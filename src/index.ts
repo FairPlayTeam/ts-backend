@@ -4,6 +4,7 @@ import 'dotenv/config';
 BigInt.prototype.toJSON = function () {
   return this.toString();
 };
+
 import express from 'express';
 import cors from 'cors';
 import { loadRoutes } from './lib/router.js';
@@ -14,20 +15,25 @@ const app = express();
 
 app.use(
   cors({
-    origin: '*',
+    origin: (origin, cb) => {
+      cb(null, true);
+    },
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true,
   }),
 );
 
+// Body parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const port = Number(process.env.PORT ?? 3000);
 
+// Load all routes
 await loadRoutes(app, new URL('./routes/', import.meta.url));
 
+// Lightweight health endpoint
 app.get('/__up', (_req, res) => {
   res.json({
     status: 'ok',
@@ -36,6 +42,7 @@ app.get('/__up', (_req, res) => {
   });
 });
 
+// 404 + error handlers (must be after routes)
 app.use(notFound);
 app.use(errorHandler);
 
