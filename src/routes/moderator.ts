@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticateToken, requireModerator } from '../lib/auth.js';
+import { getFileUrl, BUCKETS } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
 import { validate, moderationSchema } from '../middleware/validation.js';
 
@@ -49,8 +50,8 @@ router.get('/videos', async (req: Request, res: Response): Promise<void> => {
       prisma.video.count({ where: where as any }),
     ]);
 
-    res.json({
-      videos: rows.map((v: any) => ({
+    const videosWithUrls = await Promise.all(
+      rows.map(async (v: any) => ({
         id: v.id,
         title: v.title,
         user: v.user,
@@ -58,7 +59,12 @@ router.get('/videos', async (req: Request, res: Response): Promise<void> => {
         moderationStatus: v.moderationStatus,
         visibility: v.visibility,
         createdAt: v.createdAt,
+        thumbnailUrl: v.thumbnail ? await getFileUrl(BUCKETS.VIDEOS, v.thumbnail).catch(() => null) : null,
       })),
+    );
+
+    res.json({
+      videos: videosWithUrls,
       pagination: { page: Number(page), limit: Number(limit), total },
     });
   } catch (error) {

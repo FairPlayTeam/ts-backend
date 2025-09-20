@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { uploadFile, BUCKETS, getFileUrl } from '../lib/minio.js';
+import { uploadFile, BUCKETS, getFileUrl, minioClient } from '../lib/minio.js';
 import { AuthRequest } from '../lib/auth.js';
 import { Readable } from 'stream';
 import {
@@ -185,5 +185,73 @@ export const getFileDownloadUrl = async (
   } catch (error) {
     console.error('Get file URL error:', error);
     res.status(500).json({ error: 'Failed to generate file URL' });
+  }
+};
+
+export const updateThumbnail = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  const userId = req.user!.id;
+  const { id: videoId } = req.params;
+  const thumbnailFile = req.file;
+
+  if (!thumbnailFile) {
+    res.status(400).json({ error: 'No thumbnail file provided' });
+    return;
+  }
+
+  try {
+    const video = await prisma.video.findUnique({
+      where: { id: videoId },
+    });
+
+    if (!video) {
+      res.status(404).json({ error: 'Video not found' });
+      return;
+    }
+
+    if (video.userId !== userId) {
+      res
+        .status(403)
+        .json({ error: 'You are not authorized to edit this video' });
+      return;
+    }
+
+    if (video.thumbnail) {
+      try {
+        await minioClient.removeObject(BUCKETS.VIDEOS, video.thumbnail);
+      } catch (error) {
+        console.error('Failed to delete old thumbnail:', error);
+      }
+    }
+
+    const secureFilename = generateSecureFilename(thumbnailFile.originalname);
+    const newThumbnailPath = `thumbnails/${userId}/${videoId}/${secureFilename}`;
+
+    const stream = Readable.from(thumbnailFile.buffer);
+    await uploadFile(
+      BUCKETS.VIDEOS,
+      newThumbnailPath,
+      stream,
+      thumbnailFile.size,
+      {
+        'Content-Type': thumbnailFile.mimetype,
+        'uploaded-by': userId,
+      },
+    );
+
+    const updatedVideo = await prisma.video.update({
+      where: { id: videoId },
+      data: { thumbnail: newThumbnailPath },
+    });
+
+    res.json({
+      message: 'Thumbnail updated successfully',
+      thumbnailPath: updatedVideo.thumbnail,
+    });
+  } catch (error) {
+    console.error('Thumbnail update error:', error);
+    res.status(500).json({ error: 'Failed to update thumbnail' });
   }
 };

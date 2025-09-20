@@ -322,3 +322,42 @@ export const getUserVideos = async (
     res.status(500).json({ error: 'Failed to fetch user videos' });
   }
 };
+
+export const updateVideo = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  const userId = req.user!.id;
+  const { id: videoId } = req.params;
+  const { title, description, visibility } = req.body;
+
+  try {
+    const video = await prisma.video.findUnique({
+      where: { id: videoId },
+    });
+
+    if (!video) {
+      res.status(404).json({ error: 'Video not found' });
+      return;
+    }
+
+    if (video.userId !== userId) {
+      res.status(403).json({ error: 'You are not authorized to edit this video' });
+      return;
+    }
+
+    const updatedVideo = await prisma.video.update({
+      where: { id: videoId },
+      data: {
+        title,
+        description,
+        visibility,
+      },
+    });
+
+    res.json({ message: 'Video updated successfully', video: updatedVideo });
+  } catch (error) {
+    console.error('Update video error:', error);
+    res.status(500).json({ error: 'Failed to update video' });
+  }
+};

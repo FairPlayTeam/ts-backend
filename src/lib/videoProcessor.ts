@@ -76,6 +76,8 @@ const processVideoQualities = async (
 
   await downloadFromMinio(job.originalPath, originalFile);
 
+  await generateAndUploadThumbnail(job, originalFile, tempDir);
+
   const videoInfo = await getVideoInfo(originalFile);
   const maxHeight = videoInfo.height;
 
@@ -226,4 +228,47 @@ const createAndUploadMasterPlaylist = async (
     masterPath,
     `${BUCKETS.VIDEOS}/${hlsMasterIndex(userId, videoId)}`,
   );
+};
+
+const generateAndUploadThumbnail = async (
+  job: ProcessingJob,
+  inputFile: string,
+  tempDir: string,
+): Promise<void> => {
+  try {
+    const thumbnailFile = `thumbnail-${uuidv4()}.jpg`;
+    const tempThumbnailPath = path.join(tempDir, thumbnailFile);
+
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(inputFile)
+        .on('end', () => resolve())
+        .on('error', (err) =>
+          reject(new Error(`Thumbnail generation failed: ${err.message}`)),
+        )
+        .screenshots({
+          timestamps: ['00:00:01.000'],
+          filename: thumbnailFile,
+          folder: tempDir,
+          size: '640x360',
+        });
+    });
+
+    const minioThumbnailPath = `thumbnails/${job.userId}/${job.videoId}/${thumbnailFile}`;
+    await uploadToMinio(
+      tempThumbnailPath,
+      `${BUCKETS.VIDEOS}/${minioThumbnailPath}`,
+    );
+
+    await prisma.video.update({
+      where: { id: job.videoId },
+      data: { thumbnail: minioThumbnailPath },
+    });
+
+    console.log(`Thumbnail generated for video ${job.videoId}`);
+  } catch (error) {
+    console.error(
+      `Failed to generate thumbnail for video ${job.videoId}:`,
+      error,
+    );
+  }
 };

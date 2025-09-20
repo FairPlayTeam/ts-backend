@@ -5,12 +5,16 @@ import {
   getVideoById,
   getUserVideos,
   searchVideos,
+  updateVideo,
 } from '../controllers/videoController.js';
+import { updateThumbnail } from '../controllers/uploadController.js';
 import { rateVideo } from '../controllers/ratingController.js';
 import { addComment, getComments } from '../controllers/commentController.js';
 import { likeComment, unlikeComment } from '../controllers/likeController.js';
 import { registerRoute } from '../lib/docs.js';
-import { validate, commentSchema } from '../middleware/validation.js';
+import { validate, commentSchema, updateVideoSchema } from '../middleware/validation.js';
+import { upload } from '../middleware/upload.js';
+import { validateFileMagicNumbers } from '../middleware/fileValidation.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -64,6 +68,10 @@ registerRoute({
   },
 });
 router.get('/:id', getVideoById);
+router.patch('/:id', authenticateToken, requireNotBanned, validate(updateVideoSchema), updateVideo);
+router.post('/:id/thumbnail', authenticateToken, requireNotBanned, upload.single('thumbnail'), validateFileMagicNumbers, updateThumbnail);
+
+
 router.get('/search', searchVideos);
 registerRoute({
   method: 'GET',
@@ -112,6 +120,41 @@ registerRoute({
   "ratingsCount": 10
 }`,
     '403': '{ "error": "Video not available" }',
+    '404': '{ "error": "Video not found" }',
+  },
+});
+
+registerRoute({
+  method: 'PATCH',
+  path: '/videos/:id',
+  summary: 'Update video details',
+  description: 'Update the title, description, or visibility of a video. Only the video owner can perform this action.',
+  auth: true,
+  params: { id: 'Video ID' },
+  body: {
+    title: 'string (optional)',
+    description: 'string (optional)',
+    visibility: 'public | unlisted | private (optional)',
+  },
+  responses: {
+    '200': '{ "message": "Video updated successfully", ... }',
+    '403': '{ "error": "You are not authorized to edit this video" }',
+    '404': '{ "error": "Video not found" }',
+  },
+});
+
+registerRoute({
+  method: 'POST',
+  path: '/videos/:id/thumbnail',
+  summary: 'Update video thumbnail',
+  description: 'Upload a new thumbnail for a video. Only the video owner can perform this action.',
+  auth: true,
+  params: { id: 'Video ID' },
+  body: { thumbnail: 'image file' },
+  responses: {
+    '200': '{ "message": "Thumbnail updated successfully", ... }',
+    '400': '{ "error": "No thumbnail file provided" }',
+    '403': '{ "error": "You are not authorized to edit this video" }',
     '404': '{ "error": "Video not found" }',
   },
 });

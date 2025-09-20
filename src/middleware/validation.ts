@@ -37,6 +37,14 @@ export const commentSchema = z.object({
   }),
 });
 
+export const updateVideoSchema = z.object({
+  body: z.object({
+    title: z.string().min(1).max(100).optional(),
+    description: z.string().max(5000).optional().nullable(),
+    visibility: z.enum(['public', 'unlisted', 'private']).optional(),
+  }),
+});
+
 export const validate = (schema: z.AnyZodObject) => (
   req: Request,
   res: Response,
