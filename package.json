@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/index.ts",
-    "start": "bun src/index.ts",
+    "build": "tsc",
+    "start": "bun dist/index.js",
     "typecheck": "tsc --noEmit",
     "postinstall": "bunx prisma generate",
     "prisma:generate": "bunx prisma generate",
