@@ -30,6 +30,13 @@ export const moderationSchema = z.object({
   }),
 });
 
+export const commentSchema = z.object({
+  body: z.object({
+    content: z.string().min(1, 'Comment content cannot be empty').max(1000, 'Comment must be 1000 characters or less'),
+    parentId: z.string().uuid('Invalid parent ID format').optional().nullable(),
+  }),
+});
+
 export const validate = (schema: z.AnyZodObject) => (
   req: Request,
   res: Response,

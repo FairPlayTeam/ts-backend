@@ -9,7 +9,7 @@ import {
 import { rateVideo } from '../controllers/ratingController.js';
 import { addComment, getComments } from '../controllers/commentController.js';
 import { registerRoute } from '../lib/docs.js';
-import { validate } from '../middleware/validation.js';
+import { validate, commentSchema } from '../middleware/validation.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -141,11 +141,6 @@ registerRoute({
   },
 });
 
-const commentSchema = z.object({
-  body: z.object({
-    content: z.string().min(1).max(1000),
-  }),
-});
 
 router.post(
   '/:videoId/comments',
@@ -160,9 +155,10 @@ registerRoute({
   method: 'POST',
   path: '/videos/:videoId/comments',
   summary: 'Add a comment to a video',
+  description: 'To reply to another comment, include the `parentId` of the comment you are replying to in the request body.',
   auth: true,
   params: { videoId: 'Video ID' },
-  body: { content: 'string (1-1000 chars)' },
+  body: { content: 'string (1-1000 chars)', parentId: 'string (optional UUID)' },
   responses: {
     '201': '{ "message": "Comment added", ... }',
     '404': '{ "error": "Video not found" }',
@@ -173,6 +169,7 @@ registerRoute({
   method: 'GET',
   path: '/videos/:videoId/comments',
   summary: 'Get comments for a video',
+  description: 'Returns comments in a nested structure. The top-level array contains only parent comments. Replies are included in the `replies` array of each comment object.',
   params: { videoId: 'Video ID' },
   query: { page: 'number (default 1)', limit: 'number (default 20)' },
   responses: {
@@ -182,7 +179,16 @@ registerRoute({
       "id": "string",
       "content": "string",
       "createdAt": "ISO8601",
-      "user": { "id": "string", "username": "string", "displayName": "string|null", "avatarUrl": "string|null" }
+      "user": { "id": "string", "username": "string", ... },
+      "replies": [
+        {
+          "id": "string",
+          "content": "This is a reply.",
+          "createdAt": "ISO8601",
+          "user": { "id": "string", "username": "string", ... },
+          "replies": []
+        }
+      ]
     }
   ],
   "pagination": { "page": 1, "limit": 20, "total": 100 }

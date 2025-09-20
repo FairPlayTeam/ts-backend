@@ -188,7 +188,6 @@ export const getVideoById = async (
       videoObj.moderationStatus === 'approved' &&
       videoObj.visibility === 'public';
 
-    // block if owner is banned for public playback
     if (isPubliclyPlayable) {
       const owner = await prisma.user.findUnique({
         where: { id: videoObj.userId },

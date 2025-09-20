@@ -9,13 +9,14 @@ export const addComment = async (
   try {
     const userId = req.user!.id;
     const { videoId } = req.params;
-    const { content } = req.body;
+    const { content, parentId } = req.body;
 
     const newComment = await prisma.comment.create({
       data: {
         userId,
         videoId,
         content,
+        parentId,
       },
       include: {
         user: {
@@ -49,24 +50,36 @@ export const getComments = async (
     const { page = '1', limit = '20' } = req.query as Record<string, string>;
     const skip = (Number(page) - 1) * Number(limit);
 
+    const userSelect = {
+      id: true,
+      username: true,
+      displayName: true,
+      avatarUrl: true,
+    };
+
     const [rows, total] = await Promise.all([
       prisma.comment.findMany({
-        where: { videoId },
+        where: { videoId, parentId: null },
         include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              displayName: true,
-              avatarUrl: true,
+          user: { select: userSelect },
+          replies: {
+            include: {
+              user: { select: userSelect },
+              replies: {
+                include: {
+                  user: { select: userSelect },
+                },
+                orderBy: { createdAt: 'asc' },
+              },
             },
+            orderBy: { createdAt: 'asc' },
           },
         },
         orderBy: { createdAt: 'desc' },
         skip,
         take: Number(limit),
       }),
-      prisma.comment.count({ where: { videoId } }),
+      prisma.comment.count({ where: { videoId, parentId: null } }),
     ]);
 
     res.json({
