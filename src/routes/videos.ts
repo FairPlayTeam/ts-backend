@@ -11,7 +11,11 @@ import { updateThumbnail } from '../controllers/uploadController.js';
 import { rateVideo } from '../controllers/ratingController.js';
 import { addComment, getComments } from '../controllers/commentController.js';
 import { registerRoute } from '../lib/docs.js';
-import { validate, commentSchema, updateVideoSchema } from '../middleware/validation.js';
+import {
+  validate,
+  commentSchema,
+  updateVideoSchema,
+} from '../middleware/validation.js';
 import { upload } from '../middleware/upload.js';
 import { validateFileMagicNumbers } from '../middleware/fileValidation.js';
 import { z } from 'zod';
@@ -39,7 +43,7 @@ registerRoute({
       "user": { "username": "string", "displayName": "string|null" }
     }
   ],
-  "pagination": { "page": 1, "limit": 20, "total": 100 }
+  "pagination": { "page": 1, "limit": 20, "totalItems": 100, "totalPages": 5, "itemsReturned": 20 }
 }`,
   },
 });
@@ -62,14 +66,26 @@ registerRoute({
       "ratingsCount": 10
     }
   ],
-  "pagination": { "page": 1, "limit": 20, "total": 100 }
+  "pagination": { "page": 1, "limit": 20, "totalItems": 100, "totalPages": 5, "itemsReturned": 20 }
 }`,
   },
 });
 router.get('/:id', getVideoById);
-router.patch('/:id', authenticateToken, requireNotBanned, validate(updateVideoSchema), updateVideo);
-router.post('/:id/thumbnail', authenticateToken, requireNotBanned, upload.single('thumbnail'), validateFileMagicNumbers, updateThumbnail);
-
+router.patch(
+  '/:id',
+  authenticateToken,
+  requireNotBanned,
+  validate(updateVideoSchema),
+  updateVideo,
+);
+router.post(
+  '/:id/thumbnail',
+  authenticateToken,
+  requireNotBanned,
+  upload.single('thumbnail'),
+  validateFileMagicNumbers,
+  updateThumbnail,
+);
 
 router.get('/search', searchVideos);
 registerRoute({
@@ -88,7 +104,7 @@ registerRoute({
   "videos": [
     { "id": "string", "title": "string", "thumbnailUrl": "string|null", "viewCount": "string", "avgRating": 4.5, "ratingsCount": 10, "user": { "username": "string", "displayName": "string|null" }, "createdAt": "ISO8601" }
   ],
-  "pagination": { "page": 1, "limit": 20, "total": 100 },
+  "pagination": { "page": 1, "limit": 20, "totalItems": 100, "totalPages": 5, "itemsReturned": 20 },
   "query": { "q": "term" }
 }`,
   },
@@ -127,7 +143,8 @@ registerRoute({
   method: 'PATCH',
   path: '/videos/:id',
   summary: 'Update video details',
-  description: 'Update the title, description, or visibility of a video. Only the video owner can perform this action.',
+  description:
+    'Update the title, description, or visibility of a video. Only the video owner can perform this action.',
   auth: true,
   params: { id: 'Video ID' },
   body: {
@@ -136,7 +153,8 @@ registerRoute({
     visibility: 'public | unlisted | private (optional)',
   },
   responses: {
-    '200': '{ "message": "Video updated successfully", "video": { ..., "thumbnailUrl": "string|null" } }',
+    '200':
+      '{ "message": "Video updated successfully", "video": { ..., "thumbnailUrl": "string|null" } }',
     '403': '{ "error": "You are not authorized to edit this video" }',
     '404': '{ "error": "Video not found" }',
   },
@@ -146,12 +164,14 @@ registerRoute({
   method: 'POST',
   path: '/videos/:id/thumbnail',
   summary: 'Update video thumbnail',
-  description: 'Upload a new thumbnail for a video. Only the video owner can perform this action.',
+  description:
+    'Upload a new thumbnail for a video. Only the video owner can perform this action.',
   auth: true,
   params: { id: 'Video ID' },
   body: { thumbnail: 'image file' },
   responses: {
-    '200': '{ "message": "Thumbnail updated successfully", "thumbnailUrl": "string|null" }',
+    '200':
+      '{ "message": "Thumbnail updated successfully", "thumbnailUrl": "string|null" }',
     '400': '{ "error": "No thumbnail file provided" }',
     '403': '{ "error": "You are not authorized to edit this video" }',
     '404': '{ "error": "Video not found" }',
@@ -238,10 +258,9 @@ registerRoute({
       ]
     }
   ],
-  "pagination": { "page": 1, "limit": 20, "total": 100 }
+  "pagination": { "page": 1, "limit": 20, "totalItems": 100, "totalPages": 5, "itemsReturned": 20 }
 }`,
   },
 });
-
 
 export default router;

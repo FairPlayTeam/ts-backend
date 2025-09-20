@@ -61,7 +61,13 @@ router.get('/users', async (req: Request, res: Response): Promise<void> => {
 
     res.json({
       users: rows,
-      pagination: { page: Number(page), limit: Number(limit), total },
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        totalItems: total,
+        totalPages: Math.ceil(total / Number(limit)),
+        itemsReturned: rows.length,
+      },
     });
   } catch (error) {
     console.error('Admin list users error:', error);
@@ -100,7 +106,7 @@ registerRoute({
       "createdAt": "ISO8601"
     }
   ],
-  "pagination": { "page": 1, "limit": 20, "total": 123 }
+  "pagination": { "page": 1, "limit": 20, "totalItems": 123, "totalPages": 7, "itemsReturned": 20 }
 }`,
   },
 });

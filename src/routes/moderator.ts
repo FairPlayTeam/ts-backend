@@ -65,7 +65,13 @@ router.get('/videos', async (req: Request, res: Response): Promise<void> => {
 
     res.json({
       videos: videosWithUrls,
-      pagination: { page: Number(page), limit: Number(limit), total },
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        totalItems: total,
+        totalPages: Math.ceil(total / Number(limit)),
+        itemsReturned: videosWithUrls.length,
+      },
     });
   } catch (error) {
     console.error('Moderator list videos error:', error);
@@ -105,7 +111,7 @@ registerRoute({
       "createdAt": "ISO8601"
     }
   ],
-  "pagination": { "page": 1, "limit": 20, "total": 123 }
+  "pagination": { "page": 1, "limit": 20, "totalItems": 123, "totalPages": 7, "itemsReturned": 20 }
 }`,
   },
 });

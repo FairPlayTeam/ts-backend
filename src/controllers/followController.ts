@@ -118,7 +118,13 @@ export const getFollowers = async (
 
     res.json({
       followers: rows.map((r) => r.follower),
-      pagination: { page: Number(page), limit: Number(limit), total },
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        totalItems: total,
+        totalPages: Math.ceil(total / Number(limit)),
+        itemsReturned: rows.length,
+      },
     });
   } catch (error) {
     console.error('Get followers error:', error);
@@ -157,7 +163,13 @@ export const getFollowing = async (
 
     res.json({
       following: rows.map((r) => r.following),
-      pagination: { page: Number(page), limit: Number(limit), total },
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        totalItems: total,
+        totalPages: Math.ceil(total / Number(limit)),
+        itemsReturned: rows.length,
+      },
     });
   } catch (error) {
     console.error('Get following error:', error);

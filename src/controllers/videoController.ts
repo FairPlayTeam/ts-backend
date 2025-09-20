@@ -58,19 +58,23 @@ export const getVideos = async (req: Request, res: Response): Promise<void> => {
       }),
     );
 
+    const total = await prisma.video.count({
+      where: {
+        processingStatus: 'done',
+        moderationStatus: 'approved',
+        visibility: 'public',
+        user: { isBanned: false },
+      },
+    });
+
     res.json({
       videos: videosWithUrls,
       pagination: {
         page: Number(page),
         limit: Number(limit),
-        total: await prisma.video.count({
-          where: {
-            processingStatus: 'done',
-            moderationStatus: 'approved',
-            visibility: 'public',
-            user: { isBanned: false },
-          },
-        }),
+        totalItems: total,
+        totalPages: Math.ceil(total / Number(limit)),
+        itemsReturned: videosWithUrls.length,
       },
     });
   } catch (error) {
@@ -140,7 +144,13 @@ export const searchVideos = async (
 
     res.json({
       videos: results,
-      pagination: { page: Number(page), limit: Number(limit), total },
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        totalItems: total,
+        totalPages: Math.ceil(total / Number(limit)),
+        itemsReturned: results.length,
+      },
       query: { q },
     });
   } catch (error) {
@@ -309,12 +319,16 @@ export const getUserVideos = async (
       }),
     );
 
+    const total = await prisma.video.count({ where: { userId } });
+
     res.json({
       videos: videosWithUrls,
       pagination: {
         page: Number(page),
         limit: Number(limit),
-        total: await prisma.video.count({ where: { userId } }),
+        totalItems: total,
+        totalPages: Math.ceil(total / Number(limit)),
+        itemsReturned: videosWithUrls.length,
       },
     });
   } catch (error) {

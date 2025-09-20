@@ -122,7 +122,13 @@ router.get(
 
       res.json({
         videos,
-        pagination: { page: Number(page), limit: Number(limit), total },
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          totalItems: total,
+          totalPages: Math.ceil(total / Number(limit)),
+          itemsReturned: videos.length,
+        },
       });
     } catch (error) {
       console.error('Get user videos error:', error);
@@ -142,7 +148,7 @@ registerRoute({
   "videos": [
     { "id": "string", "title": "string", "description": "string|null", "createdAt": "ISO8601", "viewCount": "string", "thumbnailUrl": "string|null" }
   ],
-  "pagination": { "page": 1, "limit": 20, "total": 10 }
+  "pagination": { "page": 1, "limit": 20, "totalItems": 10, "totalPages": 1, "itemsReturned": 10 }
 }`,
   },
 });
@@ -162,7 +168,7 @@ registerRoute({
   "followers": [
     { "id": "string", "username": "string", "displayName": "string|null", "avatarUrl": "string|null" }
   ],
-  "pagination": { "page": 1, "limit": 20, "total": 100 }
+  "pagination": { "page": 1, "limit": 20, "totalItems": 100, "totalPages": 5, "itemsReturned": 20 }
 }`,
   },
 });
@@ -178,7 +184,7 @@ registerRoute({
   "following": [
     { "id": "string", "username": "string", "displayName": "string|null", "avatarUrl": "string|null" }
   ],
-  "pagination": { "page": 1, "limit": 20, "total": 100 }
+  "pagination": { "page": 1, "limit": 20, "totalItems": 100, "totalPages": 5, "itemsReturned": 20 }
 }`,
   },
 });

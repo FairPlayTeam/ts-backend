@@ -82,9 +82,17 @@ export const getComments = async (
       prisma.comment.count({ where: { videoId, parentId: null } }),
     ]);
 
+    const nestedComments = rows;
+
     res.json({
-      comments: rows,
-      pagination: { page: Number(page), limit: Number(limit), total },
+      comments: nestedComments,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        totalItems: total,
+        totalPages: Math.ceil(total / Number(limit)),
+        itemsReturned: nestedComments.length,
+      },
     });
   } catch (error) {
     console.error('Get comments error:', error);
