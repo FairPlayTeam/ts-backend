@@ -33,8 +33,6 @@ async function proxyUserAsset(
   res: Response,
 ) {
   try {
-    console.log(`[Asset Proxy] Attempting to fetch: bucket=${bucket}, objectName=${objectName}, userId=${userId}`);
-    
     // Find the user to check if they exist and if their profile is accessible
     const user = await prisma.user.findUnique({ 
       where: { id: userId },
@@ -46,11 +44,8 @@ async function proxyUserAsset(
     });
 
     if (!user) {
-      console.log(`[Asset Proxy] User not found: ${userId}`);
       return res.status(404).json({ error: 'User not found' });
     }
-
-    console.log(`[Asset Proxy] User found, fetching from MinIO...`);
     
     // For now, allow access to all user assets (avatars/banners are generally public)
     // You could add privacy controls here later if needed
@@ -60,15 +55,13 @@ async function proxyUserAsset(
     res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
     
     stream.on('error', (err) => {
-      console.error(`[Asset Proxy] Stream error:`, err);
       if (!res.headersSent) res.status(500);
       res.end(String(err));
     });
     stream.pipe(res);
   } catch (err: any) {
-    console.error(`[Asset Proxy] Error:`, err);
     const status = err?.code === 'NoSuchKey' ? 404 : 500;
-    res.status(status).json({ error: 'Failed to fetch asset', details: err.message });
+    res.status(status).json({ error: 'Failed to fetch asset' });
   }
 }
 
