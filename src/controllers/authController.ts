@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
-import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { createSession } from './sessionController.js';
+import { SessionAuthRequest } from '../lib/sessionAuth.js';
+import { getProxiedAssetUrl } from '../lib/utils.js';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -52,7 +53,9 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       if (err?.code === 'P2002') {
         const target = (err as any)?.meta?.target as string[] | undefined;
         if (Array.isArray(target) && target.includes('email')) {
-          res.status(409).json({ error: 'User with this email already exists' });
+          res
+            .status(409)
+            .json({ error: 'User with this email already exists' });
           return;
         }
         if (Array.isArray(target) && target.includes('username')) {
@@ -183,8 +186,8 @@ export const getProfile = async (
       email: user.email,
       username: user.username,
       displayName: user.displayName,
-      avatarUrl: user.avatarUrl,
-      bannerUrl: user.bannerUrl,
+      avatarUrl: getProxiedAssetUrl(user.id, user.avatarUrl, 'avatar'),
+      bannerUrl: getProxiedAssetUrl(user.id, user.bannerUrl, 'banner'),
       bio: user.bio,
       role: user.role,
       isVerified: user.isVerified,

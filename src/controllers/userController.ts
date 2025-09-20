@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { prisma } from '../lib/prisma.js';
-import { createUserSearchWhere } from '../lib/utils.js';
+import { createUserSearchWhere, getProxiedAssetUrl } from '../lib/utils.js';
 
 export const getUsers = async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -20,7 +20,12 @@ export const getUsers = async (_req: Request, res: Response): Promise<void> => {
       take: 50,
     });
 
-    res.json(users);
+    const usersWithProxiedUrls = users.map(user => ({
+      ...user,
+      avatarUrl: getProxiedAssetUrl(user.id, user.avatarUrl, 'avatar')
+    }));
+    
+    res.json({ users: usersWithProxiedUrls });
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
@@ -57,7 +62,13 @@ export const getUserById = async (
       return;
     }
 
-    res.json(user);
+    const userWithProxiedUrls = {
+      ...user,
+      avatarUrl: getProxiedAssetUrl(user.id, user.avatarUrl, 'avatar'),
+      bannerUrl: getProxiedAssetUrl(user.id, user.bannerUrl, 'banner')
+    };
+    
+    res.json(userWithProxiedUrls);
   } catch (error) {
     console.error('Error fetching user:', error);
     res.status(500).json({ error: 'Failed to fetch user' });

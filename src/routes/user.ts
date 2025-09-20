@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { BUCKETS, getFileUrl } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
-import { createUserSearchWhere } from '../lib/utils.js';
+import { createUserSearchWhere, getProxiedAssetUrl } from '../lib/utils.js';
 import {
   getFollowers,
   getFollowing,
@@ -38,14 +38,8 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const [avatarUrl, bannerUrl] = await Promise.all([
-      user.avatarUrl
-        ? getFileUrl(BUCKETS.USERS, user.avatarUrl)
-        : Promise.resolve(null),
-      user.bannerUrl
-        ? getFileUrl(BUCKETS.USERS, user.bannerUrl)
-        : Promise.resolve(null),
-    ]);
+    const avatarUrl = getProxiedAssetUrl(user.id, user.avatarUrl, 'avatar');
+    const bannerUrl = getProxiedAssetUrl(user.id, user.bannerUrl, 'banner');
 
     res.json({ ...user, avatarUrl, bannerUrl });
   } catch (error) {

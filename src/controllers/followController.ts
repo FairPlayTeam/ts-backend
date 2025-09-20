@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
-import { createUserSearchWhere } from '../lib/utils.js';
+import { createUserSearchWhere, getProxiedAssetUrl } from '../lib/utils.js';
 
 export const followUser = async (
   req: SessionAuthRequest,
@@ -153,7 +153,10 @@ export const getFollowers = async (
     ]);
 
     res.json({
-      followers: rows.map((r) => r.follower),
+      followers: rows.map((r) => ({
+        ...r.follower,
+        avatarUrl: getProxiedAssetUrl(r.follower.id, r.follower.avatarUrl, 'avatar')
+      })),
       pagination: {
         page: Number(page),
         limit: Number(limit),
@@ -208,7 +211,10 @@ export const getFollowing = async (
     ]);
 
     res.json({
-      following: rows.map((r) => r.following),
+      following: rows.map((r) => ({
+        ...r.following,
+        avatarUrl: getProxiedAssetUrl(r.following.id, r.following.avatarUrl, 'avatar')
+      })),
       pagination: {
         page: Number(page),
         limit: Number(limit),
