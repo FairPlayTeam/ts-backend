@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { BUCKETS, getFileUrl } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
+import { getFollowers, getFollowing, followUser, unfollowUser } from '../controllers/followController.js';
+import { authenticateToken, requireNotBanned } from '../lib/auth.js';
 
 const router = Router();
 
@@ -30,7 +32,12 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    res.json(user);
+    const [avatarUrl, bannerUrl] = await Promise.all([
+      user.avatarUrl ? getFileUrl(BUCKETS.USERS, user.avatarUrl) : Promise.resolve(null),
+      user.bannerUrl ? getFileUrl(BUCKETS.USERS, user.bannerUrl) : Promise.resolve(null),
+    ]);
+
+    res.json({ ...user, avatarUrl, bannerUrl });
   } catch (error) {
     console.error('Get user profile error:', error);
     res.status(500).json({ error: 'Failed to get user profile' });
@@ -140,83 +147,9 @@ registerRoute({
   },
 });
 
-router.get(
-  '/:id/followers',
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const { page = '1', limit = '20' } = req.query as Record<string, string>;
-      const skip = (Number(page) - 1) * Number(limit);
 
-      const [rows, total] = await Promise.all([
-        prisma.follow.findMany({
-          where: { followingId: id },
-          include: {
-            follower: {
-              select: {
-                id: true,
-                username: true,
-                displayName: true,
-                avatarUrl: true,
-              },
-            },
-          },
-          orderBy: { createdAt: 'desc' },
-          skip,
-          take: Number(limit),
-        }),
-        prisma.follow.count({ where: { followingId: id } }),
-      ]);
-
-      res.json({
-        followers: rows.map((r) => r.follower),
-        pagination: { page: Number(page), limit: Number(limit), total },
-      });
-    } catch (error) {
-      console.error('Get followers error:', error);
-      res.status(500).json({ error: 'Failed to get followers' });
-    }
-  },
-);
-
-router.get(
-  '/:id/following',
-  async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const { page = '1', limit = '20' } = req.query as Record<string, string>;
-      const skip = (Number(page) - 1) * Number(limit);
-
-      const [rows, total] = await Promise.all([
-        prisma.follow.findMany({
-          where: { followerId: id },
-          include: {
-            following: {
-              select: {
-                id: true,
-                username: true,
-                displayName: true,
-                avatarUrl: true,
-              },
-            },
-          },
-          orderBy: { createdAt: 'desc' },
-          skip,
-          take: Number(limit),
-        }),
-        prisma.follow.count({ where: { followerId: id } }),
-      ]);
-
-      res.json({
-        following: rows.map((r) => r.following),
-        pagination: { page: Number(page), limit: Number(limit), total },
-      });
-    } catch (error) {
-      console.error('Get following error:', error);
-      res.status(500).json({ error: 'Failed to get following list' });
-    }
-  },
-);
+router.get('/:id/followers', getFollowers);
+router.get('/:id/following', getFollowing);
 
 registerRoute({
   method: 'GET',
@@ -248,6 +181,27 @@ registerRoute({
   "pagination": { "page": 1, "limit": 20, "total": 100 }
 }`,
   },
+});
+
+router.post('/:id/follow', authenticateToken, requireNotBanned, followUser);
+router.delete('/:id/follow', authenticateToken, requireNotBanned, unfollowUser);
+
+registerRoute({
+  method: 'POST',
+  path: '/user/:id/follow',
+  summary: 'Follow a user',
+  auth: true,
+  params: { id: 'User ID to follow' },
+  responses: { '204': 'Success', '409': 'Already following' },
+});
+
+registerRoute({
+  method: 'DELETE',
+  path: '/user/:id/follow',
+  summary: 'Unfollow a user',
+  auth: true,
+  params: { id: 'User ID to unfollow' },
+  responses: { '204': 'Success', '404': 'Not following' },
 });
 
 export default router;

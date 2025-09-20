@@ -52,6 +52,12 @@ export const updateProfileSchema = z.object({
   }),
 });
 
+export const roleSchema = z.object({
+  body: z.object({
+    role: z.enum(['user', 'moderator', 'admin']),
+  }),
+});
+
 export const validate = (schema: z.AnyZodObject) => (
   req: Request,
   res: Response,

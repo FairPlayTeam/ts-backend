@@ -8,7 +8,7 @@ export const followUser = async (
 ): Promise<void> => {
   try {
     const followerId = req.user!.id;
-    const { followingId } = req.params;
+    const { id: followingId } = req.params;
 
     if (followerId === followingId) {
       res.status(400).json({ error: 'You cannot follow yourself' });
@@ -54,7 +54,7 @@ export const unfollowUser = async (
 ): Promise<void> => {
   try {
     const followerId = req.user!.id;
-    const { followingId } = req.params;
+    const { id: followingId } = req.params;
 
     await prisma.$transaction(async (tx) => {
       const deleted = await tx.follow.delete({

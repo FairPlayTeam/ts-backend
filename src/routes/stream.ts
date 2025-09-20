@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { minioClient, BUCKETS } from '../lib/minio.js';
 import { hlsMasterIndex, hlsVariantIndex } from '../lib/paths.js';
 import { registerRoute } from '../lib/docs.js';
+import { authenticateToken, AuthRequest } from '../lib/auth.js';
+import { prisma } from '../lib/prisma.js';
 
 const router = Router();
 
@@ -11,8 +13,19 @@ function contentTypeFor(path: string): string {
   return 'application/octet-stream';
 }
 
-async function proxyObject(bucket: string, objectName: string, res: Response) {
+async function proxyObject(bucket: string, objectName: string, videoId: string, requesterId: string | null, res: Response) {
   try {
+    const video = await prisma.video.findUnique({ where: { id: videoId } });
+    if (!video) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    const isPublic = video.visibility === 'public' && video.moderationStatus === 'approved' && video.processingStatus === 'done';
+
+    if (!isPublic && video.userId !== requesterId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     const stream = await minioClient.getObject(bucket, objectName);
     res.setHeader('Content-Type', contentTypeFor(objectName));
     stream.on('error', (err) => {
@@ -28,10 +41,11 @@ async function proxyObject(bucket: string, objectName: string, res: Response) {
 
 router.get(
   '/videos/:userId/:videoId/master.m3u8',
-  async (req: Request, res: Response) => {
+  authenticateToken,
+  async (req: AuthRequest, res: Response) => {
     const { userId, videoId } = req.params;
     const objectName = hlsMasterIndex(userId, videoId);
-    await proxyObject(BUCKETS.VIDEOS, objectName, res);
+    await proxyObject(BUCKETS.VIDEOS, objectName, videoId, req.user?.id ?? null, res);
   },
 );
 registerRoute({
@@ -43,10 +57,11 @@ registerRoute({
 
 router.get(
   '/videos/:userId/:videoId/:quality/index.m3u8',
-  async (req: Request, res: Response) => {
+  authenticateToken,
+  async (req: AuthRequest, res: Response) => {
     const { userId, videoId, quality } = req.params;
     const objectName = hlsVariantIndex(userId, videoId, quality);
-    await proxyObject(BUCKETS.VIDEOS, objectName, res);
+    await proxyObject(BUCKETS.VIDEOS, objectName, videoId, req.user?.id ?? null, res);
   },
 );
 registerRoute({
@@ -57,10 +72,11 @@ registerRoute({
 
 router.get(
   '/videos/:userId/:videoId/:quality/:segment',
-  async (req: Request, res: Response) => {
+  authenticateToken,
+  async (req: AuthRequest, res: Response) => {
     const { userId, videoId, quality, segment } = req.params;
     const objectName = `${userId}/${videoId}/${quality}/${segment}`;
-    await proxyObject(BUCKETS.VIDEOS, objectName, res);
+    await proxyObject(BUCKETS.VIDEOS, objectName, videoId, req.user?.id ?? null, res);
   },
 );
 registerRoute({

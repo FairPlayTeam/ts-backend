@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticateToken, requireAdmin } from '../lib/auth.js';
 import { registerRoute } from '../lib/docs.js';
-import { validate, banSchema } from '../middleware/validation.js';
+import { validate, banSchema, roleSchema } from '../middleware/validation.js';
+import { updateUserRole } from '../controllers/userController.js';
 
 const router = Router();
 
@@ -165,6 +166,22 @@ registerRoute({
   "videoCount": 0,
   "totalViews": "string"
 }`,
+    '404': '{ "error": "User not found" }',
+  },
+});
+
+router.patch('/users/:id/role', validate(roleSchema), updateUserRole);
+
+registerRoute({
+  method: 'PATCH',
+  path: '/admin/users/:id/role',
+  summary: 'Admin: update user role',
+  auth: true,
+  roles: ['admin'],
+  params: { id: 'User ID' },
+  body: { role: 'user | moderator | admin' },
+  responses: {
+    '200': '{ "message": "User role updated successfully", ... }',
     '404': '{ "error": "User not found" }',
   },
 });

@@ -1,6 +1,5 @@
 import { Router } from 'express';
-import { getDocs } from '../lib/docs.js';
-import { registerRoute } from '../lib/docs.js';
+import { getDocs, registerRoute } from '../lib/docs.js';
 
 const router = Router();
 
