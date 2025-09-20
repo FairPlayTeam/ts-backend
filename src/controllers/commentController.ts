@@ -1,0 +1,80 @@
+import { Request, Response } from 'express';
+import { prisma } from '../lib/prisma.js';
+import { AuthRequest } from '../lib/auth.js';
+
+export const addComment = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { videoId } = req.params;
+    const { content } = req.body;
+
+    const newComment = await prisma.comment.create({
+      data: {
+        userId,
+        videoId,
+        content,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    });
+
+    res.status(201).json({ message: 'Comment added', comment: newComment });
+  } catch (error: any) {
+    if (error?.code === 'P2003') {
+      res.status(404).json({ error: 'Video not found' });
+      return;
+    }
+    console.error('Add comment error:', error);
+    res.status(500).json({ error: 'Failed to add comment' });
+  }
+};
+
+export const getComments = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { videoId } = req.params;
+    const { page = '1', limit = '20' } = req.query as Record<string, string>;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [rows, total] = await Promise.all([
+      prisma.comment.findMany({
+        where: { videoId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              avatarUrl: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: Number(limit),
+      }),
+      prisma.comment.count({ where: { videoId } }),
+    ]);
+
+    res.json({
+      comments: rows,
+      pagination: { page: Number(page), limit: Number(limit), total },
+    });
+  } catch (error) {
+    console.error('Get comments error:', error);
+    res.status(500).json({ error: 'Failed to get comments' });
+  }
+};

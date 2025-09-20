@@ -1,0 +1,190 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum VideoProcessingStatus {
+  uploading
+  processing
+  done
+}
+
+enum VideoModerationStatus {
+  pending
+  approved
+  rejected
+}
+
+enum VideoVisibility {
+  public
+  unlisted
+  private
+}
+
+enum UserRole {
+  user
+  moderator
+  admin
+}
+
+enum TransactionType {
+  donation
+  subscription
+  ad_revenue
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  username     String    @unique
+  passwordHash String    @map("password_hash")
+  displayName  String?   @map("display_name")
+  avatarUrl    String?   @map("avatar_url")
+  bannerUrl    String?   @map("banner_url")
+  bio          String?
+  role         UserRole  @default(user)
+  isActive     Boolean   @default(true) @map("is_active")
+  isVerified   Boolean   @default(false) @map("is_verified")
+  isBanned     Boolean   @default(false) @map("is_banned")
+  banReasonPublic  String? @map("ban_reason_public")
+  banReasonPrivate String? @map("ban_reason_private")
+  bannedAt     DateTime? @map("banned_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  lastLogin    DateTime? @map("last_login")
+
+  followerCount Int     @default(0) @map("follower_count")
+  followingCount Int    @default(0) @map("following_count")
+  videoCount    Int     @default(0) @map("video_count")
+  totalViews    BigInt  @default(0) @map("total_views")
+  totalEarnings Decimal @default(0) @map("total_earnings")
+
+  videos        Video[]
+  following     Follow[]       @relation("UserFollowing")
+  followers     Follow[]       @relation("UserFollowers")
+  ratings       Rating[]
+  transactions  Transaction[]  @relation("UserTransactions")
+  earnings      Transaction[]  @relation("CreatorEarnings")
+  comments      Comment[]
+  sessions      Session[]
+
+  @@map("users")
+}
+
+model Video {
+  id            String          @id @default(uuid()) @db.Uuid
+  userId        String          @map("user_id") @db.Uuid
+  title         String
+  description   String?
+  thumbnail     String?
+  duration      Int?
+  tags          String[]
+  viewCount     BigInt          @default(0) @map("view_count")
+  likeCount     Int             @default(0) @map("like_count")
+  processingStatus VideoProcessingStatus @default(uploading)
+  moderationStatus VideoModerationStatus @default(pending)
+  visibility    VideoVisibility @default(public)
+  allowComments Boolean         @default(true) @map("allow_comments")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  publishedAt   DateTime?       @map("published_at")
+
+  storagePath   String? @map("storage_path")
+  qualities     Json?
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ratings  Rating[]
+  comments Comment[]
+
+  @@index([userId])
+  @@index([processingStatus])
+  @@index([moderationStatus])
+  @@index([visibility])
+  @@index([createdAt])
+  @@map("videos")
+}
+
+model Rating {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  videoId   String   @map("video_id") @db.Uuid
+  score     Int      @db.SmallInt
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoId])
+  @@index([videoId])
+  @@map("ratings")
+}
+
+model Comment {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  videoId   String   @map("video_id") @db.Uuid
+  content   String
+  likeCount Int      @default(0) @map("like_count")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([videoId])
+  @@index([createdAt])
+  @@map("comments")
+}
+
+model Transaction {
+  id          String          @id @default(uuid()) @db.Uuid
+  fromUserId  String?         @map("from_user_id") @db.Uuid
+  toUserId    String          @map("to_user_id") @db.Uuid
+  type        TransactionType
+  amount      Decimal
+  description String?
+  metadata    Json?
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  fromUser User? @relation("UserTransactions", fields: [fromUserId], references: [id])
+  toUser   User  @relation("CreatorEarnings", fields: [toUserId], references: [id])
+
+  @@index([toUserId])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model Follow {
+  id          String   @id @default(uuid()) @db.Uuid
+  followerId  String   @map("follower_id") @db.Uuid
+  followingId String   @map("following_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  follower  User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique
+  userAgent String?  @map("user_agent")
+  ipAddress String?  @map("ip_address")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}

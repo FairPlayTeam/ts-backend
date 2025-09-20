@@ -1,0 +1,253 @@
+import { Router, Request, Response } from 'express';
+import { prisma } from '../lib/prisma.js';
+import { BUCKETS, getFileUrl } from '../lib/minio.js';
+import { registerRoute } from '../lib/docs.js';
+
+const router = Router();
+
+router.get('/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatarUrl: true,
+        bannerUrl: true,
+        bio: true,
+        followerCount: true,
+        followingCount: true,
+        videoCount: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    res.json(user);
+  } catch (error) {
+    console.error('Get user profile error:', error);
+    res.status(500).json({ error: 'Failed to get user profile' });
+  }
+});
+
+registerRoute({
+  method: 'GET',
+  path: '/user/:id',
+  summary: 'Get a public user profile by id',
+  params: { id: 'User ID' },
+  responses: {
+    '200': `{
+  "id": "string",
+  "username": "string",
+  "displayName": "string|null",
+  "avatarUrl": "string|null",
+  "bannerUrl": "string|null",
+  "bio": "string|null",
+  "followerCount": 0,
+  "followingCount": 0,
+  "videoCount": 0,
+  "createdAt": "ISO8601"
+}`,
+    '404': '{ "error": "User not found" }',
+  },
+});
+
+router.get(
+  '/:id/videos',
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { page = '1', limit = '20' } = req.query as Record<string, string>;
+      const skip = (Number(page) - 1) * Number(limit);
+
+      const [rows, total] = await Promise.all([
+        prisma.video.findMany({
+          where: {
+            userId: id,
+            processingStatus: 'done' as any,
+            moderationStatus: 'approved' as any,
+            visibility: 'public' as any,
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: Number(limit),
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            thumbnail: true,
+            createdAt: true,
+            viewCount: true,
+          },
+        }),
+        prisma.video.count({
+          where: {
+            userId: id,
+            processingStatus: 'done' as any,
+            moderationStatus: 'approved' as any,
+            visibility: 'public' as any,
+          },
+        }),
+      ]);
+
+      const videos = await Promise.all(
+        rows.map(async (v) => {
+          const thumbUrl = v.thumbnail
+            ? await getFileUrl(BUCKETS.VIDEOS, v.thumbnail).catch(() => null)
+            : null;
+          return {
+            id: v.id,
+            title: v.title,
+            description: v.description,
+            createdAt: v.createdAt,
+            viewCount: v.viewCount.toString(),
+            thumbnailUrl: thumbUrl,
+          };
+        }),
+      );
+
+      res.json({
+        videos,
+        pagination: { page: Number(page), limit: Number(limit), total },
+      });
+    } catch (error) {
+      console.error('Get user videos error:', error);
+      res.status(500).json({ error: 'Failed to get user videos' });
+    }
+  },
+);
+
+registerRoute({
+  method: 'GET',
+  path: '/user/:id/videos',
+  summary: "List a user's public videos",
+  params: { id: 'User ID' },
+  query: { page: 'number (default 1)', limit: 'number (default 20)' },
+  responses: {
+    '200': `{
+  "videos": [
+    { "id": "string", "title": "string", "description": "string|null", "createdAt": "ISO8601", "viewCount": "string", "thumbnailUrl": "string|null" }
+  ],
+  "pagination": { "page": 1, "limit": 20, "total": 10 }
+}`,
+  },
+});
+
+router.get(
+  '/:id/followers',
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { page = '1', limit = '20' } = req.query as Record<string, string>;
+      const skip = (Number(page) - 1) * Number(limit);
+
+      const [rows, total] = await Promise.all([
+        prisma.follow.findMany({
+          where: { followingId: id },
+          include: {
+            follower: {
+              select: {
+                id: true,
+                username: true,
+                displayName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: Number(limit),
+        }),
+        prisma.follow.count({ where: { followingId: id } }),
+      ]);
+
+      res.json({
+        followers: rows.map((r) => r.follower),
+        pagination: { page: Number(page), limit: Number(limit), total },
+      });
+    } catch (error) {
+      console.error('Get followers error:', error);
+      res.status(500).json({ error: 'Failed to get followers' });
+    }
+  },
+);
+
+router.get(
+  '/:id/following',
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { page = '1', limit = '20' } = req.query as Record<string, string>;
+      const skip = (Number(page) - 1) * Number(limit);
+
+      const [rows, total] = await Promise.all([
+        prisma.follow.findMany({
+          where: { followerId: id },
+          include: {
+            following: {
+              select: {
+                id: true,
+                username: true,
+                displayName: true,
+                avatarUrl: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: Number(limit),
+        }),
+        prisma.follow.count({ where: { followerId: id } }),
+      ]);
+
+      res.json({
+        following: rows.map((r) => r.following),
+        pagination: { page: Number(page), limit: Number(limit), total },
+      });
+    } catch (error) {
+      console.error('Get following error:', error);
+      res.status(500).json({ error: 'Failed to get following list' });
+    }
+  },
+);
+
+registerRoute({
+  method: 'GET',
+  path: '/user/:id/followers',
+  summary: "Get a user's followers",
+  params: { id: 'User ID' },
+  query: { page: 'number (default 1)', limit: 'number (default 20)' },
+  responses: {
+    '200': `{
+  "followers": [
+    { "id": "string", "username": "string", "displayName": "string|null", "avatarUrl": "string|null" }
+  ],
+  "pagination": { "page": 1, "limit": 20, "total": 100 }
+}`,
+  },
+});
+
+registerRoute({
+  method: 'GET',
+  path: '/user/:id/following',
+  summary: 'Get users someone is following',
+  params: { id: 'User ID' },
+  query: { page: 'number (default 1)', limit: 'number (default 20)' },
+  responses: {
+    '200': `{
+  "following": [
+    { "id": "string", "username": "string", "displayName": "string|null", "avatarUrl": "string|null" }
+  ],
+  "pagination": { "page": 1, "limit": 20, "total": 100 }
+}`,
+  },
+});
+
+export default router;
