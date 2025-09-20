@@ -355,7 +355,14 @@ export const updateVideo = async (
       },
     });
 
-    res.json({ message: 'Video updated successfully', video: updatedVideo });
+    const thumbnailUrl = updatedVideo.thumbnail
+      ? await getFileUrl(BUCKETS.VIDEOS, updatedVideo.thumbnail)
+      : null;
+
+    res.json({
+      message: 'Video updated successfully',
+      video: { ...updatedVideo, thumbnailUrl },
+    });
   } catch (error) {
     console.error('Update video error:', error);
     res.status(500).json({ error: 'Failed to update video' });

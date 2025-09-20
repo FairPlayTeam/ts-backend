@@ -246,9 +246,13 @@ export const updateThumbnail = async (
       data: { thumbnail: newThumbnailPath },
     });
 
+    const thumbnailUrl = updatedVideo.thumbnail
+      ? await getFileUrl(BUCKETS.VIDEOS, updatedVideo.thumbnail)
+      : null;
+
     res.json({
       message: 'Thumbnail updated successfully',
-      thumbnailPath: updatedVideo.thumbnail,
+      thumbnailUrl,
     });
   } catch (error) {
     console.error('Thumbnail update error:', error);

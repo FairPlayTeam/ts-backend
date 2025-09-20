@@ -137,7 +137,7 @@ registerRoute({
     visibility: 'public | unlisted | private (optional)',
   },
   responses: {
-    '200': '{ "message": "Video updated successfully", ... }',
+    '200': '{ "message": "Video updated successfully", "video": { ..., "thumbnailUrl": "string|null" } }',
     '403': '{ "error": "You are not authorized to edit this video" }',
     '404': '{ "error": "Video not found" }',
   },
@@ -152,7 +152,7 @@ registerRoute({
   params: { id: 'Video ID' },
   body: { thumbnail: 'image file' },
   responses: {
-    '200': '{ "message": "Thumbnail updated successfully", ... }',
+    '200': '{ "message": "Thumbnail updated successfully", "thumbnailUrl": "string|null" }',
     '400': '{ "error": "No thumbnail file provided" }',
     '403': '{ "error": "You are not authorized to edit this video" }',
     '404': '{ "error": "Video not found" }',

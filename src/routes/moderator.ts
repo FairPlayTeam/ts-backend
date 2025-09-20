@@ -98,6 +98,7 @@ registerRoute({
       "id": "string",
       "title": "string",
       "user": { "id": "string", "username": "string", "displayName": "string|null" },
+      "thumbnailUrl": "string|null",
       "processingStatus": "uploading|processing|done",
       "moderationStatus": "pending|approved|rejected",
       "visibility": "public|unlisted|private",
