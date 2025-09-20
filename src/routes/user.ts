@@ -3,7 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { BUCKETS, getFileUrl } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
 import { getFollowers, getFollowing, followUser, unfollowUser } from '../controllers/followController.js';
-import { authenticateToken, requireNotBanned } from '../lib/auth.js';
+import { authenticateSession, requireNotBanned } from '../lib/sessionAuth.js';
 
 const router = Router();
 
@@ -189,8 +189,8 @@ registerRoute({
   },
 });
 
-router.post('/:id/follow', authenticateToken, requireNotBanned, followUser);
-router.delete('/:id/follow', authenticateToken, requireNotBanned, unfollowUser);
+router.post('/:id/follow', authenticateSession, requireNotBanned, followUser);
+router.delete('/:id/follow', authenticateSession, requireNotBanned, unfollowUser);
 
 registerRoute({
   method: 'POST',
@@ -198,7 +198,10 @@ registerRoute({
   summary: 'Follow a user',
   auth: true,
   params: { id: 'User ID to follow' },
-  responses: { '204': 'Success', '409': 'Already following' },
+  responses: { 
+    '204': 'No content',
+    '409': `{"error": "Already following this user"}` 
+  },
 });
 
 registerRoute({
@@ -207,7 +210,10 @@ registerRoute({
   summary: 'Unfollow a user',
   auth: true,
   params: { id: 'User ID to unfollow' },
-  responses: { '204': 'Success', '404': 'Not following' },
+  responses: { 
+    '204': 'No content',
+    '404': `{"error": "Not following this user"}` 
+  },
 });
 
 export default router;

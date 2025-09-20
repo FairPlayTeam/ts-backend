@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { AuthRequest } from '../lib/auth.js';
+import { SessionAuthRequest } from '../lib/sessionAuth.js';
 
 export const followUser = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   try {
@@ -49,7 +49,7 @@ export const followUser = async (
 };
 
 export const unfollowUser = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   try {

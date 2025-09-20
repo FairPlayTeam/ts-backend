@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticateToken, requireNotBanned } from '../lib/auth.js';
+import { authenticateSession, requireNotBanned } from '../lib/sessionAuth.js';
 import {
   getVideos,
   getVideoById,
@@ -47,7 +47,7 @@ registerRoute({
 }`,
   },
 });
-router.get('/my', authenticateToken, getUserVideos);
+router.get('/my', authenticateSession, getUserVideos);
 registerRoute({
   method: 'GET',
   path: '/videos/my',
@@ -73,14 +73,14 @@ registerRoute({
 router.get('/:id', getVideoById);
 router.patch(
   '/:id',
-  authenticateToken,
+  authenticateSession,
   requireNotBanned,
   validate(updateVideoSchema),
   updateVideo,
 );
 router.post(
   '/:id/thumbnail',
-  authenticateToken,
+  authenticateSession,
   requireNotBanned,
   upload.single('thumbnail'),
   validateFileMagicNumbers,
@@ -154,7 +154,7 @@ registerRoute({
   },
   responses: {
     '200':
-      '{ "message": "Video updated successfully", "video": { ..., "thumbnailUrl": "string|null" } }',
+`{"message": "Video updated successfully", "video": {"id": "uuid", "title": "Updated Title", "description": "Updated description", "thumbnailUrl": "https://example.com/thumb.jpg"}}`,
     '403': '{ "error": "You are not authorized to edit this video" }',
     '404': '{ "error": "Video not found" }',
   },
@@ -185,7 +185,7 @@ const ratingSchema = z.object({
 });
 router.post(
   '/:videoId/rating',
-  authenticateToken,
+  authenticateSession,
   requireNotBanned,
   validate(ratingSchema),
   rateVideo,
@@ -198,15 +198,15 @@ registerRoute({
   params: { videoId: 'Video ID' },
   body: { score: 'number (1-5)' },
   responses: {
-    '200': '{ "message": "Rating updated", ... }',
-    '201': '{ "message": "Rating created", ... }',
+    '200': `{"message": "Rating updated", "rating": {"id": "uuid", "score": 4, "userId": "uuid", "videoId": "uuid"}}`,
+    '201': `{"message": "Rating created", "rating": {"id": "uuid", "score": 5, "userId": "uuid", "videoId": "uuid"}}`,
     '404': '{ "error": "Video not found" }',
   },
 });
 
 router.post(
   '/:videoId/comments',
-  authenticateToken,
+  authenticateSession,
   requireNotBanned,
   validate(commentSchema),
   addComment,
@@ -226,7 +226,7 @@ registerRoute({
     parentId: 'string (optional UUID)',
   },
   responses: {
-    '201': '{ "message": "Comment added", ... }',
+    '201': `{"message": "Comment added", "comment": {"id": "uuid", "content": "Great video!", "userId": "uuid", "videoId": "uuid", "parentId": null, "likeCount": 0, "createdAt": "2024-09-20T13:30:00Z"}}`,
     '404': '{ "error": "Video not found" }',
   },
 });
@@ -251,14 +251,14 @@ registerRoute({
       "id": "string",
       "content": "string",
       "createdAt": "ISO8601",
-      "user": { "id": "string", "username": "string", ... },
+      "user": { "id": "string", "username": "string", "displayName": "string|null" },
       "_count": { "replies": 5 },
       "replies": [
         {
           "id": "string",
           "content": "This is a reply.",
           "createdAt": "ISO8601",
-          "user": { "id": "string", "username": "string", ... },
+          "user": { "id": "string", "username": "string", "displayName": "string|null" },
           "_count": { "replies": 12 },
           "replies": []
         }

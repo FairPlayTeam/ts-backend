@@ -71,6 +71,7 @@ model User {
   earnings      Transaction[]  @relation("CreatorEarnings")
   comments      Comment[]
   commentLikes  CommentLike[]
+  sessions      Session[]
 
   @@map("users")
 }
@@ -190,5 +191,27 @@ model Follow {
   @@index([followerId])
   @@index([followingId])
   @@map("follows")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  sessionKey String  @unique @map("session_key")
+  userId    String   @map("user_id") @db.Uuid
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  deviceInfo String? @map("device_info")
+  isActive  Boolean  @default(true) @map("is_active")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionKey])
+  @@index([expiresAt])
+  @@index([isActive])
+  @@map("sessions")
 }
 

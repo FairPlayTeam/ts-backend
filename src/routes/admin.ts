@@ -1,13 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticateToken, requireAdmin } from '../lib/auth.js';
+import { authenticateSession, requireAdmin } from '../lib/sessionAuth.js';
 import { registerRoute } from '../lib/docs.js';
 import { validate, banSchema, roleSchema } from '../middleware/validation.js';
 import { updateUserRole } from '../controllers/userController.js';
 
 const router = Router();
 
-router.use(authenticateToken);
+router.use(authenticateSession);
 router.use(requireAdmin);
 
 router.get('/users', async (req: Request, res: Response): Promise<void> => {
@@ -187,7 +187,7 @@ registerRoute({
   params: { id: 'User ID' },
   body: { role: 'user | moderator | admin' },
   responses: {
-    '200': '{ "message": "User role updated successfully", ... }',
+    '200': `{"message": "User role updated successfully", "user": {"id": "uuid", "username": "johndoe", "role": "moderator"}}`,
     '404': '{ "error": "User not found" }',
   },
 });

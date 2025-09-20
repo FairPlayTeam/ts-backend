@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { AuthRequest } from '../lib/auth.js';
+import { SessionAuthRequest } from '../lib/sessionAuth.js';
 
 export const addComment = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   try {

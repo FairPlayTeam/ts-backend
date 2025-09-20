@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
-import { generateToken, AuthRequest } from '../lib/auth.js';
+import { SessionAuthRequest } from '../lib/sessionAuth.js';
+import { createSession } from './sessionController.js';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -34,12 +35,18 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         select: { id: true, email: true, username: true, role: true },
       });
 
-      const token = generateToken(user.id);
+      const { sessionKey, session } = await createSession(user.id, req);
 
       res.status(201).json({
         message: 'User registered successfully',
         user,
-        token,
+        sessionKey,
+        session: {
+          id: session.id,
+          expiresAt: session.expiresAt,
+          deviceInfo: session.deviceInfo,
+          ipAddress: session.ipAddress,
+        },
       });
     } catch (err: any) {
       if (err?.code === 'P2002') {
@@ -118,7 +125,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       .update({ where: { id: user.id }, data: { lastLogin: new Date() } })
       .catch(() => {});
 
-    const token = generateToken(user.id);
+    const { sessionKey, session } = await createSession(user.id, req);
 
     res.json({
       message: 'Login successful',
@@ -128,7 +135,13 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         username: user.username,
         role: user.role,
       },
-      token,
+      sessionKey,
+      session: {
+        id: session.id,
+        expiresAt: session.expiresAt,
+        deviceInfo: session.deviceInfo,
+        ipAddress: session.ipAddress,
+      },
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -137,7 +150,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 };
 
 export const getProfile = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   try {

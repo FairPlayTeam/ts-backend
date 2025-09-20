@@ -1,9 +1,9 @@
 import { Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { AuthRequest } from '../lib/auth.js';
+import { SessionAuthRequest } from '../lib/sessionAuth.js';
 
 export const likeComment = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   const userId = req.user!.id;
@@ -53,7 +53,7 @@ export const likeComment = async (
 };
 
 export const unlikeComment = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   const userId = req.user!.id;

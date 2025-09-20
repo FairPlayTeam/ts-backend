@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { AuthRequest } from '../lib/auth.js';
+import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { prisma } from '../lib/prisma.js';
 
 export const getUsers = async (_req: Request, res: Response): Promise<void> => {
@@ -64,7 +64,7 @@ export const getUserById = async (
 };
 
 export const updateProfile = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   const userId = req.user!.id;
@@ -87,7 +87,7 @@ export const updateProfile = async (
 };
 
 export const updateUserRole = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   const adminId = req.user!.id;

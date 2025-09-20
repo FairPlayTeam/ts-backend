@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
-import { AuthRequest } from '../lib/auth.js';
+import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { getFileUrl, BUCKETS, minioClient } from '../lib/minio.js';
 import { hlsVariantIndex } from '../lib/paths.js';
 import type { Video, User, Rating } from '@prisma/client';
@@ -183,13 +182,15 @@ export const getVideoById = async (
 
     const videoObj = video;
 
+    // For optional authentication, we'll use the session validation
     let requesterId: string | null = null;
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if (token) {
+    const sessionKey = authHeader && authHeader.split(' ')[1];
+    if (sessionKey) {
       try {
-        const decoded: any = jwt.verify(token, process.env.JWT_SECRET!);
-        requesterId = decoded.userId || null;
+        const { validateSession } = await import('./sessionController.js');
+        const session = await validateSession(sessionKey);
+        requesterId = session?.user?.id || null;
       } catch (_) {}
     }
 
@@ -273,7 +274,7 @@ export const getVideoById = async (
 };
 
 export const getUserVideos = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   try {
@@ -338,7 +339,7 @@ export const getUserVideos = async (
 };
 
 export const updateVideo = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   const userId = req.user!.id;

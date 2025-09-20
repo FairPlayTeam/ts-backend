@@ -1,13 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { authenticateToken, requireModerator } from '../lib/auth.js';
+import { authenticateSession, requireModerator } from '../lib/sessionAuth.js';
 import { getFileUrl, BUCKETS } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
 import { validate, moderationSchema } from '../middleware/validation.js';
 
 const router = Router();
 
-router.use(authenticateToken);
+router.use(authenticateSession);
 router.use(requireModerator);
 
 router.get('/videos', async (req: Request, res: Response): Promise<void> => {

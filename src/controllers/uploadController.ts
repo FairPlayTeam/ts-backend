@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { uploadFile, BUCKETS, getFileUrl, minioClient } from '../lib/minio.js';
-import { AuthRequest } from '../lib/auth.js';
+import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { Readable } from 'stream';
 import {
   generateVideoId,
@@ -12,7 +12,7 @@ import { videoOriginalPath, avatarPath, bannerPath } from '../lib/paths.js';
 import { generateSecureFilename } from '../lib/fileUtils.js';
 
 export const uploadVideo = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   try {
@@ -82,7 +82,7 @@ export const uploadVideo = async (
 };
 
 export const uploadAvatar = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   try {
@@ -126,7 +126,7 @@ export const uploadAvatar = async (
 };
 
 export const uploadBanner = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   try {
@@ -195,7 +195,7 @@ export const getFileDownloadUrl = async (
 };
 
 export const updateThumbnail = async (
-  req: AuthRequest,
+  req: SessionAuthRequest,
   res: Response,
 ): Promise<void> => {
   const userId = req.user!.id;

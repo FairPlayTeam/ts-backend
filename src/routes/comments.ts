@@ -1,12 +1,12 @@
 import { Router } from 'express';
-import { authenticateToken, requireNotBanned } from '../lib/auth.js';
+import { authenticateSession, requireNotBanned } from '../lib/sessionAuth.js';
 import { likeComment, unlikeComment } from '../controllers/likeController.js';
 import { registerRoute } from '../lib/docs.js';
 
 const router = Router();
 
-router.post('/:commentId/like', authenticateToken, requireNotBanned, likeComment);
-router.delete('/:commentId/like', authenticateToken, requireNotBanned, unlikeComment);
+router.post('/:commentId/like', authenticateSession, requireNotBanned, likeComment);
+router.delete('/:commentId/like', authenticateSession, requireNotBanned, unlikeComment);
 
 registerRoute({
   method: 'POST',

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticateToken, requireNotBanned } from '../lib/auth.js';
+import { authenticateSession, requireNotBanned } from '../lib/sessionAuth.js';
 import { uploadSingle } from '../middleware/upload.js';
 import { validateFileMagicNumbers } from '../middleware/fileValidation.js';
 import {
@@ -12,7 +12,7 @@ import { registerRoute } from '../lib/docs.js';
 
 const router = Router();
 
-router.use(authenticateToken);
+router.use(authenticateSession);
 router.use(requireNotBanned);
 
 router.post(

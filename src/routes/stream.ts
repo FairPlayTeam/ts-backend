@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { minioClient, BUCKETS } from '../lib/minio.js';
 import { hlsMasterIndex, hlsVariantIndex } from '../lib/paths.js';
 import { registerRoute } from '../lib/docs.js';
-import { authenticateToken, AuthRequest } from '../lib/auth.js';
+import { authenticateSession, SessionAuthRequest } from '../lib/sessionAuth.js';
 import { prisma } from '../lib/prisma.js';
 
 const router = Router();
@@ -41,8 +41,8 @@ async function proxyObject(bucket: string, objectName: string, videoId: string, 
 
 router.get(
   '/videos/:userId/:videoId/master.m3u8',
-  authenticateToken,
-  async (req: AuthRequest, res: Response) => {
+  authenticateSession,
+  async (req: SessionAuthRequest, res: Response) => {
     const { userId, videoId } = req.params;
     const objectName = hlsMasterIndex(userId, videoId);
     await proxyObject(BUCKETS.VIDEOS, objectName, videoId, req.user?.id ?? null, res);
@@ -57,8 +57,8 @@ registerRoute({
 
 router.get(
   '/videos/:userId/:videoId/:quality/index.m3u8',
-  authenticateToken,
-  async (req: AuthRequest, res: Response) => {
+  authenticateSession,
+  async (req: SessionAuthRequest, res: Response) => {
     const { userId, videoId, quality } = req.params;
     const objectName = hlsVariantIndex(userId, videoId, quality);
     await proxyObject(BUCKETS.VIDEOS, objectName, videoId, req.user?.id ?? null, res);
@@ -72,8 +72,8 @@ registerRoute({
 
 router.get(
   '/videos/:userId/:videoId/:quality/:segment',
-  authenticateToken,
-  async (req: AuthRequest, res: Response) => {
+  authenticateSession,
+  async (req: SessionAuthRequest, res: Response) => {
     const { userId, videoId, quality, segment } = req.params;
     const objectName = `${userId}/${videoId}/${quality}/${segment}`;
     await proxyObject(BUCKETS.VIDEOS, objectName, videoId, req.user?.id ?? null, res);
