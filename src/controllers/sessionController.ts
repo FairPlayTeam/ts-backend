@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { prisma } from '../lib/prisma.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
+import { isUUID } from '../lib/utils.js';
 
 const generateSessionKey = (): string => {
   const prefix = 'fp_sess';
@@ -141,13 +142,18 @@ export const logoutSession = async (
     const { sessionId } = req.params;
 
     if (!sessionId) {
-      res.status(400).json({ error: 'Session key is required' });
+      res.status(400).json({ error: 'Session ID is required' });
+      return;
+    }
+
+    if (!isUUID(sessionId)) {
+      res.status(400).json({ error: 'Invalid session ID format' });
       return;
     }
 
     const session = await prisma.session.findFirst({
       where: {
-        sessionKey: sessionId,
+        id: sessionId,
         userId: req.user.id,
         isActive: true,
       },

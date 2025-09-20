@@ -108,6 +108,8 @@ registerRoute({
   method: 'GET',
   path: '/auth/sessions',
   summary: 'Get all active sessions for current user',
+  description:
+    'Returns all active sessions. Use the "id" field to logout specific sessions via DELETE /auth/sessions/:sessionId',
   auth: true,
   responses: {
     '200': `{
@@ -134,7 +136,7 @@ registerRoute({
   path: '/auth/sessions/:sessionId',
   summary: 'Logout from a specific session',
   auth: true,
-  params: { sessionId: 'Session key (e.g., fp_sess_...)' },
+  params: { sessionId: 'Session UUID' },
   responses: {
     '200': `{"message": "Session logged out successfully"}`,
   },
@@ -157,8 +159,6 @@ registerRoute({
 }`,
   },
 });
-
-router.delete('/sessions/all', authenticateSession, logoutAllSessions);
 registerRoute({
   method: 'DELETE',
   path: '/auth/sessions/all',
