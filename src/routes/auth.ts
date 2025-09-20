@@ -2,12 +2,13 @@ import { Router } from 'express';
 import { authenticateToken } from '../lib/auth.js';
 import { register, login, getProfile } from '../controllers/authController.js';
 import { updateProfile } from '../controllers/userController.js';
+import { authLimiter } from '../middleware/limiters.js';
 import { validate, registerSchema, loginSchema, updateProfileSchema } from '../middleware/validation.js';
 import { registerRoute } from '../lib/docs.js';
 
 const router = Router();
 
-router.post('/register', validate(registerSchema), register);
+router.post('/register', authLimiter, validate(registerSchema), register);
 registerRoute({
   method: 'POST',
   path: '/auth/register',
@@ -16,7 +17,7 @@ registerRoute({
   responses: { '201': 'User registered with JWT token' },
 });
 
-router.post('/login', validate(loginSchema), login);
+router.post('/login', authLimiter, validate(loginSchema), login);
 registerRoute({
   method: 'POST',
   path: '/auth/login',

@@ -1,5 +1,6 @@
 import type { Express } from 'express';
 import { Router } from 'express';
+import { apiLimiter, adminLimiter } from '../middleware/limiters.js';
 import { readdir, stat } from 'node:fs/promises';
 import { extname, posix as pathPosix } from 'node:path';
 
@@ -60,7 +61,13 @@ export async function loadRoutes(app: Express, routesDirUrl: URL) {
     const router = mod.default;
 
     if (router && typeof router === 'function') {
-      app.use(routePath, router as ReturnType<typeof Router>);
+      if (routePath.startsWith('/admin') || routePath.startsWith('/moderator')) {
+        app.use(routePath, adminLimiter, router as ReturnType<typeof Router>);
+      } else if (routePath !== '/health' && routePath !== '/docs') {
+        app.use(routePath, apiLimiter, router as ReturnType<typeof Router>);
+      } else {
+        app.use(routePath, router as ReturnType<typeof Router>);
+      }
       console.log(`Mounted ${fileUrl.pathname} -> ${routePath}`);
     } else if (typeof mod.register === 'function') {
       mod.register(app, routePath);

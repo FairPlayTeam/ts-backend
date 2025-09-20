@@ -9,18 +9,8 @@ import cors from 'cors';
 import { loadRoutes } from './lib/router.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { initializeBuckets } from './lib/minio.js';
-import rateLimit from 'express-rate-limit';
-
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 500,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
-});
 
 const app = express();
-
-app.use(limiter);
 
 app.use(
   cors({
@@ -45,6 +35,7 @@ app.get('/__up', (_req, res) => {
     uptime: process.uptime(),
   });
 });
+
 
 app.use(notFound);
 app.use(errorHandler);
