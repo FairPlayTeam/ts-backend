@@ -106,27 +106,38 @@ export const getComments = async (
       prisma.comment.count({ where: { videoId, parentId: null } }),
     ]);
 
-    // Transform comments to use proxied URLs
     const transformComment = (comment: any): any => ({
       ...comment,
       user: {
         ...comment.user,
-        avatarUrl: getProxiedAssetUrl(comment.user.id, comment.user.avatarUrl, 'avatar')
+        avatarUrl: getProxiedAssetUrl(
+          comment.user.id,
+          comment.user.avatarUrl,
+          'avatar',
+        ),
       },
       replies: comment.replies?.map((reply: any) => ({
         ...reply,
         user: {
           ...reply.user,
-          avatarUrl: getProxiedAssetUrl(reply.user.id, reply.user.avatarUrl, 'avatar')
+          avatarUrl: getProxiedAssetUrl(
+            reply.user.id,
+            reply.user.avatarUrl,
+            'avatar',
+          ),
         },
         replies: reply.replies?.map((childReply: any) => ({
           ...childReply,
           user: {
             ...childReply.user,
-            avatarUrl: getProxiedAssetUrl(childReply.user.id, childReply.user.avatarUrl, 'avatar')
-          }
-        }))
-      }))
+            avatarUrl: getProxiedAssetUrl(
+              childReply.user.id,
+              childReply.user.avatarUrl,
+              'avatar',
+            ),
+          },
+        })),
+      })),
     });
 
     const nestedComments = rows.map(transformComment);

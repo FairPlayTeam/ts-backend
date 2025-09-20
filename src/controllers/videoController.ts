@@ -1,8 +1,10 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { SessionAuthRequest } from '../lib/sessionAuth.js';
-import { getFileUrl, BUCKETS, minioClient } from '../lib/minio.js';
+import { BUCKETS, getFileUrl } from '../lib/minio.js';
 import { hlsVariantIndex } from '../lib/paths.js';
+import { minioClient } from '../lib/minio.js';
+import { SessionAuthRequest } from '../lib/sessionAuth.js';
+import { getProxiedThumbnailUrl } from '../lib/utils.js';
 import type { Video, User, Rating } from '@prisma/client';
 
 export const getVideos = async (req: Request, res: Response): Promise<void> => {
@@ -37,9 +39,7 @@ export const getVideos = async (req: Request, res: Response): Promise<void> => {
 
     const videosWithUrls = await Promise.all(
       videos.map(async (video: any) => {
-        const thumbnailUrl = video.thumbnail
-          ? await getFileUrl(BUCKETS.VIDEOS, video.thumbnail)
-          : null;
+        const thumbnailUrl = getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail);
 
         const avgRating =
           video.ratings.length > 0
@@ -125,9 +125,7 @@ export const searchVideos = async (
             ? video.ratings.reduce((sum: number, r: any) => sum + r.score, 0) /
               video.ratings.length
             : 0;
-        const thumbnailUrl = video.thumbnail
-          ? await getFileUrl(BUCKETS.VIDEOS, video.thumbnail).catch(() => null)
-          : null;
+        const thumbnailUrl = getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail);
         return {
           id: video.id,
           title: video.title,
@@ -247,9 +245,7 @@ export const getVideoById = async (
       };
     }
 
-    const thumbnailUrl = videoObj.thumbnail
-      ? await getFileUrl(BUCKETS.VIDEOS, videoObj.thumbnail).catch(() => null)
-      : null;
+    const thumbnailUrl = getProxiedThumbnailUrl(videoObj.userId, videoObj.id, videoObj.thumbnail);
 
     const ratings2 = videoObj.ratings || [];
     const avgRating =
@@ -299,9 +295,7 @@ export const getUserVideos = async (
 
     const videosWithUrls = await Promise.all(
       videos.map(async (video) => {
-        const thumbnailUrl = video.thumbnail
-          ? await getFileUrl(BUCKETS.VIDEOS, video.thumbnail).catch(() => null)
-          : null;
+        const thumbnailUrl = getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail);
 
         const avgRating =
           video.ratings.length > 0
@@ -371,9 +365,7 @@ export const updateVideo = async (
       },
     });
 
-    const thumbnailUrl = updatedVideo.thumbnail
-      ? await getFileUrl(BUCKETS.VIDEOS, updatedVideo.thumbnail)
-      : null;
+    const thumbnailUrl = getProxiedThumbnailUrl(updatedVideo.userId, updatedVideo.id, updatedVideo.thumbnail);
 
     res.json({
       message: 'Video updated successfully',

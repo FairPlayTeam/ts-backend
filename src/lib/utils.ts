@@ -4,13 +4,6 @@ export const isUUID = (str: string): boolean => {
   );
 };
 
-/**
- * Create a Prisma where clause that searches by username or ID
- * If the input looks like a UUID, search both username and ID
- * Otherwise, only search by username to avoid UUID validation errors
- * @param identifier - Username or UUID to search for
- * @returns Prisma where clause
- */
 export const createUserSearchWhere = (identifier: string) => {
   return isUUID(identifier)
     ? { OR: [{ username: identifier }, { id: identifier }] }
@@ -30,4 +23,19 @@ export const getProxiedAssetUrl = (
   const baseUrl = process.env.BASE_URL || 'http://localhost:2353';
 
   return `${baseUrl}/assets/users/${userId}/${assetType}/${filename}`;
+};
+
+export const getProxiedThumbnailUrl = (
+  userId: string,
+  videoId: string,
+  thumbnailPath: string | null,
+): string | null => {
+  if (!thumbnailPath) return null;
+
+  const filename = thumbnailPath.split('/').pop();
+  if (!filename) return null;
+
+  const baseUrl = process.env.BASE_URL || 'http://localhost:2353';
+
+  return `${baseUrl}/assets/videos/${userId}/${videoId}/thumbnail/${filename}`;
 };

@@ -31,7 +31,6 @@ router.get('/videos', async (req: Request, res: Response): Promise<void> => {
     if (moderationStatus) where.moderationStatus = moderationStatus;
     if (visibility) where.visibility = visibility;
     if (userId) {
-      // Support filtering by username or user ID
       where.user = createUserSearchWhere(userId);
     }
     if (search) where.title = { contains: search, mode: 'insensitive' };

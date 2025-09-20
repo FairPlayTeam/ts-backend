@@ -33,27 +33,22 @@ async function proxyUserAsset(
   res: Response,
 ) {
   try {
-    // Find the user to check if they exist and if their profile is accessible
-    const user = await prisma.user.findUnique({ 
+    const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { 
-        id: true, 
+      select: {
+        id: true,
         isBanned: true,
-        isActive: true 
-      }
+        isActive: true,
+      },
     });
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
-    // For now, allow access to all user assets (avatars/banners are generally public)
-    // You could add privacy controls here later if needed
-    
+
     const stream = await minioClient.getObject(bucket, objectName);
     res.setHeader('Content-Type', contentTypeFor(objectName));
-    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
-    
+    res.setHeader('Cache-Control', 'public, max-age=86400');
     stream.on('error', (err) => {
       if (!res.headersSent) res.status(500);
       res.end(String(err));
@@ -65,31 +60,23 @@ async function proxyUserAsset(
   }
 }
 
-// Avatar proxy route
 router.get(
   '/users/:userId/avatar/:filename',
   optionalSessionAuthenticate,
   async (req: Request, res: Response) => {
     const { userId, filename } = req.params;
     const requesterId = (req as any).user?.id || null;
-    
-    // Get the actual avatar path from the database
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { avatarUrl: true }
+      select: { avatarUrl: true },
     });
-    
+
     if (!user || !user.avatarUrl) {
       return res.status(404).json({ error: 'Avatar not found' });
     }
-    
-    await proxyUserAsset(
-      'users',
-      user.avatarUrl, // Use the exact path from database
-      userId,
-      requesterId,
-      res,
-    );
+
+    await proxyUserAsset('users', user.avatarUrl, userId, requesterId, res);
   },
 );
 
@@ -105,31 +92,23 @@ registerRoute({
   },
 });
 
-// Banner proxy route
 router.get(
   '/users/:userId/banner/:filename',
   optionalSessionAuthenticate,
   async (req: Request, res: Response) => {
     const { userId, filename } = req.params;
     const requesterId = (req as any).user?.id || null;
-    
-    // Get the actual banner path from the database
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { bannerUrl: true }
+      select: { bannerUrl: true },
     });
-    
+
     if (!user || !user.bannerUrl) {
       return res.status(404).json({ error: 'Banner not found' });
     }
-    
-    await proxyUserAsset(
-      'users',
-      user.bannerUrl, // Use the exact path from database
-      userId,
-      requesterId,
-      res,
-    );
+
+    await proxyUserAsset('users', user.bannerUrl, userId, requesterId, res);
   },
 );
 
@@ -142,6 +121,54 @@ registerRoute({
   params: {
     userId: 'User ID (UUID)',
     filename: 'Banner filename (e.g., banner.jpg)',
+  },
+});
+
+router.get(
+  '/videos/:userId/:videoId/thumbnail/:filename',
+  optionalSessionAuthenticate,
+  async (req: Request, res: Response) => {
+    const { userId, videoId, filename } = req.params;
+    const requesterId = (req as any).user?.id || null;
+
+    const video = await prisma.video.findUnique({
+      where: { id: videoId },
+      select: {
+        thumbnail: true,
+        userId: true,
+        visibility: true,
+        moderationStatus: true,
+        processingStatus: true,
+      },
+    });
+
+    if (!video || !video.thumbnail) {
+      return res.status(404).json({ error: 'Thumbnail not found' });
+    }
+
+    const isPublic =
+      video.visibility === 'public' &&
+      video.moderationStatus === 'approved' &&
+      video.processingStatus === 'done';
+
+    if (!isPublic && video.userId !== requesterId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    await proxyUserAsset('videos', video.thumbnail, userId, requesterId, res);
+  },
+);
+
+registerRoute({
+  method: 'GET',
+  path: '/assets/videos/:userId/:videoId/thumbnail/:filename',
+  summary: 'Proxy video thumbnail image',
+  description:
+    'Backend proxy for video thumbnail images. Consumed by frontend; usually not called directly by users.',
+  params: {
+    userId: 'User ID (UUID)',
+    videoId: 'Video ID (UUID)',
+    filename: 'Thumbnail filename (e.g., thumbnail.jpg)',
   },
 });
 

@@ -69,7 +69,6 @@ export const unfollowUser = async (
     const followerId = req.user!.id;
     const { id } = req.params;
 
-    // Find the user to unfollow by username first, then ID
     const userToUnfollow = await prisma.user.findFirst({
       where: createUserSearchWhere(id),
       select: { id: true },
@@ -155,7 +154,11 @@ export const getFollowers = async (
     res.json({
       followers: rows.map((r) => ({
         ...r.follower,
-        avatarUrl: getProxiedAssetUrl(r.follower.id, r.follower.avatarUrl, 'avatar')
+        avatarUrl: getProxiedAssetUrl(
+          r.follower.id,
+          r.follower.avatarUrl,
+          'avatar',
+        ),
       })),
       pagination: {
         page: Number(page),
@@ -213,7 +216,11 @@ export const getFollowing = async (
     res.json({
       following: rows.map((r) => ({
         ...r.following,
-        avatarUrl: getProxiedAssetUrl(r.following.id, r.following.avatarUrl, 'avatar')
+        avatarUrl: getProxiedAssetUrl(
+          r.following.id,
+          r.following.avatarUrl,
+          'avatar',
+        ),
       })),
       pagination: {
         page: Number(page),
