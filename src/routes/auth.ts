@@ -134,6 +134,7 @@ registerRoute({
   path: '/auth/sessions/:sessionId',
   summary: 'Logout from a specific session',
   auth: true,
+  params: { sessionId: 'Session key (e.g., fp_sess_...)' },
   responses: {
     '200': `{"message": "Session logged out successfully"}`,
   },

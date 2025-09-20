@@ -141,13 +141,13 @@ export const logoutSession = async (
     const { sessionId } = req.params;
 
     if (!sessionId) {
-      res.status(400).json({ error: 'Session ID is required' });
+      res.status(400).json({ error: 'Session key is required' });
       return;
     }
 
     const session = await prisma.session.findFirst({
       where: {
-        id: sessionId,
+        sessionKey: sessionId,
         userId: req.user.id,
         isActive: true,
       },
