@@ -36,7 +36,6 @@ app.get('/__up', (_req, res) => {
   });
 });
 
-
 app.use(notFound);
 app.use(errorHandler);
 

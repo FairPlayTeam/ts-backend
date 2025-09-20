@@ -47,8 +47,15 @@ export const getComments = async (
 ): Promise<void> => {
   try {
     const { videoId } = req.params;
-    const { page = '1', limit = '20' } = req.query as Record<string, string>;
+    const {
+      page = '1',
+      limit = '20',
+      repliesLimit = '3',
+      childRepliesLimit = '2',
+    } = req.query as Record<string, string>;
     const skip = (Number(page) - 1) * Number(limit);
+    const repliesTake = Math.max(0, Number(repliesLimit));
+    const childRepliesTake = Math.max(0, Number(childRepliesLimit));
 
     const userSelect = {
       id: true,
@@ -60,19 +67,35 @@ export const getComments = async (
     const [rows, total] = await Promise.all([
       prisma.comment.findMany({
         where: { videoId, parentId: null },
-        include: {
+        select: {
+          id: true,
+          content: true,
+          createdAt: true,
+          updatedAt: true,
           user: { select: userSelect },
+          _count: { select: { replies: true } },
           replies: {
-            include: {
+            orderBy: { createdAt: 'asc' },
+            take: repliesTake,
+            select: {
+              id: true,
+              content: true,
+              createdAt: true,
+              updatedAt: true,
               user: { select: userSelect },
+              _count: { select: { replies: true } },
               replies: {
-                include: {
+                orderBy: { createdAt: 'asc' },
+                take: childRepliesTake,
+                select: {
+                  id: true,
+                  content: true,
+                  createdAt: true,
+                  updatedAt: true,
                   user: { select: userSelect },
                 },
-                orderBy: { createdAt: 'asc' },
               },
             },
-            orderBy: { createdAt: 'asc' },
           },
         },
         orderBy: { createdAt: 'desc' },

@@ -3,7 +3,12 @@ import { authenticateToken } from '../lib/auth.js';
 import { register, login, getProfile } from '../controllers/authController.js';
 import { updateProfile } from '../controllers/userController.js';
 import { authLimiter } from '../middleware/limiters.js';
-import { validate, registerSchema, loginSchema, updateProfileSchema } from '../middleware/validation.js';
+import {
+  validate,
+  registerSchema,
+  loginSchema,
+  updateProfileSchema,
+} from '../middleware/validation.js';
 import { registerRoute } from '../lib/docs.js';
 
 const router = Router();
@@ -33,11 +38,16 @@ registerRoute({
   summary: 'Get current user profile',
   auth: true,
   responses: {
-    '200': 'User profile'
-  }
+    '200': 'User profile',
+  },
 });
 
-router.patch('/me', authenticateToken, validate(updateProfileSchema), updateProfile);
+router.patch(
+  '/me',
+  authenticateToken,
+  validate(updateProfileSchema),
+  updateProfile,
+);
 registerRoute({
   method: 'PATCH',
   path: '/auth/me',

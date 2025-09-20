@@ -20,48 +20,43 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         .json({ error: 'Password must be at least 6 characters long' });
       return;
     }
-
-    const existingEmail = await prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (existingEmail) {
-      res.status(409).json({ error: 'User with this email already exists' });
-      return;
-    }
-
-    const existingUsername = await prisma.user.findUnique({
-      where: { username },
-    });
-
-    if (existingUsername) {
-      res.status(409).json({ error: 'Username already taken' });
-      return;
-    }
-
-    const saltRounds = 12;
+    const emailNorm = String(email).trim().toLowerCase();
+    const saltRounds = Number(process.env.BCRYPT_ROUNDS || 12);
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    const user = await prisma.user.create({
-      data: {
-        email,
-        username,
-        passwordHash: hashedPassword,
-      },
-    });
+    try {
+      const user = await prisma.user.create({
+        data: {
+          email: emailNorm,
+          username: String(username).trim(),
+          passwordHash: hashedPassword,
+        },
+        select: { id: true, email: true, username: true, role: true },
+      });
 
-    const token = generateToken(user.id);
+      const token = generateToken(user.id);
 
-    res.status(201).json({
-      message: 'User registered successfully',
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-      },
-      token,
-    });
+      res.status(201).json({
+        message: 'User registered successfully',
+        user,
+        token,
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        const target = (err as any)?.meta?.target as string[] | undefined;
+        if (Array.isArray(target) && target.includes('email')) {
+          res.status(409).json({ error: 'User with this email already exists' });
+          return;
+        }
+        if (Array.isArray(target) && target.includes('username')) {
+          res.status(409).json({ error: 'Username already taken' });
+          return;
+        }
+        res.status(409).json({ error: 'Email or username already exists' });
+        return;
+      }
+      throw err;
+    }
   } catch (error) {
     console.error('Registration error:', error);
     res
@@ -81,9 +76,19 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    const lookup = String(emailOrUsername).trim();
     const user = await prisma.user.findFirst({
       where: {
-        OR: [{ email: emailOrUsername }, { username: emailOrUsername }],
+        OR: [{ email: lookup.toLowerCase() }, { username: lookup }],
+      },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+        passwordHash: true,
+        isActive: true,
+        isBanned: true,
       },
     });
 
@@ -109,10 +114,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastLogin: new Date() },
-    });
+    void prisma.user
+      .update({ where: { id: user.id }, data: { lastLogin: new Date() } })
+      .catch(() => {});
 
     const token = generateToken(user.id);
 
@@ -139,6 +143,21 @@ export const getProfile = async (
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        displayName: true,
+        avatarUrl: true,
+        bannerUrl: true,
+        bio: true,
+        role: true,
+        isVerified: true,
+        followerCount: true,
+        totalViews: true,
+        totalEarnings: true,
+        createdAt: true,
+      },
     });
 
     if (!user) {
@@ -157,7 +176,7 @@ export const getProfile = async (
       role: user.role,
       isVerified: user.isVerified,
       followerCount: user.followerCount,
-      totalViews: user.totalViews.toString(),
+      totalViews: (user as any).totalViews?.toString?.() ?? '0',
       totalEarnings: user.totalEarnings,
       createdAt: user.createdAt,
     });

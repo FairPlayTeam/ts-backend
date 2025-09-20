@@ -236,9 +236,14 @@ registerRoute({
   path: '/videos/:videoId/comments',
   summary: 'Get comments for a video',
   description:
-    'Returns comments in a nested structure. The top-level array contains only parent comments. Replies are included in the `replies` array of each comment object.',
+    'Returns comments in a nested structure. The top-level array contains only parent comments. Replies are included in the `replies` array of each comment object. The number of nested replies returned is capped by `repliesLimit` and `childRepliesLimit`. The `_count.replies` field indicates if more replies are available for a comment/reply so clients can implement "load more".',
   params: { videoId: 'Video ID' },
-  query: { page: 'number (default 1)', limit: 'number (default 20)' },
+  query: {
+    page: 'number (default 1)',
+    limit: 'number (default 20)',
+    repliesLimit: 'number (default 3) - max number of direct replies per parent comment',
+    childRepliesLimit: 'number (default 2) - max number of replies per reply',
+  },
   responses: {
     '200': `{
   "comments": [
@@ -247,12 +252,14 @@ registerRoute({
       "content": "string",
       "createdAt": "ISO8601",
       "user": { "id": "string", "username": "string", ... },
+      "_count": { "replies": 5 },
       "replies": [
         {
           "id": "string",
           "content": "This is a reply.",
           "createdAt": "ISO8601",
           "user": { "id": "string", "username": "string", ... },
+          "_count": { "replies": 12 },
           "replies": []
         }
       ]
