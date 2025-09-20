@@ -1,4 +1,9 @@
 import 'dotenv/config';
+
+// @ts-ignore
+BigInt.prototype.toJSON = function () {
+  return this.toString();
+};
 import express from 'express';
 import cors from 'cors';
 import { loadRoutes } from './lib/router.js';
