@@ -71,6 +71,7 @@ model User {
   earnings      Transaction[]  @relation("CreatorEarnings")
   comments      Comment[]
   sessions      Session[]
+  commentLikes  CommentLike[]
 
   @@map("users")
 }
@@ -135,6 +136,7 @@ model Comment {
   parentId  String?  @map("parent_id") @db.Uuid
   parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   Comment[] @relation("CommentReplies")
+  likes     CommentLike[]
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
@@ -143,6 +145,19 @@ model Comment {
   @@index([parentId])
   @@index([createdAt])
   @@map("comments")
+}
+
+model CommentLike {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  commentId String   @map("comment_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId])
+  @@map("comment_likes")
 }
 
 model Transaction {

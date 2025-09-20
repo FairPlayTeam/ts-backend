@@ -8,6 +8,7 @@ import {
 } from '../controllers/videoController.js';
 import { rateVideo } from '../controllers/ratingController.js';
 import { addComment, getComments } from '../controllers/commentController.js';
+import { likeComment, unlikeComment } from '../controllers/likeController.js';
 import { registerRoute } from '../lib/docs.js';
 import { validate, commentSchema } from '../middleware/validation.js';
 import { z } from 'zod';
@@ -141,7 +142,6 @@ registerRoute({
   },
 });
 
-
 router.post(
   '/:videoId/comments',
   authenticateToken,
@@ -151,14 +151,31 @@ router.post(
 );
 router.get('/:videoId/comments', getComments);
 
+router.post(
+  '/comments/:commentId/like',
+  authenticateToken,
+  requireNotBanned,
+  likeComment,
+);
+router.delete(
+  '/comments/:commentId/like',
+  authenticateToken,
+  requireNotBanned,
+  unlikeComment,
+);
+
 registerRoute({
   method: 'POST',
   path: '/videos/:videoId/comments',
   summary: 'Add a comment to a video',
-  description: 'To reply to another comment, include the `parentId` of the comment you are replying to in the request body.',
+  description:
+    'To reply to another comment, include the `parentId` of the comment you are replying to in the request body.',
   auth: true,
   params: { videoId: 'Video ID' },
-  body: { content: 'string (1-1000 chars)', parentId: 'string (optional UUID)' },
+  body: {
+    content: 'string (1-1000 chars)',
+    parentId: 'string (optional UUID)',
+  },
   responses: {
     '201': '{ "message": "Comment added", ... }',
     '404': '{ "error": "Video not found" }',
@@ -169,7 +186,8 @@ registerRoute({
   method: 'GET',
   path: '/videos/:videoId/comments',
   summary: 'Get comments for a video',
-  description: 'Returns comments in a nested structure. The top-level array contains only parent comments. Replies are included in the `replies` array of each comment object.',
+  description:
+    'Returns comments in a nested structure. The top-level array contains only parent comments. Replies are included in the `replies` array of each comment object.',
   params: { videoId: 'Video ID' },
   query: { page: 'number (default 1)', limit: 'number (default 20)' },
   responses: {
@@ -193,6 +211,31 @@ registerRoute({
   ],
   "pagination": { "page": 1, "limit": 20, "total": 100 }
 }`,
+  },
+});
+
+registerRoute({
+  method: 'POST',
+  path: '/comments/:commentId/like',
+  summary: 'Like a comment',
+  auth: true,
+  params: { commentId: 'Comment ID' },
+  responses: {
+    '201': '{ "message": "Comment liked", "likeCount": 1 }',
+    '404': '{ "error": "Comment not found" }',
+    '409': '{ "error": "Comment already liked" }',
+  },
+});
+
+registerRoute({
+  method: 'DELETE',
+  path: '/comments/:commentId/like',
+  summary: 'Unlike a comment',
+  auth: true,
+  params: { commentId: 'Comment ID' },
+  responses: {
+    '200': '{ "message": "Comment unliked", "likeCount": 0 }',
+    '404': '{ "error": "Like not found for this comment" }',
   },
 });
 
