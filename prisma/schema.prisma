@@ -70,7 +70,6 @@ model User {
   transactions  Transaction[]  @relation("UserTransactions")
   earnings      Transaction[]  @relation("CreatorEarnings")
   comments      Comment[]
-  sessions      Session[]
   commentLikes  CommentLike[]
 
   @@map("users")
@@ -193,18 +192,3 @@ model Follow {
   @@map("follows")
 }
 
-model Session {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  token     String   @unique
-  userAgent String?  @map("user_agent")
-  ipAddress String?  @map("ip_address")
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([expiresAt])
-  @@map("sessions")
-}
