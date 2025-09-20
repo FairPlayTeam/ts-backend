@@ -91,7 +91,7 @@ export const optionalSessionAuthenticate = async (
 
     if (sessionKey) {
       const session = await validateSession(sessionKey);
-      
+
       if (session && session.user) {
         req.user = {
           id: session.user.id,
@@ -108,10 +108,9 @@ export const optionalSessionAuthenticate = async (
       }
     }
   } catch (error) {
-    // Silently fail for optional authentication
     console.error('Optional session authentication error:', error);
   }
-  
+
   next();
 };
 
@@ -125,24 +124,22 @@ export const requireNotBanned = async (
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
-    
+
     if (req.user.role === 'admin' || req.user.role === 'moderator') {
       return next();
     }
-    
-    // Session validation already checks if user is banned
-    // but we can add an extra check here if needed
+
     const { prisma } = await import('../lib/prisma.js');
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
       select: { isBanned: true },
     });
-    
+
     if (user?.isBanned) {
       res.status(403).json({ error: 'Account is banned' });
       return;
     }
-    
+
     next();
   } catch (err) {
     res.status(500).json({ error: 'Ban check failed' });

@@ -8,7 +8,21 @@ export const followUser = async (
 ): Promise<void> => {
   try {
     const followerId = req.user!.id;
-    const { id: followingId } = req.params;
+    const { id } = req.params;
+
+    const userToFollow = await prisma.user.findFirst({
+      where: {
+        OR: [{ username: id }, { id }],
+      },
+      select: { id: true },
+    });
+
+    if (!userToFollow) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const followingId = userToFollow.id;
 
     if (followerId === followingId) {
       res.status(400).json({ error: 'You cannot follow yourself' });
@@ -54,7 +68,21 @@ export const unfollowUser = async (
 ): Promise<void> => {
   try {
     const followerId = req.user!.id;
-    const { id: followingId } = req.params;
+    const { id } = req.params;
+
+    const userToUnfollow = await prisma.user.findFirst({
+      where: {
+        OR: [{ username: id }, { id }],
+      },
+      select: { id: true },
+    });
+
+    if (!userToUnfollow) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const followingId = userToUnfollow.id;
 
     await prisma.$transaction(async (tx) => {
       const deleted = await tx.follow.delete({
@@ -96,9 +124,21 @@ export const getFollowers = async (
     const { page = '1', limit = '20' } = req.query as Record<string, string>;
     const skip = (Number(page) - 1) * Number(limit);
 
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [{ username: id }, { id }],
+      },
+      select: { id: true },
+    });
+
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
     const [rows, total] = await Promise.all([
       prisma.follow.findMany({
-        where: { followingId: id },
+        where: { followingId: user.id },
         include: {
           follower: {
             select: {
@@ -113,7 +153,7 @@ export const getFollowers = async (
         skip,
         take: Number(limit),
       }),
-      prisma.follow.count({ where: { followingId: id } }),
+      prisma.follow.count({ where: { followingId: user.id } }),
     ]);
 
     res.json({
@@ -141,9 +181,21 @@ export const getFollowing = async (
     const { page = '1', limit = '20' } = req.query as Record<string, string>;
     const skip = (Number(page) - 1) * Number(limit);
 
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [{ username: id }, { id }],
+      },
+      select: { id: true },
+    });
+
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
     const [rows, total] = await Promise.all([
       prisma.follow.findMany({
-        where: { followerId: id },
+        where: { followerId: user.id },
         include: {
           following: {
             select: {
@@ -158,7 +210,7 @@ export const getFollowing = async (
         skip,
         take: Number(limit),
       }),
-      prisma.follow.count({ where: { followerId: id } }),
+      prisma.follow.count({ where: { followerId: user.id } }),
     ]);
 
     res.json({

@@ -24,16 +24,13 @@ app.use(
   }),
 );
 
-// Body parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const port = Number(process.env.PORT ?? 3000);
 
-// Load all routes
 await loadRoutes(app, new URL('./routes/', import.meta.url));
 
-// Lightweight health endpoint
 app.get('/__up', (_req, res) => {
   res.json({
     status: 'ok',
@@ -42,7 +39,6 @@ app.get('/__up', (_req, res) => {
   });
 });
 
-// 404 + error handlers (must be after routes)
 app.use(notFound);
 app.use(errorHandler);
 

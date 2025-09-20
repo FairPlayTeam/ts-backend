@@ -12,7 +12,6 @@ const generateSessionKey = (): string => {
 const extractDeviceInfo = (userAgent?: string): string => {
   if (!userAgent) return 'Unknown Device';
 
-  // Simple device detection
   if (userAgent.includes('Mobile') || userAgent.includes('Android')) {
     return 'Mobile Device';
   } else if (userAgent.includes('iPad') || userAgent.includes('Tablet')) {
@@ -28,7 +27,6 @@ const extractDeviceInfo = (userAgent?: string): string => {
   return 'Desktop Browser';
 };
 
-// Get client IP address
 const getClientIP = (req: Request): string => {
   const forwarded = req.headers['x-forwarded-for'] as string;
   const realIP = req.headers['x-real-ip'] as string;
@@ -44,7 +42,6 @@ const getClientIP = (req: Request): string => {
   return req.connection.remoteAddress || req.socket.remoteAddress || 'unknown';
 };
 
-// Create a new session
 export const createSession = async (
   userId: string,
   req: Request,
@@ -54,7 +51,6 @@ export const createSession = async (
   const userAgent = req.headers['user-agent'];
   const deviceInfo = extractDeviceInfo(userAgent);
 
-  // Session expires in 30 days
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 30);
 
@@ -82,7 +78,6 @@ export const createSession = async (
   return { sessionKey, session };
 };
 
-// Get all sessions for a user
 export const getUserSessions = async (
   req: SessionAuthRequest,
   res: Response,
@@ -115,7 +110,6 @@ export const getUserSessions = async (
       },
     });
 
-    // Mask session keys for security (show only last 8 characters)
     const maskedSessions = sessions.map((session) => ({
       ...session,
       sessionKey: `****${session.sessionKey.slice(-8)}`,
@@ -134,7 +128,6 @@ export const getUserSessions = async (
   }
 };
 
-// Logout from a specific session
 export const logoutSession = async (
   req: SessionAuthRequest,
   res: Response,
@@ -177,7 +170,6 @@ export const logoutSession = async (
   }
 };
 
-// Logout from all sessions except current
 export const logoutAllOtherSessions = async (
   req: SessionAuthRequest,
   res: Response,
@@ -188,7 +180,6 @@ export const logoutAllOtherSessions = async (
       return;
     }
 
-    // Get current session key from request
     const authHeader = req.headers.authorization;
     const currentSessionKey = authHeader?.replace('Bearer ', '');
 
@@ -197,7 +188,6 @@ export const logoutAllOtherSessions = async (
       return;
     }
 
-    // Deactivate all sessions except current
     const result = await prisma.session.updateMany({
       where: {
         userId: req.user.id,
@@ -221,7 +211,6 @@ export const logoutAllOtherSessions = async (
   }
 };
 
-// Logout from all sessions including current
 export const logoutAllSessions = async (
   req: SessionAuthRequest,
   res: Response,
@@ -252,7 +241,6 @@ export const logoutAllSessions = async (
   }
 };
 
-// Validate and get session
 export const validateSession = async (sessionKey: string): Promise<any> => {
   try {
     const session = await prisma.session.findUnique({
@@ -281,7 +269,6 @@ export const validateSession = async (sessionKey: string): Promise<any> => {
       return null;
     }
 
-    // Update last used timestamp
     await prisma.session.update({
       where: { sessionKey },
       data: { lastUsedAt: new Date() },
@@ -294,7 +281,6 @@ export const validateSession = async (sessionKey: string): Promise<any> => {
   }
 };
 
-// Clean up expired sessions (utility function)
 export const cleanupExpiredSessions = async (): Promise<void> => {
   try {
     await prisma.session.deleteMany({

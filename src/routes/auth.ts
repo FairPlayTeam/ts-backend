@@ -25,7 +25,7 @@ registerRoute({
   path: '/auth/register',
   summary: 'Register a new user',
   body: { email: 'string', username: 'string', password: 'string' },
-  responses: { 
+  responses: {
     '201': `{
   "message": "User registered successfully",
   "user": {
@@ -41,7 +41,7 @@ registerRoute({
     "deviceInfo": "Mac",
     "ipAddress": "192.168.1.1"
   }
-}` 
+}`,
   },
 });
 
@@ -51,7 +51,7 @@ registerRoute({
   path: '/auth/login',
   summary: 'Login user',
   body: { emailOrUsername: 'string', password: 'string' },
-  responses: { 
+  responses: {
     '200': `{
   "message": "Login successful",
   "user": {
@@ -67,7 +67,7 @@ registerRoute({
     "deviceInfo": "Mac",
     "ipAddress": "192.168.1.1"
   }
-}` 
+}`,
   },
 });
 
@@ -103,7 +103,6 @@ router.patch(
   updateProfile,
 );
 
-// Session management routes
 router.get('/sessions', authenticateSession, getUserSessions);
 registerRoute({
   method: 'GET',
@@ -140,7 +139,11 @@ registerRoute({
   },
 });
 
-router.delete('/sessions/others/all', authenticateSession, logoutAllOtherSessions);
+router.delete(
+  '/sessions/others/all',
+  authenticateSession,
+  logoutAllOtherSessions,
+);
 registerRoute({
   method: 'DELETE',
   path: '/auth/sessions/others/all',

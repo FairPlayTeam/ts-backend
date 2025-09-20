@@ -2,7 +2,12 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { BUCKETS, getFileUrl } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
-import { getFollowers, getFollowing, followUser, unfollowUser } from '../controllers/followController.js';
+import {
+  getFollowers,
+  getFollowing,
+  followUser,
+  unfollowUser,
+} from '../controllers/followController.js';
 import { authenticateSession, requireNotBanned } from '../lib/sessionAuth.js';
 
 const router = Router();
@@ -11,8 +16,10 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
-    const user = await prisma.user.findUnique({
-      where: { id },
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [{ username: id }, { id }],
+      },
       select: {
         id: true,
         username: true,
@@ -33,8 +40,12 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     }
 
     const [avatarUrl, bannerUrl] = await Promise.all([
-      user.avatarUrl ? getFileUrl(BUCKETS.USERS, user.avatarUrl) : Promise.resolve(null),
-      user.bannerUrl ? getFileUrl(BUCKETS.USERS, user.bannerUrl) : Promise.resolve(null),
+      user.avatarUrl
+        ? getFileUrl(BUCKETS.USERS, user.avatarUrl)
+        : Promise.resolve(null),
+      user.bannerUrl
+        ? getFileUrl(BUCKETS.USERS, user.bannerUrl)
+        : Promise.resolve(null),
     ]);
 
     res.json({ ...user, avatarUrl, bannerUrl });
@@ -47,8 +58,8 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 registerRoute({
   method: 'GET',
   path: '/user/:id',
-  summary: 'Get a public user profile by id',
-  params: { id: 'User ID' },
+  summary: 'Get a public user profile by username or ID',
+  params: { id: 'Username or User ID' },
   responses: {
     '200': `{
   "id": "string",
@@ -74,10 +85,22 @@ router.get(
       const { page = '1', limit = '20' } = req.query as Record<string, string>;
       const skip = (Number(page) - 1) * Number(limit);
 
+      const user = await prisma.user.findFirst({
+        where: {
+          OR: [{ username: id }, { id }],
+        },
+        select: { id: true },
+      });
+
+      if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
       const [rows, total] = await Promise.all([
         prisma.video.findMany({
           where: {
-            userId: id,
+            userId: user.id,
             processingStatus: 'done' as any,
             moderationStatus: 'approved' as any,
             visibility: 'public' as any,
@@ -96,7 +119,7 @@ router.get(
         }),
         prisma.video.count({
           where: {
-            userId: id,
+            userId: user.id,
             processingStatus: 'done' as any,
             moderationStatus: 'approved' as any,
             visibility: 'public' as any,
@@ -141,7 +164,7 @@ registerRoute({
   method: 'GET',
   path: '/user/:id/videos',
   summary: "List a user's public videos",
-  params: { id: 'User ID' },
+  params: { id: 'Username or User ID' },
   query: { page: 'number (default 1)', limit: 'number (default 20)' },
   responses: {
     '200': `{
@@ -153,7 +176,6 @@ registerRoute({
   },
 });
 
-
 router.get('/:id/followers', getFollowers);
 router.get('/:id/following', getFollowing);
 
@@ -161,7 +183,7 @@ registerRoute({
   method: 'GET',
   path: '/user/:id/followers',
   summary: "Get a user's followers",
-  params: { id: 'User ID' },
+  params: { id: 'Username or User ID' },
   query: { page: 'number (default 1)', limit: 'number (default 20)' },
   responses: {
     '200': `{
@@ -177,7 +199,7 @@ registerRoute({
   method: 'GET',
   path: '/user/:id/following',
   summary: 'Get users someone is following',
-  params: { id: 'User ID' },
+  params: { id: 'Username or User ID' },
   query: { page: 'number (default 1)', limit: 'number (default 20)' },
   responses: {
     '200': `{
@@ -190,17 +212,22 @@ registerRoute({
 });
 
 router.post('/:id/follow', authenticateSession, requireNotBanned, followUser);
-router.delete('/:id/follow', authenticateSession, requireNotBanned, unfollowUser);
+router.delete(
+  '/:id/follow',
+  authenticateSession,
+  requireNotBanned,
+  unfollowUser,
+);
 
 registerRoute({
   method: 'POST',
   path: '/user/:id/follow',
   summary: 'Follow a user',
   auth: true,
-  params: { id: 'User ID to follow' },
-  responses: { 
+  params: { id: 'Username or User ID to follow' },
+  responses: {
     '204': 'No content',
-    '409': `{"error": "Already following this user"}` 
+    '409': `{"error": "Already following this user"}`,
   },
 });
 
@@ -209,10 +236,10 @@ registerRoute({
   path: '/user/:id/follow',
   summary: 'Unfollow a user',
   auth: true,
-  params: { id: 'User ID to unfollow' },
-  responses: { 
+  params: { id: 'Username or User ID to unfollow' },
+  responses: {
     '204': 'No content',
-    '404': `{"error": "Not following this user"}` 
+    '404': `{"error": "Not following this user"}`,
   },
 });
 

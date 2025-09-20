@@ -91,34 +91,39 @@ export const updateUserRole = async (
   res: Response,
 ): Promise<void> => {
   const adminId = req.user!.id;
-  const { id: targetUserId } = req.params;
+  const { id } = req.params;
   const { role: newRole } = req.body;
 
   try {
-    const [adminUser, targetUser] = await Promise.all([
-      prisma.user.findUnique({ where: { id: adminId } }),
-      prisma.user.findUnique({ where: { id: targetUserId } }),
-    ]);
+    const targetUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ username: id }, { id }],
+      },
+    });
 
     if (!targetUser) {
       res.status(404).json({ error: 'Target user not found' });
       return;
     }
 
-    // Rule: Admins cannot demote other admins.
-    if (targetUser.role === 'admin' && adminId !== targetUserId) {
-      res.status(403).json({ error: 'Admins cannot change the role of other admins.' });
+    const adminUser = await prisma.user.findUnique({ where: { id: adminId } });
+
+    if (targetUser.role === 'admin' && adminId !== targetUser.id) {
+      res
+        .status(403)
+        .json({ error: 'Admins cannot change the role of other admins.' });
       return;
     }
 
-    // Rule: Moderators cannot be promoted to admin by another moderator (this is covered by requireAdmin middleware, but good to double check).
     if (newRole === 'admin' && adminUser?.role !== 'admin') {
-        res.status(403).json({ error: 'Only admins can promote other users to admin.' });
-        return;
+      res
+        .status(403)
+        .json({ error: 'Only admins can promote other users to admin.' });
+      return;
     }
 
     const updatedUser = await prisma.user.update({
-      where: { id: targetUserId },
+      where: { id: targetUser.id },
       data: { role: newRole },
     });
 

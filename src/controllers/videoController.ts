@@ -182,7 +182,6 @@ export const getVideoById = async (
 
     const videoObj = video;
 
-    // For optional authentication, we'll use the session validation
     let requesterId: string | null = null;
     const authHeader = req.headers['authorization'];
     const sessionKey = authHeader && authHeader.split(' ')[1];
@@ -357,7 +356,9 @@ export const updateVideo = async (
     }
 
     if (video.userId !== userId) {
-      res.status(403).json({ error: 'You are not authorized to edit this video' });
+      res
+        .status(403)
+        .json({ error: 'You are not authorized to edit this video' });
       return;
     }
 

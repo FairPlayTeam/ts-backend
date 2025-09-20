@@ -29,7 +29,11 @@ router.get('/videos', async (req: Request, res: Response): Promise<void> => {
     if (processingStatus) where.processingStatus = processingStatus;
     if (moderationStatus) where.moderationStatus = moderationStatus;
     if (visibility) where.visibility = visibility;
-    if (userId) where.userId = userId;
+    if (userId) {
+      where.user = {
+        OR: [{ username: userId }, { id: userId }],
+      };
+    }
     if (search) where.title = { contains: search, mode: 'insensitive' };
 
     const skip = (Number(page) - 1) * Number(limit);
@@ -59,7 +63,9 @@ router.get('/videos', async (req: Request, res: Response): Promise<void> => {
         moderationStatus: v.moderationStatus,
         visibility: v.visibility,
         createdAt: v.createdAt,
-        thumbnailUrl: v.thumbnail ? await getFileUrl(BUCKETS.VIDEOS, v.thumbnail).catch(() => null) : null,
+        thumbnailUrl: v.thumbnail
+          ? await getFileUrl(BUCKETS.VIDEOS, v.thumbnail).catch(() => null)
+          : null,
       })),
     );
 
@@ -91,7 +97,7 @@ registerRoute({
     processingStatus: 'uploading|processing|done (optional)',
     moderationStatus: 'pending|approved|rejected (optional)',
     visibility: 'public|unlisted|private (optional)',
-    userId: 'Filter by owner (optional)',
+    userId: 'Filter by owner username or ID (optional)',
     search: 'Case-insensitive substring in title (optional)',
     page: 'Page number (default 1)',
     limit: 'Items per page (default 20)',

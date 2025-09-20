@@ -114,8 +114,10 @@ registerRoute({
 router.get('/users/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const user = await prisma.user.findUnique({
-      where: { id },
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [{ username: id }, { id }],
+      },
       select: {
         id: true,
         email: true,
@@ -149,10 +151,10 @@ router.get('/users/:id', async (req: Request, res: Response): Promise<void> => {
 registerRoute({
   method: 'GET',
   path: '/admin/users/:id',
-  summary: 'Admin: get user by id',
+  summary: 'Admin: get user by username or ID',
   auth: true,
   roles: ['admin'],
-  params: { id: 'User ID' },
+  params: { id: 'Username or User ID' },
   responses: {
     '200': `{
   "id": "string",
@@ -184,7 +186,7 @@ registerRoute({
   summary: 'Admin: update user role',
   auth: true,
   roles: ['admin'],
-  params: { id: 'User ID' },
+  params: { id: 'Username or User ID' },
   body: { role: 'user | moderator | admin' },
   responses: {
     '200': `{"message": "User role updated successfully", "user": {"id": "uuid", "username": "johndoe", "role": "moderator"}}`,
@@ -209,6 +211,18 @@ router.patch(
         return;
       }
 
+      const user = await prisma.user.findFirst({
+        where: {
+          OR: [{ username: id }, { id }],
+        },
+        select: { id: true },
+      });
+
+      if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
       const data: any = {
         isBanned,
         banReasonPublic: publicReason ?? null,
@@ -217,7 +231,7 @@ router.patch(
       };
 
       const updated = await prisma.user.update({
-        where: { id },
+        where: { id: user.id },
         data,
         select: {
           id: true,
@@ -252,7 +266,7 @@ registerRoute({
     'Ban or unban a user with optional public and private reasons. Sets bannedAt when banning.',
   auth: true,
   roles: ['admin'],
-  params: { id: 'User ID' },
+  params: { id: 'Username or User ID' },
   body: {
     isBanned: 'boolean',
     publicReason: 'string?',

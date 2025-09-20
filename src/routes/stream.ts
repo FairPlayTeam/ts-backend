@@ -52,7 +52,8 @@ registerRoute({
   method: 'GET',
   path: '/stream/videos/:userId/:videoId/master.m3u8',
   summary: 'Proxy HLS master playlist',
-  description: 'Backend proxy for HLS master playlist. Consumed by players; usually not called directly by users.'
+  description: 'Backend proxy for HLS master playlist. Consumed by players; usually not called directly by users. Note: userId must be the actual user ID (UUID), not username.',
+  params: { userId: 'User ID (UUID)', videoId: 'Video ID' }
 });
 
 router.get(
@@ -68,6 +69,8 @@ registerRoute({
   method: 'GET',
   path: '/stream/videos/:userId/:videoId/:quality/index.m3u8',
   summary: 'Proxy HLS variant playlist',
+  description: 'Backend proxy for HLS variant playlist. Note: userId must be the actual user ID (UUID), not username.',
+  params: { userId: 'User ID (UUID)', videoId: 'Video ID', quality: 'Video quality (240p, 480p, 720p, 1080p)' },
 });
 
 router.get(
@@ -83,6 +86,8 @@ registerRoute({
   method: 'GET',
   path: '/stream/videos/:userId/:videoId/:quality/:segment',
   summary: 'Proxy HLS segment (.ts)',
+  description: 'Backend proxy for HLS video segments. Note: userId must be the actual user ID (UUID), not username.',
+  params: { userId: 'User ID (UUID)', videoId: 'Video ID', quality: 'Video quality', segment: 'Segment filename' },
 });
 
 export default router;
