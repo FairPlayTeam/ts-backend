@@ -45,6 +45,13 @@ export const updateVideoSchema = z.object({
   }),
 });
 
+export const updateProfileSchema = z.object({
+  body: z.object({
+    displayName: z.string().min(1).max(30).optional().nullable(),
+    bio: z.string().max(200).optional().nullable(),
+  }),
+});
+
 export const validate = (schema: z.AnyZodObject) => (
   req: Request,
   res: Response,

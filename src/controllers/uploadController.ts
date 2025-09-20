@@ -110,11 +110,14 @@ export const uploadAvatar = async (
       },
     );
 
+    await prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl: avatarObjectPath },
+    });
+
     res.json({
       message: 'Avatar uploaded successfully',
-      storagePath,
-      size: avatarFile.size,
-      mimetype: avatarFile.mimetype,
+      avatarUrl: await getFileUrl(BUCKETS.USERS, avatarObjectPath),
     });
   } catch (error) {
     console.error('Avatar upload error:', error);
@@ -151,11 +154,14 @@ export const uploadBanner = async (
       },
     );
 
+    await prisma.user.update({
+      where: { id: userId },
+      data: { bannerUrl: bannerObjectPath },
+    });
+
     res.json({
       message: 'Banner uploaded successfully',
-      storagePath,
-      size: bannerFile.size,
-      mimetype: bannerFile.mimetype,
+      bannerUrl: await getFileUrl(BUCKETS.USERS, bannerObjectPath),
     });
   } catch (error) {
     console.error('Banner upload error:', error);

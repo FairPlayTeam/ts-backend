@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { authenticateToken } from '../lib/auth.js';
 import { register, login, getProfile } from '../controllers/authController.js';
+import { updateProfile } from '../controllers/userController.js';
+import { validate, registerSchema, loginSchema, updateProfileSchema } from '../middleware/validation.js';
 import { registerRoute } from '../lib/docs.js';
-import { validate, registerSchema, loginSchema } from '../middleware/validation.js';
 
 const router = Router();
 
@@ -30,7 +31,24 @@ registerRoute({
   path: '/auth/me',
   summary: 'Get current user profile',
   auth: true,
-  responses: { '200': 'User profile' },
+  responses: {
+    '200': 'User profile'
+  }
+});
+
+router.patch('/me', authenticateToken, validate(updateProfileSchema), updateProfile);
+registerRoute({
+  method: 'PATCH',
+  path: '/auth/me',
+  summary: 'Update current user profile',
+  auth: true,
+  body: {
+    displayName: 'string (optional)',
+    bio: 'string (optional)',
+  },
+  responses: {
+    '200': '{ "message": "Profile updated successfully", ... }',
+  },
 });
 
 export default router;

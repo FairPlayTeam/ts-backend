@@ -10,7 +10,6 @@ import {
 import { updateThumbnail } from '../controllers/uploadController.js';
 import { rateVideo } from '../controllers/ratingController.js';
 import { addComment, getComments } from '../controllers/commentController.js';
-import { likeComment, unlikeComment } from '../controllers/likeController.js';
 import { registerRoute } from '../lib/docs.js';
 import { validate, commentSchema, updateVideoSchema } from '../middleware/validation.js';
 import { upload } from '../middleware/upload.js';
@@ -194,19 +193,6 @@ router.post(
 );
 router.get('/:videoId/comments', getComments);
 
-router.post(
-  '/comments/:commentId/like',
-  authenticateToken,
-  requireNotBanned,
-  likeComment,
-);
-router.delete(
-  '/comments/:commentId/like',
-  authenticateToken,
-  requireNotBanned,
-  unlikeComment,
-);
-
 registerRoute({
   method: 'POST',
   path: '/videos/:videoId/comments',
@@ -257,29 +243,5 @@ registerRoute({
   },
 });
 
-registerRoute({
-  method: 'POST',
-  path: '/comments/:commentId/like',
-  summary: 'Like a comment',
-  auth: true,
-  params: { commentId: 'Comment ID' },
-  responses: {
-    '201': '{ "message": "Comment liked", "likeCount": 1 }',
-    '404': '{ "error": "Comment not found" }',
-    '409': '{ "error": "Comment already liked" }',
-  },
-});
-
-registerRoute({
-  method: 'DELETE',
-  path: '/comments/:commentId/like',
-  summary: 'Unlike a comment',
-  auth: true,
-  params: { commentId: 'Comment ID' },
-  responses: {
-    '200': '{ "message": "Comment unliked", "likeCount": 0 }',
-    '404': '{ "error": "Like not found for this comment" }',
-  },
-});
 
 export default router;

@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { AuthRequest } from '../lib/auth.js';
 import { prisma } from '../lib/prisma.js';
 
 export const getUsers = async (_req: Request, res: Response): Promise<void> => {
@@ -59,5 +60,28 @@ export const getUserById = async (
   } catch (error) {
     console.error('Error fetching user:', error);
     res.status(500).json({ error: 'Failed to fetch user' });
+  }
+};
+
+export const updateProfile = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  const userId = req.user!.id;
+  const { displayName, bio } = req.body;
+
+  try {
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        displayName,
+        bio,
+      },
+    });
+
+    res.json({ message: 'Profile updated successfully', user: updatedUser });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 };
