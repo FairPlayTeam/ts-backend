@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
+import { createUserSearchWhere } from '../lib/utils.js';
 
 export const followUser = async (
   req: SessionAuthRequest,
@@ -11,9 +12,7 @@ export const followUser = async (
     const { id } = req.params;
 
     const userToFollow = await prisma.user.findFirst({
-      where: {
-        OR: [{ username: id }, { id }],
-      },
+      where: createUserSearchWhere(id),
       select: { id: true },
     });
 
@@ -70,10 +69,9 @@ export const unfollowUser = async (
     const followerId = req.user!.id;
     const { id } = req.params;
 
+    // Find the user to unfollow by username first, then ID
     const userToUnfollow = await prisma.user.findFirst({
-      where: {
-        OR: [{ username: id }, { id }],
-      },
+      where: createUserSearchWhere(id),
       select: { id: true },
     });
 
@@ -125,9 +123,7 @@ export const getFollowers = async (
     const skip = (Number(page) - 1) * Number(limit);
 
     const user = await prisma.user.findFirst({
-      where: {
-        OR: [{ username: id }, { id }],
-      },
+      where: createUserSearchWhere(id),
       select: { id: true },
     });
 
@@ -182,9 +178,7 @@ export const getFollowing = async (
     const skip = (Number(page) - 1) * Number(limit);
 
     const user = await prisma.user.findFirst({
-      where: {
-        OR: [{ username: id }, { id }],
-      },
+      where: createUserSearchWhere(id),
       select: { id: true },
     });
 

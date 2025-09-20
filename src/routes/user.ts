@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { BUCKETS, getFileUrl } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
+import { createUserSearchWhere } from '../lib/utils.js';
 import {
   getFollowers,
   getFollowing,
@@ -17,9 +18,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
 
     const user = await prisma.user.findFirst({
-      where: {
-        OR: [{ username: id }, { id }],
-      },
+      where: createUserSearchWhere(id),
       select: {
         id: true,
         username: true,
@@ -86,9 +85,7 @@ router.get(
       const skip = (Number(page) - 1) * Number(limit);
 
       const user = await prisma.user.findFirst({
-        where: {
-          OR: [{ username: id }, { id }],
-        },
+        where: createUserSearchWhere(id),
         select: { id: true },
       });
 

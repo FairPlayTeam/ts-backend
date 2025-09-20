@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticateSession, requireAdmin } from '../lib/sessionAuth.js';
 import { registerRoute } from '../lib/docs.js';
+import { createUserSearchWhere } from '../lib/utils.js';
 import { validate, banSchema, roleSchema } from '../middleware/validation.js';
 import { updateUserRole } from '../controllers/userController.js';
 
@@ -115,9 +116,7 @@ router.get('/users/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const user = await prisma.user.findFirst({
-      where: {
-        OR: [{ username: id }, { id }],
-      },
+      where: createUserSearchWhere(id),
       select: {
         id: true,
         email: true,
@@ -212,9 +211,7 @@ router.patch(
       }
 
       const user = await prisma.user.findFirst({
-        where: {
-          OR: [{ username: id }, { id }],
-        },
+        where: createUserSearchWhere(id),
         select: { id: true },
       });
 

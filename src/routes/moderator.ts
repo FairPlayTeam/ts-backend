@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { authenticateSession, requireModerator } from '../lib/sessionAuth.js';
 import { getFileUrl, BUCKETS } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
+import { createUserSearchWhere } from '../lib/utils.js';
 import { validate, moderationSchema } from '../middleware/validation.js';
 
 const router = Router();
@@ -30,9 +31,8 @@ router.get('/videos', async (req: Request, res: Response): Promise<void> => {
     if (moderationStatus) where.moderationStatus = moderationStatus;
     if (visibility) where.visibility = visibility;
     if (userId) {
-      where.user = {
-        OR: [{ username: userId }, { id: userId }],
-      };
+      // Support filtering by username or user ID
+      where.user = createUserSearchWhere(userId);
     }
     if (search) where.title = { contains: search, mode: 'insensitive' };
 

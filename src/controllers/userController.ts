@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { prisma } from '../lib/prisma.js';
+import { createUserSearchWhere } from '../lib/utils.js';
 
 export const getUsers = async (_req: Request, res: Response): Promise<void> => {
   try {
@@ -96,9 +97,7 @@ export const updateUserRole = async (
 
   try {
     const targetUser = await prisma.user.findFirst({
-      where: {
-        OR: [{ username: id }, { id }],
-      },
+      where: createUserSearchWhere(id),
     });
 
     if (!targetUser) {
