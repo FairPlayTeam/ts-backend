@@ -130,15 +130,17 @@ registerRoute({
   },
 });
 
-router.delete('/sessions/:sessionId', authenticateSession, logoutSession);
+router.delete('/sessions/all', authenticateSession, logoutAllSessions);
 registerRoute({
   method: 'DELETE',
-  path: '/auth/sessions/:sessionId',
-  summary: 'Logout from a specific session',
+  path: '/auth/sessions/all',
+  summary: 'Logout from all sessions including current',
   auth: true,
-  params: { sessionId: 'Session UUID' },
   responses: {
-    '200': `{"message": "Session logged out successfully"}`,
+    '200': `{
+  "message": "All sessions logged out successfully",
+  "sessionsLoggedOut": 4
+}`,
   },
 });
 
@@ -159,16 +161,16 @@ registerRoute({
 }`,
   },
 });
+
+router.delete('/sessions/:sessionId', authenticateSession, logoutSession);
 registerRoute({
   method: 'DELETE',
-  path: '/auth/sessions/all',
-  summary: 'Logout from all sessions including current',
+  path: '/auth/sessions/:sessionId',
+  summary: 'Logout from a specific session',
   auth: true,
+  params: { sessionId: 'Session UUID' },
   responses: {
-    '200': `{
-  "message": "All sessions logged out successfully",
-  "sessionsLoggedOut": 4
-}`,
+    '200': `{"message": "Session logged out successfully"}`,
   },
 });
 registerRoute({
