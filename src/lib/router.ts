@@ -66,7 +66,11 @@ export async function loadRoutes(app: Express, routesDirUrl: URL) {
         routePath.startsWith('/moderator')
       ) {
         app.use(routePath, adminLimiter, router as ReturnType<typeof Router>);
-      } else if (routePath !== '/health' && routePath !== '/docs') {
+      } else if (
+        routePath !== '/health' &&
+        routePath !== '/docs' &&
+        !routePath.startsWith('/users')
+      ) {
         app.use(routePath, apiLimiter, router as ReturnType<typeof Router>);
       } else {
         app.use(routePath, router as ReturnType<typeof Router>);
