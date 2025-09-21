@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { BUCKETS, getFileUrl } from '../lib/minio.js';
+import { getProxiedThumbnailUrl } from '../lib/utils.js';
 import { registerRoute } from '../lib/docs.js';
 import { createUserSearchWhere, getProxiedAssetUrl } from '../lib/utils.js';
 import {
@@ -120,9 +120,7 @@ router.get(
 
       const videos = await Promise.all(
         rows.map(async (v) => {
-          const thumbUrl = v.thumbnail
-            ? await getFileUrl(BUCKETS.VIDEOS, v.thumbnail).catch(() => null)
-            : null;
+          const thumbUrl = getProxiedThumbnailUrl(user.id, v.id, v.thumbnail);
           return {
             id: v.id,
             title: v.title,
