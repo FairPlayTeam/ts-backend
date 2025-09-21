@@ -286,7 +286,8 @@ registerRoute({
                 "username": "string",
                 "displayName": "string|null",
                 "avatarUrl": "http://localhost:2353/assets/users/<userId>/avatar/<file>"
-              }
+              },
+              "_count": { "replies": 0 }
             }
           ]
         }
