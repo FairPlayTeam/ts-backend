@@ -73,6 +73,7 @@ export const getComments = async (
           content: true,
           createdAt: true,
           updatedAt: true,
+          likeCount: true,
           user: { select: userSelect },
           _count: { select: { replies: true } },
           replies: {
@@ -83,6 +84,7 @@ export const getComments = async (
               content: true,
               createdAt: true,
               updatedAt: true,
+              likeCount: true,
               user: { select: userSelect },
               _count: { select: { replies: true } },
               replies: {
@@ -93,6 +95,7 @@ export const getComments = async (
                   content: true,
                   createdAt: true,
                   updatedAt: true,
+                  likeCount: true,
                   user: { select: userSelect },
                 },
               },
