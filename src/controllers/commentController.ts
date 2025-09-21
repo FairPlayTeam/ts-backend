@@ -42,21 +42,82 @@ export const addComment = async (
   }
 };
 
+export const getCommentReplies = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { commentId } = req.params as { commentId: string };
+    const { page = '1', limit = '20' } = req.query as Record<string, string>;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const parent = await prisma.comment.findUnique({
+      where: { id: commentId },
+      select: { id: true },
+    });
+    if (!parent) {
+      res.status(404).json({ error: 'Comment not found' });
+      return;
+    }
+
+    const userSelect = {
+      id: true,
+      username: true,
+      displayName: true,
+      avatarUrl: true,
+    };
+
+    const [rows, total] = await Promise.all([
+      prisma.comment.findMany({
+        where: { parentId: commentId },
+        select: {
+          id: true,
+          content: true,
+          createdAt: true,
+          updatedAt: true,
+          likeCount: true,
+          user: { select: userSelect },
+          _count: { select: { replies: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+        skip,
+        take: Number(limit),
+      }),
+      prisma.comment.count({ where: { parentId: commentId } }),
+    ]);
+
+    const replies = rows.map((r: any) => ({
+      ...r,
+      user: {
+        ...r.user,
+        avatarUrl: getProxiedAssetUrl(r.user.id, r.user.avatarUrl, 'avatar'),
+      },
+    }));
+
+    res.json({
+      replies,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        totalItems: total,
+        totalPages: Math.ceil(total / Number(limit)),
+        itemsReturned: replies.length,
+      },
+    });
+  } catch (error) {
+    console.error('Get comment replies error:', error);
+    res.status(500).json({ error: 'Failed to get comment replies' });
+  }
+};
+
 export const getComments = async (
   req: Request,
   res: Response,
 ): Promise<void> => {
   try {
     const { videoId } = req.params;
-    const {
-      page = '1',
-      limit = '20',
-      repliesLimit = '3',
-      childRepliesLimit = '2',
-    } = req.query as Record<string, string>;
+    const { page = '1', limit = '20' } = req.query as Record<string, string>;
     const skip = (Number(page) - 1) * Number(limit);
-    const repliesTake = Math.max(0, Number(repliesLimit));
-    const childRepliesTake = Math.max(0, Number(childRepliesLimit));
 
     const userSelect = {
       id: true,
@@ -76,32 +137,6 @@ export const getComments = async (
           likeCount: true,
           user: { select: userSelect },
           _count: { select: { replies: true } },
-          replies: {
-            orderBy: { createdAt: 'asc' },
-            take: repliesTake,
-            select: {
-              id: true,
-              content: true,
-              createdAt: true,
-              updatedAt: true,
-              likeCount: true,
-              user: { select: userSelect },
-              _count: { select: { replies: true } },
-              replies: {
-                orderBy: { createdAt: 'asc' },
-                take: childRepliesTake,
-                select: {
-                  id: true,
-                  content: true,
-                  createdAt: true,
-                  updatedAt: true,
-                  likeCount: true,
-                  user: { select: userSelect },
-                  _count: { select: { replies: true } },
-                },
-              },
-            },
-          },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -110,7 +145,7 @@ export const getComments = async (
       prisma.comment.count({ where: { videoId, parentId: null } }),
     ]);
 
-    const transformComment = (comment: any): any => ({
+    const comments = rows.map((comment: any) => ({
       ...comment,
       user: {
         ...comment.user,
@@ -120,40 +155,16 @@ export const getComments = async (
           'avatar',
         ),
       },
-      replies: comment.replies?.map((reply: any) => ({
-        ...reply,
-        user: {
-          ...reply.user,
-          avatarUrl: getProxiedAssetUrl(
-            reply.user.id,
-            reply.user.avatarUrl,
-            'avatar',
-          ),
-        },
-        replies: reply.replies?.map((childReply: any) => ({
-          ...childReply,
-          user: {
-            ...childReply.user,
-            avatarUrl: getProxiedAssetUrl(
-              childReply.user.id,
-              childReply.user.avatarUrl,
-              'avatar',
-            ),
-          },
-        })),
-      })),
-    });
-
-    const nestedComments = rows.map(transformComment);
+    }));
 
     res.json({
-      comments: nestedComments,
+      comments,
       pagination: {
         page: Number(page),
         limit: Number(limit),
         totalItems: total,
         totalPages: Math.ceil(total / Number(limit)),
-        itemsReturned: nestedComments.length,
+        itemsReturned: comments.length,
       },
     });
   } catch (error) {

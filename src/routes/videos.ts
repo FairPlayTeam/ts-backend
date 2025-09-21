@@ -153,8 +153,7 @@ registerRoute({
     visibility: 'public | unlisted | private (optional)',
   },
   responses: {
-    '200':
-`{"message": "Video updated successfully", "video": {"id": "uuid", "title": "Updated Title", "description": "Updated description", "thumbnailUrl": "https://example.com/thumb.jpg"}}`,
+    '200': `{"message": "Video updated successfully", "video": {"id": "uuid", "title": "Updated Title", "description": "Updated description", "thumbnailUrl": "https://example.com/thumb.jpg"}}`,
     '403': '{ "error": "You are not authorized to edit this video" }',
     '404': '{ "error": "Video not found" }',
   },
@@ -236,13 +235,11 @@ registerRoute({
   path: '/videos/:videoId/comments',
   summary: 'Get comments for a video',
   description:
-    'Returns comments in a nested structure. The top-level array contains only parent comments. Replies are included in the `replies` array of each comment object. Each comment (including replies and child replies) includes a `likeCount` field. The number of nested replies returned is capped by `repliesLimit` and `childRepliesLimit`. The `_count.replies` field indicates if more replies are available for a comment/reply so clients can implement "load more".',
+    'Returns only top-level (parent) comments for a video. Each comment includes `likeCount` and `_count.replies` so clients can decide whether to fetch replies. To fetch replies for any comment, call GET /comments/:commentId/replies with pagination. Use that replies endpoint recursively to implement infinite nesting.',
   params: { videoId: 'Video ID' },
   query: {
     page: 'number (default 1)',
     limit: 'number (default 20)',
-    repliesLimit: 'number (default 3) - max number of direct replies per parent comment',
-    childRepliesLimit: 'number (default 2) - max number of replies per reply',
   },
   responses: {
     '200': `{
@@ -259,39 +256,7 @@ registerRoute({
         "displayName": "string|null",
         "avatarUrl": "http://localhost:2353/assets/users/<userId>/avatar/<file>"
       },
-      "_count": { "replies": 5 },
-      "replies": [
-        {
-          "id": "string",
-          "content": "This is a reply.",
-          "createdAt": "ISO8601",
-          "updatedAt": "ISO8601",
-          "likeCount": 2,
-          "user": {
-            "id": "string",
-            "username": "string",
-            "displayName": "string|null",
-            "avatarUrl": "http://localhost:2353/assets/users/<userId>/avatar/<file>"
-          },
-          "_count": { "replies": 12 },
-          "replies": [
-            {
-              "id": "string",
-              "content": "This is a child reply.",
-              "createdAt": "ISO8601",
-              "updatedAt": "ISO8601",
-              "likeCount": 1,
-              "user": {
-                "id": "string",
-                "username": "string",
-                "displayName": "string|null",
-                "avatarUrl": "http://localhost:2353/assets/users/<userId>/avatar/<file>"
-              },
-              "_count": { "replies": 0 }
-            }
-          ]
-        }
-      ]
+      "_count": { "replies": 5 }
     }
   ],
   "pagination": { "page": 1, "limit": 20, "totalItems": 100, "totalPages": 5, "itemsReturned": 20 }
