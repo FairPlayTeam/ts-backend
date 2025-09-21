@@ -236,7 +236,7 @@ registerRoute({
   path: '/videos/:videoId/comments',
   summary: 'Get comments for a video',
   description:
-    'Returns comments in a nested structure. The top-level array contains only parent comments. Replies are included in the `replies` array of each comment object. The number of nested replies returned is capped by `repliesLimit` and `childRepliesLimit`. The `_count.replies` field indicates if more replies are available for a comment/reply so clients can implement "load more".',
+    'Returns comments in a nested structure. The top-level array contains only parent comments. Replies are included in the `replies` array of each comment object. Each comment (including replies and child replies) includes a `likeCount` field. The number of nested replies returned is capped by `repliesLimit` and `childRepliesLimit`. The `_count.replies` field indicates if more replies are available for a comment/reply so clients can implement "load more".',
   params: { videoId: 'Video ID' },
   query: {
     page: 'number (default 1)',
@@ -251,16 +251,44 @@ registerRoute({
       "id": "string",
       "content": "string",
       "createdAt": "ISO8601",
-      "user": { "id": "string", "username": "string", "displayName": "string|null" },
+      "updatedAt": "ISO8601",
+      "likeCount": 3,
+      "user": {
+        "id": "string",
+        "username": "string",
+        "displayName": "string|null",
+        "avatarUrl": "http://localhost:2353/assets/users/<userId>/avatar/<file>"
+      },
       "_count": { "replies": 5 },
       "replies": [
         {
           "id": "string",
           "content": "This is a reply.",
           "createdAt": "ISO8601",
-          "user": { "id": "string", "username": "string", "displayName": "string|null" },
+          "updatedAt": "ISO8601",
+          "likeCount": 2,
+          "user": {
+            "id": "string",
+            "username": "string",
+            "displayName": "string|null",
+            "avatarUrl": "http://localhost:2353/assets/users/<userId>/avatar/<file>"
+          },
           "_count": { "replies": 12 },
-          "replies": []
+          "replies": [
+            {
+              "id": "string",
+              "content": "This is a child reply.",
+              "createdAt": "ISO8601",
+              "updatedAt": "ISO8601",
+              "likeCount": 1,
+              "user": {
+                "id": "string",
+                "username": "string",
+                "displayName": "string|null",
+                "avatarUrl": "http://localhost:2353/assets/users/<userId>/avatar/<file>"
+              }
+            }
+          ]
         }
       ]
     }
