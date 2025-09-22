@@ -80,11 +80,12 @@ const processVideoQualities = async (
 
   const videoInfo = await getVideoInfo(originalFile);
   const maxHeight = videoInfo.height;
+  const hasAudio = (videoInfo as any).hasAudio === true;
 
   const qualitiesToProcess = job.qualities.filter((q) => q.height <= maxHeight);
 
   const processPromises = qualitiesToProcess.map((quality) =>
-    processQuality(job, originalFile, quality),
+    processQuality(job, originalFile, quality, hasAudio),
   );
 
   await Promise.all(processPromises);
@@ -95,33 +96,41 @@ const processQuality = async (
   job: ProcessingJob,
   inputFile: string,
   quality: VideoQuality,
+  hasAudio: boolean,
 ): Promise<void> => {
   const outDir = `/tmp/video-processing/${job.videoId}/${quality.name}`;
   await fs.mkdir(outDir, { recursive: true });
 
   await new Promise<void>((resolve, reject) => {
-    ffmpeg(inputFile)
+    const cmd = ffmpeg(inputFile)
       .videoCodec('libx264')
-      .audioCodec('aac')
       .size(`?x${quality.height}`)
       .videoBitrate(quality.bitrate)
-      .audioBitrate('128k')
       .outputOptions([
-        '-preset',
-        'veryfast',
-        '-movflags',
-        '+faststart',
-        '-hls_time',
-        '6',
-        '-hls_playlist_type',
-        'vod',
-        '-hls_segment_filename',
-        path.join(outDir, 'segment_%03d.ts'),
+        // Map the first video stream
+        '-map', '0:v:0',
+        // Map the first audio stream if present (the '?' makes it optional)
+        '-map', '0:a:0?',
+        // H.264 preset and faststart
+        '-preset', 'veryfast',
+        '-movflags', '+faststart',
+        // HLS settings
+        '-hls_time', '6',
+        '-hls_playlist_type', 'vod',
+        '-hls_segment_filename', path.join(outDir, 'segment_%03d.ts'),
       ])
       .format('hls')
       .on('end', () => resolve())
-      .on('error', reject)
-      .save(path.join(outDir, 'index.m3u8'));
+      .on('error', reject);
+
+    if (hasAudio) {
+      cmd.audioCodec('aac').audioBitrate('128k').audioChannels(2).audioFrequency(44100);
+    } else {
+      // Explicitly disable audio encoding when no audio is present to avoid warnings
+      cmd.noAudio();
+    }
+
+    cmd.save(path.join(outDir, 'index.m3u8'));
   });
 
   const objectPrefix = hlsVariantDir(job.userId, job.videoId, quality.name);
@@ -135,7 +144,7 @@ const processQuality = async (
 
 const getVideoInfo = (
   filePath: string,
-): Promise<{ width: number; height: number; duration: number }> => {
+): Promise<{ width: number; height: number; duration: number; hasAudio: boolean }> => {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (err, metadata) => {
       if (err) return reject(err);
@@ -144,11 +153,13 @@ const getVideoInfo = (
         (s) => s.codec_type === 'video',
       );
       if (!videoStream) return reject(new Error('No video stream found'));
+      const audioStream = metadata.streams.find((s) => s.codec_type === 'audio');
 
       resolve({
         width: videoStream.width || 0,
         height: videoStream.height || 0,
         duration: metadata.format.duration || 0,
+        hasAudio: Boolean(audioStream),
       });
     });
   });

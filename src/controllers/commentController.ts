@@ -31,7 +31,20 @@ export const addComment = async (
       },
     });
 
-    res.status(201).json({ message: 'Comment added', comment: newComment });
+    // Proxy avatar URL in the response
+    const transformed = {
+      ...newComment,
+      user: {
+        ...newComment.user,
+        avatarUrl: getProxiedAssetUrl(
+          newComment.user.id,
+          newComment.user.avatarUrl,
+          'avatar',
+        ),
+      },
+    };
+
+    res.status(201).json({ message: 'Comment added', comment: transformed });
   } catch (error: any) {
     if (error?.code === 'P2003') {
       res.status(404).json({ error: 'Video not found' });
