@@ -39,7 +39,11 @@ export const getVideos = async (req: Request, res: Response): Promise<void> => {
 
     const videosWithUrls = await Promise.all(
       videos.map(async (video: any) => {
-        const thumbnailUrl = getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail);
+        const thumbnailUrl = getProxiedThumbnailUrl(
+          video.userId,
+          video.id,
+          video.thumbnail,
+        );
 
         const avgRating =
           video.ratings.length > 0
@@ -125,7 +129,11 @@ export const searchVideos = async (
             ? video.ratings.reduce((sum: number, r: any) => sum + r.score, 0) /
               video.ratings.length
             : 0;
-        const thumbnailUrl = getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail);
+        const thumbnailUrl = getProxiedThumbnailUrl(
+          video.userId,
+          video.id,
+          video.thumbnail,
+        );
         return {
           id: video.id,
           title: video.title,
@@ -215,7 +223,10 @@ export const getVideoById = async (
     }
 
     let hls: any = null;
-    if (isPubliclyPlayable) {
+    const isOwner = requesterId === videoObj.userId;
+    const canBuildHls =
+      isPubliclyPlayable || (isOwner && videoObj.processingStatus === 'done');
+    if (canBuildHls) {
       const base = `${req.protocol}://${req.get('host')}`;
       const masterUrl = `${base}/stream/videos/${videoObj.userId}/${videoObj.id}/master.m3u8`;
 
@@ -245,7 +256,11 @@ export const getVideoById = async (
       };
     }
 
-    const thumbnailUrl = getProxiedThumbnailUrl(videoObj.userId, videoObj.id, videoObj.thumbnail);
+    const thumbnailUrl = getProxiedThumbnailUrl(
+      videoObj.userId,
+      videoObj.id,
+      videoObj.thumbnail,
+    );
 
     const ratings2 = videoObj.ratings || [];
     const avgRating =
@@ -295,7 +310,11 @@ export const getUserVideos = async (
 
     const videosWithUrls = await Promise.all(
       videos.map(async (video) => {
-        const thumbnailUrl = getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail);
+        const thumbnailUrl = getProxiedThumbnailUrl(
+          video.userId,
+          video.id,
+          video.thumbnail,
+        );
 
         const avgRating =
           video.ratings.length > 0
@@ -365,7 +384,11 @@ export const updateVideo = async (
       },
     });
 
-    const thumbnailUrl = getProxiedThumbnailUrl(updatedVideo.userId, updatedVideo.id, updatedVideo.thumbnail);
+    const thumbnailUrl = getProxiedThumbnailUrl(
+      updatedVideo.userId,
+      updatedVideo.id,
+      updatedVideo.thumbnail,
+    );
 
     res.json({
       message: 'Video updated successfully',
