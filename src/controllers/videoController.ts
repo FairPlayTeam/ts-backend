@@ -189,6 +189,7 @@ export const getVideoById = async (
     const videoObj = video;
 
     let requesterId: string | null = null;
+    let requesterRole: string | null = null;
     const authHeader = req.headers['authorization'];
     const sessionKey = authHeader && authHeader.split(' ')[1];
     if (sessionKey) {
@@ -196,6 +197,7 @@ export const getVideoById = async (
         const { validateSession } = await import('./sessionController.js');
         const session = await validateSession(sessionKey);
         requesterId = session?.user?.id || null;
+        requesterRole = session?.user?.role || null;
       } catch (_) {}
     }
 
@@ -217,15 +219,18 @@ export const getVideoById = async (
       }
     }
 
-    if (!isPubliclyPlayable && requesterId !== videoObj.userId) {
+    const isOwner = requesterId === videoObj.userId;
+    const isModerator =
+      requesterRole === 'moderator' || requesterRole === 'admin';
+
+    if (!isPubliclyPlayable && !isOwner && !isModerator) {
       res.status(403).json({ error: 'Video not available' });
       return;
     }
 
     let hls: any = null;
-    const isOwner = requesterId === videoObj.userId;
     const canBuildHls =
-      isPubliclyPlayable || (isOwner && videoObj.processingStatus === 'done');
+      isPubliclyPlayable || (isOwner && videoObj.processingStatus === 'done') || (isModerator && videoObj.processingStatus === 'done');
     if (canBuildHls) {
       const protocol = req.get('X-Forwarded-Proto') || req.protocol;
       const base = `${protocol}://${req.get('host')}`;
