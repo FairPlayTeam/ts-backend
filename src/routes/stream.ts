@@ -22,6 +22,7 @@ async function proxyObject(
   objectName: string,
   videoId: string,
   requesterId: string | null,
+  requesterRole: string | null,
   res: Response,
 ) {
   try {
@@ -37,8 +38,9 @@ async function proxyObject(
       (video.visibility === 'unlisted' && video.processingStatus === 'done');
 
     const isOwner = video.userId === requesterId;
+    const isModerator = requesterRole === 'moderator' || requesterRole === 'admin';
 
-    if (!isPubliclyAccessible && !isOwner) {
+    if (!isPubliclyAccessible && !isOwner && !isModerator) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -66,6 +68,7 @@ router.get(
       objectName,
       videoId,
       req.user?.id ?? null,
+      req.user?.role ?? null,
       res,
     );
   },
@@ -91,6 +94,7 @@ router.get(
       objectName,
       videoId,
       req.user?.id ?? null,
+      req.user?.role ?? null,
       res,
     );
   },
@@ -120,6 +124,7 @@ router.get(
       objectName,
       videoId,
       req.user?.id ?? null,
+      req.user?.role ?? null,
       res,
     );
   },

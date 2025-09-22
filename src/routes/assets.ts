@@ -151,7 +151,11 @@ router.get(
       video.moderationStatus === 'approved' &&
       video.processingStatus === 'done';
 
-    if (!isPublic && video.userId !== requesterId) {
+    const isOwner = video.userId === requesterId;
+    const requesterRole = (req as any).user?.role || null;
+    const isModerator = requesterRole === 'moderator' || requesterRole === 'admin';
+
+    if (!isPublic && !isOwner && !isModerator) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
