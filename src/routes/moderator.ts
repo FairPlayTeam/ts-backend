@@ -3,7 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { authenticateSession, requireModerator } from '../lib/sessionAuth.js';
 import { getFileUrl, BUCKETS } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
-import { createUserSearchWhere } from '../lib/utils.js';
+import { createUserSearchWhere, getProxiedThumbnailUrl } from '../lib/utils.js';
 import { validate, moderationSchema } from '../middleware/validation.js';
 
 const router = Router();
@@ -53,20 +53,16 @@ router.get('/videos', async (req: Request, res: Response): Promise<void> => {
       prisma.video.count({ where: where as any }),
     ]);
 
-    const videosWithUrls = await Promise.all(
-      rows.map(async (v: any) => ({
-        id: v.id,
-        title: v.title,
-        user: v.user,
-        processingStatus: v.processingStatus,
-        moderationStatus: v.moderationStatus,
-        visibility: v.visibility,
-        createdAt: v.createdAt,
-        thumbnailUrl: v.thumbnail
-          ? await getFileUrl(BUCKETS.VIDEOS, v.thumbnail).catch(() => null)
-          : null,
-      })),
-    );
+    const videosWithUrls = rows.map((v: any) => ({
+      id: v.id,
+      title: v.title,
+      user: v.user,
+      processingStatus: v.processingStatus,
+      moderationStatus: v.moderationStatus,
+      visibility: v.visibility,
+      createdAt: v.createdAt,
+      thumbnailUrl: getProxiedThumbnailUrl(v.userId, v.id, v.thumbnail),
+    }));
 
     res.json({
       videos: videosWithUrls,
