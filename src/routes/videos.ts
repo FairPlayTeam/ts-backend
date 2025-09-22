@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticateSession, requireNotBanned } from '../lib/sessionAuth.js';
+import { authenticateSession, requireNotBanned, optionalSessionAuthenticate } from '../lib/sessionAuth.js';
 import {
   getVideos,
   getVideoById,
@@ -210,7 +210,7 @@ router.post(
   validate(commentSchema),
   addComment,
 );
-router.get('/:videoId/comments', getComments);
+router.get('/:videoId/comments', optionalSessionAuthenticate, getComments);
 
 registerRoute({
   method: 'POST',
@@ -235,7 +235,7 @@ registerRoute({
   path: '/videos/:videoId/comments',
   summary: 'Get comments for a video',
   description:
-    'Returns only top-level (parent) comments for a video. Each comment includes `likeCount` and `_count.replies` so clients can decide whether to fetch replies. To fetch replies for any comment, call GET /comments/:commentId/replies with pagination. Use that replies endpoint recursively to implement infinite nesting.',
+    'Returns only top-level (parent) comments for a video. Each comment includes `likeCount`, `likedByMe` (only when the request is authenticated), and `_count.replies` so clients can decide whether to fetch replies. To fetch replies for any comment, call GET /comments/:commentId/replies with pagination. Use that replies endpoint recursively to implement infinite nesting.',
   params: { videoId: 'Video ID' },
   query: {
     page: 'number (default 1)',
@@ -250,6 +250,7 @@ registerRoute({
       "createdAt": "ISO8601",
       "updatedAt": "ISO8601",
       "likeCount": 3,
+      "likedByMe": true,
       "user": {
         "id": "string",
         "username": "string",

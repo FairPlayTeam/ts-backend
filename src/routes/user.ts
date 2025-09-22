@@ -9,49 +9,74 @@ import {
   followUser,
   unfollowUser,
 } from '../controllers/followController.js';
-import { authenticateSession, requireNotBanned } from '../lib/sessionAuth.js';
+import {
+  authenticateSession,
+  requireNotBanned,
+  optionalSessionAuthenticate,
+} from '../lib/sessionAuth.js';
 
 const router = Router();
 
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
+router.get(
+  '/:id',
+  optionalSessionAuthenticate,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
 
-    const user = await prisma.user.findFirst({
-      where: createUserSearchWhere(id),
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-        avatarUrl: true,
-        bannerUrl: true,
-        bio: true,
-        followerCount: true,
-        followingCount: true,
-        videoCount: true,
-        createdAt: true,
-      },
-    });
+      const user = await prisma.user.findFirst({
+        where: createUserSearchWhere(id),
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          avatarUrl: true,
+          bannerUrl: true,
+          bio: true,
+          followerCount: true,
+          followingCount: true,
+          videoCount: true,
+          createdAt: true,
+        },
+      });
 
-    if (!user) {
-      res.status(404).json({ error: 'User not found' });
-      return;
+      if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      const avatarUrl = getProxiedAssetUrl(user.id, user.avatarUrl, 'avatar');
+      const bannerUrl = getProxiedAssetUrl(user.id, user.bannerUrl, 'banner');
+
+      let isFollowing: boolean | undefined = undefined;
+      const requesterId = (req as any).user?.id as string | undefined;
+      if (requesterId && requesterId !== user.id) {
+        const follow = await prisma.follow.findFirst({
+          where: { followerId: requesterId, followingId: user.id },
+          select: { id: true },
+        });
+        isFollowing = Boolean(follow);
+      }
+
+      const responseBody: any = { ...user, avatarUrl, bannerUrl };
+      if (requesterId) {
+        responseBody.isFollowing = isFollowing ?? false;
+      }
+
+      res.json(responseBody);
+    } catch (error) {
+      console.error('Get user profile error:', error);
+      res.status(500).json({ error: 'Failed to get user profile' });
     }
-
-    const avatarUrl = getProxiedAssetUrl(user.id, user.avatarUrl, 'avatar');
-    const bannerUrl = getProxiedAssetUrl(user.id, user.bannerUrl, 'banner');
-
-    res.json({ ...user, avatarUrl, bannerUrl });
-  } catch (error) {
-    console.error('Get user profile error:', error);
-    res.status(500).json({ error: 'Failed to get user profile' });
-  }
-});
+  },
+);
 
 registerRoute({
   method: 'GET',
   path: '/user/:id',
   summary: 'Get a public user profile by username or ID',
+  description:
+    'When the request is authenticated, the response additionally includes `isFollowing` indicating whether the current user follows this profile.',
   params: { id: 'Username or User ID' },
   responses: {
     '200': `{
@@ -64,7 +89,8 @@ registerRoute({
   "followerCount": 0,
   "followingCount": 0,
   "videoCount": 0,
-  "createdAt": "ISO8601"
+  "createdAt": "ISO8601",
+  "isFollowing": true
 }`,
     '404': '{ "error": "User not found" }',
   },

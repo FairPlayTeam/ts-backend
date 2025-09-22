@@ -86,8 +86,20 @@ export const getCommentReplies = async (
       prisma.comment.count({ where: { parentId: commentId } }),
     ]);
 
+    const requesterId = (req as any).user?.id as string | undefined;
+    let likedIds = new Set<string>();
+    if (requesterId && rows.length > 0) {
+      const ids = rows.map((c: any) => c.id);
+      const likes = await prisma.commentLike.findMany({
+        where: { userId: requesterId, commentId: { in: ids } },
+        select: { commentId: true },
+      });
+      likedIds = new Set(likes.map((l) => l.commentId));
+    }
+
     const replies = rows.map((r: any) => ({
       ...r,
+      likedByMe: requesterId ? likedIds.has(r.id) : undefined,
       user: {
         ...r.user,
         avatarUrl: getProxiedAssetUrl(r.user.id, r.user.avatarUrl, 'avatar'),
@@ -145,8 +157,20 @@ export const getComments = async (
       prisma.comment.count({ where: { videoId, parentId: null } }),
     ]);
 
+    const requesterId = (req as any).user?.id as string | undefined;
+    let likedIds = new Set<string>();
+    if (requesterId && rows.length > 0) {
+      const ids = rows.map((c: any) => c.id);
+      const likes = await prisma.commentLike.findMany({
+        where: { userId: requesterId, commentId: { in: ids } },
+        select: { commentId: true },
+      });
+      likedIds = new Set(likes.map((l) => l.commentId));
+    }
+
     const comments = rows.map((comment: any) => ({
       ...comment,
+      likedByMe: requesterId ? likedIds.has(comment.id) : undefined,
       user: {
         ...comment.user,
         avatarUrl: getProxiedAssetUrl(
