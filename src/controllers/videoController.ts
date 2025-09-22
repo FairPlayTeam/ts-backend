@@ -227,7 +227,8 @@ export const getVideoById = async (
     const canBuildHls =
       isPubliclyPlayable || (isOwner && videoObj.processingStatus === 'done');
     if (canBuildHls) {
-      const base = `${req.protocol}://${req.get('host')}`;
+      const protocol = req.get('X-Forwarded-Proto') || req.protocol;
+      const base = `${protocol}://${req.get('host')}`;
       const masterUrl = `${base}/stream/videos/${videoObj.userId}/${videoObj.id}/master.m3u8`;
 
       const candidateQualities = ['1080p', '720p', '480p', '240p'];
