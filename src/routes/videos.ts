@@ -53,6 +53,8 @@ registerRoute({
   path: '/videos/my',
   summary: 'List my videos',
   auth: true,
+  description:
+    'Returns all of your videos regardless of visibility or moderation status, including items that are still processing or pending moderator approval. Each item includes status fields so the client can display badges such as Pending/Processing/Rejected. Note: To fetch details or stream a video that is not publicly available (e.g., pending, private, or unapproved), the request must be authenticated as the owner.',
   query: { page: 'number (default 1)', limit: 'number (default 20)' },
   responses: {
     '200': `{
@@ -60,10 +62,14 @@ registerRoute({
     {
       "id": "string",
       "title": "string",
+      "description": "string|null",
       "thumbnailUrl": "string|null",
       "viewCount": "string",
       "avgRating": 4.5,
-      "ratingsCount": 10
+      "ratingsCount": 10,
+      "visibility": "public|unlisted|private",
+      "processingStatus": "uploading|processing|done|failed",
+      "moderationStatus": "pending|approved|rejected"
     }
   ],
   "pagination": { "page": 1, "limit": 20, "totalItems": 100, "totalPages": 5, "itemsReturned": 20 }
