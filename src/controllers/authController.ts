@@ -30,7 +30,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       const user = await prisma.user.create({
         data: {
           email: emailNorm,
-          username: String(username).trim(),
+          username: String(username).trim().toLowerCase(),
           passwordHash: hashedPassword,
         },
         select: { id: true, email: true, username: true, role: true },
