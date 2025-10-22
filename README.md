@@ -1,3 +1,5 @@
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D31GU3L5)
+
 # fairplay ts api
 
 ik the devs are really wanting rust but i was bored and made this api
