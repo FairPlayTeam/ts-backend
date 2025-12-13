@@ -37,5 +37,5 @@ export const getProxiedThumbnailUrl = (
 
   const baseUrl = process.env.BASE_URL || 'http://localhost:2353';
 
-  return `${baseUrl}/assets/videos/${userId}/${videoId}/thumbnail/${filename}`;
+  return `${baseUrl}/videos/thumbnails/${userId}/${videoId}/${filename}`;
 };
