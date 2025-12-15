@@ -22,7 +22,7 @@ export const getProxiedAssetUrl = (
 
   const baseUrl = process.env.BASE_URL || 'http://localhost:2353';
 
-  return `${baseUrl}/assets/users/${userId}/${assetType}/${filename}`;
+  return `${baseUrl}/users/${userId}/profile/${filename}`;
 };
 
 export const getProxiedThumbnailUrl = (
