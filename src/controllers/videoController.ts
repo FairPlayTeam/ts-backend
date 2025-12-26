@@ -181,7 +181,7 @@ export const getVideoById = async (
       where: { id },
       include: {
         user: {
-          select: { username: true, displayName: true },
+          select: { username: true, displayName: true, avatarUrl: true},
         },
         ratings: true,
       },
