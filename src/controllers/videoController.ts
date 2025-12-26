@@ -6,6 +6,7 @@ import { minioClient } from '../lib/minio.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { getProxiedThumbnailUrl } from '../lib/utils.js';
 import type { Video, User, Rating } from '@prisma/client';
+import { validate as isUUID } from 'uuid';
 
 export const getVideos = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -170,6 +171,11 @@ export const getVideoById = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
+    
+    if (!isUUID(id)) {
+      res.status(404).json({ error: 'Video not found' });
+      return;
+    }
 
     const video = await prisma.video.findUnique({
       where: { id },

@@ -22,6 +22,29 @@ import { z } from 'zod';
 
 const router = Router();
 
+router.get('/search', searchVideos);
+registerRoute({
+  method: 'GET',
+  path: '/videos/search',
+  summary: 'Search publicly available videos',
+  description:
+    'Search only videos that are approved, done processing, public, and whose owners are not banned.',
+  query: {
+    q: 'string (query term)',
+    page: 'number (default 1)',
+    limit: 'number (default 20)',
+  },
+  responses: {
+    '200': `{
+  "videos": [
+    { "id": "string", "title": "string", "thumbnailUrl": "string|null", "viewCount": "string", "avgRating": 4.5, "ratingsCount": 10, "user": { "username": "string", "displayName": "string|null" }, "createdAt": "ISO8601" }
+  ],
+  "pagination": { "page": 1, "limit": 20, "totalItems": 100, "totalPages": 5, "itemsReturned": 20 },
+  "query": { "q": "term" }
+}`,
+  },
+});
+
 router.get('/', getVideos);
 registerRoute({
   method: 'GET',
@@ -93,28 +116,6 @@ router.post(
   updateThumbnail,
 );
 
-router.get('/search', searchVideos);
-registerRoute({
-  method: 'GET',
-  path: '/videos/search',
-  summary: 'Search publicly available videos',
-  description:
-    'Search only videos that are approved, done processing, public, and whose owners are not banned.',
-  query: {
-    q: 'string (query term)',
-    page: 'number (default 1)',
-    limit: 'number (default 20)',
-  },
-  responses: {
-    '200': `{
-  "videos": [
-    { "id": "string", "title": "string", "thumbnailUrl": "string|null", "viewCount": "string", "avgRating": 4.5, "ratingsCount": 10, "user": { "username": "string", "displayName": "string|null" }, "createdAt": "ISO8601" }
-  ],
-  "pagination": { "page": 1, "limit": 20, "totalItems": 100, "totalPages": 5, "itemsReturned": 20 },
-  "query": { "q": "term" }
-}`,
-  },
-});
 registerRoute({
   method: 'GET',
   path: '/videos/:id',
