@@ -7,6 +7,7 @@ import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { getProxiedThumbnailUrl } from '../lib/utils.js';
 import type { Video, User, Rating } from '@prisma/client';
 import { validate as isUUID } from 'uuid';
+import { getProxiedAssetUrl } from '../lib/utils.js';
 
 export const getVideos = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -181,7 +182,7 @@ export const getVideoById = async (
       where: { id },
       include: {
         user: {
-          select: { username: true, displayName: true, avatarUrl: true},
+          select: { id:true, username: true, displayName: true, avatarUrl: true},
         },
         ratings: true,
       },
@@ -273,6 +274,12 @@ export const getVideoById = async (
       videoObj.id,
       videoObj.thumbnail,
     );
+    
+    const avatarAssetUrl = getProxiedAssetUrl(
+      videoObj.user.id,
+      videoObj.user.avatarUrl,
+      'avatar',
+    )
 
     const ratings2 = videoObj.ratings || [];
     const avgRating =
@@ -288,7 +295,12 @@ export const getVideoById = async (
       thumbnailUrl,
       avgRating: Math.round(avgRating * 10) / 10,
       ratingsCount: videoObj.ratings.length,
+      user: {
+        ...videoObj.user,
+        avatarUrl: avatarAssetUrl,
+      },
     });
+
   } catch (error) {
     console.error('Error fetching video:', error);
     res.status(500).json({ error: 'Failed to fetch video' });
