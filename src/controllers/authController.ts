@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { createSession } from './sessionController.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { getProxiedAssetUrl } from '../lib/utils.js';
+import { getFollowing } from './followController.js';
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -170,6 +171,7 @@ export const getProfile = async (
         role: true,
         isVerified: true,
         followerCount: true,
+        followingCount: true,
         totalViews: true,
         totalEarnings: true,
         createdAt: true,
@@ -192,6 +194,7 @@ export const getProfile = async (
       role: user.role,
       isVerified: user.isVerified,
       followerCount: user.followerCount,
+      followingCount: user.followingCount,
       totalViews: (user as any).totalViews?.toString?.() ?? '0',
       totalEarnings: user.totalEarnings,
       createdAt: user.createdAt,
