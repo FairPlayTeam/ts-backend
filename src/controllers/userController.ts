@@ -13,6 +13,7 @@ export const getUsers = async (_req: Request, res: Response): Promise<void> => {
         displayName: true,
         avatarUrl: true,
         followerCount: true,
+        followingCount: true,
         videoCount: true,
         createdAt: true,
       },
