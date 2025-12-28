@@ -8,6 +8,62 @@ import { getProxiedThumbnailUrl } from '../lib/utils.js';
 import type { Video, User, Rating } from '@prisma/client';
 import { validate as isUUID } from 'uuid';
 import { getProxiedAssetUrl } from '../lib/utils.js';
+import { startOfDay } from 'date-fns';
+
+const incrementVideoView = async (
+  video: Video,
+  userId: string | null,
+): Promise<void> => {
+  if (!userId) {
+    return;
+  }
+
+  const today = startOfDay(new Date());
+
+  try {
+    const existing = await prisma.videoView.findUnique({
+      where: {
+        userId_videoId_date: {
+          userId,
+          videoId: video.id,
+          date: today,
+        },
+      },
+    });
+
+    if (existing) {
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.videoView.create({
+        data: {
+          userId,
+          videoId: video.id,
+          date: today,
+        },
+      }),
+      prisma.video.update({
+        where: { id: video.id },
+        data: {
+          viewCount: {
+            increment: 1n,
+          },
+        },
+      }),
+      prisma.user.update({
+        where: { id: video.userId },
+        data: {
+          totalViews: {
+            increment: 1n,
+          },
+        },
+      }),
+    ]);
+  } catch (error) {
+    console.error('Error incrementing video view:', error);
+  }
+};
 
 export const getVideos = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -172,7 +228,7 @@ export const getVideoById = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    
+
     if (!isUUID(id)) {
       res.status(404).json({ error: 'Video not found' });
       return;
@@ -182,7 +238,12 @@ export const getVideoById = async (
       where: { id },
       include: {
         user: {
-          select: { id:true, username: true, displayName: true, avatarUrl: true},
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            avatarUrl: true,
+          },
         },
         ratings: true,
       },
@@ -197,8 +258,10 @@ export const getVideoById = async (
 
     let requesterId: string | null = null;
     let requesterRole: string | null = null;
+
     const authHeader = req.headers['authorization'];
     const sessionKey = authHeader && authHeader.split(' ')[1];
+
     if (sessionKey) {
       try {
         const { validateSession } = await import('./sessionController.js');
@@ -218,6 +281,7 @@ export const getVideoById = async (
         where: { id: videoObj.userId },
         select: { isBanned: true },
       });
+
       if (owner?.isBanned) {
         if (requesterId !== videoObj.userId) {
           res.status(403).json({ error: 'Video not available' });
@@ -235,16 +299,22 @@ export const getVideoById = async (
       return;
     }
 
+    await incrementVideoView(videoObj, requesterId);
+
     let hls: any = null;
+
     const canBuildHls =
-      isPubliclyPlayable || (isOwner && videoObj.processingStatus === 'done') || (isModerator && videoObj.processingStatus === 'done');
+      isPubliclyPlayable ||
+      (isOwner && videoObj.processingStatus === 'done') ||
+      (isModerator && videoObj.processingStatus === 'done');
+
     if (canBuildHls) {
       const protocol = req.get('X-Forwarded-Proto') || req.protocol;
       const base = `${protocol}://${req.get('host')}`;
       const masterUrl = `${base}/stream/videos/${videoObj.userId}/${videoObj.id}/master.m3u8`;
-
       const candidateQualities = ['1080p', '720p', '480p', '240p'];
       const available: string[] = [];
+
       for (const q of candidateQualities) {
         try {
           await minioClient.statObject(
@@ -256,11 +326,13 @@ export const getVideoById = async (
       }
 
       const variantUrls: Record<string, string | null> = {};
+
       for (const q of candidateQualities) {
         variantUrls[q] = available.includes(q)
           ? `${base}/stream/videos/${videoObj.userId}/${videoObj.id}/${q}/index.m3u8`
           : null;
       }
+
       hls = {
         master: masterUrl,
         variants: variantUrls,
@@ -274,17 +346,17 @@ export const getVideoById = async (
       videoObj.id,
       videoObj.thumbnail,
     );
-    
+
     const avatarAssetUrl = getProxiedAssetUrl(
       videoObj.user.id,
       videoObj.user.avatarUrl,
       'avatar',
-    )
+    );
 
     const ratings2 = videoObj.ratings || [];
     const avgRating =
       ratings2.length > 0
-        ? ratings2.reduce((sum: number, r: any) => sum + r.score, 0) /
+        ? ratings2.reduce((sum: number, r: Rating) => sum + r.score, 0) /
           ratings2.length
         : 0;
 
@@ -300,7 +372,6 @@ export const getVideoById = async (
         avatarUrl: avatarAssetUrl,
       },
     });
-
   } catch (error) {
     console.error('Error fetching video:', error);
     res.status(500).json({ error: 'Failed to fetch video' });
