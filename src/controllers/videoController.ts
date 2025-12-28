@@ -17,11 +17,13 @@ const incrementVideoView = async (
   if (!userId) {
     return;
   }
-
+  
   const today = startOfDay(new Date());
 
+  console.log('IncrementVideoView called:', { videoId: video.id, userId, today});
+
   try {
-    const existing = await prisma.videoView.findUnique({
+    const existing = await prisma.VideoView.findUnique({
       where: {
         userId_videoId_date: {
           userId,
@@ -36,7 +38,7 @@ const incrementVideoView = async (
     }
 
     await prisma.$transaction([
-      prisma.videoView.create({
+      prisma.VideoView.create({
         data: {
           userId,
           videoId: video.id,
@@ -298,6 +300,13 @@ export const getVideoById = async (
       res.status(403).json({ error: 'Video not available' });
       return;
     }
+
+    console.log('DEBUG:', {
+      videoId: videoObj.id,
+      requesterId,
+      sessionKey: sessionKey ? 'PRESENT' : 'MISSING',
+      isPubliclyPlayable,
+    });
 
     await incrementVideoView(videoObj, requesterId);
 
