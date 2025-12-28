@@ -23,7 +23,7 @@ const incrementVideoView = async (
   console.log('IncrementVideoView called:', { videoId: video.id, userId, today});
 
   try {
-    const existing = await prisma.VideoView.findUnique({
+    const existing = await prisma.videoView.findUnique({
       where: {
         userId_videoId_date: {
           userId,
@@ -38,7 +38,7 @@ const incrementVideoView = async (
     }
 
     await prisma.$transaction([
-      prisma.VideoView.create({
+      prisma.videoView.create({
         data: {
           userId,
           videoId: video.id,
