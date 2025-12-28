@@ -423,3 +423,87 @@ export const updateVideo = async (
     res.status(500).json({ error: 'Failed to update video' });
   }
 };
+
+export const deleteVideo = async (
+  req: SessionAuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const requester = req.user;
+
+    if (!requester) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    if (!isUUID(id)) {
+      res.status(404).json({ error: 'Video not found' });
+      return;
+    }
+
+    const video = await prisma.video.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        userId: true,
+        thumbnail: true,
+      },
+    });
+
+    if (!video) {
+      res.status(404).json({ error: 'Video not found' });
+      return;
+    }
+
+    const isOwner = requester.id === video.userId;
+    const isModerator =
+      requester.role === 'admin' || requester.role === 'moderator';
+
+    if (!isOwner && !isModerator) {
+      res
+        .status(403)
+        .json({ error: 'You are not authorized to delete this video' });
+      return;
+    }
+
+    // HLS cleanup
+    const qualities = ['1080p', '720p', '480p', '240p', 'master'];
+    for (const q of qualities) {
+      try {
+        await minioClient.removeObject(
+          BUCKETS.VIDEOS,
+          hlsVariantIndex(video.userId, video.id, q),
+        );
+      } catch (_) {}
+    }
+
+    // delete thumbnails
+    if (video.thumbnail) {
+      try {
+        await minioClient.removeObject(
+          BUCKETS.USERS,
+          `${video.userId}/videos/${video.id}/thumbnail/${video.thumbnail}`,
+        );
+      } catch (_) {}
+    }
+
+    // postgres cleanup
+    await prisma.$transaction([
+      prisma.rating.deleteMany({
+        where: { videoId: video.id },
+      }),
+      prisma.comment.deleteMany({
+        where: { videoId: video.id },
+      }),
+      prisma.video.delete({
+        where: { id: video.id },
+      }),
+    ]);
+
+    res.json({ message: 'Video deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting video:', error);
+    res.status(500).json({ error: 'Failed to delete video' });
+  }
+};

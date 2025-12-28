@@ -6,6 +6,7 @@ import {
   getUserVideos,
   searchVideos,
   updateVideo,
+  deleteVideo,
 } from '../controllers/videoController.js';
 import { updateThumbnail } from '../controllers/uploadController.js';
 import { rateVideo } from '../controllers/ratingController.js';
@@ -107,6 +108,12 @@ router.patch(
   validate(updateVideoSchema),
   updateVideo,
 );
+router.delete(
+  '/:id',
+  authenticateSession,
+  requireNotBanned,
+  deleteVideo,
+);
 router.post(
   '/:id/thumbnail',
   authenticateSession,
@@ -162,6 +169,21 @@ registerRoute({
   responses: {
     '200': `{"message": "Video updated successfully", "video": {"id": "uuid", "title": "Updated Title", "description": "Updated description", "thumbnailUrl": "https://example.com/thumb.jpg"}}`,
     '403': '{ "error": "You are not authorized to edit this video" }',
+    '404': '{ "error": "Video not found" }',
+  },
+});
+
+registerRoute({
+  method: 'DELETE',
+  path: '/videos/:id',
+  summary: 'Delete a video',
+  description:
+    'Delete a video permanently. Only video owner and moderators can perform this action.',
+  auth: true,
+  params: { id: 'Video ID' },
+  responses: {
+    '200': '{ "message": "Video deleted successfully" }',
+    '403': '{ "error": "You are not authorized to delete this video" }',
     '404': '{ "error": "Video not found" }',
   },
 });
