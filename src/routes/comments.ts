@@ -5,7 +5,7 @@ import {
   optionalSessionAuthenticate,
 } from '../lib/sessionAuth.js';
 import { likeComment, unlikeComment } from '../controllers/likeController.js';
-import { getCommentReplies } from '../controllers/commentController.js';
+import { getCommentReplies, deleteComment } from '../controllers/commentController.js';
 import { registerRoute } from '../lib/docs.js';
 
 const router = Router();
@@ -21,6 +21,11 @@ router.delete(
   authenticateSession,
   requireNotBanned,
   unlikeComment,
+);
+router.delete(
+  '/comments/:commentId',
+  authenticateSession,
+  deleteComment
 );
 
 registerRoute({

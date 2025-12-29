@@ -55,6 +55,61 @@ export const addComment = async (
   }
 };
 
+export const deleteComment = async (
+  req: SessionAuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { commentId } = req.params as { commentId: string };
+
+    const comment = await prisma.comment.findUnique({
+      where: { id: commentId },
+      select: {
+        id: true,
+        userId: true,
+        _count: { select: { replies: true } },
+      },
+    });
+
+    if (!comment) {
+      res.status(404).json({ error: 'Comment not found' });
+      return;
+    }
+
+    if (comment.userId !== userId) {
+      res.status(403).json({ error: 'Not allowed to delete this comment' });
+      return;
+    }
+
+    if (comment._count.replies > 0) {
+      await prisma.comment.update({
+        where: { id: commentId },
+        data: {
+          content: '[deleted]',
+        },
+      });
+
+      res.json({ message: 'Comment deleted (soft)' });
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.commentLike.deleteMany({
+        where: { commentId },
+      }),
+      prisma.comment.delete({
+        where: { id: commentId },
+      }),
+    ]);
+
+    res.json({ message: 'Comment deleted' });
+  } catch (error) {
+    console.error('Delete comment error:', error);
+    res.status(500).json({ error: 'Failed to delete comment' });
+  }
+};
+
 export const getCommentReplies = async (
   req: Request,
   res: Response,

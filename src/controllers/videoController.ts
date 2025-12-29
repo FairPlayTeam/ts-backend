@@ -20,8 +20,6 @@ const incrementVideoView = async (
   
   const today = startOfDay(new Date());
 
-  console.log('IncrementVideoView called:', { videoId: video.id, userId, today});
-
   try {
     const existing = await prisma.videoView.findUnique({
       where: {
