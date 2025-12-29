@@ -23,7 +23,7 @@ router.delete(
   unlikeComment,
 );
 router.delete(
-  '/comments/:commentId',
+  '/:commentId',
   authenticateSession,
   deleteComment
 );
