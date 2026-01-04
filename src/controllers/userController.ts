@@ -147,13 +147,19 @@ export const updateUserRole = async (
 
 export const getTopCreators = async (
   _req: Request,
-  res: Response,
+  res: Response
 ): Promise<void> => {
   try {
     const users = await prisma.user.findMany({
       where: {
         isBanned: false,
-        videoCount: { gt: 0 },
+        videos: {
+          some: {
+            processingStatus: 'done',
+            moderationStatus: 'approved',
+            visibility: 'public',
+          },
+        },
       },
       select: {
         id: true,
