@@ -144,6 +144,64 @@ export const getVideos = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
+export const getTopViewedVideos = async (
+  _req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const videos = await prisma.video.findMany({
+      where: {
+        processingStatus: 'done',
+        moderationStatus: 'approved',
+        visibility: 'public',
+        user: { isBanned: false },
+      },
+      include: {
+        user: {
+          select: {
+            username: true,
+            displayName: true,
+          },
+        },
+        ratings: {
+          select: {
+            score: true,
+          },
+        },
+      },
+      orderBy: { viewCount: 'desc' },
+      take: 3,
+    });
+
+    const videosWithUrls = videos.map(video => {
+      const thumbnailUrl = getProxiedThumbnailUrl(
+        video.userId,
+        video.id,
+        video.thumbnail,
+      );
+
+      const avgRating =
+        video.ratings.length > 0
+          ? video.ratings.reduce((sum, rating) => sum + rating.score, 0) /
+            video.ratings.length
+          : 0;
+
+      return {
+        ...video,
+        thumbnailUrl,
+        viewCount: video.viewCount.toString(),
+        avgRating: Math.round(avgRating * 10) / 10,
+        ratingsCount: video.ratings.length,
+      };
+    });
+
+    res.json({ videos: videosWithUrls });
+  } catch (error) {
+    console.error('Error fetching top viewed videos:', error);
+    res.status(500).json({ error: 'Failed to fetch top viewed videos' });
+  }
+};
+
 export const searchVideos = async (
   req: Request,
   res: Response,

@@ -14,8 +14,20 @@ import {
   requireNotBanned,
   optionalSessionAuthenticate,
 } from '../lib/sessionAuth.js';
+import { getTopCreators } from '../controllers/userController.js';
 
 const router = Router();
+
+router.get('/top/creators', getTopCreators);
+registerRoute({
+  method: 'GET',
+  path: '/user/top/creators',
+  summary: 'Get the 3 most followed creators',
+  description: 'Returns the top 3 non-banned users with at least 1 video, ordered by followerCount (descending).',
+  responses: {
+    '200': `{"users": [{"id":"string","username":"string","displayName":"string|null","avatarUrl":"string|null","followerCount":0,"followingCount":0,"videoCount":0,"createdAt":"2024-09-20T13:30:00Z"}]}`,
+  },
+});
 
 router.get(
   '/:id',

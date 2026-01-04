@@ -144,3 +144,39 @@ export const updateUserRole = async (
     res.status(500).json({ error: 'Failed to update user role' });
   }
 };
+
+export const getTopCreators = async (
+  _req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const users = await prisma.user.findMany({
+      where: {
+        isBanned: false,
+        videoCount: { gt: 0 },
+      },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatarUrl: true,
+        followerCount: true,
+        followingCount: true,
+        videoCount: true,
+        createdAt: true,
+      },
+      orderBy: { followerCount: 'desc' },
+      take: 3,
+    });
+
+    const usersWithProxiedUrls = users.map(user => ({
+      ...user,
+      avatarUrl: getProxiedAssetUrl(user.id, user.avatarUrl, 'avatar'),
+    }));
+
+    res.json({ users: usersWithProxiedUrls });
+  } catch (error) {
+    console.error('Error fetching top creators:', error);
+    res.status(500).json({ error: 'Failed to fetch top creators' });
+  }
+};

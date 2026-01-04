@@ -4,6 +4,7 @@ import {
   getVideos,
   getVideoById,
   getUserVideos,
+  getTopViewedVideos,
   searchVideos,
   updateVideo,
   deleteVideo,
@@ -22,6 +23,17 @@ import { validateFileMagicNumbers } from '../middleware/fileValidation.js';
 import { z } from 'zod';
 
 const router = Router();
+
+router.get('/top/viewed', getTopViewedVideos);
+registerRoute({
+  method: 'GET',
+  path: '/videos/top/viewed',
+  summary: 'Get the 3 most viewed videos',
+  description: 'Returns the top 3 publicly playable videos ordered by view count (descending).',
+  responses: {
+    '200': `{"videos": [{"id":"string","title":"string","description":"string|null","thumbnailUrl":"string|null","viewCount":"string","avgRating":0,"ratingsCount":0,"user":{"username":"string","displayName":"string|null"}}]}`,
+  },
+});
 
 router.get('/search', searchVideos);
 registerRoute({
