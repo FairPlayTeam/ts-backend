@@ -61,6 +61,9 @@ export const deleteComment = async (
 ): Promise<void> => {
   try {
     const userId = req.user!.id;
+    const role = (req.user as any)?.role as string | undefined;
+    const isStaff = role === 'moderator' || role === 'admin';
+
     const { commentId } = req.params as { commentId: string };
 
     const comment = await prisma.comment.findUnique({
@@ -77,7 +80,8 @@ export const deleteComment = async (
       return;
     }
 
-    if (comment.userId !== userId) {
+    const canDelete = comment.userId === userId || isStaff;
+    if (!canDelete) {
       res.status(403).json({ error: 'Not allowed to delete this comment' });
       return;
     }
@@ -85,9 +89,7 @@ export const deleteComment = async (
     if (comment._count.replies > 0) {
       await prisma.comment.update({
         where: { id: commentId },
-        data: {
-          content: '[deleted]',
-        },
+        data: { content: '[deleted]' },
       });
 
       res.json({ message: 'Comment deleted (soft)' });
