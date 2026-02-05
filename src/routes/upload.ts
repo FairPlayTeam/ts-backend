@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import { authenticateSession, requireNotBanned } from '../lib/sessionAuth.js';
-import { uploadSingle } from '../middleware/upload.js';
+import {
+  uploadSingle,
+  uploadVideoBundle as uploadVideoBundleFields,
+} from '../middleware/upload.js';
 import { validateFileMagicNumbers } from '../middleware/fileValidation.js';
 import {
   uploadVideo,
+  uploadVideoBundle,
   uploadAvatar,
   uploadBanner,
   getFileDownloadUrl,
@@ -33,6 +37,36 @@ registerRoute({
   "video": {
     "id": "string",
     "title": "string"
+  }
+}`
+  }
+});
+
+router.post(
+  '/video-bundle',
+  uploadVideoBundleFields,
+  validateFileMagicNumbers,
+  uploadVideoBundle,
+);
+registerRoute({
+  method: 'POST',
+  path: '/upload/video-bundle',
+  summary: 'Upload a video with an optional thumbnail (queued for processing)',
+  auth: true,
+  body: {
+    title: 'string',
+    description: 'string?',
+    tags: 'string (comma-separated)',
+    video: 'file',
+    thumbnail: 'image file (optional)',
+  },
+  responses: {
+    '200': `{
+  "message": "Video uploaded successfully and queued for processing",
+  "video": {
+    "id": "string",
+    "title": "string",
+    "thumbnailUrl": "string|null"
   }
 }`
   }

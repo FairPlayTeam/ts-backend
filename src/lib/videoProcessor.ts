@@ -247,6 +247,18 @@ const generateAndUploadThumbnail = async (
   tempDir: string,
 ): Promise<void> => {
   try {
+    const existing = await prisma.video.findUnique({
+      where: { id: job.videoId },
+      select: { thumbnail: true },
+    });
+
+    if (existing?.thumbnail) {
+      console.log(
+        `Skipping thumbnail generation for video ${job.videoId} (custom thumbnail already set)`,
+      );
+      return;
+    }
+
     const thumbnailFile = `thumbnail-${uuidv4()}.jpg`;
     const tempThumbnailPath = path.join(tempDir, thumbnailFile);
 

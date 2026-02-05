@@ -18,4 +18,9 @@ export const uploadFields = upload.fields([
   { name: 'banner', maxCount: 1 },
 ]);
 
+export const uploadVideoBundle = upload.fields([
+  { name: 'video', maxCount: 1 },
+  { name: 'thumbnail', maxCount: 1 },
+]);
+
 export const uploadSingle = (fieldName: string) => upload.single(fieldName);
