@@ -53,6 +53,21 @@ registerRoute({
   },
 });
 
+registerRoute({
+  method: 'DELETE',
+  path: '/comments/:commentId',
+  summary: 'Delete a comment',
+  description:
+    'Deletes a comment. Owners can delete their own comments. Moderators/admins can delete any comment.',
+  auth: true,
+  params: { commentId: 'Comment ID' },
+  responses: {
+    '200': '{ "message": "Comment deleted" }',
+    '403': '{ "error": "Not allowed to delete this comment" }',
+    '404': '{ "error": "Comment not found" }',
+  },
+});
+
 router.get(
   '/:commentId/replies',
   optionalSessionAuthenticate,

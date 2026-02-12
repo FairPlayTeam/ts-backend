@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import { uploadFile, BUCKETS, getFileUrl, minioClient } from '../lib/minio.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
-import { Readable } from 'stream';
+import { createReadStream } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import {
   generateVideoId,
   addToProcessingQueue,
@@ -10,6 +11,7 @@ import {
 import { prisma } from '../lib/prisma.js';
 import { videoOriginalPath, avatarPath, bannerPath } from '../lib/paths.js';
 import { generateSecureFilename } from '../lib/fileUtils.js';
+import { getProxiedThumbnailUrl } from '../lib/utils.js';
 
 const MAX_THUMBNAIL_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_THUMBNAIL_MB = Math.round(MAX_THUMBNAIL_BYTES / (1024 * 1024));
@@ -136,9 +138,9 @@ const isAnimatedWebp = (buffer: Buffer): boolean => {
   return false;
 };
 
-const validateThumbnailRules = (
+const validateThumbnailRules = async (
   file: Express.Multer.File,
-): ThumbnailValidationError | null => {
+): Promise<ThumbnailValidationError | null> => {
   if (file.size > MAX_THUMBNAIL_BYTES) {
     return {
       status: 413,
@@ -146,7 +148,13 @@ const validateThumbnailRules = (
     };
   }
 
-  const buffer = file.buffer;
+  const buffer = file.buffer ?? (file.path ? await readFile(file.path) : null);
+  if (!buffer) {
+    return {
+      status: 400,
+      message: 'Invalid thumbnail payload.',
+    };
+  }
   if (isAnimatedGif(buffer) || isAnimatedPng(buffer) || isAnimatedWebp(buffer)) {
     return {
       status: 400,
@@ -179,7 +187,7 @@ export const uploadVideo = async (
     const videoId = generateVideoId();
     const originalPath = videoOriginalPath(userId, videoId);
 
-    const stream = Readable.from(videoFile.buffer);
+    const stream = createReadStream(videoFile.path);
 
     const storagePath = await uploadFile(
       BUCKETS.VIDEOS,
@@ -192,14 +200,27 @@ export const uploadVideo = async (
       },
     );
 
-    const video = await prisma.video.create({
-      data: {
-        id: videoId,
-        userId,
-        title,
-        description: description || null,
-        tags: parseTags(tags),
-      },
+    const video = await prisma.$transaction(async (tx) => {
+      const created = await tx.video.create({
+        data: {
+          id: videoId,
+          userId,
+          title,
+          description: description || null,
+          tags: parseTags(tags),
+        },
+      });
+
+      const videoCount = await tx.video.count({
+        where: { userId },
+      });
+
+      await tx.user.update({
+        where: { id: userId },
+        data: { videoCount },
+      });
+
+      return created;
     });
 
     addToProcessingQueue({
@@ -246,7 +267,7 @@ export const uploadVideoBundle = async (
     const videoId = generateVideoId();
     const originalPath = videoOriginalPath(userId, videoId);
 
-    const videoStream = Readable.from(videoFile.buffer);
+    const videoStream = createReadStream(videoFile.path);
     const storagePath = await uploadFile(
       BUCKETS.VIDEOS,
       originalPath,
@@ -260,14 +281,14 @@ export const uploadVideoBundle = async (
 
     let thumbnailPath: string | null = null;
     if (thumbnailFile) {
-      const validationError = validateThumbnailRules(thumbnailFile);
+      const validationError = await validateThumbnailRules(thumbnailFile);
       if (validationError) {
         res.status(validationError.status).json({ error: validationError.message });
         return;
       }
       const secureFilename = generateSecureFilename(thumbnailFile.originalname);
       thumbnailPath = `thumbnails/${userId}/${videoId}/${secureFilename}`;
-      const thumbnailStream = Readable.from(thumbnailFile.buffer);
+      const thumbnailStream = createReadStream(thumbnailFile.path);
       await uploadFile(
         BUCKETS.VIDEOS,
         thumbnailPath,
@@ -280,15 +301,28 @@ export const uploadVideoBundle = async (
       );
     }
 
-    const video = await prisma.video.create({
-      data: {
-        id: videoId,
-        userId,
-        title,
-        description: description || null,
-        tags: parseTags(tags),
-        thumbnail: thumbnailPath,
-      },
+    const video = await prisma.$transaction(async (tx) => {
+      const created = await tx.video.create({
+        data: {
+          id: videoId,
+          userId,
+          title,
+          description: description || null,
+          tags: parseTags(tags),
+          thumbnail: thumbnailPath,
+        },
+      });
+
+      const videoCount = await tx.video.count({
+        where: { userId },
+      });
+
+      await tx.user.update({
+        where: { id: userId },
+        data: { videoCount },
+      });
+
+      return created;
     });
 
     addToProcessingQueue({
@@ -298,9 +332,7 @@ export const uploadVideoBundle = async (
       qualities: VIDEO_QUALITIES,
     });
 
-    const thumbnailUrl = thumbnailPath
-      ? await getFileUrl(BUCKETS.VIDEOS, thumbnailPath)
-      : null;
+    const thumbnailUrl = getProxiedThumbnailUrl(userId, videoId, thumbnailPath);
 
     res.json({
       message: 'Video uploaded successfully and queued for processing',
@@ -332,9 +364,9 @@ export const uploadAvatar = async (
     const secureFilename = generateSecureFilename(avatarFile.originalname);
     const avatarObjectPath = avatarPath(userId, secureFilename);
 
-    const stream = Readable.from(avatarFile.buffer);
+    const stream = createReadStream(avatarFile.path);
 
-    const storagePath = await uploadFile(
+    await uploadFile(
       BUCKETS.USERS,
       avatarObjectPath,
       stream,
@@ -376,9 +408,9 @@ export const uploadBanner = async (
     const secureFilename = generateSecureFilename(bannerFile.originalname);
     const bannerObjectPath = bannerPath(userId, secureFilename);
 
-    const stream = Readable.from(bannerFile.buffer);
+    const stream = createReadStream(bannerFile.path);
 
-    const storagePath = await uploadFile(
+    await uploadFile(
       BUCKETS.USERS,
       bannerObjectPath,
       stream,
@@ -443,7 +475,7 @@ export const updateThumbnail = async (
   }
 
   try {
-    const validationError = validateThumbnailRules(thumbnailFile);
+    const validationError = await validateThumbnailRules(thumbnailFile);
     if (validationError) {
       res.status(validationError.status).json({ error: validationError.message });
       return;
@@ -476,7 +508,7 @@ export const updateThumbnail = async (
     const secureFilename = generateSecureFilename(thumbnailFile.originalname);
     const newThumbnailPath = `thumbnails/${userId}/${videoId}/${secureFilename}`;
 
-    const stream = Readable.from(thumbnailFile.buffer);
+    const stream = createReadStream(thumbnailFile.path);
     await uploadFile(
       BUCKETS.VIDEOS,
       newThumbnailPath,

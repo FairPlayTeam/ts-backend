@@ -1,6 +1,11 @@
 import 'dotenv/config';
 
-// @ts-ignore
+declare global {
+  interface BigInt {
+    toJSON(): string;
+  }
+}
+
 BigInt.prototype.toJSON = function () {
   return this.toString();
 };
@@ -12,11 +17,31 @@ import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { initializeBuckets } from './lib/minio.js';
 
 const app = express();
+const isProduction = process.env.NODE_ENV === 'production';
+const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter((origin) => origin.length > 0);
 
 app.use(
   cors({
     origin: (origin, cb) => {
-      cb(null, true);
+      if (!origin) {
+        cb(null, true);
+        return;
+      }
+
+      if (!isProduction && allowedOrigins.length === 0) {
+        cb(null, true);
+        return;
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        cb(null, true);
+        return;
+      }
+
+      cb(new Error('CORS origin not allowed'));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],

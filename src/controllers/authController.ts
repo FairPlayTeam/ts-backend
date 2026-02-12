@@ -195,7 +195,7 @@ export const getProfile = async (
       isVerified: user.isVerified,
       followerCount: user.followerCount,
       followingCount: user.followingCount,
-      totalViews: (user as any).totalViews?.toString?.() ?? '0',
+      totalViews: user.totalViews.toString(),
       totalEarnings: user.totalEarnings,
       createdAt: user.createdAt,
     });

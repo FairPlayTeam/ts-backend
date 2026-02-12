@@ -87,9 +87,7 @@ registerRoute({
   responses: {
     '200': `{
   "message": "Avatar uploaded successfully",
-  "storagePath": "string",
-  "size": 12345,
-  "mimetype": "image/png"
+  "avatarUrl": "string"
 }`
   }
 });
@@ -109,9 +107,7 @@ registerRoute({
   responses: {
     '200': `{
   "message": "Banner uploaded successfully",
-  "storagePath": "string",
-  "size": 12345,
-  "mimetype": "image/png"
+  "bannerUrl": "string"
 }`
   }
 });

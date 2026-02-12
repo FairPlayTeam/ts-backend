@@ -11,7 +11,8 @@ export const errorHandler = (
   res: Response,
   next: NextFunction,
 ): void => {
-  const statusCode = err.statusCode || 500;
+  const statusCode =
+    err.statusCode || (err.message === 'CORS origin not allowed' ? 403 : 500);
   const message = err.message || 'Internal Server Error';
 
   console.error(`Error ${statusCode}: ${message}`);

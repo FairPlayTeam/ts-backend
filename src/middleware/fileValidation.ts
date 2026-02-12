@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import { fileTypeFromBuffer } from 'file-type';
+import { fileTypeFromBuffer, fileTypeFromFile } from 'file-type';
+import { collectUploadedFiles } from './upload.js';
 
 const ALLOWED_VIDEO_TYPES = [
   'video/mp4',
@@ -24,12 +25,14 @@ export const validateFileMagicNumbers = async (
     return next();
   }
 
-  const files: Express.Multer.File[] = req.file
-    ? [req.file]
-    : Object.values(req.files || {}).flat();
+  const files: Express.Multer.File[] = collectUploadedFiles(req);
 
   for (const file of files) {
-    const fileType = await fileTypeFromBuffer(file.buffer);
+    const fileType = file.path
+      ? await fileTypeFromFile(file.path)
+      : file.buffer
+        ? await fileTypeFromBuffer(file.buffer)
+        : undefined;
 
     if (!fileType) {
       return res

@@ -357,13 +357,6 @@ export const getVideoById = async (
       return;
     }
 
-    console.log('DEBUG:', {
-      videoId: videoObj.id,
-      requesterId,
-      sessionKey: sessionKey ? 'PRESENT' : 'MISSING',
-      isPubliclyPlayable,
-    });
-
     await incrementVideoView(videoObj, requesterId);
 
     let hls: any = null;
@@ -625,17 +618,40 @@ export const deleteVideo = async (
     }
 
     // postgres cleanup
-    await prisma.$transaction([
-      prisma.rating.deleteMany({
+    await prisma.$transaction(async (tx) => {
+      await tx.commentLike.deleteMany({
+        where: {
+          comment: {
+            videoId: video.id,
+          },
+        },
+      });
+
+      await tx.rating.deleteMany({
         where: { videoId: video.id },
-      }),
-      prisma.comment.deleteMany({
+      });
+
+      await tx.comment.deleteMany({
         where: { videoId: video.id },
-      }),
-      prisma.video.delete({
+      });
+
+      await tx.videoView.deleteMany({
+        where: { videoId: video.id },
+      });
+
+      await tx.video.delete({
         where: { id: video.id },
-      }),
-    ]);
+      });
+
+      const videoCount = await tx.video.count({
+        where: { userId: video.userId },
+      });
+
+      await tx.user.update({
+        where: { id: video.userId },
+        data: { videoCount },
+      });
+    });
 
     res.json({ message: 'Video deleted successfully' });
   } catch (error) {

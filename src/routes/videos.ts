@@ -18,7 +18,7 @@ import {
   commentSchema,
   updateVideoSchema,
 } from '../middleware/validation.js';
-import { upload } from '../middleware/upload.js';
+import { uploadSingle } from '../middleware/upload.js';
 import { validateFileMagicNumbers } from '../middleware/fileValidation.js';
 import { z } from 'zod';
 
@@ -104,7 +104,7 @@ registerRoute({
       "avgRating": 4.5,
       "ratingsCount": 10,
       "visibility": "public|unlisted|private",
-      "processingStatus": "uploading|processing|done|failed",
+      "processingStatus": "uploading|processing|done",
       "moderationStatus": "pending|approved|rejected"
     }
   ],
@@ -130,7 +130,7 @@ router.post(
   '/:id/thumbnail',
   authenticateSession,
   requireNotBanned,
-  upload.single('thumbnail'),
+  uploadSingle('thumbnail'),
   validateFileMagicNumbers,
   updateThumbnail,
 );

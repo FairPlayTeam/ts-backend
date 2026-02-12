@@ -30,7 +30,7 @@ export const hlsMasterIndex = (userId: string, videoId: string) =>
   `${videoBase(userId, videoId)}/master.m3u8`;
 
 export const profileBase = (userId: string) => `${userId}/profile`;
-export const avatarPath = (userId: string, ext: string) =>
-  `${profileBase(userId)}/avatar.${ext}`;
-export const bannerPath = (userId: string, ext: string) =>
-  `${profileBase(userId)}/banner.${ext}`;
+export const avatarPath = (userId: string, filename: string) =>
+  `${profileBase(userId)}/avatar.${filename}`;
+export const bannerPath = (userId: string, filename: string) =>
+  `${profileBase(userId)}/banner.${filename}`;
