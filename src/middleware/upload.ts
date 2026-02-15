@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os';
 const uploadTempDir = path.join(tmpdir(), 'fpbackend-uploads');
 mkdirSync(uploadTempDir, { recursive: true });
 const MAX_UPLOAD_FILE_BYTES = 500 * 1024 * 1024;
-const MAX_VIDEO_CHUNK_BYTES = 100 * 1024 * 1024;
+// Cloudflare Tunnel caps request body around 100 MB. Keep a safety margin for multipart overhead.
+const MAX_VIDEO_CHUNK_BYTES = 95 * 1024 * 1024;
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadTempDir),
@@ -28,7 +29,7 @@ export const upload = multer({
 const uploadChunk = multer({
   storage,
   limits: {
-    fileSize: MAX_VIDEO_CHUNK_BYTES, // 100MB max per chunk
+    fileSize: MAX_VIDEO_CHUNK_BYTES, // Safe chunk limit for tunnel constraints
   },
 });
 

@@ -20,7 +20,8 @@ import { getProxiedThumbnailUrl } from '../lib/utils.js';
 
 const MAX_THUMBNAIL_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_THUMBNAIL_MB = Math.round(MAX_THUMBNAIL_BYTES / (1024 * 1024));
-const VIDEO_CHUNK_BYTES = 100 * 1024 * 1024; // 100MB
+// Cloudflare Tunnel caps request body around 100 MB. Keep margin for multipart overhead.
+const VIDEO_CHUNK_BYTES = 95 * 1024 * 1024;
 const VIDEO_CHUNK_MB = Math.round(VIDEO_CHUNK_BYTES / (1024 * 1024));
 const VIDEO_CHUNK_UPLOAD_ROOT = path.join(tmpdir(), 'fpbackend-video-chunks');
 const VIDEO_CHUNK_MANIFEST_FILE = 'manifest.json';

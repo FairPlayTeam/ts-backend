@@ -51,7 +51,7 @@ router.post('/video-chunks/init', initChunkedVideoUpload);
 registerRoute({
   method: 'POST',
   path: '/upload/video-chunks/init',
-  summary: 'Initialize chunked video upload (100MB chunks)',
+  summary: 'Initialize chunked video upload (safe chunks under tunnel limit)',
   auth: true,
   body: {
     title: 'string',
@@ -65,8 +65,8 @@ registerRoute({
   responses: {
     '201': `{
   "uploadId": "uuid",
-  "chunkSizeBytes": 104857600,
-  "chunkSizeMB": 100,
+  "chunkSizeBytes": 99614720,
+  "chunkSizeMB": 95,
   "totalChunks": 6,
   "totalSize": 624951296
 }`,
@@ -77,7 +77,7 @@ router.post('/video-chunks/:uploadId/chunk', uploadChunkSingle, uploadVideoChunk
 registerRoute({
   method: 'POST',
   path: '/upload/video-chunks/:uploadId/chunk',
-  summary: 'Upload one video chunk (max 100MB)',
+  summary: 'Upload one video chunk (max safe chunk size from init response)',
   auth: true,
   params: { uploadId: 'Upload session ID (UUID)' },
   body: {
