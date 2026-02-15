@@ -1,8 +1,13 @@
 import { Request, Response } from 'express';
+import crypto from 'node:crypto';
 import { uploadFile, BUCKETS, getFileUrl, minioClient } from '../lib/minio.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
-import { createReadStream } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { promises as fs } from 'node:fs';
+import { once } from 'node:events';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileTypeFromFile } from 'file-type';
 import {
   generateVideoId,
   addToProcessingQueue,
@@ -15,6 +20,18 @@ import { getProxiedThumbnailUrl } from '../lib/utils.js';
 
 const MAX_THUMBNAIL_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_THUMBNAIL_MB = Math.round(MAX_THUMBNAIL_BYTES / (1024 * 1024));
+const VIDEO_CHUNK_BYTES = 100 * 1024 * 1024; // 100MB
+const VIDEO_CHUNK_MB = Math.round(VIDEO_CHUNK_BYTES / (1024 * 1024));
+const VIDEO_CHUNK_UPLOAD_ROOT = path.join(tmpdir(), 'fpbackend-video-chunks');
+const VIDEO_CHUNK_MANIFEST_FILE = 'manifest.json';
+const VIDEO_CHUNK_ASSEMBLED_FILE = 'assembled-video.bin';
+const ALLOWED_VIDEO_MIME_TYPES = [
+  'video/mp4',
+  'video/quicktime',
+  'video/x-msvideo',
+  'video/x-matroska',
+  'video/webm',
+];
 
 const parseTags = (tags: unknown): string[] => {
   if (typeof tags === 'string') {
@@ -31,6 +48,176 @@ const parseTags = (tags: unknown): string[] => {
   }
 
   return [];
+};
+
+type ChunkedVideoManifest = {
+  uploadId: string;
+  userId: string;
+  title: string;
+  description: string | null;
+  tags: string[];
+  totalSize: number;
+  totalChunks: number;
+  originalName: string;
+  mimeType: string | null;
+  createdAt: string;
+};
+
+const parsePositiveInteger = (value: unknown): number | null => {
+  const num = Number(value);
+  if (!Number.isInteger(num) || num <= 0) {
+    return null;
+  }
+  return num;
+};
+
+const parseNonNegativeInteger = (value: unknown): number | null => {
+  const num = Number(value);
+  if (!Number.isInteger(num) || num < 0) {
+    return null;
+  }
+  return num;
+};
+
+const isSafeUploadId = (uploadId: string): boolean =>
+  /^[a-f0-9-]{36}$/i.test(uploadId);
+
+const chunkFileName = (chunkIndex: number): string =>
+  `chunk-${chunkIndex}.part`;
+
+const getChunkUploadDir = (userId: string, uploadId: string): string =>
+  path.join(VIDEO_CHUNK_UPLOAD_ROOT, userId, uploadId);
+
+const getChunkManifestPath = (uploadDir: string): string =>
+  path.join(uploadDir, VIDEO_CHUNK_MANIFEST_FILE);
+
+const getChunkPath = (uploadDir: string, chunkIndex: number): string =>
+  path.join(uploadDir, chunkFileName(chunkIndex));
+
+const getChunkAssembledPath = (uploadDir: string): string =>
+  path.join(uploadDir, VIDEO_CHUNK_ASSEMBLED_FILE);
+
+const readChunkManifest = async (
+  uploadDir: string,
+): Promise<ChunkedVideoManifest | null> => {
+  try {
+    const manifestRaw = await fs.readFile(getChunkManifestPath(uploadDir), 'utf8');
+    return JSON.parse(manifestRaw) as ChunkedVideoManifest;
+  } catch (error: unknown) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: string }).code)
+        : '';
+
+    if (code === 'ENOENT') {
+      return null;
+    }
+
+    throw error;
+  }
+};
+
+const writeChunkManifest = async (
+  uploadDir: string,
+  manifest: ChunkedVideoManifest,
+): Promise<void> => {
+  await fs.writeFile(
+    getChunkManifestPath(uploadDir),
+    JSON.stringify(manifest),
+    'utf8',
+  );
+};
+
+const listUploadedChunkIndexes = async (uploadDir: string): Promise<number[]> => {
+  const entries = await fs.readdir(uploadDir, { withFileTypes: true });
+  const indexes = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const match = /^chunk-(\d+)\.part$/.exec(entry.name);
+      if (!match) {
+        return null;
+      }
+      return Number.parseInt(match[1], 10);
+    })
+    .filter((index): index is number => index !== null)
+    .sort((a, b) => a - b);
+
+  return indexes;
+};
+
+const listMissingChunkIndexes = (
+  totalChunks: number,
+  uploadedChunkIndexes: number[],
+): number[] => {
+  const uploadedSet = new Set(uploadedChunkIndexes);
+  const missing: number[] = [];
+
+  for (let i = 0; i < totalChunks; i += 1) {
+    if (!uploadedSet.has(i)) {
+      missing.push(i);
+    }
+  }
+
+  return missing;
+};
+
+const expectedChunkSize = (
+  manifest: ChunkedVideoManifest,
+  chunkIndex: number,
+): number => {
+  if (chunkIndex === manifest.totalChunks - 1) {
+    return manifest.totalSize - VIDEO_CHUNK_BYTES * (manifest.totalChunks - 1);
+  }
+  return VIDEO_CHUNK_BYTES;
+};
+
+const assembleChunks = async (
+  uploadDir: string,
+  totalChunks: number,
+  assembledPath: string,
+): Promise<void> => {
+  await fs.rm(assembledPath, { force: true });
+
+  const output = createWriteStream(assembledPath, { flags: 'w' });
+
+  try {
+    for (let i = 0; i < totalChunks; i += 1) {
+      const source = getChunkPath(uploadDir, i);
+
+      await new Promise<void>((resolve, reject) => {
+        const input = createReadStream(source);
+
+        const onError = (error: unknown) => {
+          input.destroy();
+          reject(error);
+        };
+
+        input.once('error', onError);
+        output.once('error', onError);
+
+        input.once('end', () => {
+          output.removeListener('error', onError);
+          resolve();
+        });
+
+        input.pipe(output, { end: false });
+      });
+    }
+
+    output.end();
+    await once(output, 'finish');
+  } catch (error) {
+    output.destroy();
+    throw error;
+  }
+};
+
+const cleanupChunkUpload = async (uploadDir: string): Promise<void> => {
+  try {
+    await fs.rm(uploadDir, { recursive: true, force: true });
+  } catch (error) {
+    console.error(`Failed to cleanup chunk upload directory: ${uploadDir}`, error);
+  }
 };
 
 type ThumbnailValidationError = {
@@ -148,7 +335,7 @@ const validateThumbnailRules = async (
     };
   }
 
-  const buffer = file.buffer ?? (file.path ? await readFile(file.path) : null);
+  const buffer = file.buffer ?? (file.path ? await fs.readFile(file.path) : null);
   if (!buffer) {
     return {
       status: 400,
@@ -345,6 +532,331 @@ export const uploadVideoBundle = async (
   } catch (error) {
     console.error('Video upload (bundle) error:', error);
     res.status(500).json({ error: 'Failed to upload video' });
+  }
+};
+
+export const initChunkedVideoUpload = async (
+  req: SessionAuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const title = typeof req.body.title === 'string' ? req.body.title.trim() : '';
+    const description =
+      typeof req.body.description === 'string' && req.body.description.length > 0
+        ? req.body.description
+        : null;
+    const tags = parseTags(req.body.tags);
+    const totalSize = parsePositiveInteger(req.body.totalSize);
+    const totalChunks = parsePositiveInteger(req.body.totalChunks);
+    const originalName =
+      typeof req.body.originalName === 'string' ? req.body.originalName : 'video';
+    const mimeType =
+      typeof req.body.mimeType === 'string' && req.body.mimeType.length > 0
+        ? req.body.mimeType
+        : null;
+
+    if (!title) {
+      res.status(400).json({ error: 'Video title is required' });
+      return;
+    }
+
+    if (!totalSize || !totalChunks) {
+      res.status(400).json({
+        error: 'totalSize and totalChunks are required positive integers',
+      });
+      return;
+    }
+
+    const expectedLastChunkBytes =
+      totalSize - VIDEO_CHUNK_BYTES * (totalChunks - 1);
+
+    if (
+      expectedLastChunkBytes <= 0 ||
+      expectedLastChunkBytes > VIDEO_CHUNK_BYTES
+    ) {
+      res.status(400).json({
+        error: `Invalid totalSize/totalChunks combination for ${VIDEO_CHUNK_MB}MB chunks`,
+      });
+      return;
+    }
+
+    const uploadId = crypto.randomUUID();
+    const uploadDir = getChunkUploadDir(userId, uploadId);
+
+    await fs.mkdir(uploadDir, { recursive: true });
+
+    const manifest: ChunkedVideoManifest = {
+      uploadId,
+      userId,
+      title,
+      description,
+      tags,
+      totalSize,
+      totalChunks,
+      originalName,
+      mimeType,
+      createdAt: new Date().toISOString(),
+    };
+
+    await writeChunkManifest(uploadDir, manifest);
+
+    res.status(201).json({
+      uploadId,
+      chunkSizeBytes: VIDEO_CHUNK_BYTES,
+      chunkSizeMB: VIDEO_CHUNK_MB,
+      totalChunks,
+      totalSize,
+    });
+  } catch (error) {
+    console.error('Chunked video upload init error:', error);
+    res.status(500).json({ error: 'Failed to initialize chunked upload' });
+  }
+};
+
+export const uploadVideoChunk = async (
+  req: SessionAuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { uploadId } = req.params;
+    const chunkFile = req.file;
+    const chunkIndex = parseNonNegativeInteger(req.body.chunkIndex);
+
+    if (!uploadId || !isSafeUploadId(uploadId)) {
+      res.status(400).json({ error: 'Invalid uploadId' });
+      return;
+    }
+
+    if (!chunkFile) {
+      res.status(400).json({ error: 'No chunk file provided' });
+      return;
+    }
+
+    if (chunkIndex === null) {
+      res.status(400).json({ error: 'chunkIndex must be a non-negative integer' });
+      return;
+    }
+
+    if (chunkFile.size > VIDEO_CHUNK_BYTES) {
+      res.status(413).json({
+        error: `Chunk is too large. Max size is ${VIDEO_CHUNK_MB}MB.`,
+      });
+      return;
+    }
+
+    const uploadDir = getChunkUploadDir(userId, uploadId);
+    const manifest = await readChunkManifest(uploadDir);
+
+    if (!manifest) {
+      res.status(404).json({ error: 'Chunk upload session not found' });
+      return;
+    }
+
+    if (manifest.userId !== userId) {
+      res.status(403).json({ error: 'You are not authorized for this upload' });
+      return;
+    }
+
+    if (chunkIndex >= manifest.totalChunks) {
+      res.status(400).json({
+        error: `chunkIndex must be between 0 and ${manifest.totalChunks - 1}`,
+      });
+      return;
+    }
+
+    const expectedBytes = expectedChunkSize(manifest, chunkIndex);
+    if (chunkFile.size !== expectedBytes) {
+      res.status(400).json({
+        error: `Invalid chunk size for index ${chunkIndex}. Expected ${expectedBytes} bytes.`,
+      });
+      return;
+    }
+
+    const finalChunkPath = getChunkPath(uploadDir, chunkIndex);
+    await fs.rm(finalChunkPath, { force: true });
+    await fs.rename(chunkFile.path, finalChunkPath);
+
+    const uploadedChunkIndexes = await listUploadedChunkIndexes(uploadDir);
+    const missingChunkIndexes = listMissingChunkIndexes(
+      manifest.totalChunks,
+      uploadedChunkIndexes,
+    );
+
+    res.json({
+      message: 'Chunk uploaded successfully',
+      uploadId,
+      chunkIndex,
+      receivedChunks: uploadedChunkIndexes.length,
+      totalChunks: manifest.totalChunks,
+      isComplete: missingChunkIndexes.length === 0,
+    });
+  } catch (error) {
+    console.error('Chunk upload error:', error);
+    res.status(500).json({ error: 'Failed to upload chunk' });
+  }
+};
+
+export const completeChunkedVideoUpload = async (
+  req: SessionAuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { uploadId } = req.params;
+
+    if (!uploadId || !isSafeUploadId(uploadId)) {
+      res.status(400).json({ error: 'Invalid uploadId' });
+      return;
+    }
+
+    const uploadDir = getChunkUploadDir(userId, uploadId);
+    const manifest = await readChunkManifest(uploadDir);
+
+    if (!manifest) {
+      res.status(404).json({ error: 'Chunk upload session not found' });
+      return;
+    }
+
+    if (manifest.userId !== userId) {
+      res.status(403).json({ error: 'You are not authorized for this upload' });
+      return;
+    }
+
+    const uploadedChunkIndexes = await listUploadedChunkIndexes(uploadDir);
+    const missingChunkIndexes = listMissingChunkIndexes(
+      manifest.totalChunks,
+      uploadedChunkIndexes,
+    );
+
+    if (missingChunkIndexes.length > 0) {
+      res.status(400).json({
+        error: 'Some chunks are missing',
+        missingChunks: missingChunkIndexes,
+      });
+      return;
+    }
+
+    const assembledPath = getChunkAssembledPath(uploadDir);
+    await assembleChunks(uploadDir, manifest.totalChunks, assembledPath);
+
+    const assembledStat = await fs.stat(assembledPath);
+    if (assembledStat.size !== manifest.totalSize) {
+      res.status(400).json({
+        error: `Assembled file size mismatch. Expected ${manifest.totalSize}, got ${assembledStat.size}.`,
+      });
+      return;
+    }
+
+    const detectedFileType = await fileTypeFromFile(assembledPath);
+    if (
+      !detectedFileType ||
+      !ALLOWED_VIDEO_MIME_TYPES.includes(detectedFileType.mime)
+    ) {
+      res.status(400).json({
+        error: 'Invalid file type. The assembled file is not a supported video.',
+      });
+      return;
+    }
+
+    const contentType =
+      manifest.mimeType && ALLOWED_VIDEO_MIME_TYPES.includes(manifest.mimeType)
+        ? manifest.mimeType
+        : detectedFileType.mime;
+
+    const videoId = generateVideoId();
+    const originalPath = videoOriginalPath(userId, videoId);
+
+    const stream = createReadStream(assembledPath);
+    const storagePath = await uploadFile(
+      BUCKETS.VIDEOS,
+      originalPath,
+      stream,
+      assembledStat.size,
+      {
+        'Content-Type': contentType,
+        'uploaded-by': userId,
+      },
+    );
+
+    const video = await prisma.$transaction(async (tx) => {
+      const created = await tx.video.create({
+        data: {
+          id: videoId,
+          userId,
+          title: manifest.title,
+          description: manifest.description,
+          tags: manifest.tags,
+        },
+      });
+
+      const videoCount = await tx.video.count({
+        where: { userId },
+      });
+
+      await tx.user.update({
+        where: { id: userId },
+        data: { videoCount },
+      });
+
+      return created;
+    });
+
+    addToProcessingQueue({
+      videoId,
+      userId,
+      originalPath: storagePath,
+      qualities: VIDEO_QUALITIES,
+    });
+
+    await cleanupChunkUpload(uploadDir);
+
+    res.json({
+      message: 'Video uploaded successfully and queued for processing',
+      video: {
+        id: video.id,
+        title: video.title,
+      },
+    });
+  } catch (error) {
+    console.error('Chunked video upload completion error:', error);
+    res.status(500).json({ error: 'Failed to finalize chunked upload' });
+  }
+};
+
+export const abortChunkedVideoUpload = async (
+  req: SessionAuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { uploadId } = req.params;
+
+    if (!uploadId || !isSafeUploadId(uploadId)) {
+      res.status(400).json({ error: 'Invalid uploadId' });
+      return;
+    }
+
+    const uploadDir = getChunkUploadDir(userId, uploadId);
+    const manifest = await readChunkManifest(uploadDir);
+
+    if (!manifest) {
+      res.status(404).json({ error: 'Chunk upload session not found' });
+      return;
+    }
+
+    if (manifest.userId !== userId) {
+      res.status(403).json({ error: 'You are not authorized for this upload' });
+      return;
+    }
+
+    await cleanupChunkUpload(uploadDir);
+
+    res.json({ message: 'Chunked upload aborted successfully' });
+  } catch (error) {
+    console.error('Chunked video upload abort error:', error);
+    res.status(500).json({ error: 'Failed to abort chunked upload' });
   }
 };
 

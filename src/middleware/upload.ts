@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 
 const uploadTempDir = path.join(tmpdir(), 'fpbackend-uploads');
 mkdirSync(uploadTempDir, { recursive: true });
+const MAX_UPLOAD_FILE_BYTES = 500 * 1024 * 1024;
+const MAX_VIDEO_CHUNK_BYTES = 100 * 1024 * 1024;
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadTempDir),
@@ -19,7 +21,14 @@ const storage = multer.diskStorage({
 export const upload = multer({
   storage,
   limits: {
-    fileSize: 500 * 1024 * 1024, // 500MB max per file
+    fileSize: MAX_UPLOAD_FILE_BYTES, // 500MB max per file
+  },
+});
+
+const uploadChunk = multer({
+  storage,
+  limits: {
+    fileSize: MAX_VIDEO_CHUNK_BYTES, // 100MB max per chunk
   },
 });
 
@@ -99,3 +108,5 @@ export const uploadVideoBundle = withTempFileCleanup(
 
 export const uploadSingle = (fieldName: string): RequestHandler =>
   withTempFileCleanup(upload.single(fieldName));
+
+export const uploadChunkSingle = withTempFileCleanup(uploadChunk.single('chunk'));
