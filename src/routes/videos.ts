@@ -112,7 +112,7 @@ registerRoute({
 }`,
   },
 });
-router.get('/:id', getVideoById);
+router.get('/:id', optionalSessionAuthenticate, getVideoById);
 router.patch(
   '/:id',
   authenticateSession,
@@ -158,7 +158,8 @@ registerRoute({
   "thumbnailUrl": "string|null",
   "viewCount": "string",
   "avgRating": 4.5,
-  "ratingsCount": 10
+  "ratingsCount": 10,
+  "userRating": 4
 }`,
     '403': '{ "error": "Video not available" }',
     '404': '{ "error": "Video not found" }',

@@ -1,3 +1,5 @@
+const baseUrl =  process.env.BASE_URL || 'http://localhost:2353';
+
 export const isUUID = (str: string): boolean => {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     str,
@@ -12,15 +14,12 @@ export const createUserSearchWhere = (identifier: string) => {
 
 export const getProxiedAssetUrl = (
   userId: string,
-  assetPath: string | null,
-  assetType: 'avatar' | 'banner',
+  assetPath: string | null
 ): string | null => {
   if (!assetPath) return null;
 
   const filename = assetPath.split('/').pop();
   if (!filename) return null;
-
-  const baseUrl = process.env.BASE_URL || 'http://localhost:2353';
 
   return `${baseUrl}/users/${userId}/profile/${filename}`;
 };
@@ -34,8 +33,6 @@ export const getProxiedThumbnailUrl = (
 
   const filename = thumbnailPath.split('/').pop();
   if (!filename) return null;
-
-  const baseUrl = process.env.BASE_URL || 'http://localhost:2353';
 
   return `${baseUrl}/videos/thumbnails/${userId}/${videoId}/${filename}`;
 };

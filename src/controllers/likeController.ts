@@ -1,91 +1,90 @@
 import { Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
+import { isUUID } from '../lib/utils.js';
 
 export const likeComment = async (
-  req: SessionAuthRequest,
-  res: Response,
+	req: SessionAuthRequest,
+	res: Response,
 ): Promise<void> => {
-  const userId = req.user!.id;
-  const { commentId } = req.params;
+	try {
+		const userId = req.user!.id;
+		const { commentId } = req.params;
 
-  try {
-    const existingLike = await prisma.commentLike.findUnique({
-      where: {
-        userId_commentId: {
-          userId,
-          commentId,
-        },
-      },
-    });
+		if (!isUUID(commentId)) {
+			res.status(400).json({ error: 'Invalid comment ID format' });
+			return;
+		}
 
-    if (existingLike) {
-      res.status(409).json({ error: 'Comment already liked' });
-      return;
-    }
+		const comment = await prisma.comment.findUnique({
+			where: { id: commentId },
+			select: { id: true },
+		});
+		if (!comment) {
+			res.status(404).json({ error: 'Comment not found' });
+			return;
+		}
 
-    const [, comment] = await prisma.$transaction([
-      prisma.commentLike.create({
-        data: {
-          userId,
-          commentId,
-        },
-      }),
-      prisma.comment.update({
-        where: { id: commentId },
-        data: {
-          likeCount: {
-            increment: 1,
-          },
-        },
-      }),
-    ]);
+		const [, updated] = await prisma.$transaction([
+			prisma.commentLike.create({
+				data: { userId, commentId },
+			}),
+			prisma.comment.update({
+				where: { id: commentId },
+				data: { likeCount: { increment: 1 } },
+			}),
+		]);
 
-    res.status(201).json({ message: 'Comment liked', likeCount: comment.likeCount });
-  } catch (error: any) {
-    if (error?.code === 'P2025') {
-      res.status(404).json({ error: 'Comment not found' });
-      return;
-    }
-    console.error('Like comment error:', error);
-    res.status(500).json({ error: 'Failed to like comment' });
-  }
+		res.status(201).json({ message: 'Comment liked', likeCount: updated.likeCount });
+	} catch (error: any) {
+		if (error?.code === 'P2002') {
+			res.status(409).json({ error: 'Comment already liked' });
+			return;
+		}
+		if (error?.code === 'P2025') {
+			res.status(404).json({ error: 'Comment not found' });
+			return;
+		}
+		console.error('Like comment error:', error);
+		res.status(500).json({ error: 'Failed to like comment' });
+	}
 };
 
 export const unlikeComment = async (
-  req: SessionAuthRequest,
-  res: Response,
+	req: SessionAuthRequest,
+	res: Response,
 ): Promise<void> => {
-  const userId = req.user!.id;
-  const { commentId } = req.params;
+	try {
+		const userId = req.user!.id;
+		const { commentId } = req.params;
 
-  try {
-    const [, comment] = await prisma.$transaction([
-      prisma.commentLike.delete({
-        where: {
-          userId_commentId: {
-            userId,
-            commentId,
-          },
-        },
-      }),
-      prisma.comment.update({
-        where: { id: commentId },
-        data: {
-          likeCount: {
-            decrement: 1,
-          },
-        },
-      }),
-    ]);
+		if (!isUUID(commentId)) {
+			res.status(400).json({ error: 'Invalid comment ID format' });
+			return;
+		}
 
-    res.status(200).json({ message: 'Comment unliked', likeCount: comment.likeCount });
-  } catch (error: any) {
-    if (error?.code === 'P2025') {
-      res.status(404).json({ error: 'Like not found for this comment' });
-      return;
-    }
-    console.error('Unlike comment error:', error);
-    res.status(500).json({ error: 'Failed to unlike comment' });
-  }
+		const [, updated] = await prisma.$transaction([
+			prisma.commentLike.delete({
+				where: { userId_commentId: { userId, commentId } },
+			}),
+			prisma.comment.updateMany({
+				where: { id: commentId },
+				data: { likeCount: { decrement: 1 } },
+			}),
+		]);
+
+		const comment = await prisma.comment.findUnique({
+			where: { id: commentId },
+			select: { likeCount: true },
+		});
+
+		res.status(200).json({ message: 'Comment unliked', likeCount: comment?.likeCount ?? 0 });
+	} catch (error: any) {
+		if (error?.code === 'P2025') {
+			res.status(404).json({ error: 'You have not liked this comment' });
+			return;
+		}
+		console.error('Unlike comment error:', error);
+		res.status(500).json({ error: 'Failed to unlike comment' });
+	}
 };

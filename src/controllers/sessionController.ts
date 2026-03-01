@@ -60,7 +60,7 @@ export const createSession = async (
       sessionKey,
       userId,
       ipAddress,
-      userAgent: userAgent || null,
+      userAgent: userAgent ?? null,
       deviceInfo,
       expiresAt,
     },
@@ -287,14 +287,25 @@ export const validateSession = async (sessionKey: string): Promise<any> => {
   }
 };
 
+const INACTIVE_SESSION_RETENTION_DAYS = 30;
+
 export const cleanupExpiredSessions = async (): Promise<void> => {
-  try {
-    await prisma.session.deleteMany({
-      where: {
-        OR: [{ expiresAt: { lt: new Date() } }, { isActive: false }],
-      },
-    });
-  } catch (error) {
-    console.error('Cleanup expired sessions error:', error);
-  }
+    try {
+        const retentionCutoff = new Date();
+        retentionCutoff.setDate(retentionCutoff.getDate() - INACTIVE_SESSION_RETENTION_DAYS);
+
+        await prisma.session.deleteMany({
+            where: {
+                OR: [
+                    { expiresAt: { lt: new Date() } },
+                    {
+                        isActive: false,
+                        updatedAt: { lt: retentionCutoff },
+                    },
+                ],
+            },
+        });
+    } catch (error) {
+        console.error('Cleanup expired sessions error:', error);
+    }
 };

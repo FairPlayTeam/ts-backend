@@ -43,11 +43,12 @@ router.get('/users', async (req: Request, res: Response): Promise<void> => {
           email: true,
           username: true,
           displayName: true,
+          avatarUrl: true,
           role: true,
           isActive: true,
           isVerified: true,
           isBanned: true,
-          banReasonPublic: true,
+          banReasonPrivate: true,
           createdAt: true,
         },
         orderBy: {
@@ -99,11 +100,12 @@ registerRoute({
       "email": "string",
       "username": "string",
       "displayName": "string|null",
+      "thumbnailUrl": "string|null",
       "role": "user|moderator|admin",
       "isActive": true,
       "isVerified": false,
       "isBanned": false,
-      "banReasonPublic": "string|null",
+      "banReasonPrivate": "string|null",
       "createdAt": "ISO8601"
     }
   ],
@@ -122,11 +124,11 @@ router.get('/users/:id', async (req: Request, res: Response): Promise<void> => {
         email: true,
         username: true,
         displayName: true,
+        avatarUrl: true,
         role: true,
         isActive: true,
         isVerified: true,
         isBanned: true,
-        banReasonPublic: true,
         banReasonPrivate: true,
         bannedAt: true,
         createdAt: true,
@@ -160,11 +162,11 @@ registerRoute({
   "email": "string",
   "username": "string",
   "displayName": "string|null",
+  "thumbnailUrl": "string|null",
   "role": "user|moderator|admin",
   "isActive": true,
   "isVerified": false,
   "isBanned": false,
-  "banReasonPublic": "string|null",
   "banReasonPrivate": "string|null",
   "bannedAt": "ISO8601|null",
   "createdAt": "ISO8601",
@@ -199,9 +201,8 @@ router.patch(
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const { isBanned, publicReason, privateReason } = req.body as {
+      const { isBanned, privateReason } = req.body as {
         isBanned?: boolean;
-        publicReason?: string;
         privateReason?: string;
       };
 
@@ -222,7 +223,6 @@ router.patch(
 
       const data: any = {
         isBanned,
-        banReasonPublic: publicReason ?? null,
         banReasonPrivate: privateReason ?? null,
         bannedAt: isBanned ? new Date() : null,
       };
@@ -234,7 +234,6 @@ router.patch(
           id: true,
           username: true,
           isBanned: true,
-          banReasonPublic: true,
           banReasonPrivate: true,
           bannedAt: true,
         },
@@ -276,7 +275,6 @@ registerRoute({
     "id": "string",
     "username": "string",
     "isBanned": true,
-    "banReasonPublic": "string|null",
     "banReasonPrivate": "string|null",
     "bannedAt": "ISO8601|null"
   }

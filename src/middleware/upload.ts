@@ -1,14 +1,17 @@
 import multer from 'multer';
 import type { Request, RequestHandler } from 'express';
 import crypto from 'node:crypto';
-import { mkdirSync, promises as fs } from 'node:fs';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 
 const uploadTempDir = path.join(tmpdir(), 'fpbackend-uploads');
-mkdirSync(uploadTempDir, { recursive: true });
+fs.mkdir(uploadTempDir, { recursive: true }).catch((err) => {
+  console.error(`[upload] Failed to create temp upload directory: ${uploadTempDir}`, err);
+  process.exit(1);
+});
+
 const MAX_UPLOAD_FILE_BYTES = 500 * 1024 * 1024;
-// Cloudflare Tunnel caps request body around 100 MB. Keep a safety margin for multipart overhead.
 const MAX_VIDEO_CHUNK_BYTES = 95 * 1024 * 1024;
 
 const storage = multer.diskStorage({
@@ -22,29 +25,25 @@ const storage = multer.diskStorage({
 export const upload = multer({
   storage,
   limits: {
-    fileSize: MAX_UPLOAD_FILE_BYTES, // 500MB max per file
+    fileSize: MAX_UPLOAD_FILE_BYTES,
+    files: 4,
+    fields: 10,
   },
 });
 
 const uploadChunk = multer({
   storage,
   limits: {
-    fileSize: MAX_VIDEO_CHUNK_BYTES, // Safe chunk limit for tunnel constraints
+    fileSize: MAX_VIDEO_CHUNK_BYTES,
+    files: 1,
+    fields: 5
   },
 });
 
 export const collectUploadedFiles = (req: Request): Express.Multer.File[] => {
-  if (req.file) {
-    return [req.file];
-  }
-
-  if (!req.files) {
-    return [];
-  }
-
-  if (Array.isArray(req.files)) {
-    return req.files;
-  }
+  if (req.file) return [req.file]
+  if (!req.files) return []
+  if (Array.isArray(req.files)) return req.files
 
   return Object.values(req.files).flat();
 };
@@ -63,7 +62,7 @@ const cleanupTempFiles = async (req: Request): Promise<void> => {
             ? String((err as { code?: string }).code)
             : '';
         if (code !== 'ENOENT') {
-          console.error(`Failed to cleanup temp upload file ${file.path}`, err);
+          console.error(`Failed to cleanup temp file ${file.path}`, err);
         }
       }
     }),
@@ -80,12 +79,9 @@ const withTempFileCleanup = (middleware: RequestHandler): RequestHandler => {
     };
 
     res.once('finish', cleanupOnce);
-    res.once('close', cleanupOnce);
 
     middleware(req, res, (err) => {
-      if (err) {
-        cleanupOnce();
-      }
+      if (err) cleanupOnce();
       next(err);
     });
   };
@@ -107,7 +103,12 @@ export const uploadVideoBundle = withTempFileCleanup(
   ]),
 );
 
-export const uploadSingle = (fieldName: string): RequestHandler =>
-  withTempFileCleanup(upload.single(fieldName));
+const singleUploadCache = new Map<string, RequestHandler>();
+export const uploadSingle = (fieldName: string): RequestHandler => {
+  if (!singleUploadCache.has(fieldName)) {
+    singleUploadCache.set(fieldName, withTempFileCleanup(upload.single(fieldName)));
+  }
+  return singleUploadCache.get(fieldName)!
+}
 
 export const uploadChunkSingle = withTempFileCleanup(uploadChunk.single('chunk'));

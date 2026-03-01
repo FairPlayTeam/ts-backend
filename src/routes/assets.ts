@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { minioClient } from '../lib/minio.js';
+import { BUCKETS } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
 import { optionalSessionAuthenticate } from '../lib/sessionAuth.js';
 
@@ -64,7 +65,7 @@ router.get(
   '/users/:userId/avatar/:filename',
   optionalSessionAuthenticate,
   async (req: Request, res: Response) => {
-    const { userId, filename } = req.params;
+    const { userId } = req.params;
     const requesterId = (req as any).user?.id || null;
 
     const user = await prisma.user.findUnique({
@@ -76,7 +77,7 @@ router.get(
       return res.status(404).json({ error: 'Avatar not found' });
     }
 
-    await proxyUserAsset('users', user.avatarUrl, userId, requesterId, res);
+    await proxyUserAsset(BUCKETS.USERS, user.avatarUrl, userId, requesterId, res);
   },
 );
 
@@ -96,7 +97,7 @@ router.get(
   '/users/:userId/banner/:filename',
   optionalSessionAuthenticate,
   async (req: Request, res: Response) => {
-    const { userId, filename } = req.params;
+    const { userId } = req.params;
     const requesterId = (req as any).user?.id || null;
 
     const user = await prisma.user.findUnique({
@@ -104,11 +105,11 @@ router.get(
       select: { bannerUrl: true },
     });
 
-    if (!user || !user.bannerUrl) {
+    if (!user?.bannerUrl) {
       return res.status(404).json({ error: 'Banner not found' });
     }
 
-    await proxyUserAsset('users', user.bannerUrl, userId, requesterId, res);
+    await proxyUserAsset(BUCKETS.USERS, user.bannerUrl, userId, requesterId, res);
   },
 );
 
@@ -159,7 +160,7 @@ router.get(
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    await proxyUserAsset('videos', video.thumbnail, userId, requesterId, res);
+    await proxyUserAsset(BUCKETS.VIDEOS, video.thumbnail, userId, requesterId, res);
   },
 );
 

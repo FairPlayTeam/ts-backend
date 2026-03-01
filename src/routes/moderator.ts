@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticateSession, requireModerator } from '../lib/sessionAuth.js';
-import { getFileUrl, BUCKETS } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
 import { createUserSearchWhere, getProxiedThumbnailUrl } from '../lib/utils.js';
 import { validate, moderationSchema } from '../middleware/validation.js';

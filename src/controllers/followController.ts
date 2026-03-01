@@ -3,113 +3,138 @@ import { prisma } from '../lib/prisma.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { createUserSearchWhere, getProxiedAssetUrl } from '../lib/utils.js';
 
+const MAX_PAGE_LIMIT = 50
+const DEFAULT_PAGE_LIMIT = 20
+
+const parsePagination = (query: Record<string, string>) => {
+    const page = Math.max(1, parseInt(query.page ?? '1') || 1)
+    const limit = Math.min(
+        MAX_PAGE_LIMIT,
+        Math.max(1, parseInt(query.limit ?? String(DEFAULT_PAGE_LIMIT)) || DEFAULT_PAGE_LIMIT)
+    )
+    return { page, limit, skip: (page - 1) * limit }
+}
+
+const isValidUserParam = (id: string): boolean =>
+    typeof id === 'string' && id.length > 0 && id.length <= 100
+
 export const followUser = async (
-  req: SessionAuthRequest,
-  res: Response,
+	req: SessionAuthRequest,
+	res: Response,
 ): Promise<void> => {
-  try {
-    const followerId = req.user!.id;
-    const { id } = req.params;
+	try {
+		const followerId = req.user!.id;
+		const { id } = req.params;
 
-    const userToFollow = await prisma.user.findFirst({
-      where: createUserSearchWhere(id),
-      select: { id: true },
-    });
+		if (!isValidUserParam(id)) {
+            res.status(400).json({ error: 'Invalid user identifier' })
+            return
+        }
 
-    if (!userToFollow) {
-      res.status(404).json({ error: 'User not found' });
-      return;
-    }
+		const userToFollow = await prisma.user.findFirst({
+			where: createUserSearchWhere(id),
+			select: { id: true },
+		});
 
-    const followingId = userToFollow.id;
+		if (!userToFollow) {
+			res.status(404).json({ error: 'User not found' });
+			return;
+		}
 
-    if (followerId === followingId) {
-      res.status(400).json({ error: 'You cannot follow yourself' });
-      return;
-    }
+		const followingId = userToFollow.id;
 
-    await prisma.$transaction(async (tx) => {
-      await tx.follow.create({
-        data: {
-          followerId,
-          followingId,
-        },
-      });
+		if (followerId === followingId) {
+			res.status(400).json({ error: 'You cannot follow yourself' });
+			return;
+		}
 
-      await tx.user.update({
-        where: { id: followerId },
-        data: { followingCount: { increment: 1 } },
-      });
-      await tx.user.update({
-        where: { id: followingId },
-        data: { followerCount: { increment: 1 } },
-      });
-    });
+		await prisma.$transaction(async (tx) => {
+			await tx.follow.create({
+				data: {
+					followerId,
+					followingId,
+				},
+			});
 
-    res.status(204).send();
-  } catch (error: any) {
-    if (error?.code === 'P2002') {
-      res.status(409).json({ error: 'You are already following this user' });
-      return;
-    }
-    if (error?.code === 'P2025') {
-      res.status(404).json({ error: 'User to follow not found' });
-      return;
-    }
-    console.error('Follow user error:', error);
-    res.status(500).json({ error: 'Failed to follow user' });
-  }
+			await tx.user.update({
+				where: { id: followerId },
+				data: { followingCount: { increment: 1 } },
+			});
+			await tx.user.update({
+				where: { id: followingId },
+				data: { followerCount: { increment: 1 } },
+			});
+		});
+
+		res.status(204).send();
+	} catch (error: any) {
+		if (error?.code === 'P2002') {
+			res.status(409).json({ error: 'You are already following this user' });
+			return;
+		}
+		if (error?.code === 'P2025') {
+			res.status(404).json({ error: 'User to follow not found' });
+			return;
+		}
+		console.error('Follow user error:', error);
+		res.status(500).json({ error: 'Failed to follow user' });
+	}
 };
 
 export const unfollowUser = async (
-  req: SessionAuthRequest,
-  res: Response,
+	req: SessionAuthRequest,
+	res: Response,
 ): Promise<void> => {
-  try {
-    const followerId = req.user!.id;
-    const { id } = req.params;
+	try {
+		const followerId = req.user!.id;
+		const { id } = req.params;
 
-    const userToUnfollow = await prisma.user.findFirst({
-      where: createUserSearchWhere(id),
-      select: { id: true },
-    });
+		if (!isValidUserParam(id)) {
+            res.status(400).json({ error: 'Invalid user identifier' })
+            return
+        }
 
-    if (!userToUnfollow) {
-      res.status(404).json({ error: 'User not found' });
-      return;
-    }
+		const userToUnfollow = await prisma.user.findFirst({
+			where: createUserSearchWhere(id),
+			select: { id: true },
+		});
 
-    const followingId = userToUnfollow.id;
+		if (!userToUnfollow) {
+			res.status(404).json({ error: 'User not found' });
+			return;
+		}
 
-    await prisma.$transaction(async (tx) => {
-      const deleted = await tx.follow.delete({
-        where: {
-          followerId_followingId: {
-            followerId,
-            followingId,
-          },
-        },
-      });
+		const followingId = userToUnfollow.id;
 
-      await tx.user.update({
-        where: { id: followerId },
-        data: { followingCount: { decrement: 1 } },
-      });
-      await tx.user.update({
-        where: { id: followingId },
-        data: { followerCount: { decrement: 1 } },
-      });
-    });
+		await prisma.$transaction(async (tx) => {
+			await tx.follow.delete({
+				where: {
+					followerId_followingId: {
+						followerId,
+						followingId,
+					},
+				},
+			});
 
-    res.status(204).send();
-  } catch (error: any) {
-    if (error?.code === 'P2025') {
-      res.status(404).json({ error: 'You are not following this user' });
-      return;
-    }
-    console.error('Unfollow user error:', error);
-    res.status(500).json({ error: 'Failed to unfollow user' });
-  }
+			await tx.user.update({
+				where: { id: followerId },
+				data: { followingCount: { decrement: 1 } },
+			});
+			await tx.user.update({
+				where: { id: followingId },
+				data: { followerCount: { decrement: 1 } },
+			});
+		});
+
+		res.status(204).send();
+	} catch (error: any) {
+		if (error?.code === 'P2025') {
+		res.status(404).json({ error: 'You are not following this user' });
+		return;
+		}
+		console.error('Unfollow user error:', error);
+		res.status(500).json({ error: 'Failed to unfollow user' });
+	}
 };
 
 export const getFollowers = async (
@@ -118,8 +143,13 @@ export const getFollowers = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    const { page = '1', limit = '20' } = req.query as Record<string, string>;
-    const skip = (Number(page) - 1) * Number(limit);
+
+	if (!isValidUserParam(id)) {
+		res.status(400).json({ error: 'Invalid user identifier' })
+		return
+	}
+
+    const { page, limit, skip } = parsePagination(req.query as Record<string, string>);
 
     const user = await prisma.user.findFirst({
       where: createUserSearchWhere(id),
@@ -146,7 +176,7 @@ export const getFollowers = async (
         },
         orderBy: { createdAt: 'desc' },
         skip,
-        take: Number(limit),
+        take: limit,
       }),
       prisma.follow.count({ where: { followingId: user.id } }),
     ]);
@@ -157,14 +187,13 @@ export const getFollowers = async (
         avatarUrl: getProxiedAssetUrl(
           r.follower.id,
           r.follower.avatarUrl,
-          'avatar',
         ),
       })),
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
+        page: page,
+        limit: limit,
         totalItems: total,
-        totalPages: Math.ceil(total / Number(limit)),
+        totalPages: Math.ceil(total / limit),
         itemsReturned: rows.length,
       },
     });
@@ -180,8 +209,13 @@ export const getFollowing = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    const { page = '1', limit = '20' } = req.query as Record<string, string>;
-    const skip = (Number(page) - 1) * Number(limit);
+
+	if (!isValidUserParam(id)) {
+		res.status(400).json({ error: 'Invalid user identifier' })
+		return
+	}
+
+    const { page, limit, skip } = parsePagination(req.query as Record<string, string>)
 
     const user = await prisma.user.findFirst({
       where: createUserSearchWhere(id),
@@ -208,7 +242,7 @@ export const getFollowing = async (
         },
         orderBy: { createdAt: 'desc' },
         skip,
-        take: Number(limit),
+        take: limit,
       }),
       prisma.follow.count({ where: { followerId: user.id } }),
     ]);
@@ -219,14 +253,13 @@ export const getFollowing = async (
         avatarUrl: getProxiedAssetUrl(
           r.following.id,
           r.following.avatarUrl,
-          'avatar',
         ),
       })),
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
+        page: page,
+        limit: limit,
         totalItems: total,
-        totalPages: Math.ceil(total / Number(limit)),
+        totalPages: Math.ceil(total / limit),
         itemsReturned: rows.length,
       },
     });

@@ -18,6 +18,7 @@ import {
   getFileDownloadUrl,
 } from '../controllers/uploadController.js';
 import { registerRoute } from '../lib/docs.js';
+import { uploadLimiter } from '../middleware/limiters.js';
 
 const router = Router();
 
@@ -128,6 +129,7 @@ registerRoute({
 
 router.post(
   '/video-bundle',
+  uploadLimiter,
   uploadVideoBundleFields,
   validateFileMagicNumbers,
   uploadVideoBundle,
@@ -141,6 +143,7 @@ registerRoute({
     title: 'string',
     description: 'string?',
     tags: 'string (comma-separated)',
+    allowComments: 'boolean (optional, default: true)',
     video: 'file',
     thumbnail: 'image file (optional)',
   },

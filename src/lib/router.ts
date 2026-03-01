@@ -2,7 +2,6 @@ import type { Express } from 'express';
 import { Router } from 'express';
 import { apiLimiter, adminLimiter } from '../middleware/limiters.js';
 import { readdir, stat } from 'node:fs/promises';
-import { extname, posix as pathPosix } from 'node:path';
 
 function routePathFromFile(relativeFile: string): string {
   const normalized = relativeFile.replace(/\\/g, '/');
@@ -25,6 +24,7 @@ function normalizeRoutePath(p: string): string {
 
 async function walkFiles(dirUrl: URL, acc: URL[] = []): Promise<URL[]> {
   const entries = await readdir(dirUrl, { withFileTypes: true });
+
   for (const entry of entries) {
     if (entry.name.startsWith('.')) continue;
     const childUrl = new URL(
@@ -46,7 +46,7 @@ async function walkFiles(dirUrl: URL, acc: URL[] = []): Promise<URL[]> {
 export async function loadRoutes(app: Express, routesDirUrl: URL) {
   try {
     await stat(routesDirUrl);
-  } catch (e) {
+  } catch {
     console.warn('Routes directory not found:', routesDirUrl.toString());
     return;
   }
@@ -61,15 +61,13 @@ export async function loadRoutes(app: Express, routesDirUrl: URL) {
     const router = mod.default;
 
     if (router && typeof router === 'function') {
-      if (
-        routePath.startsWith('/admin') ||
-        routePath.startsWith('/moderator')
-      ) {
+      if (routePath.startsWith('/admin') || routePath.startsWith('/moderator')) {
         app.use(routePath, adminLimiter, router as ReturnType<typeof Router>);
       } else if (
         routePath !== '/health' &&
         routePath !== '/docs' &&
-        !routePath.startsWith('/users')
+        !routePath.startsWith('/users') &&
+        !routePath.startsWith('/stream')
       ) {
         app.use(routePath, apiLimiter, router as ReturnType<typeof Router>);
       } else {

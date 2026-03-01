@@ -3,54 +3,82 @@ import { z, ZodError } from 'zod';
 
 export const registerSchema = z.object({
   body: z.object({
-    email: z.string().email('Invalid email format'),
-    username: z.string().min(3, 'Username must be at least 3 characters').max(20, 'Username must be at most 20 characters').regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
-    password: z.string().min(6, 'Password must be at least 6 characters'),
+    email: z.string().trim().email('Invalid email format').max(254),
+    username: z
+      .string()
+      .trim()
+      .min(3, 'Username must be at least 3 characters')
+      .max(20, 'Username must be at most 20 characters')
+      .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
+    password: z
+      .string()
+      .min(8, 'Password must be at least 8 characters')
+      .max(128, 'Password must be at most 128 characters')
+      .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+      .regex(/[0-9]/, 'Password must contain at least one number'),
   }),
 });
 
 export const loginSchema = z.object({
   body: z.object({
-    emailOrUsername: z.string().min(1, 'Email or username is required'),
-    password: z.string().min(1, 'Password is required'),
+    emailOrUsername: z.string().trim().min(1, 'Email or username is required').max(254),
+    password: z.string().min(1, 'Password is required').max(128),
   }),
 });
 
 export const banSchema = z.object({
   body: z.object({
     isBanned: z.boolean(),
-    publicReason: z.string().optional().nullable(),
-    privateReason: z.string().optional().nullable(),
+    privateReason: z.string().max(1000).optional().nullable(),
   }),
 });
 
 export const moderationSchema = z.object({
   body: z.object({
-    action: z.enum(['approve', 'reject'], { errorMap: () => ({ message: "Action must be 'approve' or 'reject'" }) }),
+    action: z.enum(['approve', 'reject'], {
+      errorMap: () => ({ message: "Action must be 'approve' or 'reject'" }),
+    }),
   }),
 });
 
 export const commentSchema = z.object({
   body: z.object({
-    content: z.string().min(1, 'Comment content cannot be empty').max(1000, 'Comment must be 1000 characters or less'),
+    content: z
+      .string()
+      .trim()
+      .min(1, 'Comment content cannot be empty')
+      .max(1000, 'Comment must be 1000 characters or less'),
     parentId: z.string().uuid('Invalid parent ID format').optional().nullable(),
   }),
 });
 
-export const updateVideoSchema = z.object({
-  body: z.object({
-    title: z.string().min(1).max(100).optional(),
-    description: z.string().max(5000).optional().nullable(),
-    visibility: z.enum(['public', 'unlisted', 'private']).optional(),
-  }),
-});
+export const updateVideoSchema = z
+  .object({
+    body: z.object({
+      title: z.string().trim().min(1).max(100).optional(),
+      description: z.string().trim().max(5000).optional().nullable(),
+      visibility: z.enum(['public', 'unlisted', 'private']).optional(),
+    }),
+  })
+  .refine(
+    ({ body }) =>
+      body.title !== undefined ||
+      body.description !== undefined ||
+      body.visibility !== undefined,
+    { message: 'At least one field must be provided' },
+  );
 
-export const updateProfileSchema = z.object({
-  body: z.object({
-    displayName: z.string().min(1).max(30).optional().nullable(),
-    bio: z.string().max(200).optional().nullable(),
-  }),
-});
+export const updateProfileSchema = z
+  .object({
+    body: z.object({
+      displayName: z.string().trim().min(1).max(30).optional().nullable(),
+      bio: z.string().trim().max(200).optional().nullable(),
+    }),
+  })
+  .refine(
+    ({ body }) => body.displayName !== undefined || body.bio !== undefined,
+    { message: 'At least one field must be provided' },
+  );
 
 export const roleSchema = z.object({
   body: z.object({
@@ -58,20 +86,27 @@ export const roleSchema = z.object({
   }),
 });
 
-export const validate = (schema: z.AnyZodObject) => (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    schema.parse({ body: req.body, query: req.query, params: req.params });
-    next();
-  } catch (error) {
-    if (error instanceof ZodError) {
-      res.status(400).json({ error: 'Validation failed', details: error.errors });
-    } else {
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-};
+const formatZodErrors = (error: ZodError) =>
+  error.errors.map(({ path, message }) => ({
+    field: path.filter((p) => p !== 'body').join('.') || 'unknown',
+    message,
+  }));
 
+export const validate =
+  (schema: z.ZodTypeAny) =>
+  (req: Request, res: Response, next: NextFunction) => {
+    const result = schema.safeParse({
+      body: req.body,
+      query: req.query,
+      params: req.params,
+    })
+
+    if (!result.success) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: formatZodErrors(result.error),
+      })
+    }
+
+    next();
+  }

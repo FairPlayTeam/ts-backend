@@ -27,21 +27,23 @@ export const initializeBuckets = async (): Promise<void> => {
       let exists = false;
       try {
         exists = await minioClient.bucketExists(bucketName);
-      } catch (e) {}
+      } catch (error) {
+        console.error('Failed to check if bucket exists:', error);
+      }
 
       if (!exists) {
         try {
           await minioClient.makeBucket(bucketName);
           console.log(`Created bucket: ${bucketName}`);
-        } catch (err: any) {
-          const code = err?.code || err?.name || '';
+        } catch (error: any) {
+          const code = error?.code || error?.name || '';
           if (
             code === 'BucketAlreadyOwnedByYou' ||
             code === 'BucketAlreadyExists'
           ) {
             console.warn(`Bucket ${bucketName} already exists; continuing`);
           } else {
-            throw err;
+            throw error;
           }
         }
       }
@@ -77,41 +79,6 @@ export const getFileUrl = async (
     return await minioClient.presignedGetObject(bucketName, objectName, expiry);
   } catch (error) {
     console.error('Error generating presigned URL:', error);
-    throw error;
-  }
-};
-
-export const deleteFile = async (
-  bucketName: string,
-  objectName: string,
-): Promise<void> => {
-  try {
-    await minioClient.removeObject(bucketName, objectName);
-  } catch (error) {
-    console.error('Error deleting file from MinIO:', error);
-    throw error;
-  }
-};
-
-export const listFiles = async (
-  bucketName: string,
-  prefix?: string,
-): Promise<Minio.BucketItem[]> => {
-  try {
-    const files: Minio.BucketItem[] = [];
-    const stream = minioClient.listObjects(bucketName, prefix, true);
-
-    return new Promise((resolve, reject) => {
-      stream.on('data', (obj: Minio.BucketItem) => {
-        if (obj.name) {
-          files.push(obj);
-        }
-      });
-      stream.on('end', () => resolve(files));
-      stream.on('error', reject);
-    });
-  } catch (error) {
-    console.error('Error listing files from MinIO:', error);
     throw error;
   }
 };

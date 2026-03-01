@@ -57,8 +57,8 @@ router.get(
         return;
       }
 
-      const avatarUrl = getProxiedAssetUrl(user.id, user.avatarUrl, 'avatar');
-      const bannerUrl = getProxiedAssetUrl(user.id, user.bannerUrl, 'banner');
+      const avatarUrl = getProxiedAssetUrl(user.id, user.avatarUrl);
+      const bannerUrl = getProxiedAssetUrl(user.id, user.bannerUrl);
 
       let isFollowing: boolean | undefined = undefined;
       const requesterId = (req as any).user?.id as string | undefined;

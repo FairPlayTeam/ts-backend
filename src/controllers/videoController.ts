@@ -1,661 +1,471 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { BUCKETS, getFileUrl } from '../lib/minio.js';
+import { BUCKETS } from '../lib/minio.js';
 import { hlsVariantIndex } from '../lib/paths.js';
 import { minioClient } from '../lib/minio.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
-import { getProxiedThumbnailUrl } from '../lib/utils.js';
-import type { Video, User, Rating } from '@prisma/client';
+import { getProxiedThumbnailUrl, getProxiedAssetUrl } from '../lib/utils.js';
 import { validate as isUUID } from 'uuid';
-import { getProxiedAssetUrl } from '../lib/utils.js';
 import { startOfDay } from 'date-fns';
 
+const MAX_PAGE_LIMIT = 100;
+const DEFAULT_PAGE_LIMIT = 20;
+
+const clampPagination = (page: unknown, limit: unknown) => {
+  const p = Math.max(1, parseInt(String(page)) || 1);
+  const l = Math.min(MAX_PAGE_LIMIT, Math.max(1, parseInt(String(limit)) || DEFAULT_PAGE_LIMIT));
+  return { page: p, limit: l, skip: (p - 1) * l };
+};
+
 const incrementVideoView = async (
-  video: Video,
-  userId: string | null,
+  videoId: string,
+  videoUserId: string,
+  requesterId: string,
 ): Promise<void> => {
-  if (!userId) {
-    return;
-  }
-  
+	if (!requesterId) return;
+
   const today = startOfDay(new Date());
 
   try {
-    const existing = await prisma.videoView.findUnique({
-      where: {
-        userId_videoId_date: {
-          userId,
-          videoId: video.id,
-          date: today,
-        },
-      },
-    });
+		let justCreated = false;
+		try {
+			await prisma.videoView.create({
+				data: { userId: requesterId, videoId, date: today },
+			});
+			justCreated = true;
+		} catch (e: any) {
+			if (e?.code === 'P2002') return;
+			throw e;
+		}
 
-    if (existing) {
-      return;
-    }
+		if (!justCreated) return;
 
-    await prisma.$transaction([
-      prisma.videoView.create({
-        data: {
-          userId,
-          videoId: video.id,
-          date: today,
-        },
-      }),
-      prisma.video.update({
-        where: { id: video.id },
-        data: {
-          viewCount: {
-            increment: 1n,
-          },
-        },
-      }),
-      prisma.user.update({
-        where: { id: video.userId },
-        data: {
-          totalViews: {
-            increment: 1n,
-          },
-        },
-      }),
-    ]);
+		await prisma.$transaction([
+			prisma.video.update({
+				where: { id: videoId },
+				data: { viewCount: { increment: 1n } },
+			}),
+			prisma.user.update({
+				where: { id: videoUserId },
+				data: { totalViews: { increment: 1n } },
+			}),
+		]);
   } catch (error) {
-    console.error('Error incrementing video view:', error);
+		console.error('Error incrementing video view:', error);
   }
 };
+
+const computeAvgRating = (ratings: { score: number }[]): number => {
+  if (ratings.length === 0) return 0;
+  const sum = ratings.reduce((acc, r) => acc + r.score, 0);
+  return Math.round((sum / ratings.length) * 10) / 10;
+};
+
+const PUBLIC_VIDEO_FILTER = {
+  processingStatus: 'done',
+  moderationStatus: 'approved',
+  visibility: 'public',
+  user: { isBanned: false },
+} as const;
 
 export const getVideos = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { page = 1, limit = 20 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+		const { page, limit, skip } = clampPagination(req.query.page, req.query.limit);
 
-    const videos = await prisma.video.findMany({
-      where: {
-        processingStatus: 'done',
-        moderationStatus: 'approved',
-        visibility: 'public',
-        user: { isBanned: false },
-      },
-      include: {
-        user: {
-          select: {
-            username: true,
-            displayName: true,
-          },
-        },
-        ratings: {
-          select: {
-            score: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: Number(limit),
-    });
+		const [videos, total] = await Promise.all([
+			prisma.video.findMany({
+				where: PUBLIC_VIDEO_FILTER,
+				include: {
+					user: { select: { username: true, displayName: true } },
+					ratings: { select: { score: true } },
+				},
+				orderBy: { createdAt: 'desc' },
+				skip,
+				take: limit,
+			}),
+			prisma.video.count({ where: PUBLIC_VIDEO_FILTER }),
+		]);
 
-    const videosWithUrls = await Promise.all(
-      videos.map(async (video: any) => {
-        const thumbnailUrl = getProxiedThumbnailUrl(
-          video.userId,
-          video.id,
-          video.thumbnail,
-        );
+		const videosWithUrls = videos.map((video) => ({
+			...video,
+			thumbnailUrl: getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail),
+			viewCount: video.viewCount.toString(),
+			avgRating: computeAvgRating(video.ratings),
+			ratingsCount: video.ratings.length,
+		}));
 
-        const avgRating =
-          video.ratings.length > 0
-            ? video.ratings.reduce((sum: number, r: any) => sum + r.score, 0) /
-              video.ratings.length
-            : 0;
-
-        return {
-          ...video,
-          thumbnailUrl,
-          viewCount: video.viewCount.toString(),
-          avgRating: Math.round(avgRating * 10) / 10,
-          ratingsCount: video.ratings.length,
-        };
-      }),
-    );
-
-    const total = await prisma.video.count({
-      where: {
-        processingStatus: 'done',
-        moderationStatus: 'approved',
-        visibility: 'public',
-        user: { isBanned: false },
-      },
-    });
-
-    res.json({
-      videos: videosWithUrls,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        totalItems: total,
-        totalPages: Math.ceil(total / Number(limit)),
-        itemsReturned: videosWithUrls.length,
-      },
-    });
+		res.json({
+			videos: videosWithUrls,
+			pagination: {
+			page,
+			limit,
+			totalItems: total,
+			totalPages: Math.ceil(total / limit),
+			itemsReturned: videosWithUrls.length,
+			},
+		});
   } catch (error) {
-    console.error('Error fetching videos:', error);
-    res.status(500).json({ error: 'Failed to fetch videos' });
+		console.error('Error fetching videos:', error);
+		res.status(500).json({ error: 'Failed to fetch videos' });
   }
 };
 
-export const getTopViewedVideos = async (
-  _req: Request,
-  res: Response,
-): Promise<void> => {
+export const getTopViewedVideos = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const videos = await prisma.video.findMany({
-      where: {
-        processingStatus: 'done',
-        moderationStatus: 'approved',
-        visibility: 'public',
-        user: { isBanned: false },
-      },
-      include: {
-        user: {
-          select: {
-            username: true,
-            displayName: true,
-          },
-        },
-        ratings: {
-          select: {
-            score: true,
-          },
-        },
-      },
-      orderBy: { viewCount: 'desc' },
-      take: 3,
-    });
+		const videos = await prisma.video.findMany({
+			where: PUBLIC_VIDEO_FILTER,
+			include: {
+			user: { select: { username: true, displayName: true } },
+			ratings: { select: { score: true } },
+			},
+			orderBy: { viewCount: 'desc' },
+			take: 3,
+		});
 
-    const videosWithUrls = videos.map(video => {
-      const thumbnailUrl = getProxiedThumbnailUrl(
-        video.userId,
-        video.id,
-        video.thumbnail,
-      );
+		const videosWithUrls = videos.map((video) => ({
+			...video,
+			thumbnailUrl: getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail),
+			viewCount: video.viewCount.toString(),
+			avgRating: computeAvgRating(video.ratings),
+			ratingsCount: video.ratings.length,
+		}));
 
-      const avgRating =
-        video.ratings.length > 0
-          ? video.ratings.reduce((sum, rating) => sum + rating.score, 0) /
-            video.ratings.length
-          : 0;
-
-      return {
-        ...video,
-        thumbnailUrl,
-        viewCount: video.viewCount.toString(),
-        avgRating: Math.round(avgRating * 10) / 10,
-        ratingsCount: video.ratings.length,
-      };
-    });
-
-    res.json({ videos: videosWithUrls });
+		res.json({ videos: videosWithUrls });
   } catch (error) {
-    console.error('Error fetching top viewed videos:', error);
-    res.status(500).json({ error: 'Failed to fetch top viewed videos' });
+		console.error('Error fetching top viewed videos:', error);
+		res.status(500).json({ error: 'Failed to fetch top viewed videos' });
   }
 };
 
-export const searchVideos = async (
-  req: Request,
-  res: Response,
-): Promise<void> => {
+export const searchVideos = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { q = '', page = '1', limit = '20' } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+		const { q = '' } = req.query;
+		const { page, limit, skip } = clampPagination(req.query.page, req.query.limit);
 
-    const where: any = {
-      processingStatus: 'done',
-      moderationStatus: 'approved',
-      visibility: 'public',
-      user: { isBanned: false },
-    };
-    if (q && String(q).trim().length > 0) {
-      where.OR = [
-        { title: { contains: String(q), mode: 'insensitive' } },
-        { user: { username: { contains: String(q), mode: 'insensitive' } } },
-        { user: { displayName: { contains: String(q), mode: 'insensitive' } } },
-      ];
-    }
+		const searchTerm = String(q).trim();
 
-    const [rows, total] = await Promise.all([
-      prisma.video.findMany({
-        where,
-        include: {
-          user: { select: { username: true, displayName: true } },
-          ratings: { select: { score: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: Number(limit),
-      }),
-      prisma.video.count({ where }),
-    ]);
+		const where: any = { ...PUBLIC_VIDEO_FILTER };
+		if (searchTerm.length > 0) {
+			where.OR = [
+				{ title: { contains: searchTerm, mode: 'insensitive' } },
+				{ user: { username: { contains: searchTerm, mode: 'insensitive' } } },
+				{ user: { displayName: { contains: searchTerm, mode: 'insensitive' } } },
+			];
+		}
 
-    const results = await Promise.all(
-      rows.map(async (video: any) => {
-        const avgRating =
-          video.ratings.length > 0
-            ? video.ratings.reduce((sum: number, r: any) => sum + r.score, 0) /
-              video.ratings.length
-            : 0;
-        const thumbnailUrl = getProxiedThumbnailUrl(
-          video.userId,
-          video.id,
-          video.thumbnail,
-        );
-        return {
-          id: video.id,
-          title: video.title,
-          thumbnailUrl,
-          viewCount: video.viewCount.toString(),
-          avgRating: Math.round(avgRating * 10) / 10,
-          ratingsCount: video.ratings.length,
-          user: video.user,
-          createdAt: video.createdAt,
-        };
-      }),
-    );
+		const [rows, total] = await Promise.all([
+			prisma.video.findMany({
+				where,
+				include: {
+					user: { select: { username: true, displayName: true } },
+					ratings: { select: { score: true } },
+				},
+				orderBy: { createdAt: 'desc' },
+				skip,
+				take: limit,
+			}),
+			prisma.video.count({ where }),
+		]);
 
-    res.json({
-      videos: results,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        totalItems: total,
-        totalPages: Math.ceil(total / Number(limit)),
-        itemsReturned: results.length,
-      },
-      query: { q },
-    });
+		const results = rows.map((video) => ({
+			id: video.id,
+			title: video.title,
+			thumbnailUrl: getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail),
+			viewCount: video.viewCount.toString(),
+			avgRating: computeAvgRating(video.ratings),
+			ratingsCount: video.ratings.length,
+			user: video.user,
+			createdAt: video.createdAt,
+		}));
+
+		res.json({
+			videos: results,
+			pagination: {
+			page,
+			limit,
+			totalItems: total,
+			totalPages: Math.ceil(total / limit),
+			itemsReturned: results.length,
+			},
+			query: { q: searchTerm },
+		});
   } catch (error) {
-    console.error('Error searching videos:', error);
-    res.status(500).json({ error: 'Failed to search videos' });
+		console.error('Error searching videos:', error);
+		res.status(500).json({ error: 'Failed to search videos' });
   }
 };
 
-export const getVideoById = async (
-  req: Request,
-  res: Response,
-): Promise<void> => {
+export const getVideoById = async (req: SessionAuthRequest, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
+		const { id } = req.params;
 
-    if (!isUUID(id)) {
-      res.status(404).json({ error: 'Video not found' });
-      return;
-    }
+		if (!isUUID(id)) {
+			res.status(404).json({ error: 'Video not found' });
+			return;
+		}
 
-    const video = await prisma.video.findUnique({
-      where: { id },
-      include: {
-        user: {
-          select: {
-            id: true,
-            username: true,
-            displayName: true,
-            avatarUrl: true,
-          },
-        },
-        ratings: true,
-      },
-    });
+		const video = await prisma.video.findUnique({
+			where: { id },
+			include: {
+				user: {
+					select: {
+						id: true,
+						username: true,
+						displayName: true,
+						avatarUrl: true,
+						isBanned: true,
+					},
+				},
+				ratings: true,
+			},
+		});
 
-    if (!video) {
-      res.status(404).json({ error: 'Video not found' });
-      return;
-    }
+		if (!video) {
+			res.status(404).json({ error: 'Video not found' });
+			return;
+		}
 
-    const videoObj = video;
+		const requesterId: string | null = req.user?.id ?? null;
+		const requesterRole: string | null = req.user?.role ?? null;
 
-    let requesterId: string | null = null;
-    let requesterRole: string | null = null;
+		const isPubliclyPlayable =
+			video.processingStatus === 'done' &&
+			video.moderationStatus === 'approved' &&
+			video.visibility === 'public';
 
-    const authHeader = req.headers['authorization'];
-    const sessionKey = authHeader && authHeader.split(' ')[1];
+		if (isPubliclyPlayable && video.user.isBanned && requesterId !== video.userId) {
+			res.status(403).json({ error: 'Video not available' });
+			return;
+		}
 
-    if (sessionKey) {
-      try {
-        const { validateSession } = await import('./sessionController.js');
-        const session = await validateSession(sessionKey);
-        requesterId = session?.user?.id || null;
-        requesterRole = session?.user?.role || null;
-      } catch (_) {}
-    }
+		const isOwner = requesterId === video.userId;
+		const isModerator = requesterRole === 'moderator' || requesterRole === 'admin';
+		
+		if (!isPubliclyPlayable && !isOwner && !isModerator) {
+			res.status(403).json({ error: 'Video not available' });
+			return;
+		}
 
-    const isPubliclyPlayable =
-      videoObj.processingStatus === 'done' &&
-      videoObj.moderationStatus === 'approved' &&
-      videoObj.visibility === 'public';
+		if (requesterId) {
+			await incrementVideoView(video.id, video.userId, requesterId);
+		}
 
-    if (isPubliclyPlayable) {
-      const owner = await prisma.user.findUnique({
-        where: { id: videoObj.userId },
-        select: { isBanned: true },
-      });
+		let hls: any = null;
 
-      if (owner?.isBanned) {
-        if (requesterId !== videoObj.userId) {
-          res.status(403).json({ error: 'Video not available' });
-          return;
-        }
-      }
-    }
+		const canBuildHls =
+			isPubliclyPlayable ||
+			((isOwner || isModerator) && video.processingStatus === 'done');
 
-    const isOwner = requesterId === videoObj.userId;
-    const isModerator =
-      requesterRole === 'moderator' || requesterRole === 'admin';
+		if (canBuildHls) {
+			const protocol = req.get('X-Forwarded-Proto') || req.protocol;
+			const base = `${protocol}://${req.get('host')}`;
+			const candidateQualities = ['1080p', '720p', '480p', '240p'];
 
-    if (!isPubliclyPlayable && !isOwner && !isModerator) {
-      res.status(403).json({ error: 'Video not available' });
-      return;
-    }
+			const statResults = await Promise.allSettled(
+			candidateQualities.map((q) =>
+				minioClient.statObject(BUCKETS.VIDEOS, hlsVariantIndex(video.userId, video.id, q))
+			)
+			);
 
-    await incrementVideoView(videoObj, requesterId);
+			const available = candidateQualities.filter((_, i) => statResults[i].status === 'fulfilled');
 
-    let hls: any = null;
+			const variantUrls: Record<string, string | null> = {};
+			for (const q of candidateQualities) {
+			variantUrls[q] = available.includes(q)
+				? `${base}/stream/videos/${video.userId}/${video.id}/${q}/index.m3u8`
+				: null;
+			}
 
-    const canBuildHls =
-      isPubliclyPlayable ||
-      (isOwner && videoObj.processingStatus === 'done') ||
-      (isModerator && videoObj.processingStatus === 'done');
+			hls = {
+			master: `${base}/stream/videos/${video.userId}/${video.id}/master.m3u8`,
+			variants: variantUrls,
+			available,
+			preferred: available[0] ?? null,
+			};
+		}
 
-    if (canBuildHls) {
-      const protocol = req.get('X-Forwarded-Proto') || req.protocol;
-      const base = `${protocol}://${req.get('host')}`;
-      const masterUrl = `${base}/stream/videos/${videoObj.userId}/${videoObj.id}/master.m3u8`;
-      const candidateQualities = ['1080p', '720p', '480p', '240p'];
-      const available: string[] = [];
+		const { isBanned: _banned, ...publicUser } = video.user;
 
-      for (const q of candidateQualities) {
-        try {
-          await minioClient.statObject(
-            BUCKETS.VIDEOS,
-            hlsVariantIndex(videoObj.userId, videoObj.id, q),
-          );
-          available.push(q);
-        } catch (_) {}
-      }
+		const userRating = requesterId
+			? (video.ratings.find((r) => r.userId === requesterId)?.score ?? null)
+			: null;
 
-      const variantUrls: Record<string, string | null> = {};
-
-      for (const q of candidateQualities) {
-        variantUrls[q] = available.includes(q)
-          ? `${base}/stream/videos/${videoObj.userId}/${videoObj.id}/${q}/index.m3u8`
-          : null;
-      }
-
-      hls = {
-        master: masterUrl,
-        variants: variantUrls,
-        available,
-        preferred: available[0] || null,
-      };
-    }
-
-    const thumbnailUrl = getProxiedThumbnailUrl(
-      videoObj.userId,
-      videoObj.id,
-      videoObj.thumbnail,
-    );
-
-    const avatarAssetUrl = getProxiedAssetUrl(
-      videoObj.user.id,
-      videoObj.user.avatarUrl,
-      'avatar',
-    );
-
-    const ratings2 = videoObj.ratings || [];
-    const avgRating =
-      ratings2.length > 0
-        ? ratings2.reduce((sum: number, r: Rating) => sum + r.score, 0) /
-          ratings2.length
-        : 0;
-
-    res.json({
-      ...videoObj,
-      viewCount: videoObj.viewCount.toString(),
-      hls,
-      thumbnailUrl,
-      avgRating: Math.round(avgRating * 10) / 10,
-      ratingsCount: videoObj.ratings.length,
-      user: {
-        ...videoObj.user,
-        avatarUrl: avatarAssetUrl,
-      },
-    });
+		res.json({
+			...video,
+			viewCount: video.viewCount.toString(),
+			hls,
+			thumbnailUrl: getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail),
+			avgRating: computeAvgRating(video.ratings),
+			ratingsCount: video.ratings.length,
+			userRating,
+			user: {
+				...publicUser,
+				avatarUrl: getProxiedAssetUrl(video.user.id, video.user.avatarUrl),
+			},
+		});
   } catch (error) {
-    console.error('Error fetching video:', error);
-    res.status(500).json({ error: 'Failed to fetch video' });
+		console.error('Error fetching video:', error);
+		res.status(500).json({ error: 'Failed to fetch video' });
   }
 };
 
-export const getUserVideos = async (
-  req: SessionAuthRequest,
-  res: Response,
-): Promise<void> => {
+export const getUserVideos = async (req: SessionAuthRequest, res: Response): Promise<void> => {
   try {
-    const userId = req.user!.id;
-    const { page = 1, limit = 20 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+		const userId = req.user!.id;
+		const { page, limit, skip } = clampPagination(req.query.page, req.query.limit);
 
-    const videos = await prisma.video.findMany({
-      where: { userId },
-      include: {
-        ratings: {
-          select: {
-            score: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      skip,
-      take: Number(limit),
-    });
+		const [videos, total] = await Promise.all([
+			prisma.video.findMany({
+			where: { userId },
+			include: { ratings: { select: { score: true } } },
+			orderBy: { createdAt: 'desc' },
+			skip,
+			take: limit,
+			}),
+			prisma.video.count({ where: { userId } }),
+		]);
 
-    const videosWithUrls = await Promise.all(
-      videos.map(async (video) => {
-        const thumbnailUrl = getProxiedThumbnailUrl(
-          video.userId,
-          video.id,
-          video.thumbnail,
-        );
+		const videosWithUrls = videos.map((video) => ({
+			...video,
+			thumbnailUrl: getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail),
+			viewCount: video.viewCount.toString(),
+			avgRating: computeAvgRating(video.ratings),
+			ratingsCount: video.ratings.length,
+		}));
 
-        const avgRating =
-          video.ratings.length > 0
-            ? video.ratings.reduce((sum: number, r: any) => sum + r.score, 0) /
-              video.ratings.length
-            : 0;
-
-        return {
-          ...video,
-          thumbnailUrl,
-          viewCount: video.viewCount.toString(),
-          avgRating: Math.round(avgRating * 10) / 10,
-          ratingsCount: video.ratings.length,
-        };
-      }),
-    );
-
-    const total = await prisma.video.count({ where: { userId } });
-
-    res.json({
-      videos: videosWithUrls,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        totalItems: total,
-        totalPages: Math.ceil(total / Number(limit)),
-        itemsReturned: videosWithUrls.length,
-      },
-    });
+		res.json({
+			videos: videosWithUrls,
+			pagination: {
+			page,
+			limit,
+			totalItems: total,
+			totalPages: Math.ceil(total / limit),
+			itemsReturned: videosWithUrls.length,
+			},
+		});
   } catch (error) {
-    console.error('Error fetching user videos:', error);
-    res.status(500).json({ error: 'Failed to fetch user videos' });
+		console.error('Error fetching user videos:', error);
+		res.status(500).json({ error: 'Failed to fetch user videos' });
   }
 };
 
-export const updateVideo = async (
-  req: SessionAuthRequest,
-  res: Response,
-): Promise<void> => {
+export const updateVideo = async (req: SessionAuthRequest, res: Response): Promise<void> => {
   const userId = req.user!.id;
   const { id: videoId } = req.params;
   const { title, description, visibility } = req.body;
 
   try {
-    const video = await prisma.video.findUnique({
-      where: { id: videoId },
-    });
+		const video = await prisma.video.findUnique({ where: { id: videoId } });
 
-    if (!video) {
-      res.status(404).json({ error: 'Video not found' });
-      return;
-    }
+		if (!video) {
+			res.status(404).json({ error: 'Video not found' });
+			return;
+		}
 
-    if (video.userId !== userId) {
-      res
-        .status(403)
-        .json({ error: 'You are not authorized to edit this video' });
-      return;
-    }
+		if (video.userId !== userId) {
+			res.status(403).json({ error: 'You are not authorized to edit this video' });
+			return;
+		}
 
-    const updatedVideo = await prisma.video.update({
-      where: { id: videoId },
-      data: {
-        title,
-        description,
-        visibility,
-      },
-    });
+		const updatedVideo = await prisma.video.update({
+			where: { id: videoId },
+			data: { title, description, visibility },
+		});
 
-    const thumbnailUrl = getProxiedThumbnailUrl(
-      updatedVideo.userId,
-      updatedVideo.id,
-      updatedVideo.thumbnail,
-    );
-
-    res.json({
-      message: 'Video updated successfully',
-      video: { ...updatedVideo, thumbnailUrl },
-    });
+		res.json({
+			message: 'Video updated successfully',
+			video: {
+			...updatedVideo,
+			thumbnailUrl: getProxiedThumbnailUrl(updatedVideo.userId, updatedVideo.id, updatedVideo.thumbnail),
+			},
+		});
   } catch (error) {
-    console.error('Update video error:', error);
-    res.status(500).json({ error: 'Failed to update video' });
+		console.error('Update video error:', error);
+		res.status(500).json({ error: 'Failed to update video' });
   }
 };
 
-export const deleteVideo = async (
-  req: SessionAuthRequest,
-  res: Response,
-): Promise<void> => {
+export const deleteVideo = async (req: SessionAuthRequest, res: Response): Promise<void> => {
   try {
-    const { id } = req.params;
-    const requester = req.user;
+		const { id } = req.params;
+		const requester = req.user;
 
-    if (!requester) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
+		if (!requester) {
+			res.status(401).json({ error: 'Unauthorized' });
+			return;
+		}
 
-    if (!isUUID(id)) {
-      res.status(404).json({ error: 'Video not found' });
-      return;
-    }
+		if (!isUUID(id)) {
+			res.status(404).json({ error: 'Video not found' });
+			return;
+		}
 
-    const video = await prisma.video.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        userId: true,
-        thumbnail: true,
-      },
-    });
+		const video = await prisma.video.findUnique({
+			where: { id },
+			select: { id: true, userId: true, thumbnail: true },
+		});
 
-    if (!video) {
-      res.status(404).json({ error: 'Video not found' });
-      return;
-    }
+		if (!video) {
+			res.status(404).json({ error: 'Video not found' });
+			return;
+		}
 
-    const isOwner = requester.id === video.userId;
-    const isModerator =
-      requester.role === 'admin' || requester.role === 'moderator';
+		const isOwner = requester.id === video.userId;
+		const isModerator = requester.role === 'admin' || requester.role === 'moderator';
 
-    if (!isOwner && !isModerator) {
-      res
-        .status(403)
-        .json({ error: 'You are not authorized to delete this video' });
-      return;
-    }
+		if (!isOwner && !isModerator) {
+			res.status(403).json({ error: 'You are not authorized to delete this video' });
+			return;
+		}
 
-    // HLS cleanup
-    const qualities = ['1080p', '720p', '480p', '240p', 'master'];
-    for (const q of qualities) {
-      try {
-        await minioClient.removeObject(
-          BUCKETS.VIDEOS,
-          hlsVariantIndex(video.userId, video.id, q),
-        );
-      } catch (_) {}
-    }
+		await deleteMinioPrefix(BUCKETS.VIDEOS, `${video.userId}/${video.id}/`);
 
-    // delete thumbnails
-    if (video.thumbnail) {
-      try {
-        await minioClient.removeObject(
-          BUCKETS.USERS,
-          `${video.userId}/videos/${video.id}/thumbnail/${video.thumbnail}`,
-        );
-      } catch (_) {}
-    }
+		if (video.thumbnail) {
+			const filename = video.thumbnail.split('/').pop();
+			if (filename) {
+				try {
+				await minioClient.removeObject(
+					BUCKETS.VIDEOS,
+					`thumbnails/${video.userId}/${video.id}/${filename}`,
+				);
+				} catch (_) {}
+			}
+		}
 
-    // postgres cleanup
-    await prisma.$transaction(async (tx) => {
-      await tx.commentLike.deleteMany({
-        where: {
-          comment: {
-            videoId: video.id,
-          },
-        },
-      });
+		await prisma.$transaction(async (tx) => {
+			await tx.commentLike.deleteMany({
+				where: { comment: { videoId: video.id } },
+			});
+			await tx.rating.deleteMany({ where: { videoId: video.id } });
+			await tx.comment.deleteMany({ where: { videoId: video.id } });
+			await tx.videoView.deleteMany({ where: { videoId: video.id } });
+			await tx.video.delete({ where: { id: video.id } });
 
-      await tx.rating.deleteMany({
-        where: { videoId: video.id },
-      });
+			const videoCount = await tx.video.count({ where: { userId: video.userId } });
+			await tx.user.update({
+				where: { id: video.userId },
+				data: { videoCount },
+			});
+		});
 
-      await tx.comment.deleteMany({
-        where: { videoId: video.id },
-      });
-
-      await tx.videoView.deleteMany({
-        where: { videoId: video.id },
-      });
-
-      await tx.video.delete({
-        where: { id: video.id },
-      });
-
-      const videoCount = await tx.video.count({
-        where: { userId: video.userId },
-      });
-
-      await tx.user.update({
-        where: { id: video.userId },
-        data: { videoCount },
-      });
-    });
-
-    res.json({ message: 'Video deleted successfully' });
+		res.json({ message: 'Video deleted successfully' });
   } catch (error) {
-    console.error('Error deleting video:', error);
-    res.status(500).json({ error: 'Failed to delete video' });
+		console.error('Error deleting video:', error);
+		res.status(500).json({ error: 'Failed to delete video' });
   }
+};
+
+const deleteMinioPrefix = async (bucket: string, prefix: string): Promise<void> => {
+  const objectNames: string[] = [];
+
+  await new Promise<void>((resolve, reject) => {
+		const stream = minioClient.listObjectsV2(bucket, prefix, true);
+		stream.on('data', (obj) => { if (obj.name) objectNames.push(obj.name); });
+		stream.on('end', resolve);
+		stream.on('error', reject);
+  });
+
+  if (objectNames.length === 0) return;
+
+	await minioClient.removeObjects(bucket, objectNames);
 };
