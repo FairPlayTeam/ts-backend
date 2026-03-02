@@ -63,7 +63,10 @@ router.get('/users', async (req: Request, res: Response): Promise<void> => {
     ]);
 
     res.json({
-      users: rows,
+      users: rows.map((u) => ({
+        ...u,
+        avatarUrl: getProxiedAssetUrl(u.id, u.avatarUrl),
+      })),
       pagination: {
         page: Number(page),
         limit: Number(limit),
