@@ -5,6 +5,7 @@ import { registerRoute } from '../lib/docs.js';
 import { createUserSearchWhere } from '../lib/utils.js';
 import { validate, banSchema, roleSchema } from '../middleware/validation.js';
 import { updateUserRole } from '../controllers/userController.js';
+import { getProxiedAssetUrl } from '../lib/utils.js';
 
 const router = Router();
 
@@ -142,7 +143,24 @@ router.get('/users/:id', async (req: Request, res: Response): Promise<void> => {
       res.status(404).json({ error: 'User not found' });
       return;
     }
-    res.json(user);
+    res.json({
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      displayName: user.displayName,
+      avatarUrl: getProxiedAssetUrl(user.id, user.avatarUrl),
+      role: user.role,
+      isActive: user.isActive,
+      isVerified: user.isVerified,
+      isBanned: user.isBanned,
+      banReasonPrivate: user.banReasonPrivate,
+      bannedAt: user.bannedAt,
+      createdAt: user.createdAt,
+      followerCount: user.followerCount,
+      followingCount: user.followingCount,
+      videoCount: user.videoCount,
+      totalViews: user.totalViews,
+    });
   } catch (error) {
     console.error('Admin get user error:', error);
     res.status(500).json({ error: 'Failed to get user' });
