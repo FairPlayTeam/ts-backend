@@ -16,10 +16,25 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 			return;
 		}
 
+		const passwordErrors: string[] = [];
+
 		if (password.length < 6) {
-			res
-				.status(400)
-				.json({ error: 'Password must be at least 6 characters long' });
+			passwordErrors.push('at least 6 characters');
+		}
+		if (!/[A-Z]/.test(password)) {
+			passwordErrors.push('at least one uppercase letter');
+		}
+		if (!/[0-9]/.test(password)) {
+			passwordErrors.push('at least one number');
+		}
+		if (!/[!@#$%^&*()\-_=+\[\]{};':"\\|,.<>\/?]/.test(password)) {
+			passwordErrors.push('at least one special character (!@#$...)');
+		}
+
+		if (passwordErrors.length > 0) {
+			res.status(400).json({
+				error: `Password must contain ${passwordErrors.join(', ')}.`,
+			});
 			return;
 		}
 
