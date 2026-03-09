@@ -148,6 +148,7 @@ export const searchVideos = async (req: Request, res: Response): Promise<void> =
 		if (searchTerm.length > 0) {
 			where.OR = [
 				{ title: { contains: searchTerm, mode: 'insensitive' } },
+				{ tags: { has: searchTerm } },
 				{ user: { username: { contains: searchTerm, mode: 'insensitive' } } },
 				{ user: { displayName: { contains: searchTerm, mode: 'insensitive' } } },
 			];
