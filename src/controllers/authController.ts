@@ -16,6 +16,11 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 			return;
 		}
 
+		if (String(username).trim().length < 3) {
+			res.status(400).json({ error: 'Username must be at least 3 characters' });
+			return;
+		}
+
 		const passwordErrors: string[] = [];
 
 		if (password.length < 6) {
@@ -27,7 +32,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 		if (!/[0-9]/.test(password)) {
 			passwordErrors.push('at least one number');
 		}
-		if (!/[!@#$%^&*()\-_=+\[\]{};':"\\|,.<>\/?]/.test(password)) {
+		if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
 			passwordErrors.push('at least one special character (!@#$...)');
 		}
 
