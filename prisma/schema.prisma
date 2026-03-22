@@ -74,8 +74,24 @@ model User {
   commentLikes  CommentLike[]
   sessions      Session[]
   dailyViews    VideoView[]
+  updatedCampaigns Campaign[] @relation("CampaignUpdatedBy")
 
   @@map("users")
+}
+
+model Campaign {
+  id          String   @id @default("active")
+  title       String
+  description String
+  link        String
+  thumbnailUrl String  @map("thumbnail_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  updatedById String?  @map("updated_by_id") @db.Uuid
+
+  updatedBy User? @relation("CampaignUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("campaigns")
 }
 
 model VideoView {

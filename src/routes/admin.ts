@@ -3,8 +3,14 @@ import { prisma } from '../lib/prisma.js';
 import { authenticateSession, requireAdmin } from '../lib/sessionAuth.js';
 import { registerRoute } from '../lib/docs.js';
 import { createUserSearchWhere } from '../lib/utils.js';
-import { validate, banSchema, roleSchema } from '../middleware/validation.js';
+import {
+  validate,
+  banSchema,
+  roleSchema,
+  upsertCampaignSchema,
+} from '../middleware/validation.js';
 import { updateUserRole } from '../controllers/userController.js';
+import { upsertCampaign } from '../controllers/campaignController.js';
 import { getProxiedAssetUrl } from '../lib/utils.js';
 
 const router = Router();
@@ -301,6 +307,44 @@ registerRoute({
   }
 }`,
     '404': '{ "error": "User not found" }',
+  },
+});
+
+router.put('/campaign', validate(upsertCampaignSchema), upsertCampaign);
+
+registerRoute({
+  method: 'PUT',
+  path: '/admin/campaign',
+  summary: 'Admin: create or update the active advertising campaign',
+  description:
+    'Upserts the singleton campaign record. Only one campaign can exist at a time.',
+  auth: true,
+  roles: ['admin'],
+  body: {
+    title: 'string',
+    description: 'string',
+    link: 'http(s) URL',
+    thumbnailUrl: 'http(s) URL',
+  },
+  responses: {
+    '200': `{
+  "message": "Campaign updated successfully",
+  "campaign": {
+    "id": "active",
+    "title": "string",
+    "description": "string",
+    "link": "https://example.com",
+    "thumbnailUrl": "https://example.com/banner.jpg",
+    "createdAt": "ISO8601",
+    "updatedAt": "ISO8601",
+    "updatedBy": {
+      "id": "uuid",
+      "username": "admin",
+      "role": "admin"
+    }
+  }
+}`,
+    '403': '{ "error": "Admin access required" }',
   },
 });
 

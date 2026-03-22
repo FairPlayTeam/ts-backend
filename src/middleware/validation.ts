@@ -86,6 +86,27 @@ export const roleSchema = z.object({
   }),
 });
 
+const httpUrlSchema = z
+  .string()
+  .trim()
+  .url('Must be a valid URL')
+  .refine((value) => /^https?:\/\//i.test(value), {
+    message: 'URL must start with http:// or https://',
+  });
+
+export const upsertCampaignSchema = z.object({
+  body: z.object({
+    title: z.string().trim().min(1, 'Title is required').max(50),
+    description: z
+      .string()
+      .trim()
+      .min(1, 'Description is required')
+      .max(200),
+    link: httpUrlSchema,
+    thumbnailUrl: httpUrlSchema,
+  }),
+});
+
 const formatZodErrors = (error: ZodError) =>
   error.errors.map(({ path, message }) => ({
     field: path.filter((p) => p !== 'body').join('.') || 'unknown',
