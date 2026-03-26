@@ -12,10 +12,11 @@ export const registerSchema = z.object({
       .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
     password: z
       .string()
-      .min(8, 'Password must be at least 8 characters')
+      .min(6, 'Password must be at least 6 characters')
       .max(128, 'Password must be at most 128 characters')
       .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-      .regex(/[0-9]/, 'Password must contain at least one number'),
+      .regex(/[0-9]/, 'Password must contain at least one number')
+      .regex(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/, 'Password must contain at least one special character (!@#$...)'),
   }),
 });
 
@@ -23,6 +24,12 @@ export const loginSchema = z.object({
   body: z.object({
     emailOrUsername: z.string().trim().min(1, 'Email or username is required').max(254),
     password: z.string().min(1, 'Password is required').max(128),
+  }),
+});
+
+export const resendVerificationSchema = z.object({
+  body: z.object({
+    email: z.string().trim().email('Invalid email format').max(254),
   }),
 });
 
@@ -120,14 +127,18 @@ export const validate =
       body: req.body,
       query: req.query,
       params: req.params,
-    })
+    });
 
     if (!result.success) {
       return res.status(400).json({
         error: 'Validation failed',
         details: formatZodErrors(result.error),
-      })
+      });
     }
 
+    req.body = result.data.body;
+    if (result.data.query) req.query = result.data.query;
+    if (result.data.params) req.params = result.data.params;
+
     next();
-  }
+  };

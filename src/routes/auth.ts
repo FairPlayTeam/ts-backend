@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateSession } from '../lib/sessionAuth.js';
-import { register, login, getProfile } from '../controllers/authController.js';
+import { register, login, verifyEmail, resendVerification, getProfile } from '../controllers/authController.js';
 import { updateProfile } from '../controllers/userController.js';
 import {
   getUserSessions,
@@ -13,6 +13,7 @@ import {
   validate,
   registerSchema,
   loginSchema,
+  resendVerificationSchema,
   updateProfileSchema,
 } from '../middleware/validation.js';
 import { registerRoute } from '../lib/docs.js';
@@ -26,22 +27,7 @@ registerRoute({
   summary: 'Register a new user',
   body: { email: 'string', username: 'string', password: 'string' },
   responses: {
-    '201': `{
-  "message": "User registered successfully",
-  "user": {
-    "id": "uuid",
-    "email": "user@example.com",
-    "username": "johndoe",
-    "role": "user"
-  },
-  "sessionKey": "fp_sess_a1b2c3d4e5f6...",
-  "session": {
-    "id": "uuid",
-    "expiresAt": "2024-10-20T13:30:00Z",
-    "deviceInfo": "Mac",
-    "ipAddress": "192.168.1.1"
-  }
-}`,
+    '201': `{ "message": "User registered successfully" }`,
   },
 });
 
@@ -71,6 +57,30 @@ registerRoute({
   },
 });
 
+router.get('/verify-email', verifyEmail);
+registerRoute({
+  method: 'GET',
+  path: '/auth/verify-email',
+  summary: 'Verify user email address',
+  description: 'Validates the token sent by email and marks the account as verified',
+  query: { token: 'Verification token received by email' },
+  responses: {
+    '200': `{"message": "Email verified successfully"}`,
+    '400': `{"message": "Invalid or expired verification link."}`,
+  },
+});
+
+router.post('/resend-verification', authLimiter, validate(resendVerificationSchema), resendVerification);
+registerRoute({
+  method: 'POST',
+  path: '/auth/resend-verification',
+  summary: 'Resend email verification link',
+  body: { email: 'string' },
+  responses: {
+    '200': `{"message": "If this email exists and is unverified, a new link has been sent."}`,
+  },
+});
+
 router.get('/me', authenticateSession, getProfile);
 registerRoute({
   method: 'GET',
@@ -90,7 +100,6 @@ registerRoute({
   "isVerified": false,
   "followerCount": 42,
   "totalViews": "1337",
-  "totalEarnings": "0.00",
   "createdAt": "2024-01-01T00:00:00Z"
 }`,
   },
@@ -102,6 +111,19 @@ router.patch(
   validate(updateProfileSchema),
   updateProfile,
 );
+registerRoute({
+  method: 'PATCH',
+  path: '/auth/me',
+  summary: 'Update current user profile',
+  auth: true,
+  body: {
+    displayName: 'string (optional)',
+    bio: 'string (optional)',
+  },
+  responses: {
+    '200': `{"message": "Profile updated successfully", "user": {"id": "uuid", "displayName": "John Doe", "bio": "Updated bio"}}`,
+  },
+});
 
 router.get('/sessions', authenticateSession, getUserSessions);
 registerRoute({
@@ -171,19 +193,6 @@ registerRoute({
   params: { sessionId: 'Session UUID' },
   responses: {
     '200': `{"message": "Session logged out successfully"}`,
-  },
-});
-registerRoute({
-  method: 'PATCH',
-  path: '/auth/me',
-  summary: 'Update current user profile',
-  auth: true,
-  body: {
-    displayName: 'string (optional)',
-    bio: 'string (optional)',
-  },
-  responses: {
-    '200': `{"message": "Profile updated successfully", "user": {"id": "uuid", "displayName": "John Doe", "bio": "Updated bio"}}`,
   },
 });
 

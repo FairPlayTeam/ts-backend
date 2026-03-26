@@ -4,6 +4,8 @@ import { prisma } from '../lib/prisma.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { isUUID } from '../lib/utils.js';
 
+const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 30;
+
 const generateSessionKey = (): string => {
   const prefix = 'fp_sess';
   const randomBytes = crypto.randomBytes(32).toString('hex');
@@ -62,7 +64,7 @@ export const createSession = async (
       ipAddress,
       userAgent: userAgent ?? null,
       deviceInfo,
-      expiresAt,
+      expiresAt: new Date(Date.now() + SESSION_DURATION_MS),
     },
     include: {
       user: {
