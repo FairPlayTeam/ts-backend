@@ -39,9 +39,9 @@ router.get('/search', searchVideos);
 registerRoute({
   method: 'GET',
   path: '/videos/search',
-  summary: 'Search publicly available videos',
+  summary: 'Search publicly available videos and creators',
   description:
-    'Search only videos that are approved, done processing, public, and whose owners are not banned.',
+    'Search videos that are approved, done processing, public, and whose owners are not banned. Also returns non-banned creators who have at least one public approved video.',
   query: {
     q: 'string (query term)',
     page: 'number (default 1)',
@@ -49,10 +49,21 @@ registerRoute({
   },
   responses: {
     '200': `{
+  "results": [
+    { "type": "video", "video": { "id": "string", "title": "string", "thumbnailUrl": "string|null", "viewCount": "string", "avgRating": 4.5, "ratingsCount": 10, "user": { "username": "string", "displayName": "string|null" }, "createdAt": "ISO8601" } },
+    { "type": "creator", "creator": { "id": "string", "username": "string", "displayName": "string|null", "avatarUrl": "string|null", "followerCount": 42, "videoCount": 7, "createdAt": "ISO8601" } }
+  ],
   "videos": [
     { "id": "string", "title": "string", "thumbnailUrl": "string|null", "viewCount": "string", "avgRating": 4.5, "ratingsCount": 10, "user": { "username": "string", "displayName": "string|null" }, "createdAt": "ISO8601" }
   ],
-  "pagination": { "page": 1, "limit": 20, "totalItems": 100, "totalPages": 5, "itemsReturned": 20 },
+  "creators": [
+    { "id": "string", "username": "string", "displayName": "string|null", "avatarUrl": "string|null", "followerCount": 42, "videoCount": 7, "createdAt": "ISO8601" }
+  ],
+  "pagination": {
+    "videos": { "page": 1, "limit": 20, "totalItems": 100, "totalPages": 5, "itemsReturned": 20 },
+    "creators": { "page": 1, "limit": 20, "totalItems": 12, "totalPages": 1, "itemsReturned": 12 },
+    "results": { "page": 1, "limit": 40, "totalItems": 112, "totalPages": 3, "itemsReturned": 32 }
+  },
   "query": { "q": "term" }
 }`,
   },

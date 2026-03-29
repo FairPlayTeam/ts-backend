@@ -68,6 +68,42 @@ const PUBLIC_VIDEO_FILTER = {
   user: { isBanned: false },
 } as const;
 
+const PUBLIC_CREATOR_SELECT = {
+  id: true,
+  username: true,
+  displayName: true,
+  avatarUrl: true,
+  followerCount: true,
+  videoCount: true,
+  createdAt: true,
+} as const;
+
+const mixSearchResults = <
+  TVideo extends Record<string, unknown>,
+  TCreator extends Record<string, unknown>,
+>(
+  videos: TVideo[],
+  creators: TCreator[],
+) => {
+  const results: Array<
+    | { type: 'video'; video: TVideo }
+    | { type: 'creator'; creator: TCreator }
+  > = [];
+
+  const maxLength = Math.max(videos.length, creators.length);
+  for (let i = 0; i < maxLength; i += 1) {
+    if (videos[i]) {
+      results.push({ type: 'video', video: videos[i] });
+    }
+
+    if (creators[i]) {
+      results.push({ type: 'creator', creator: creators[i] });
+    }
+  }
+
+  return results;
+};
+
 export const getVideos = async (req: Request, res: Response): Promise<void> => {
   try {
 		const { page, limit, skip } = clampPagination(req.query.page, req.query.limit);
@@ -154,7 +190,18 @@ export const searchVideos = async (req: Request, res: Response): Promise<void> =
 			];
 		}
 
-		const [rows, total] = await Promise.all([
+		const creatorWhere: any = {
+			isBanned: false,
+			videos: { some: PUBLIC_VIDEO_FILTER },
+		};
+		if (searchTerm.length > 0) {
+			creatorWhere.OR = [
+				{ username: { contains: searchTerm, mode: 'insensitive' } },
+				{ displayName: { contains: searchTerm, mode: 'insensitive' } },
+			];
+		}
+
+		const [rows, total, creators, creatorsTotal] = await Promise.all([
 			prisma.video.findMany({
 				where,
 				include: {
@@ -166,9 +213,20 @@ export const searchVideos = async (req: Request, res: Response): Promise<void> =
 				take: limit,
 			}),
 			prisma.video.count({ where }),
+			prisma.user.findMany({
+				where: creatorWhere,
+				select: PUBLIC_CREATOR_SELECT,
+				orderBy: [
+					{ followerCount: 'desc' },
+					{ createdAt: 'desc' },
+				],
+				skip,
+				take: limit,
+			}),
+			prisma.user.count({ where: creatorWhere }),
 		]);
 
-		const results = rows.map((video) => ({
+		const videos = rows.map((video) => ({
 			id: video.id,
 			title: video.title,
 			thumbnailUrl: getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail),
@@ -179,20 +237,45 @@ export const searchVideos = async (req: Request, res: Response): Promise<void> =
 			createdAt: video.createdAt,
 		}));
 
+		const users = creators.map((creator) => ({
+			...creator,
+			avatarUrl: getProxiedAssetUrl(creator.id, creator.avatarUrl),
+		}));
+
+		const results = mixSearchResults(videos, users);
+
 		res.json({
-			videos: results,
+			results,
+			videos,
+			creators: users,
 			pagination: {
-			page,
-			limit,
-			totalItems: total,
-			totalPages: Math.ceil(total / limit),
-			itemsReturned: results.length,
+				videos: {
+					page,
+					limit,
+					totalItems: total,
+					totalPages: Math.ceil(total / limit),
+					itemsReturned: videos.length,
+				},
+				creators: {
+					page,
+					limit,
+					totalItems: creatorsTotal,
+					totalPages: Math.ceil(creatorsTotal / limit),
+					itemsReturned: users.length,
+				},
+				results: {
+					page,
+					limit: limit * 2,
+					totalItems: total + creatorsTotal,
+					totalPages: Math.ceil((total + creatorsTotal) / (limit * 2)),
+					itemsReturned: results.length,
+				},
 			},
 			query: { q: searchTerm },
 		});
   } catch (error) {
 		console.error('Error searching videos:', error);
-		res.status(500).json({ error: 'Failed to search videos' });
+		res.status(500).json({ error: 'Failed to search videos and creators' });
   }
 };
 
