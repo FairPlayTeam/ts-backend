@@ -62,11 +62,25 @@ registerRoute({
   method: 'GET',
   path: '/auth/verify-email',
   summary: 'Verify user email address',
-  description: 'Validates the token sent by email and marks the account as verified',
+  description:
+    'Validates the token sent by email, marks the account as verified, and creates a new authenticated session.',
   query: { token: 'Verification token received by email' },
   responses: {
-    '200': `{"message": "Email verified successfully"}`,
-    '400': `{"message": "Invalid or expired verification link."}`,
+    '200': `{
+  "message": "Email successfully verified",
+  "user": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "username": "johndoe",
+    "role": "user"
+  },
+  "sessionKey": "fp_sess_a1b2c3d4e5f6...",
+  "session": {
+    "id": "uuid",
+    "expiresAt": "2024-10-20T13:30:00Z"
+  }
+}`,
+    '400': `{"error": "Invalid or expired verification link."}`,
   },
 });
 
