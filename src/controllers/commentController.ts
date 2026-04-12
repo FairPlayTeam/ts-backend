@@ -27,6 +27,12 @@ const userSelect = {
     avatarUrl: true,
 };
 
+type DeleteCommentResult = {
+    message: string;
+    deletionMode: 'soft' | 'hard';
+    commentId: string;
+};
+
 export const addComment = async (
     req: SessionAuthRequest,
     res: Response,
@@ -142,7 +148,12 @@ export const deleteComment = async (
                 where: { id: commentId },
                 data: { isDeleted: true, content: '[deleted]' },
             });
-            res.json({ message: 'Comment deleted' });
+            const result: DeleteCommentResult = {
+                message: 'Comment soft deleted',
+                deletionMode: 'soft',
+                commentId,
+            };
+            res.json(result);
             return;
         }
 
@@ -151,7 +162,12 @@ export const deleteComment = async (
             prisma.comment.delete({ where: { id: commentId } }),
         ]);
 
-        res.json({ message: 'Comment deleted' });
+        const result: DeleteCommentResult = {
+            message: 'Comment deleted',
+            deletionMode: 'hard',
+            commentId,
+        };
+        res.json(result);
     } catch (error) {
         console.error('Delete comment error:', error);
         res.status(500).json({ error: 'Failed to delete comment' });
@@ -183,7 +199,7 @@ export const getCommentReplies = async (
 
         const [rows, total] = await Promise.all([
             prisma.comment.findMany({
-                where: { parentId: commentId, isDeleted: false },
+                where: { parentId: commentId },
                 select: {
                     id: true,
                     content: true,
@@ -197,7 +213,7 @@ export const getCommentReplies = async (
                 skip,
                 take: limit,
             }),
-            prisma.comment.count({ where: { parentId: commentId, isDeleted: false } }),
+            prisma.comment.count({ where: { parentId: commentId } }),
         ]);
 
         const requesterId = getOptionalUserId(req);
@@ -249,7 +265,7 @@ export const getComments = async (
 
         const [rows, total] = await Promise.all([
             prisma.comment.findMany({
-                where: { videoId, parentId: null, isDeleted: false },
+                where: { videoId, parentId: null },
                 select: {
                     id: true,
                     content: true,
@@ -263,7 +279,7 @@ export const getComments = async (
                 skip,
                 take: limit,
             }),
-            prisma.comment.count({ where: { videoId, parentId: null, isDeleted: false } }),
+            prisma.comment.count({ where: { videoId, parentId: null } }),
         ]);
 
         const requesterId = getOptionalUserId(req);

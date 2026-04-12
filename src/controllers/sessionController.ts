@@ -1,10 +1,35 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { isUUID } from '../lib/utils.js';
 
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 30;
+
+const sessionUserSelect = {
+  id: true,
+  email: true,
+  username: true,
+  role: true,
+  isActive: true,
+  isBanned: true,
+} satisfies Prisma.UserSelect;
+
+type SessionRecord = Prisma.SessionGetPayload<{
+  include: {
+    user: {
+      select: typeof sessionUserSelect;
+    };
+  };
+}>;
+
+export class SessionValidationUnavailableError extends Error {
+  constructor(message = 'Session validation is temporarily unavailable.', options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'SessionValidationUnavailableError';
+  }
+}
 
 const generateSessionKey = (): string => {
   const prefix = 'fp_sess';
@@ -30,9 +55,17 @@ const extractDeviceInfo = (userAgent?: string): string => {
   return 'Desktop Browser';
 };
 
+const getSingleHeaderValue = (header: string | string[] | undefined): string | undefined => {
+  if (typeof header === 'string') {
+    return header;
+  }
+
+  return header?.[0];
+};
+
 const getClientIP = (req: Request): string => {
-  const forwarded = req.headers['x-forwarded-for'] as string;
-  const realIP = req.headers['x-real-ip'] as string;
+  const forwarded = getSingleHeaderValue(req.headers['x-forwarded-for']);
+  const realIP = getSingleHeaderValue(req.headers['x-real-ip']);
 
   if (forwarded) {
     return forwarded.split(',')[0].trim();
@@ -48,10 +81,10 @@ const getClientIP = (req: Request): string => {
 export const createSession = async (
   userId: string,
   req: Request,
-): Promise<{ sessionKey: string; session: any }> => {
+): Promise<{ sessionKey: string; session: SessionRecord }> => {
   const sessionKey = generateSessionKey();
   const ipAddress = getClientIP(req);
-  const userAgent = req.headers['user-agent'];
+  const userAgent = req.get('user-agent') ?? undefined;
   const deviceInfo = extractDeviceInfo(userAgent);
 
   const expiresAt = new Date();
@@ -68,12 +101,7 @@ export const createSession = async (
     },
     include: {
       user: {
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          role: true,
-        },
+        select: sessionUserSelect,
       },
     },
   });
@@ -113,12 +141,12 @@ export const getUserSessions = async (
       },
     });
 
+    const currentSessionKey = req.headers.authorization?.replace('Bearer ', '');
+
     const maskedSessions = sessions.map((session) => ({
       ...session,
       sessionKey: `****${session.sessionKey.slice(-8)}`,
-      isCurrent: req.headers.authorization?.includes(
-        session.sessionKey.slice(-8),
-      ),
+      isCurrent: session.sessionKey === currentSessionKey,
     }));
 
     res.json({
@@ -249,7 +277,7 @@ export const logoutAllSessions = async (
   }
 };
 
-export const validateSession = async (sessionKey: string): Promise<any> => {
+export const validateSession = async (sessionKey: string): Promise<SessionRecord | null> => {
   try {
     const session = await prisma.session.findUnique({
       where: {
@@ -257,14 +285,7 @@ export const validateSession = async (sessionKey: string): Promise<any> => {
       },
       include: {
         user: {
-          select: {
-            id: true,
-            email: true,
-            username: true,
-            role: true,
-            isActive: true,
-            isBanned: true,
-          },
+          select: sessionUserSelect,
         },
       },
     });
@@ -285,7 +306,9 @@ export const validateSession = async (sessionKey: string): Promise<any> => {
     return session;
   } catch (error) {
     console.error('Validate session error:', error);
-    return null;
+    throw new SessionValidationUnavailableError(undefined, {
+      cause: error instanceof Error ? error : undefined,
+    });
   }
 };
 

@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticateSession, requireModerator } from '../lib/sessionAuth.js';
@@ -6,6 +7,85 @@ import { createUserSearchWhere, getProxiedThumbnailUrl } from '../lib/utils.js';
 import { validate, moderationSchema } from '../middleware/validation.js';
 
 const router = Router();
+
+const DEFAULT_PAGE_SIZE = 20;
+const MODERATOR_VIDEO_SORT_FIELDS = ['createdAt', 'title'] as const;
+const VIDEO_PROCESSING_STATUSES = ['uploading', 'processing', 'done'] as const;
+const VIDEO_MODERATION_STATUSES = ['pending', 'approved', 'rejected'] as const;
+const VIDEO_VISIBILITIES = ['public', 'unlisted', 'private'] as const;
+
+type ModeratorVideoSortField = (typeof MODERATOR_VIDEO_SORT_FIELDS)[number];
+type SortDirection = 'asc' | 'desc';
+type ProcessingStatus = (typeof VIDEO_PROCESSING_STATUSES)[number];
+type ModerationStatus = (typeof VIDEO_MODERATION_STATUSES)[number];
+type Visibility = (typeof VIDEO_VISIBILITIES)[number];
+
+const isModeratorVideoSortField = (value: string): value is ModeratorVideoSortField =>
+  MODERATOR_VIDEO_SORT_FIELDS.includes(value as ModeratorVideoSortField);
+
+const isProcessingStatus = (value: string): value is ProcessingStatus =>
+  VIDEO_PROCESSING_STATUSES.includes(value as ProcessingStatus);
+
+const isModerationStatus = (value: string): value is ModerationStatus =>
+  VIDEO_MODERATION_STATUSES.includes(value as ModerationStatus);
+
+const isVisibility = (value: string): value is Visibility =>
+  VIDEO_VISIBILITIES.includes(value as Visibility);
+
+const parsePageNumber = (value: string | undefined, fallback: number) =>
+  Math.max(1, Number.parseInt(value ?? String(fallback), 10) || fallback);
+
+const parseSortDirection = (value: string | undefined): SortDirection =>
+  value === 'asc' ? 'asc' : 'desc';
+
+const buildModeratorVideosWhere = ({
+  processingStatus,
+  moderationStatus,
+  visibility,
+  userId,
+  search,
+}: {
+  processingStatus?: string;
+  moderationStatus?: string;
+  visibility?: string;
+  userId?: string;
+  search?: string;
+}): Prisma.VideoWhereInput => {
+  const where: Prisma.VideoWhereInput = {};
+
+  if (processingStatus && isProcessingStatus(processingStatus)) {
+    where.processingStatus = processingStatus;
+  }
+
+  if (moderationStatus && isModerationStatus(moderationStatus)) {
+    where.moderationStatus = moderationStatus;
+  }
+
+  if (visibility && isVisibility(visibility)) {
+    where.visibility = visibility;
+  }
+
+  if (userId) {
+    where.user = createUserSearchWhere(userId);
+  }
+
+  if (search) {
+    where.title = { contains: search, mode: 'insensitive' };
+  }
+
+  return where;
+};
+
+const buildModeratorVideosOrderBy = (
+  sort: string | undefined,
+): Prisma.VideoOrderByWithRelationInput => {
+  const [rawField, rawDirection] = (sort ?? 'createdAt:desc').split(':');
+  const field = isModeratorVideoSortField(rawField) ? rawField : 'createdAt';
+
+  return {
+    [field]: parseSortDirection(rawDirection),
+  };
+};
 
 router.use(authenticateSession);
 router.use(requireModerator);
@@ -19,57 +99,53 @@ router.get('/videos', async (req: Request, res: Response): Promise<void> => {
       userId,
       search,
       page = '1',
-      limit = '20',
+      limit = String(DEFAULT_PAGE_SIZE),
       sort = 'createdAt:desc',
     } = req.query as Record<string, string>;
 
-    const [sortField, sortDir] = sort.split(':');
-
-    const where: any = {};
-    if (processingStatus) where.processingStatus = processingStatus;
-    if (moderationStatus) where.moderationStatus = moderationStatus;
-    if (visibility) where.visibility = visibility;
-    if (userId) {
-      where.user = createUserSearchWhere(userId);
-    }
-    if (search) where.title = { contains: search, mode: 'insensitive' };
-
-    const skip = (Number(page) - 1) * Number(limit);
+    const pageNumber = parsePageNumber(page, 1);
+    const limitNumber = parsePageNumber(limit, DEFAULT_PAGE_SIZE);
+    const skip = (pageNumber - 1) * limitNumber;
+    const where = buildModeratorVideosWhere({
+      processingStatus,
+      moderationStatus,
+      visibility,
+      userId,
+      search,
+    });
+    const orderBy = buildModeratorVideosOrderBy(sort);
 
     const [rows, total] = await Promise.all([
       prisma.video.findMany({
-        where: where as any,
+        where,
         include: {
           user: { select: { id: true, username: true, displayName: true } },
         },
-        orderBy: {
-          [sortField || 'createdAt']:
-            (sortDir as any) === 'asc' ? 'asc' : 'desc',
-        },
+        orderBy,
         skip,
-        take: Number(limit),
+        take: limitNumber,
       }),
-      prisma.video.count({ where: where as any }),
+      prisma.video.count({ where }),
     ]);
 
-    const videosWithUrls = rows.map((v: any) => ({
-      id: v.id,
-      title: v.title,
-      user: v.user,
-      processingStatus: v.processingStatus,
-      moderationStatus: v.moderationStatus,
-      visibility: v.visibility,
-      createdAt: v.createdAt,
-      thumbnailUrl: getProxiedThumbnailUrl(v.userId, v.id, v.thumbnail),
+    const videosWithUrls = rows.map((video) => ({
+      id: video.id,
+      title: video.title,
+      user: video.user,
+      processingStatus: video.processingStatus,
+      moderationStatus: video.moderationStatus,
+      visibility: video.visibility,
+      createdAt: video.createdAt,
+      thumbnailUrl: getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail),
     }));
 
     res.json({
       videos: videosWithUrls,
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
+        page: pageNumber,
+        limit: limitNumber,
         totalItems: total,
-        totalPages: Math.ceil(total / Number(limit)),
+        totalPages: Math.ceil(total / limitNumber),
         itemsReturned: videosWithUrls.length,
       },
     });
@@ -157,7 +233,7 @@ router.patch(
 
       const updated = await prisma.video.update({
         where: { id },
-        data: { moderationStatus } as any,
+        data: { moderationStatus },
         select: {
           id: true,
           title: true,
@@ -167,8 +243,8 @@ router.patch(
       });
 
       res.json({ message: 'Moderation updated', video: updated });
-    } catch (error: any) {
-      if (error?.code === 'P2025') {
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         res.status(404).json({ error: 'Video not found' });
         return;
       }

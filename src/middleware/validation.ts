@@ -54,7 +54,7 @@ export const commentSchema = z.object({
       .string()
       .trim()
       .min(1, 'Comment content cannot be empty')
-      .max(1000, 'Comment must be 1000 characters or less'),
+      .max(500, 'Comment must be 500 characters or less'),
     parentId: z.string().uuid('Invalid parent ID format').optional().nullable(),
   }),
 });

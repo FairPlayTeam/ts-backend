@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticateSession, requireAdmin } from '../lib/sessionAuth.js';
@@ -15,6 +16,54 @@ import { getProxiedAssetUrl } from '../lib/utils.js';
 
 const router = Router();
 
+const DEFAULT_PAGE_SIZE = 20;
+const ADMIN_USER_SORT_FIELDS = ['createdAt', 'username', 'email'] as const;
+
+type AdminUserSortField = (typeof ADMIN_USER_SORT_FIELDS)[number];
+type SortDirection = 'asc' | 'desc';
+
+const isAdminUserSortField = (value: string): value is AdminUserSortField =>
+  ADMIN_USER_SORT_FIELDS.includes(value as AdminUserSortField);
+
+const parsePageNumber = (value: string | undefined, fallback: number) =>
+  Math.max(1, Number.parseInt(value ?? String(fallback), 10) || fallback);
+
+const parseSortDirection = (value: string | undefined): SortDirection =>
+  value === 'asc' ? 'asc' : 'desc';
+
+const buildAdminUsersWhere = ({
+  search,
+  isBanned,
+}: {
+  search?: string;
+  isBanned?: string;
+}): Prisma.UserWhereInput => {
+  const where: Prisma.UserWhereInput = {};
+
+  if (search) {
+    where.OR = [
+      { username: { contains: search, mode: 'insensitive' } },
+      { email: { contains: search, mode: 'insensitive' } },
+      { displayName: { contains: search, mode: 'insensitive' } },
+    ];
+  }
+
+  if (typeof isBanned !== 'undefined') {
+    where.isBanned = isBanned === 'true';
+  }
+
+  return where;
+};
+
+const buildAdminUsersOrderBy = (sort: string | undefined): Prisma.UserOrderByWithRelationInput => {
+  const [rawField, rawDirection] = (sort ?? 'createdAt:desc').split(':');
+  const field = isAdminUserSortField(rawField) ? rawField : 'createdAt';
+
+  return {
+    [field]: parseSortDirection(rawDirection),
+  };
+};
+
 router.use(authenticateSession);
 router.use(requireAdmin);
 
@@ -23,28 +72,20 @@ router.get('/users', async (req: Request, res: Response): Promise<void> => {
     const {
       search,
       page = '1',
-      limit = '20',
+      limit = String(DEFAULT_PAGE_SIZE),
       sort = 'createdAt:desc',
       isBanned,
     } = req.query as Record<string, string>;
 
-    const [sortField, sortDir] = (sort || 'createdAt:desc').split(':');
-
-    const where: any = {};
-    if (search) {
-      where.OR = [
-        { username: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { displayName: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    if (typeof isBanned !== 'undefined') where.isBanned = isBanned === 'true';
-
-    const skip = (Number(page) - 1) * Number(limit);
+    const pageNumber = parsePageNumber(page, 1);
+    const limitNumber = parsePageNumber(limit, DEFAULT_PAGE_SIZE);
+    const skip = (pageNumber - 1) * limitNumber;
+    const where = buildAdminUsersWhere({ search, isBanned });
+    const orderBy = buildAdminUsersOrderBy(sort);
 
     const [rows, total] = await Promise.all([
       prisma.user.findMany({
-        where: where as any,
+        where,
         select: {
           id: true,
           email: true,
@@ -58,14 +99,11 @@ router.get('/users', async (req: Request, res: Response): Promise<void> => {
           banReasonPrivate: true,
           createdAt: true,
         },
-        orderBy: {
-          [sortField || 'createdAt']:
-            (sortDir as any) === 'asc' ? 'asc' : 'desc',
-        },
+        orderBy,
         skip,
-        take: Number(limit),
+        take: limitNumber,
       }),
-      prisma.user.count({ where: where as any }),
+      prisma.user.count({ where }),
     ]);
 
     res.json({
@@ -74,10 +112,10 @@ router.get('/users', async (req: Request, res: Response): Promise<void> => {
         avatarUrl: getProxiedAssetUrl(u.id, u.avatarUrl),
       })),
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
+        page: pageNumber,
+        limit: limitNumber,
         totalItems: total,
-        totalPages: Math.ceil(total / Number(limit)),
+        totalPages: Math.ceil(total / limitNumber),
         itemsReturned: rows.length,
       },
     });
@@ -248,7 +286,7 @@ router.patch(
         return;
       }
 
-      const data: any = {
+      const data: Prisma.UserUpdateInput = {
         isBanned,
         banReasonPrivate: privateReason ?? null,
         bannedAt: isBanned ? new Date() : null,
@@ -270,8 +308,8 @@ router.patch(
         message: isBanned ? 'User banned' : 'User unbanned',
         user: updated,
       });
-    } catch (error: any) {
-      if (error?.code === 'P2025') {
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         res.status(404).json({ error: 'User not found' });
         return;
       }

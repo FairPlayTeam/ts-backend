@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
-import { validateSession } from '../controllers/sessionController.js';
+import {
+  SessionValidationUnavailableError,
+  validateSession,
+} from '../controllers/sessionController.js';
 
 export interface SessionAuthRequest extends Request {
   user?: {
@@ -14,6 +17,10 @@ export interface SessionAuthRequest extends Request {
     expiresAt: Date;
   };
 }
+
+const SESSION_UNAVAILABLE_RESPONSE = {
+  error: 'Authentication service temporarily unavailable',
+};
 
 export const authenticateSession = async (
   req: SessionAuthRequest,
@@ -52,6 +59,11 @@ export const authenticateSession = async (
     next();
   } catch (error) {
     console.error('Session authentication error:', error);
+    if (error instanceof SessionValidationUnavailableError) {
+      res.status(503).json(SESSION_UNAVAILABLE_RESPONSE);
+      return;
+    }
+
     res.status(500).json({ error: 'Authentication failed' });
   }
 };
@@ -82,7 +94,7 @@ export const requireModerator = (
 
 export const optionalSessionAuthenticate = async (
   req: SessionAuthRequest,
-  _res: Response,
+  res: Response,
   next: NextFunction,
 ) => {
   try {
@@ -109,6 +121,10 @@ export const optionalSessionAuthenticate = async (
     }
   } catch (error) {
     console.error('Optional session authentication error:', error);
+    if (error instanceof SessionValidationUnavailableError) {
+      res.status(503).json(SESSION_UNAVAILABLE_RESPONSE);
+      return;
+    }
   }
 
   next();

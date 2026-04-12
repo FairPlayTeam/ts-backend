@@ -86,9 +86,10 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     const lookup = String(emailOrUsername).trim();
     const lookupEmail = lookup.toLowerCase();
+    const lookupUsername = lookup.toLowerCase();
     const user = await prisma.user.findFirst({
       where: {
-        OR: [{ email: lookupEmail }, { username: lookup }],
+        OR: [{ email: lookupEmail }, { username: lookupUsername }],
       },
       select: {
         id: true,
@@ -250,18 +251,18 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
     const tokenHash = hashToken(token);
 
 
-    await prisma.emailVerificationToken.upsert({
-      where: { userId: user.id },
-      update: {
-        token: tokenHash,
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
-      },
-      create: {
-        userId: user.id,
-        token: tokenHash,
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
-      },
-    });
+    await prisma.$transaction([
+      prisma.emailVerificationToken.deleteMany({
+        where: { userId: user.id },
+      }),
+      prisma.emailVerificationToken.create({
+        data: {
+          userId: user.id,
+          token: tokenHash,
+          expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+        },
+      }),
+    ]);
 
     try {
       await sendVerificationEmail(user.email, token);

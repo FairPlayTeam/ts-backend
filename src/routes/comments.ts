@@ -58,11 +58,15 @@ registerRoute({
   path: '/comments/:commentId',
   summary: 'Delete a comment',
   description:
-    'Deletes a comment. Owners can delete their own comments. Moderators/admins can delete any comment.',
+    'Deletes a comment. Owners can delete their own comments. Moderators/admins can delete any comment. Comments with replies are soft-deleted and kept as `[deleted]` placeholders so reply threads remain reachable.',
   auth: true,
   params: { commentId: 'Comment ID' },
   responses: {
-    '200': '{ "message": "Comment deleted" }',
+    '200': `{
+  "message": "Comment deleted|Comment soft deleted",
+  "deletionMode": "hard|soft",
+  "commentId": "uuid"
+}`,
     '403': '{ "error": "Not allowed to delete this comment" }',
     '404': '{ "error": "Comment not found" }',
   },
@@ -78,7 +82,7 @@ registerRoute({
   path: '/comments/:commentId/replies',
   summary: 'Get replies for a comment (paginated)',
   description:
-    'Returns the direct replies of a comment. Use this endpoint recursively to implement infinite nested replies. Each reply includes likeCount, likedByMe (only when the request is authenticated), user (with proxied avatarUrl), and _count.replies to indicate if more nested replies are available.',
+    'Returns the direct replies of a comment. Use this endpoint recursively to implement infinite nested replies. Soft-deleted comments are preserved with their `[deleted]` content so child replies stay reachable. Each reply includes likeCount, likedByMe (only when the request is authenticated), user (with proxied avatarUrl), and _count.replies to indicate if more nested replies are available.',
   params: { commentId: 'Parent comment ID' },
   query: {
     page: 'number (default 1)',

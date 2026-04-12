@@ -288,7 +288,7 @@ registerRoute({
   path: '/videos/:videoId/comments',
   summary: 'Get comments for a video',
   description:
-    'Returns only top-level (parent) comments for a video. Each comment includes `likeCount`, `likedByMe` (only when the request is authenticated), and `_count.replies` so clients can decide whether to fetch replies. To fetch replies for any comment, call GET /comments/:commentId/replies with pagination. Use that replies endpoint recursively to implement infinite nesting.',
+    'Returns top-level (parent) comments for a video. Soft-deleted comments are preserved with their `[deleted]` content so reply threads remain accessible. Each comment includes `likeCount`, `likedByMe` (only when the request is authenticated), and `_count.replies` so clients can decide whether to fetch replies. To fetch replies for any comment, call GET /comments/:commentId/replies with pagination. Use that replies endpoint recursively to implement infinite nesting.',
   params: { videoId: 'Video ID' },
   query: {
     page: 'number (default 1)',
