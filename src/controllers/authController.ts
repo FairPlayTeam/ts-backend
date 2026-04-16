@@ -6,7 +6,27 @@ import { prisma } from '../lib/prisma.js';
 import { createSession } from './sessionController.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { getProxiedAssetUrl } from '../lib/utils.js';
-import { sendVerificationEmail } from '../lib/mailer.js';
+import {
+  assertMailerConfigured,
+  MailerConfigurationError,
+  sendVerificationEmail,
+} from '../lib/mailer.js';
+
+const EMAIL_VERIFICATION_UNAVAILABLE_RESPONSE = {
+  error: 'Email verification is temporarily unavailable. Please try again later.',
+};
+
+const respondWhenMailerUnavailable = (
+  res: Response,
+  error: unknown,
+): boolean => {
+  if (error instanceof MailerConfigurationError) {
+    res.status(503).json(EMAIL_VERIFICATION_UNAVAILABLE_RESPONSE);
+    return true;
+  }
+
+  return false;
+};
 
 function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -15,6 +35,7 @@ function hashToken(token: string): string {
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, username, password } = req.body;
+    assertMailerConfigured();
 
     const usernameNorm = String(username).trim().toLowerCase();
     const emailNorm = String(email).trim().toLowerCase();
@@ -49,6 +70,16 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         await sendVerificationEmail(user.email, token);
       } catch (mailErr) {
         console.error('Verification email failed after registration:', mailErr);
+
+        await prisma.user.delete({ where: { id: user.id } }).catch((cleanupError) => {
+          console.error(
+            `Failed to rollback user ${user.id} after verification email failure:`,
+            cleanupError,
+          );
+        });
+
+        res.status(503).json(EMAIL_VERIFICATION_UNAVAILABLE_RESPONSE);
+        return;
       }
 
       res.status(201).json({
@@ -75,6 +106,10 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       throw err;
     }
   } catch (error) {
+    if (respondWhenMailerUnavailable(res, error)) {
+      return;
+    }
+
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Internal server error during registration' });
   }
@@ -237,6 +272,7 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
 
   try {
     const { email } = req.body;
+    assertMailerConfigured();
 
     const user = await prisma.user.findUnique({
       where: { email: String(email).trim().toLowerCase() },
@@ -268,12 +304,20 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
       await sendVerificationEmail(user.email, token);
     } catch (mailErr) {
       console.error('Resend verification email failed:', mailErr);
-      res.status(500).json({ error: 'Failed to send verification email. Please try again.' });
+      if (respondWhenMailerUnavailable(res, mailErr)) {
+        return;
+      }
+
+      res.status(503).json(EMAIL_VERIFICATION_UNAVAILABLE_RESPONSE);
       return;
     }
 
     res.json(genericOk);
   } catch (error) {
+    if (respondWhenMailerUnavailable(res, error)) {
+      return;
+    }
+
     console.error('Resend verification error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

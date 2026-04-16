@@ -1,9 +1,12 @@
 import rateLimit from 'express-rate-limit';
 import type { Request } from 'express';
 
+const getClientKey = (req: Request): string =>
+    req.ip ?? req.socket.remoteAddress ?? 'unknown';
+
 const userAwareKey = (req: Request): string => {
     const userId = (req as any).user?.id
-    return userId ? `user_${userId}` : (req.ip ?? 'unknown')
+    return userId ? `user_${userId}` : getClientKey(req)
 };
 
 export const apiLimiter = rateLimit({
@@ -36,7 +39,7 @@ export const adminLimiter = rateLimit({
     },
 });
 
-// 6 uploads per hour maximum
+// Limits how many new upload flows a user can start in one hour.
 export const uploadLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
     limit: 6,
@@ -45,5 +48,17 @@ export const uploadLimiter = rateLimit({
     keyGenerator: userAwareKey,
     message: {
         error: 'Upload limit reached, please try again after 1 hour.',
+    },
+});
+
+// Allows chunked uploads to progress while still protecting the API from abuse.
+export const chunkUploadLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 240,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: userAwareKey,
+    message: {
+        error: 'Chunk upload request limit reached, please try again after 1 hour.',
     },
 });

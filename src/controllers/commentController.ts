@@ -3,22 +3,15 @@ import { prisma } from '../lib/prisma.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { getProxiedAssetUrl } from '../lib/utils.js';
 import { isUUID } from '../lib/utils.js';
+import { canAccessVideo } from '../lib/videoAccess.js';
+import { parsePagination as parseRequestPagination } from '../lib/pagination.js';
+import { resolveVideoByIdentifier } from '../lib/videoIds.js';
 
 const MAX_PAGE_LIMIT = 50;
 const DEFAULT_PAGE_LIMIT = 20;
 
 const getOptionalUserId = (req: Request): string | undefined =>
     (req as SessionAuthRequest).user?.id;
-
-const parsePagination = (query: Record<string, string>) => {
-    const page = Math.max(1, parseInt(query.page ?? '1') || 1);
-    const limit = Math.min(
-        MAX_PAGE_LIMIT,
-        Math.max(1, parseInt(query.limit ?? String(DEFAULT_PAGE_LIMIT)) || DEFAULT_PAGE_LIMIT)
-    );
-    const skip = (page - 1) * limit;
-    return { page, limit, skip };
-};
 
 const userSelect = {
     id: true,
@@ -27,11 +20,83 @@ const userSelect = {
     avatarUrl: true,
 };
 
+const videoAccessSelect = {
+    userId: true,
+    visibility: true,
+    processingStatus: true,
+    moderationStatus: true,
+    user: {
+        select: {
+            isBanned: true,
+        },
+    },
+} as const;
+
 type DeleteCommentResult = {
     message: string;
     deletionMode: 'soft' | 'hard';
     commentId: string;
 };
+
+const commentListSelect = {
+    id: true,
+    content: true,
+    createdAt: true,
+    updatedAt: true,
+    likeCount: true,
+    user: { select: userSelect },
+    _count: { select: { replies: true } },
+} as const;
+
+type CommentListRow = {
+    id: string;
+    content: string;
+    createdAt: Date;
+    updatedAt: Date;
+    likeCount: number;
+    user: {
+        id: string;
+        username: string;
+        displayName: string | null;
+        avatarUrl: string | null;
+    };
+    _count: {
+        replies: number;
+    };
+};
+
+const getLikedCommentIds = async (
+    requesterId: string | undefined,
+    commentIds: string[],
+): Promise<Set<string>> => {
+    if (!requesterId || commentIds.length === 0) {
+        return new Set();
+    }
+
+    const likes = await prisma.commentLike.findMany({
+        where: {
+            userId: requesterId,
+            commentId: { in: commentIds },
+        },
+        select: { commentId: true },
+    });
+
+    return new Set(likes.map((like) => like.commentId));
+};
+
+const mapCommentListItems = (
+    rows: CommentListRow[],
+    requesterId: string | undefined,
+    likedIds: Set<string>,
+) =>
+    rows.map((row) => ({
+        ...row,
+        likedByMe: requesterId ? likedIds.has(row.id) : undefined,
+        user: {
+            ...row.user,
+            avatarUrl: getProxiedAssetUrl(row.user.id, row.user.avatarUrl),
+        },
+    }));
 
 export const addComment = async (
     req: SessionAuthRequest,
@@ -42,17 +107,18 @@ export const addComment = async (
         const { videoId } = req.params;
         const { content, parentId } = req.body;
 
-        if (!isUUID(videoId)) {
-            res.status(400).json({ error: 'Invalid video ID format' });
-            return;
-        }
-
-        const video = await prisma.video.findUnique({
-            where: { id: videoId },
-            select: { id: true, allowComments: true },
+        const video = await resolveVideoByIdentifier(videoId, {
+            id: true,
+            allowComments: true,
+            ...videoAccessSelect,
         });
         if (!video) {
             res.status(404).json({ error: 'Video not found' });
+            return;
+        }
+
+        if (!canAccessVideo(video, req.user)) {
+            res.status(403).json({ error: 'Video not available' });
             return;
         }
 
@@ -74,7 +140,7 @@ export const addComment = async (
                 res.status(404).json({ error: 'Parent comment not found' });
                 return;
             }
-            if (parent.videoId !== videoId) {
+            if (parent.videoId !== video.id) {
                 res.status(400).json({ error: 'Parent comment does not belong to this video' });
                 return;
             }
@@ -83,7 +149,7 @@ export const addComment = async (
         const newComment = await prisma.comment.create({
             data: {
                 userId,
-                videoId,
+                videoId: video.id,
                 content,
                 parentId: parentId ?? null,
             },
@@ -144,10 +210,19 @@ export const deleteComment = async (
         }
 
         if (comment._count.replies > 0) {
-            await prisma.comment.update({
-                where: { id: commentId },
-                data: { isDeleted: true, content: '[deleted]' },
-            });
+            await prisma.$transaction([
+                prisma.commentLike.deleteMany({
+                    where: { commentId },
+                }),
+                prisma.comment.update({
+                    where: { id: commentId },
+                    data: {
+                        isDeleted: true,
+                        content: '[deleted]',
+                        likeCount: 0,
+                    },
+                }),
+            ]);
             const result: DeleteCommentResult = {
                 message: 'Comment soft deleted',
                 deletionMode: 'soft',
@@ -186,29 +261,34 @@ export const getCommentReplies = async (
             return;
         }
 
-        const { page, limit, skip } = parsePagination(req.query as Record<string, string>);
+        const { page, limit, skip } = parseRequestPagination(req.query, {
+            defaultLimit: DEFAULT_PAGE_LIMIT,
+            maxLimit: MAX_PAGE_LIMIT,
+        });
 
         const parent = await prisma.comment.findUnique({
             where: { id: commentId },
-            select: { id: true },
+            select: {
+                id: true,
+                video: {
+                    select: videoAccessSelect,
+                },
+            },
         });
         if (!parent) {
             res.status(404).json({ error: 'Comment not found' });
             return;
         }
 
+        if (!canAccessVideo(parent.video, (req as SessionAuthRequest).user ?? null)) {
+            res.status(403).json({ error: 'Video not available' });
+            return;
+        }
+
         const [rows, total] = await Promise.all([
             prisma.comment.findMany({
                 where: { parentId: commentId },
-                select: {
-                    id: true,
-                    content: true,
-                    createdAt: true,
-                    updatedAt: true,
-                    likeCount: true,
-                    user: { select: userSelect },
-                    _count: { select: { replies: true } },
-                },
+                select: commentListSelect,
                 orderBy: { createdAt: 'asc' },
                 skip,
                 take: limit,
@@ -217,24 +297,13 @@ export const getCommentReplies = async (
         ]);
 
         const requesterId = getOptionalUserId(req);
-        let likedIds = new Set<string>();
-        if (requesterId && rows.length > 0) {
-            const likes = await prisma.commentLike.findMany({
-                where: { userId: requesterId, commentId: { in: rows.map((c) => c.id) } },
-                select: { commentId: true },
-            });
-            likedIds = new Set(likes.map((l) => l.commentId));
-        }
+        const likedIds = await getLikedCommentIds(
+            requesterId,
+            rows.map((comment) => comment.id),
+        );
 
         res.json({
-            replies: rows.map((r) => ({
-                ...r,
-                likedByMe: requesterId ? likedIds.has(r.id) : undefined,
-                user: {
-                    ...r.user,
-                    avatarUrl: getProxiedAssetUrl(r.user.id, r.user.avatarUrl),
-                },
-            })),
+            replies: mapCommentListItems(rows, requesterId, likedIds),
             pagination: {
                 page,
                 limit,
@@ -256,51 +325,45 @@ export const getComments = async (
     try {
         const { videoId } = req.params;
 
-        if (!isUUID(videoId)) {
-            res.status(400).json({ error: 'Invalid video ID format' });
+        const video = await resolveVideoByIdentifier(videoId, {
+            id: true,
+            ...videoAccessSelect,
+        });
+
+        if (!video) {
+            res.status(404).json({ error: 'Video not found' });
             return;
         }
 
-        const { page, limit, skip } = parsePagination(req.query as Record<string, string>);
+        if (!canAccessVideo(video, (req as SessionAuthRequest).user ?? null)) {
+            res.status(403).json({ error: 'Video not available' });
+            return;
+        }
+
+        const { page, limit, skip } = parseRequestPagination(req.query, {
+            defaultLimit: DEFAULT_PAGE_LIMIT,
+            maxLimit: MAX_PAGE_LIMIT,
+        });
 
         const [rows, total] = await Promise.all([
             prisma.comment.findMany({
-                where: { videoId, parentId: null },
-                select: {
-                    id: true,
-                    content: true,
-                    createdAt: true,
-                    updatedAt: true,
-                    likeCount: true,
-                    user: { select: userSelect },
-                    _count: { select: { replies: true } },
-                },
+                where: { videoId: video.id, parentId: null },
+                select: commentListSelect,
                 orderBy: { createdAt: 'desc' },
                 skip,
                 take: limit,
             }),
-            prisma.comment.count({ where: { videoId, parentId: null } }),
+            prisma.comment.count({ where: { videoId: video.id, parentId: null } }),
         ]);
 
         const requesterId = getOptionalUserId(req);
-        let likedIds = new Set<string>();
-        if (requesterId && rows.length > 0) {
-            const likes = await prisma.commentLike.findMany({
-                where: { userId: requesterId, commentId: { in: rows.map((c) => c.id) } },
-                select: { commentId: true },
-            });
-            likedIds = new Set(likes.map((l) => l.commentId));
-        }
+        const likedIds = await getLikedCommentIds(
+            requesterId,
+            rows.map((comment) => comment.id),
+        );
 
         res.json({
-            comments: rows.map((comment) => ({
-                ...comment,
-                likedByMe: requesterId ? likedIds.has(comment.id) : undefined,
-                user: {
-                    ...comment.user,
-                    avatarUrl: getProxiedAssetUrl(comment.user.id, comment.user.avatarUrl),
-                },
-            })),
+            comments: mapCommentListItems(rows, requesterId, likedIds),
             pagination: {
                 page,
                 limit,

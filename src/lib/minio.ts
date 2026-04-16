@@ -1,20 +1,24 @@
 import * as Minio from 'minio';
 import { Readable } from 'stream';
+import { parseMinioUrl } from './serverConfig.js';
 
-const parseMinioUrl = (url: string) => {
-  const urlObj = new URL(url);
-  return {
-    endPoint: urlObj.hostname,
-    port: parseInt(urlObj.port) || 9000,
-    useSSL: urlObj.protocol === 'https:',
-    accessKey: urlObj.username,
-    secretKey: urlObj.password,
-  };
+let minioClientInstance: Minio.Client | null = null;
+
+export const getMinioClient = (): Minio.Client => {
+  if (!minioClientInstance) {
+    minioClientInstance = new Minio.Client(parseMinioUrl(process.env.MINIO_URL));
+  }
+
+  return minioClientInstance;
 };
 
-const minioConfig = parseMinioUrl(process.env.MINIO_URL!);
-
-export const minioClient = new Minio.Client(minioConfig);
+export const minioClient = new Proxy({} as Minio.Client, {
+  get(_target, prop) {
+    const client = getMinioClient() as unknown as Record<PropertyKey, unknown>;
+    const value = client[prop];
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
+}) as Minio.Client;
 
 export const BUCKETS = {
   VIDEOS: 'videos',
@@ -23,17 +27,19 @@ export const BUCKETS = {
 
 export const initializeBuckets = async (): Promise<void> => {
   try {
+    const client = getMinioClient();
+
     for (const bucketName of Object.values(BUCKETS)) {
       let exists = false;
       try {
-        exists = await minioClient.bucketExists(bucketName);
+        exists = await client.bucketExists(bucketName);
       } catch (error) {
         console.error('Failed to check if bucket exists:', error);
       }
 
       if (!exists) {
         try {
-          await minioClient.makeBucket(bucketName);
+          await client.makeBucket(bucketName);
           console.log(`Created bucket: ${bucketName}`);
         } catch (error: any) {
           const code = error?.code || error?.name || '';
@@ -62,7 +68,13 @@ export const uploadFile = async (
   metaData?: Record<string, string>,
 ): Promise<string> => {
   try {
-    await minioClient.putObject(bucketName, objectName, stream, size, metaData);
+    await getMinioClient().putObject(
+      bucketName,
+      objectName,
+      stream,
+      size,
+      metaData,
+    );
     return `${bucketName}/${objectName}`;
   } catch (error) {
     console.error('Error uploading file to MinIO:', error);
@@ -76,7 +88,11 @@ export const getFileUrl = async (
   expiry: number = 24 * 60 * 60,
 ): Promise<string> => {
   try {
-    return await minioClient.presignedGetObject(bucketName, objectName, expiry);
+    return await getMinioClient().presignedGetObject(
+      bucketName,
+      objectName,
+      expiry,
+    );
   } catch (error) {
     console.error('Error generating presigned URL:', error);
     throw error;

@@ -5,6 +5,17 @@ export interface AppError extends Error {
   isOperational?: boolean;
 }
 
+export const getPublicErrorMessage = (
+  err: AppError,
+  statusCode: number,
+): string => {
+  if (statusCode >= 500) {
+    return 'Internal Server Error';
+  }
+
+  return err.message || 'Request failed';
+};
+
 export const errorHandler = (
   err: AppError,
   req: Request,
@@ -13,9 +24,9 @@ export const errorHandler = (
 ): void => {
   const statusCode =
     err.statusCode || (err.message === 'CORS origin not allowed' ? 403 : 500);
-  const message = err.message || 'Internal Server Error';
+  const message = getPublicErrorMessage(err, statusCode);
 
-  console.error(`Error ${statusCode}: ${message}`);
+  console.error(`Error ${statusCode}: ${err.message || 'Unknown error'}`);
   console.error(err.stack);
 
   res.status(statusCode).json({

@@ -2,21 +2,33 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { createUserSearchWhere, getProxiedAssetUrl } from '../lib/utils.js';
+import { isStaffRole } from '../lib/videoAccess.js';
+import { parsePagination } from '../lib/pagination.js';
 
 const MAX_PAGE_LIMIT = 50
 const DEFAULT_PAGE_LIMIT = 20
 
-const parsePagination = (query: Record<string, string>) => {
-    const page = Math.max(1, parseInt(query.page ?? '1') || 1)
-    const limit = Math.min(
-        MAX_PAGE_LIMIT,
-        Math.max(1, parseInt(query.limit ?? String(DEFAULT_PAGE_LIMIT)) || DEFAULT_PAGE_LIMIT)
-    )
-    return { page, limit, skip: (page - 1) * limit }
-}
-
 const isValidUserParam = (id: string): boolean =>
     typeof id === 'string' && id.length > 0 && id.length <= 100
+
+const canViewBannedUser = (
+    req: Request | SessionAuthRequest,
+    targetUserId: string,
+): boolean =>
+    (req as SessionAuthRequest).user?.id === targetUserId ||
+    isStaffRole((req as SessionAuthRequest).user?.role);
+
+const canViewBannedRelationUsers = (
+    req: Request | SessionAuthRequest,
+): boolean => isStaffRole((req as SessionAuthRequest).user?.role);
+
+export const buildFollowersVisibilityWhere = (
+    canViewBannedUsers: boolean,
+) => (canViewBannedUsers ? {} : { follower: { isBanned: false } });
+
+export const buildFollowingVisibilityWhere = (
+    canViewBannedUsers: boolean,
+) => (canViewBannedUsers ? {} : { following: { isBanned: false } });
 
 export const followUser = async (
 	req: SessionAuthRequest,
@@ -33,10 +45,10 @@ export const followUser = async (
 
 		const userToFollow = await prisma.user.findFirst({
 			where: createUserSearchWhere(id),
-			select: { id: true },
+			select: { id: true, isBanned: true },
 		});
 
-		if (!userToFollow) {
+		if (!userToFollow || userToFollow.isBanned) {
 			res.status(404).json({ error: 'User not found' });
 			return;
 		}
@@ -96,10 +108,10 @@ export const unfollowUser = async (
 
 		const userToUnfollow = await prisma.user.findFirst({
 			where: createUserSearchWhere(id),
-			select: { id: true },
+			select: { id: true, isBanned: true },
 		});
 
-		if (!userToUnfollow) {
+		if (!userToUnfollow || userToUnfollow.isBanned) {
 			res.status(404).json({ error: 'User not found' });
 			return;
 		}
@@ -149,11 +161,14 @@ export const getFollowers = async (
 		return
 	}
 
-    const { page, limit, skip } = parsePagination(req.query as Record<string, string>);
+    const { page, limit, skip } = parsePagination(req.query, {
+      defaultLimit: DEFAULT_PAGE_LIMIT,
+      maxLimit: MAX_PAGE_LIMIT,
+    });
 
     const user = await prisma.user.findFirst({
       where: createUserSearchWhere(id),
-      select: { id: true },
+      select: { id: true, isBanned: true },
     });
 
     if (!user) {
@@ -161,9 +176,21 @@ export const getFollowers = async (
       return;
     }
 
+    if (user.isBanned && !canViewBannedUser(req, user.id)) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const visibilityWhere = buildFollowersVisibilityWhere(
+      canViewBannedRelationUsers(req),
+    );
+
     const [rows, total] = await Promise.all([
       prisma.follow.findMany({
-        where: { followingId: user.id },
+        where: {
+          followingId: user.id,
+          ...visibilityWhere,
+        },
         include: {
           follower: {
             select: {
@@ -178,7 +205,12 @@ export const getFollowers = async (
         skip,
         take: limit,
       }),
-      prisma.follow.count({ where: { followingId: user.id } }),
+      prisma.follow.count({
+        where: {
+          followingId: user.id,
+          ...visibilityWhere,
+        },
+      }),
     ]);
 
     res.json({
@@ -215,11 +247,14 @@ export const getFollowing = async (
 		return
 	}
 
-    const { page, limit, skip } = parsePagination(req.query as Record<string, string>)
+    const { page, limit, skip } = parsePagination(req.query, {
+      defaultLimit: DEFAULT_PAGE_LIMIT,
+      maxLimit: MAX_PAGE_LIMIT,
+    });
 
     const user = await prisma.user.findFirst({
       where: createUserSearchWhere(id),
-      select: { id: true },
+      select: { id: true, isBanned: true },
     });
 
     if (!user) {
@@ -227,9 +262,21 @@ export const getFollowing = async (
       return;
     }
 
+    if (user.isBanned && !canViewBannedUser(req, user.id)) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const visibilityWhere = buildFollowingVisibilityWhere(
+      canViewBannedRelationUsers(req),
+    );
+
     const [rows, total] = await Promise.all([
       prisma.follow.findMany({
-        where: { followerId: user.id },
+        where: {
+          followerId: user.id,
+          ...visibilityWhere,
+        },
         include: {
           following: {
             select: {
@@ -244,7 +291,12 @@ export const getFollowing = async (
         skip,
         take: limit,
       }),
-      prisma.follow.count({ where: { followerId: user.id } }),
+      prisma.follow.count({
+        where: {
+          followerId: user.id,
+          ...visibilityWhere,
+        },
+      }),
     ]);
 
     res.json({

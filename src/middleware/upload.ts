@@ -4,15 +4,17 @@ import crypto from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import {
+  DIRECT_VIDEO_UPLOAD_MAX_BYTES,
+  VIDEO_CHUNK_BYTES,
+} from '../lib/uploadConfig.js';
+import { APP_SLUG } from '../lib/appInfo.js';
 
-const uploadTempDir = path.join(tmpdir(), 'fpbackend-uploads');
+const uploadTempDir = path.join(tmpdir(), `${APP_SLUG}-uploads`);
 fs.mkdir(uploadTempDir, { recursive: true }).catch((err) => {
   console.error(`[upload] Failed to create temp upload directory: ${uploadTempDir}`, err);
   process.exit(1);
 });
-
-const MAX_UPLOAD_FILE_BYTES = 500 * 1024 * 1024;
-const MAX_VIDEO_CHUNK_BYTES = 95 * 1024 * 1024;
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadTempDir),
@@ -25,7 +27,7 @@ const storage = multer.diskStorage({
 export const upload = multer({
   storage,
   limits: {
-    fileSize: MAX_UPLOAD_FILE_BYTES,
+    fileSize: DIRECT_VIDEO_UPLOAD_MAX_BYTES,
     files: 4,
     fields: 10,
   },
@@ -34,7 +36,7 @@ export const upload = multer({
 const uploadChunk = multer({
   storage,
   limits: {
-    fileSize: MAX_VIDEO_CHUNK_BYTES,
+    fileSize: VIDEO_CHUNK_BYTES,
     files: 1,
     fields: 5
   },

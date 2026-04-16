@@ -1,4 +1,5 @@
 import ffmpeg from 'fluent-ffmpeg';
+import { VideoProcessingStatus } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { minioClient, BUCKETS } from './minio.js';
 import { prisma } from './prisma.js';
@@ -6,20 +7,13 @@ import { hlsVariantDir, hlsMasterIndex } from './paths.js';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
-
-export interface VideoQuality {
-    name: string;
-    height: number;
-    bitrate: string;
-    crf: number;
-}
-
-export const VIDEO_QUALITIES: VideoQuality[] = [
-    { name: '240p',  height: 240,  bitrate: '400k',  crf: 28 },
-    { name: '480p',  height: 480,  bitrate: '800k',  crf: 26 },
-    { name: '720p',  height: 720,  bitrate: '2000k', crf: 24 },
-    { name: '1080p', height: 1080, bitrate: '4000k', crf: 22 },
-]
+import { tmpdir } from 'node:os';
+import {
+    VideoQuality,
+    VIDEO_QUALITIES,
+    selectQualitiesForSource,
+} from './videoProfiles.js';
+import { APP_SLUG } from './appInfo.js';
 
 export interface ProcessingJob {
     videoId: string;
@@ -34,10 +28,76 @@ let activeJobsCount = 0;
 
 const MAX_CONCURRENT_JOBS = 1;
 const MINIO_UPLOAD_CONCURRENCY = 5;
+const VIDEO_PROCESSING_ROOT = path.join(tmpdir(), `${APP_SLUG}-video-processing`);
+
+const getVideoProcessingDir = (videoId: string): string =>
+    path.join(VIDEO_PROCESSING_ROOT, videoId);
+
+const isQueued = (videoId: string): boolean =>
+    processingQueue.some((job) => job.videoId === videoId);
 
 export const addToProcessingQueue = (job: ProcessingJob): void => {
+    if (activeJobs.has(job.videoId) || isQueued(job.videoId)) {
+        return;
+    }
+
     processingQueue.push(job);
     processNextJob();
+};
+
+export const resumePendingVideoProcessing = async (): Promise<void> => {
+    try {
+        const resumableStatuses = [
+            VideoProcessingStatus.uploading,
+            VideoProcessingStatus.processing,
+        ] as const;
+
+        const unrecoverable = await prisma.video.updateMany({
+            where: {
+                processingStatus: { in: [...resumableStatuses] },
+                storagePath: null,
+            },
+            data: {
+                processingStatus: VideoProcessingStatus.failed,
+            },
+        });
+
+        if (unrecoverable.count > 0) {
+            console.warn(
+                `Marked ${unrecoverable.count} video(s) as failed because their original upload path is missing.`,
+            );
+        }
+
+        const pendingVideos = await prisma.video.findMany({
+            where: {
+                processingStatus: { in: [...resumableStatuses] },
+                storagePath: { not: null },
+            },
+            select: {
+                id: true,
+                userId: true,
+                storagePath: true,
+            },
+            orderBy: {
+                createdAt: 'asc',
+            },
+        });
+
+        for (const video of pendingVideos) {
+            addToProcessingQueue({
+                videoId: video.id,
+                userId: video.userId,
+                originalPath: video.storagePath!,
+                qualities: VIDEO_QUALITIES,
+            });
+        }
+
+        if (pendingVideos.length > 0) {
+            console.log(`Resumed ${pendingVideos.length} pending video processing job(s)`);
+        }
+    } catch (error) {
+        console.error('Failed to resume pending video processing:', error);
+    }
 };
 
 const processNextJob = async (): Promise<void> => {
@@ -50,19 +110,23 @@ const processNextJob = async (): Promise<void> => {
     activeJobs.set(job.videoId, true);
 
     try {
-        await updateProcessingStatus(job.videoId, 'processing');
-        const processed = await processVideoQualities(job);
-        const variants = processed.map((q) => ({
+        await updateProcessingStatus(job.videoId, VideoProcessingStatus.processing);
+        const processedVideo = await processVideoQualities(job);
+        const variants = processedVideo.qualities.map((q) => ({
             name: q.name,
             bandwidth: parseBitrate(q.bitrate),
             resolution: `${q.actualWidth}x${q.height}`
         }));
         await createAndUploadMasterPlaylist(job.userId, job.videoId, variants);
-        await updateProcessingStatus(job.videoId, 'done');
-        await deleteFromMinio(job.originalPath);
+        await markProcessingCompleted(
+            job.videoId,
+            processedVideo.qualities,
+            processedVideo.duration,
+        );
+        await deleteOriginalUpload(job.videoId, job.originalPath);
     } catch (error) {
         console.error(`Video processing failed: ${job.videoId}`, error);
-        await updateProcessingStatus(job.videoId, 'done').catch(() => {});
+        await updateProcessingStatus(job.videoId, VideoProcessingStatus.failed).catch(() => {});
     } finally {
         activeJobsCount--;
         activeJobs.delete(job.videoId);
@@ -79,37 +143,58 @@ const parseBitrate = (bitrate: string): number => {
 
 type ProcessedQuality = VideoQuality & { actualWidth: number }
 
+type ProcessedVideo = {
+    duration: number;
+    qualities: ProcessedQuality[];
+};
+
 const processVideoQualities = async (
     job: ProcessingJob
-): Promise<ProcessedQuality[]> => {
-    const tempDir = `/tmp/video-processing/${job.videoId}`;
-    const originalFile = `${tempDir}/original.mp4`;
+): Promise<ProcessedVideo> => {
+    const tempDir = getVideoProcessingDir(job.videoId);
+    const originalFile = path.join(tempDir, 'original.mp4');
 
     await fs.mkdir(tempDir, { recursive: true });
-    await downloadFromMinio(job.originalPath, originalFile);
 
-    await generateAndUploadThumbnail(job, originalFile, tempDir);
+    try {
+        await downloadFromMinio(job.originalPath, originalFile);
 
-    const videoInfo = await getVideoInfo(originalFile);
-    const maxHeight = videoInfo.height;
-    const hasAudio = videoInfo.hasAudio;
-    const aspectRatio = videoInfo.width / videoInfo.height;
+        await generateAndUploadThumbnail(job, originalFile, tempDir);
 
-    const qualitiesToProcess = job.qualities.filter((q) => q.height <= maxHeight);
+        const videoInfo = await getVideoInfo(originalFile);
+        if (videoInfo.width <= 0 || videoInfo.height <= 0) {
+            throw new Error('Invalid video dimensions');
+        }
 
-    const results = await pLimit(
-        qualitiesToProcess.map((quality) => async () => {
-            const actualWidth = Math.round((quality.height * aspectRatio) / 2) * 2;
-            return processQuality(job, originalFile, quality, hasAudio, actualWidth);
-        }),
-        2
-    )
+        const maxHeight = videoInfo.height;
+        const hasAudio = videoInfo.hasAudio;
+        const aspectRatio = videoInfo.width / videoInfo.height;
 
-    await fs.rm(tempDir, { recursive: true, force: true }).catch((err) => {
-        console.error(`Failed to clean temp dir ${tempDir}:`, err);
-    })
+        const qualitiesToProcess = selectQualitiesForSource(maxHeight, job.qualities);
+        if (qualitiesToProcess.length === 0) {
+            throw new Error('No video quality profiles available for processing');
+        }
 
-    return results;
+        const qualities = await pLimit(
+            qualitiesToProcess.map((quality) => async () => {
+                const actualWidth = Math.max(
+                    2,
+                    Math.round((quality.height * aspectRatio) / 2) * 2,
+                );
+                return processQuality(job, originalFile, quality, hasAudio, actualWidth);
+            }),
+            2
+        );
+
+        return {
+            duration: videoInfo.duration,
+            qualities,
+        };
+    } finally {
+        await fs.rm(tempDir, { recursive: true, force: true }).catch((err) => {
+            console.error(`Failed to clean temp dir ${tempDir}:`, err);
+        });
+    }
 };
 
 async function pLimit<T>(
@@ -137,7 +222,7 @@ const processQuality = async (
     hasAudio: boolean,
     actualWidth: number
 ): Promise<ProcessedQuality> => {
-    const outDir = `/tmp/video-processing/${job.videoId}/${quality.name}`;
+    const outDir = path.join(getVideoProcessingDir(job.videoId), quality.name);
     await fs.mkdir(outDir, { recursive: true });
 
     await new Promise<void>((resolve, reject) => {
@@ -228,13 +313,48 @@ const deleteFromMinio = async (minioPath: string): Promise<void> => {
     await minioClient.removeObject(bucket, objectName);
 };
 
+const deleteOriginalUpload = async (videoId: string, minioPath: string): Promise<void> => {
+    try {
+        await deleteFromMinio(minioPath);
+        await prisma.video.update({
+            where: { id: videoId },
+            data: { storagePath: null },
+        });
+    } catch (error) {
+        console.error(`Failed to cleanup original upload for video ${videoId}:`, error);
+    }
+};
+
 const updateProcessingStatus = async (
     videoId: string,
-    processingStatus: 'uploading' | 'processing' | 'done'
+    processingStatus: VideoProcessingStatus
 ): Promise<void> => {
     await prisma.video.update({
         where: { id: videoId },
-        data: { processingStatus } as any
+        data: { processingStatus }
+    });
+};
+
+const markProcessingCompleted = async (
+    videoId: string,
+    qualities: ProcessedQuality[],
+    duration: number,
+): Promise<void> => {
+    await prisma.video.update({
+        where: { id: videoId },
+        data: {
+            processingStatus: VideoProcessingStatus.done,
+            duration: Number.isFinite(duration) && duration >= 0
+                ? Math.round(duration)
+                : null,
+            publishedAt: new Date(),
+            qualities: qualities.map((quality) => ({
+                name: quality.name,
+                height: quality.height,
+                width: quality.actualWidth,
+                bitrate: quality.bitrate,
+            })),
+        },
     });
 };
 
@@ -245,7 +365,7 @@ const createAndUploadMasterPlaylist = async (
     videoId: string,
     variants: { name: string; bandwidth: number; resolution: string }[]
 ): Promise<void> => {
-    const tempDir = `/tmp/video-processing/${videoId}`;
+    const tempDir = getVideoProcessingDir(videoId);
     await fs.mkdir(tempDir, { recursive: true });
     const masterPath = path.join(tempDir, 'master.m3u8');
 

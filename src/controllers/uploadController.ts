@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import crypto from 'node:crypto';
 import { uploadFile, BUCKETS, getFileUrl, minioClient } from '../lib/minio.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
@@ -11,18 +11,36 @@ import { fileTypeFromFile } from 'file-type';
 import {
   generateVideoId,
   addToProcessingQueue,
-  VIDEO_QUALITIES,
 } from '../lib/videoProcessor.js';
 import { prisma } from '../lib/prisma.js';
 import { videoOriginalPath, avatarPath, bannerPath } from '../lib/paths.js';
 import { generateSecureFilename } from '../lib/fileUtils.js';
-import { getProxiedThumbnailUrl } from '../lib/utils.js';
+import { getProxiedAssetUrl, getProxiedThumbnailUrl } from '../lib/utils.js';
+import {
+  normalizeStorageObjectName,
+  parseStorageObjectTarget,
+  type StorageBucketName,
+} from '../lib/storageObjectAccess.js';
+import {
+  MAX_THUMBNAIL_BYTES,
+  MAX_THUMBNAIL_MB,
+  MAX_CHUNKED_VIDEO_UPLOAD_CHUNKS,
+  MAX_CHUNKED_VIDEO_UPLOAD_TOTAL_MB,
+  VIDEO_CHUNK_BYTES,
+  VIDEO_CHUNK_MB,
+  validateChunkedVideoUploadPlan,
+} from '../lib/uploadConfig.js';
+import { VIDEO_QUALITIES } from '../lib/videoProfiles.js';
+import { isStaffRole } from '../lib/videoAccess.js';
+import { APP_SLUG } from '../lib/appInfo.js';
+import {
+  generateUniqueVideoPublicId,
+  getPublicVideoId,
+  resolveVideoByIdentifier,
+} from '../lib/videoIds.js';
+import { syncUserVideoStats } from '../lib/userVideoStats.js';
 
-const MAX_THUMBNAIL_BYTES = 5 * 1024 * 1024;
-const MAX_THUMBNAIL_MB = Math.round(MAX_THUMBNAIL_BYTES / (1024 * 1024));
-const VIDEO_CHUNK_BYTES = 95 * 1024 * 1024;
-const VIDEO_CHUNK_MB = Math.round(VIDEO_CHUNK_BYTES / (1024 * 1024));
-const VIDEO_CHUNK_UPLOAD_ROOT = path.join(tmpdir(), 'fpbackend-video-chunks');
+const VIDEO_CHUNK_UPLOAD_ROOT = path.join(tmpdir(), `${APP_SLUG}-video-chunks`);
 const VIDEO_CHUNK_MANIFEST_FILE = 'manifest.json';
 const VIDEO_CHUNK_ASSEMBLED_FILE = 'assembled-video.bin';
 const ALLOWED_VIDEO_MIME_TYPES = [
@@ -64,6 +82,17 @@ const parseTags = (tags: unknown): string[] => {
   return [];
 };
 
+const rollbackCreatedVideo = async (videoId: string, userId: string): Promise<void> => {
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.video.delete({ where: { id: videoId } });
+      await syncUserVideoStats(tx, userId);
+    });
+  } catch (error) {
+    console.error(`Failed to rollback uploaded video ${videoId}:`, error);
+  }
+};
+
 type ChunkedVideoManifest = {
   uploadId: string;
   userId: string;
@@ -77,7 +106,7 @@ type ChunkedVideoManifest = {
   mimeType: string | null;
   createdAt: string;
   allowComments: boolean;
-  license: string;
+  license: VideoLicense;
 };
 
 const parsePositiveInteger = (value: unknown): number | null => {
@@ -106,7 +135,37 @@ const getChunkAssembledPath = (uploadDir: string): string =>
 const readChunkManifest = async (uploadDir: string): Promise<ChunkedVideoManifest | null> => {
   try {
     const raw = await fs.readFile(getChunkManifestPath(uploadDir), 'utf8');
-    return JSON.parse(raw) as ChunkedVideoManifest;
+    const parsed = JSON.parse(raw) as Partial<ChunkedVideoManifest>;
+
+    if (
+      typeof parsed.uploadId !== 'string' ||
+      typeof parsed.userId !== 'string' ||
+      typeof parsed.title !== 'string' ||
+      !Array.isArray(parsed.tags) ||
+      typeof parsed.totalSize !== 'number' ||
+      typeof parsed.totalChunks !== 'number' ||
+      typeof parsed.receivedChunks !== 'number' ||
+      typeof parsed.originalName !== 'string' ||
+      typeof parsed.createdAt !== 'string'
+    ) {
+      throw new Error('Invalid chunk upload manifest');
+    }
+
+    return {
+      uploadId: parsed.uploadId,
+      userId: parsed.userId,
+      title: parsed.title,
+      description: typeof parsed.description === 'string' ? parsed.description : null,
+      tags: parsed.tags.map((tag) => String(tag).trim()).filter((tag) => tag.length > 0),
+      totalSize: parsed.totalSize,
+      totalChunks: parsed.totalChunks,
+      receivedChunks: parsed.receivedChunks,
+      originalName: parsed.originalName,
+      mimeType: typeof parsed.mimeType === 'string' ? parsed.mimeType : null,
+      createdAt: parsed.createdAt,
+      allowComments: parsed.allowComments !== false,
+      license: parseLicense(parsed.license),
+    };
   } catch (error: unknown) {
     const code = typeof error === 'object' && error !== null && 'code' in error
       ? String((error as { code?: string }).code)
@@ -182,6 +241,17 @@ const cleanupChunkUpload = async (uploadDir: string): Promise<void> => {
   }
 };
 
+const cleanupAssembledChunkFile = async (uploadDir: string): Promise<void> => {
+  try {
+    await fs.rm(getChunkAssembledPath(uploadDir), { force: true });
+  } catch (error) {
+    console.error(
+      `Failed to cleanup assembled chunk upload file in: ${uploadDir}`,
+      error,
+    );
+  }
+};
+
 export const cleanupExpiredChunkSessions = async (): Promise<void> => {
   try {
     const userDirs = await fs.readdir(VIDEO_CHUNK_UPLOAD_ROOT, { withFileTypes: true });
@@ -202,7 +272,15 @@ export const cleanupExpiredChunkSessions = async (): Promise<void> => {
         }
       }
     }
-  } catch (error) {
+  } catch (error: unknown) {
+    const code = typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: string }).code)
+      : '';
+
+    if (code === 'ENOENT') {
+      return;
+    }
+
     console.error('Failed to cleanup expired chunk sessions:', error);
   }
 };
@@ -339,25 +417,32 @@ export const uploadVideo = async (req: SessionAuthRequest, res: Response): Promi
     const userId = req.user!.id;
     const videoId = generateVideoId();
     const originalPath = videoOriginalPath(userId, videoId);
+    const storagePath = `${BUCKETS.VIDEOS}/${originalPath}`;
 
     const video = await prisma.$transaction(async (tx) => {
       const created = await tx.video.create({
-        data: { id: videoId, userId, title, description: description || null, tags: parseTags(tags) },
+        data: {
+          id: videoId,
+          publicId: await generateUniqueVideoPublicId(tx.video),
+          userId,
+          title,
+          description: description || null,
+          tags: parseTags(tags),
+          storagePath,
+        },
       });
-      const videoCount = await tx.video.count({ where: { userId } });
-      await tx.user.update({ where: { id: userId }, data: { videoCount } });
+      await syncUserVideoStats(tx, userId);
       return created;
     });
 
-    let storagePath: string;
     try {
       const stream = createReadStream(videoFile.path);
-      storagePath = await uploadFile(BUCKETS.VIDEOS, originalPath, stream, videoFile.size, {
+      await uploadFile(BUCKETS.VIDEOS, originalPath, stream, videoFile.size, {
         'Content-Type': videoFile.mimetype,
         'uploaded-by': userId,
       });
     } catch (uploadError) {
-      await prisma.video.delete({ where: { id: videoId } }).catch(() => {});
+      await rollbackCreatedVideo(videoId, userId);
       throw uploadError;
     }
 
@@ -365,7 +450,7 @@ export const uploadVideo = async (req: SessionAuthRequest, res: Response): Promi
 
     res.json({
       message: 'Video uploaded successfully and queued for processing',
-      video: { id: video.id, title: video.title },
+      video: { id: getPublicVideoId(video), title: video.title },
     });
   } catch (error) {
     console.error('Video upload error:', error);
@@ -401,6 +486,7 @@ export const uploadVideoBundle = async (req: SessionAuthRequest, res: Response):
     const userId = req.user!.id;
     const videoId = generateVideoId();
     const originalPath = videoOriginalPath(userId, videoId);
+    const storagePath = `${BUCKETS.VIDEOS}/${originalPath}`;
     const allowComments = allowCommentsRaw !== 'false' && allowCommentsRaw !== false;
 
     let thumbnailPath: string | null = null;
@@ -411,14 +497,23 @@ export const uploadVideoBundle = async (req: SessionAuthRequest, res: Response):
 
     const video = await prisma.$transaction(async (tx) => {
       const created = await tx.video.create({
-        data: { id: videoId, userId, title, description: description || null, tags: parseTags(tags), thumbnail: thumbnailPath, allowComments, license },
+        data: {
+          id: videoId,
+          publicId: await generateUniqueVideoPublicId(tx.video),
+          userId,
+          title,
+          description: description || null,
+          tags: parseTags(tags),
+          thumbnail: thumbnailPath,
+          allowComments,
+          license,
+          storagePath,
+        },
       });
-      const videoCount = await tx.video.count({ where: { userId } });
-      await tx.user.update({ where: { id: userId }, data: { videoCount } });
+      await syncUserVideoStats(tx, userId);
       return created;
     });
 
-    let storagePath: string;
     try {
       if (thumbnailFile && thumbnailPath) {
         const thumbnailStream = createReadStream(thumbnailFile.path);
@@ -429,12 +524,12 @@ export const uploadVideoBundle = async (req: SessionAuthRequest, res: Response):
       }
 
       const videoStream = createReadStream(videoFile.path);
-      storagePath = await uploadFile(BUCKETS.VIDEOS, originalPath, videoStream, videoFile.size, {
+      await uploadFile(BUCKETS.VIDEOS, originalPath, videoStream, videoFile.size, {
         'Content-Type': videoFile.mimetype,
         'uploaded-by': userId,
       });
     } catch (uploadError) {
-      await prisma.video.delete({ where: { id: videoId } }).catch(() => {});
+      await rollbackCreatedVideo(videoId, userId);
       throw uploadError;
     }
 
@@ -443,7 +538,7 @@ export const uploadVideoBundle = async (req: SessionAuthRequest, res: Response):
     res.json({
       message: 'Video uploaded successfully and queued for processing',
       video: {
-        id: video.id,
+        id: getPublicVideoId(video),
         title: video.title,
         thumbnailUrl: getProxiedThumbnailUrl(userId, videoId, thumbnailPath),
       },
@@ -474,9 +569,16 @@ export const initChunkedVideoUpload = async (req: SessionAuthRequest, res: Respo
       return;
     }
 
-    const expectedLastChunkBytes = totalSize - VIDEO_CHUNK_BYTES * (totalChunks - 1);
-    if (expectedLastChunkBytes <= 0 || expectedLastChunkBytes > VIDEO_CHUNK_BYTES) {
-      res.status(400).json({ error: `Invalid totalSize/totalChunks combination for ${VIDEO_CHUNK_MB}MB chunks` });
+    const uploadPlanError = validateChunkedVideoUploadPlan(totalSize, totalChunks);
+    if (uploadPlanError) {
+      res.status(400).json({
+        error: uploadPlanError,
+        limits: {
+          chunkSizeMB: VIDEO_CHUNK_MB,
+          maxChunks: MAX_CHUNKED_VIDEO_UPLOAD_CHUNKS,
+          maxTotalSizeMB: MAX_CHUNKED_VIDEO_UPLOAD_TOTAL_MB,
+        },
+      });
       return;
     }
 
@@ -563,6 +665,7 @@ export const completeChunkedVideoUpload = async (req: SessionAuthRequest, res: R
   const userId = req.user!.id;
   const { uploadId } = req.params;
   let uploadDir: string | null = null;
+  let shouldCleanupUploadDir = false;
 
   try {
     if (!uploadId || !isSafeUploadId(uploadId)) { res.status(400).json({ error: 'Invalid uploadId' }); return; }
@@ -602,39 +705,54 @@ export const completeChunkedVideoUpload = async (req: SessionAuthRequest, res: R
 
     const videoId = generateVideoId();
     const originalPath = videoOriginalPath(userId, videoId);
+    const storagePath = `${BUCKETS.VIDEOS}/${originalPath}`;
 
     const video = await prisma.$transaction(async (tx) => {
       const created = await tx.video.create({
-        data: { id: videoId, userId, title: manifest.title, description: manifest.description, tags: manifest.tags },
+        data: {
+          id: videoId,
+          publicId: await generateUniqueVideoPublicId(tx.video),
+          userId,
+          title: manifest.title,
+          description: manifest.description,
+          tags: manifest.tags,
+          allowComments: manifest.allowComments,
+          license: manifest.license,
+          storagePath,
+        },
       });
-      const videoCount = await tx.video.count({ where: { userId } });
-      await tx.user.update({ where: { id: userId }, data: { videoCount } });
+      await syncUserVideoStats(tx, userId);
       return created;
     });
 
     const stream = createReadStream(assembledPath);
-    let storagePath: string;
     try {
-      storagePath = await uploadFile(BUCKETS.VIDEOS, originalPath, stream, assembledStat.size, {
+      await uploadFile(BUCKETS.VIDEOS, originalPath, stream, assembledStat.size, {
         'Content-Type': contentType,
         'uploaded-by': userId,
       });
     } catch (uploadError) {
-      await prisma.video.delete({ where: { id: videoId } }).catch(() => {});
+      await rollbackCreatedVideo(videoId, userId);
       throw uploadError;
     }
 
     addToProcessingQueue({ videoId, userId, originalPath: storagePath, qualities: VIDEO_QUALITIES });
+    shouldCleanupUploadDir = true;
+    await cleanupChunkUpload(uploadDir);
 
     res.json({
       message: 'Video uploaded successfully and queued for processing',
-      video: { id: video.id, title: video.title },
+      video: { id: getPublicVideoId(video), title: video.title },
     });
   } catch (error) {
     console.error('Chunked video upload completion error:', error);
     res.status(500).json({ error: 'Failed to finalize chunked upload' });
   } finally {
-    if (uploadDir) await cleanupChunkUpload(uploadDir);
+    // Keep the chunk session on failure so the client can retry completion
+    // or replace missing/corrupted chunks without restarting from scratch.
+    if (uploadDir && !shouldCleanupUploadDir) {
+      await cleanupAssembledChunkFile(uploadDir);
+    }
   }
 };
 
@@ -689,7 +807,7 @@ export const uploadAvatar = async (req: SessionAuthRequest, res: Response): Prom
 
     res.json({
       message: 'Avatar uploaded successfully',
-      avatarUrl: await getFileUrl(BUCKETS.USERS, newAvatarPath),
+      avatarUrl: getProxiedAssetUrl(userId, newAvatarPath),
     });
   } catch (error) {
     console.error('Avatar upload error:', error);
@@ -727,7 +845,7 @@ export const uploadBanner = async (req: SessionAuthRequest, res: Response): Prom
 
     res.json({
       message: 'Banner uploaded successfully',
-      bannerUrl: await getFileUrl(BUCKETS.USERS, newBannerPath),
+      bannerUrl: getProxiedAssetUrl(userId, newBannerPath),
     });
   } catch (error) {
     console.error('Banner upload error:', error);
@@ -735,22 +853,114 @@ export const uploadBanner = async (req: SessionAuthRequest, res: Response): Prom
   }
 };
 
-export const getFileDownloadUrl = async (req: Request, res: Response): Promise<void> => {
+export const getFileDownloadUrl = async (req: SessionAuthRequest, res: Response): Promise<void> => {
   try {
-    const { bucket, filename } = req.params;
+    const { bucket } = req.params;
+    const rawObjectName =
+      (typeof req.query.objectName === 'string' ? req.query.objectName : undefined) ??
+      req.params.filename ??
+      req.params[0];
+    const objectName = normalizeStorageObjectName(rawObjectName);
+    const requester = req.user;
 
     const rawExpiry = parseInt(req.query.expiry as string);
     const expiry = Number.isInteger(rawExpiry)
       ? Math.min(MAX_EXPIRY_SECONDS, Math.max(MIN_EXPIRY_SECONDS, rawExpiry))
       : DEFAULT_EXPIRY_SECONDS;
 
+    if (!requester) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
     if (!Object.values(BUCKETS).includes(bucket as any)) {
       res.status(400).json({ error: 'Invalid bucket name' });
       return;
     }
 
-    const url = await getFileUrl(bucket, filename, expiry);
-    res.json({ url, expiresIn: expiry });
+    if (!objectName) {
+      res.status(400).json({ error: 'Object name is required' });
+      return;
+    }
+
+    const target = parseStorageObjectTarget(bucket as StorageBucketName, objectName);
+
+    if (!target) {
+      res.status(400).json({ error: 'Invalid object path' });
+      return;
+    }
+
+    if (target.bucket === 'users') {
+      const user = await prisma.user.findUnique({
+        where: { id: target.userId },
+        select: {
+          id: true,
+          avatarUrl: true,
+          bannerUrl: true,
+        },
+      });
+
+      if (!user) {
+        res.status(404).json({ error: 'Object not found' });
+        return;
+      }
+
+      const expectedObjectName =
+        target.kind === 'user-avatar' ? user.avatarUrl : user.bannerUrl;
+
+      if (!expectedObjectName || expectedObjectName !== objectName) {
+        res.status(404).json({ error: 'Object not found' });
+        return;
+      }
+
+      if (requester.id !== user.id && !isStaffRole(requester.role)) {
+        res.status(403).json({ error: 'Access denied' });
+        return;
+      }
+    } else {
+      const video = await prisma.video.findUnique({
+        where: { id: target.videoId },
+        select: {
+          id: true,
+          userId: true,
+          thumbnail: true,
+        },
+      });
+
+      if (!video || video.userId !== target.userId) {
+        res.status(404).json({ error: 'Object not found' });
+        return;
+      }
+
+      if (requester.id !== video.userId && !isStaffRole(requester.role)) {
+        res.status(403).json({ error: 'Access denied' });
+        return;
+      }
+
+      if (target.kind === 'video-thumbnail') {
+        if (!video.thumbnail || video.thumbnail !== objectName) {
+          res.status(404).json({ error: 'Object not found' });
+          return;
+        }
+      } else if (!objectName.startsWith(`${video.userId}/${video.id}/`)) {
+        res.status(404).json({ error: 'Object not found' });
+        return;
+      }
+    }
+
+    try {
+      await minioClient.statObject(bucket, objectName);
+    } catch (error: any) {
+      const code = error?.code || error?.name;
+      if (code === 'NoSuchKey' || code === 'NotFound') {
+        res.status(404).json({ error: 'Object not found' });
+        return;
+      }
+      throw error;
+    }
+
+    const url = await getFileUrl(bucket, objectName, expiry);
+    res.json({ url, expiresIn: expiry, objectName });
   } catch (error) {
     console.error('Get file URL error:', error);
     res.status(500).json({ error: 'Failed to generate file URL' });
@@ -771,7 +981,11 @@ export const updateThumbnail = async (req: SessionAuthRequest, res: Response): P
       return;
     }
 
-    const video = await prisma.video.findUnique({ where: { id: videoId } });
+    const video = await resolveVideoByIdentifier(videoId, {
+      id: true,
+      userId: true,
+      thumbnail: true,
+    });
     if (!video) { res.status(404).json({ error: 'Video not found' }); return; }
     if (video.userId !== userId) {
       res.status(403).json({ error: 'You are not authorized to edit this video' });
@@ -779,7 +993,7 @@ export const updateThumbnail = async (req: SessionAuthRequest, res: Response): P
     }
 
     const secureFilename = generateSecureFilename(thumbnailFile.originalname);
-    const newThumbnailPath = `thumbnails/${userId}/${videoId}/${secureFilename}`;
+    const newThumbnailPath = `thumbnails/${userId}/${video.id}/${secureFilename}`;
 
     const stream = createReadStream(thumbnailFile.path);
     await uploadFile(BUCKETS.VIDEOS, newThumbnailPath, stream, thumbnailFile.size, {
@@ -787,7 +1001,7 @@ export const updateThumbnail = async (req: SessionAuthRequest, res: Response): P
       'uploaded-by': userId,
     });
 
-    await prisma.video.update({ where: { id: videoId }, data: { thumbnail: newThumbnailPath } });
+    await prisma.video.update({ where: { id: video.id }, data: { thumbnail: newThumbnailPath } });
 
     if (video.thumbnail && video.thumbnail !== newThumbnailPath) {
       await minioClient.removeObject(BUCKETS.VIDEOS, video.thumbnail).catch((err) => {
@@ -795,7 +1009,7 @@ export const updateThumbnail = async (req: SessionAuthRequest, res: Response): P
       });
     }
 
-    const thumbnailUrl = await getFileUrl(BUCKETS.VIDEOS, newThumbnailPath);
+    const thumbnailUrl = getProxiedThumbnailUrl(userId, video.id, newThumbnailPath);
     res.json({ message: 'Thumbnail updated successfully', thumbnailUrl });
   } catch (error) {
     console.error('Thumbnail update error:', error);

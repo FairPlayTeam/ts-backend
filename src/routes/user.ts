@@ -1,8 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { getProxiedThumbnailUrl } from '../lib/utils.js';
 import { registerRoute } from '../lib/docs.js';
-import { createUserSearchWhere, getProxiedAssetUrl } from '../lib/utils.js';
+import {
+  createUserSearchWhere,
+  getProxiedAssetUrl,
+  getProxiedThumbnailUrl,
+} from '../lib/utils.js';
 import {
   getFollowers,
   getFollowing,
@@ -13,8 +16,12 @@ import {
   authenticateSession,
   requireNotBanned,
   optionalSessionAuthenticate,
+  SessionAuthRequest,
 } from '../lib/sessionAuth.js';
 import { getTopCreators } from '../controllers/userController.js';
+import { isStaffRole } from '../lib/videoAccess.js';
+import { parsePagination } from '../lib/pagination.js';
+import { getPublicVideoId } from '../lib/videoIds.js';
 
 const router = Router();
 
@@ -32,7 +39,7 @@ registerRoute({
 router.get(
   '/:id',
   optionalSessionAuthenticate,
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: SessionAuthRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
 
@@ -49,6 +56,7 @@ router.get(
           followingCount: true,
           videoCount: true,
           createdAt: true,
+          isBanned: true,
         },
       });
 
@@ -60,8 +68,16 @@ router.get(
       const avatarUrl = getProxiedAssetUrl(user.id, user.avatarUrl);
       const bannerUrl = getProxiedAssetUrl(user.id, user.bannerUrl);
 
+      const requesterId = req.user?.id;
+      const requesterRole = req.user?.role;
+      const canViewBannedUser = requesterId === user.id || isStaffRole(requesterRole);
+
+      if (user.isBanned && !canViewBannedUser) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
       let isFollowing: boolean | undefined = undefined;
-      const requesterId = (req as any).user?.id as string | undefined;
       if (requesterId && requesterId !== user.id) {
         const follow = await prisma.follow.findFirst({
           where: { followerId: requesterId, followingId: user.id },
@@ -70,7 +86,20 @@ router.get(
         isFollowing = Boolean(follow);
       }
 
-      const responseBody: any = { ...user, avatarUrl, bannerUrl };
+      const { isBanned: _isBanned, ...publicUser } = user;
+      const responseBody: {
+        avatarUrl: string | null;
+        bannerUrl: string | null;
+        bio: string | null;
+        createdAt: Date;
+        displayName: string | null;
+        followerCount: number;
+        followingCount: number;
+        id: string;
+        username: string;
+        videoCount: number;
+        isFollowing?: boolean;
+      } = { ...publicUser, avatarUrl, bannerUrl };
       if (requesterId) {
         responseBody.isFollowing = isFollowing ?? false;
       }
@@ -110,18 +139,29 @@ registerRoute({
 
 router.get(
   '/:id/videos',
-  async (req: Request, res: Response): Promise<void> => {
+  optionalSessionAuthenticate,
+    async (req: SessionAuthRequest, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const { page = '1', limit = '20' } = req.query as Record<string, string>;
-      const skip = (Number(page) - 1) * Number(limit);
+      const { page, limit, skip } = parsePagination(req.query, {
+        defaultLimit: 20,
+        maxLimit: 50,
+      });
 
       const user = await prisma.user.findFirst({
         where: createUserSearchWhere(id),
-        select: { id: true },
+        select: { id: true, isBanned: true },
       });
 
       if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      const canViewBannedUser =
+        req.user?.id === user.id || isStaffRole(req.user?.role);
+
+      if (user.isBanned && !canViewBannedUser) {
         res.status(404).json({ error: 'User not found' });
         return;
       }
@@ -130,15 +170,16 @@ router.get(
         prisma.video.findMany({
           where: {
             userId: user.id,
-            processingStatus: 'done' as any,
-            moderationStatus: 'approved' as any,
-            visibility: 'public' as any,
+            processingStatus: 'done',
+            moderationStatus: 'approved',
+            visibility: 'public',
           },
           orderBy: { createdAt: 'desc' },
           skip,
-          take: Number(limit),
+          take: limit,
           select: {
             id: true,
+            publicId: true,
             title: true,
             description: true,
             thumbnail: true,
@@ -149,9 +190,9 @@ router.get(
         prisma.video.count({
           where: {
             userId: user.id,
-            processingStatus: 'done' as any,
-            moderationStatus: 'approved' as any,
-            visibility: 'public' as any,
+            processingStatus: 'done',
+            moderationStatus: 'approved',
+            visibility: 'public',
           },
         }),
       ]);
@@ -160,7 +201,7 @@ router.get(
         rows.map(async (v) => {
           const thumbUrl = getProxiedThumbnailUrl(user.id, v.id, v.thumbnail);
           return {
-            id: v.id,
+            id: getPublicVideoId(v),
             title: v.title,
             description: v.description,
             createdAt: v.createdAt,
@@ -173,10 +214,10 @@ router.get(
       res.json({
         videos,
         pagination: {
-          page: Number(page),
-          limit: Number(limit),
+          page,
+          limit,
           totalItems: total,
-          totalPages: Math.ceil(total / Number(limit)),
+          totalPages: Math.ceil(total / limit),
           itemsReturned: videos.length,
         },
       });
@@ -203,8 +244,8 @@ registerRoute({
   },
 });
 
-router.get('/:id/followers', getFollowers);
-router.get('/:id/following', getFollowing);
+router.get('/:id/followers', optionalSessionAuthenticate, getFollowers);
+router.get('/:id/following', optionalSessionAuthenticate, getFollowing);
 
 registerRoute({
   method: 'GET',

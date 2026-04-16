@@ -18,7 +18,13 @@ import {
   getFileDownloadUrl,
 } from '../controllers/uploadController.js';
 import { registerRoute } from '../lib/docs.js';
-import { uploadLimiter } from '../middleware/limiters.js';
+import { chunkUploadLimiter, uploadLimiter } from '../middleware/limiters.js';
+import {
+  DIRECT_VIDEO_UPLOAD_MAX_MB,
+  MAX_CHUNKED_VIDEO_UPLOAD_CHUNKS,
+  MAX_CHUNKED_VIDEO_UPLOAD_TOTAL_MB,
+  VIDEO_CHUNK_MB,
+} from '../lib/uploadConfig.js';
 
 const router = Router();
 
@@ -27,6 +33,7 @@ router.use(requireNotBanned);
 
 router.post(
   '/video',
+  uploadLimiter,
   uploadSingle('video'),
   validateFileMagicNumbers,
   uploadVideo,
@@ -34,7 +41,7 @@ router.post(
 registerRoute({
   method: 'POST',
   path: '/upload/video',
-  summary: 'Upload a video (queued for processing)',
+  summary: `Upload a video up to ${DIRECT_VIDEO_UPLOAD_MAX_MB}MB (queued for processing)`,
   auth: true,
   body: { title: 'string', description: 'string?', tags: 'string (comma-separated)', video: 'file' },
   responses: {
@@ -48,16 +55,19 @@ registerRoute({
   }
 });
 
-router.post('/video-chunks/init', initChunkedVideoUpload);
+router.post('/video-chunks/init', uploadLimiter, initChunkedVideoUpload);
 registerRoute({
   method: 'POST',
   path: '/upload/video-chunks/init',
-  summary: 'Initialize chunked video upload (safe chunks under tunnel limit)',
+  summary: `Initialize chunked video upload (up to ${MAX_CHUNKED_VIDEO_UPLOAD_TOTAL_MB}MB total)`,
   auth: true,
+  description: `Chunked uploads use fixed ${VIDEO_CHUNK_MB}MB chunks and are capped at ${MAX_CHUNKED_VIDEO_UPLOAD_CHUNKS} chunks total to protect temporary disk usage.`,
   body: {
     title: 'string',
     description: 'string?',
     tags: 'string (comma-separated)?',
+    allowComments: 'boolean (optional, default: true)',
+    license: 'all_rights_reserved|cc_by|cc_by_sa|cc_by_nd|cc_by_nc|cc_by_nc_sa|cc_by_nc_nd|cc0 (optional)',
     totalSize: 'number (bytes)',
     totalChunks: 'number',
     originalName: 'string?',
@@ -74,7 +84,12 @@ registerRoute({
   },
 });
 
-router.post('/video-chunks/:uploadId/chunk', uploadChunkSingle, uploadVideoChunk);
+router.post(
+  '/video-chunks/:uploadId/chunk',
+  chunkUploadLimiter,
+  uploadChunkSingle,
+  uploadVideoChunk,
+);
 registerRoute({
   method: 'POST',
   path: '/upload/video-chunks/:uploadId/chunk',
@@ -83,7 +98,7 @@ registerRoute({
   params: { uploadId: 'Upload session ID (UUID)' },
   body: {
     chunkIndex: 'number (0-based)',
-    chunk: 'file (max 100MB)',
+    chunk: `file (max ${VIDEO_CHUNK_MB}MB)`,
   },
   responses: {
     '200': `{
@@ -97,7 +112,11 @@ registerRoute({
   },
 });
 
-router.post('/video-chunks/:uploadId/complete', completeChunkedVideoUpload);
+router.post(
+  '/video-chunks/:uploadId/complete',
+  chunkUploadLimiter,
+  completeChunkedVideoUpload,
+);
 registerRoute({
   method: 'POST',
   path: '/upload/video-chunks/:uploadId/complete',
@@ -115,7 +134,11 @@ registerRoute({
   },
 });
 
-router.delete('/video-chunks/:uploadId', abortChunkedVideoUpload);
+router.delete(
+  '/video-chunks/:uploadId',
+  chunkUploadLimiter,
+  abortChunkedVideoUpload,
+);
 registerRoute({
   method: 'DELETE',
   path: '/upload/video-chunks/:uploadId',
@@ -137,7 +160,7 @@ router.post(
 registerRoute({
   method: 'POST',
   path: '/upload/video-bundle',
-  summary: 'Upload a video with an optional thumbnail (queued for processing)',
+  summary: `Upload a video bundle up to ${DIRECT_VIDEO_UPLOAD_MAX_MB}MB with an optional thumbnail`,
   auth: true,
   body: {
     title: 'string',
@@ -199,14 +222,25 @@ registerRoute({
   }
 });
 
-router.get('/url/:bucket/:filename', getFileDownloadUrl);
+router.get('/url/:bucket', getFileDownloadUrl);
+router.get('/url/:bucket/*', getFileDownloadUrl);
 registerRoute({
   method: 'GET',
-  path: '/upload/url/:bucket/:filename',
-  summary: 'Get presigned URL for object',
+  path: '/upload/url/:bucket',
+  summary: 'Get a presigned URL for one of your stored objects',
+  description:
+    'Only the owning user or staff can request a presigned URL. Public assets and playback should use the proxy endpoints instead.',
   auth: true,
-  params: { bucket: 'videos|users', filename: 'string' },
-  responses: { '200': '{ "url": "string", "expiresIn": 86400 }' }
+  params: { bucket: 'videos|users' },
+  query: {
+    objectName: 'Object path inside the bucket (preferred for nested paths)',
+    expiry: 'Expiry in seconds between 60 and 604800 (optional)',
+  },
+  responses: {
+    '200': '{ "url": "string", "expiresIn": 86400, "objectName": "user/video/file.ext" }',
+    '403': '{ "error": "Access denied" }',
+    '404': '{ "error": "Object not found" }',
+  }
 });
 
 export default router;

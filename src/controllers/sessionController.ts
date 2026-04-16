@@ -6,6 +6,8 @@ import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { isUUID } from '../lib/utils.js';
 
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 30;
+const SESSION_KEY_SUFFIX_LENGTH = 8;
+const LAST_USED_AT_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 const sessionUserSelect = {
   id: true,
@@ -37,6 +39,47 @@ const generateSessionKey = (): string => {
   return `${prefix}_${randomBytes}`;
 };
 
+const hashSessionKey = (sessionKey: string): string =>
+  crypto.createHash('sha256').update(sessionKey).digest('hex');
+
+const getSessionKeySuffix = (sessionKey: string): string =>
+  sessionKey.slice(-SESSION_KEY_SUFFIX_LENGTH);
+
+const isHashedSessionKey = (value: string): boolean =>
+  /^[0-9a-f]{64}$/i.test(value);
+
+const shouldRefreshLastUsedAt = (lastUsedAt: Date): boolean =>
+  Date.now() - lastUsedAt.getTime() >= LAST_USED_AT_REFRESH_INTERVAL_MS;
+
+const migrateLegacySessionKey = async (
+  sessionId: string,
+  sessionKeyHash: string,
+  sessionKeySuffix: string,
+): Promise<void> => {
+  try {
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: {
+        sessionKey: sessionKeyHash,
+        sessionKeySuffix,
+      },
+    });
+  } catch (error) {
+    console.error('Legacy session migration error:', error);
+  }
+};
+
+const refreshSessionLastUsedAt = async (sessionId: string): Promise<void> => {
+  try {
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: { lastUsedAt: new Date() },
+    });
+  } catch (error) {
+    console.error('Session lastUsedAt refresh error:', error);
+  }
+};
+
 const extractDeviceInfo = (userAgent?: string): string => {
   if (!userAgent) return 'Unknown Device';
 
@@ -64,6 +107,10 @@ const getSingleHeaderValue = (header: string | string[] | undefined): string | u
 };
 
 const getClientIP = (req: Request): string => {
+  if (req.ip) {
+    return req.ip;
+  }
+
   const forwarded = getSingleHeaderValue(req.headers['x-forwarded-for']);
   const realIP = getSingleHeaderValue(req.headers['x-real-ip']);
 
@@ -83,6 +130,8 @@ export const createSession = async (
   req: Request,
 ): Promise<{ sessionKey: string; session: SessionRecord }> => {
   const sessionKey = generateSessionKey();
+  const sessionKeyHash = hashSessionKey(sessionKey);
+  const sessionKeySuffix = getSessionKeySuffix(sessionKey);
   const ipAddress = getClientIP(req);
   const userAgent = req.get('user-agent') ?? undefined;
   const deviceInfo = extractDeviceInfo(userAgent);
@@ -92,7 +141,8 @@ export const createSession = async (
 
   const session = await prisma.session.create({
     data: {
-      sessionKey,
+      sessionKey: sessionKeyHash,
+      sessionKeySuffix,
       userId,
       ipAddress,
       userAgent: userAgent ?? null,
@@ -129,7 +179,7 @@ export const getUserSessions = async (
       },
       select: {
         id: true,
-        sessionKey: true,
+        sessionKeySuffix: true,
         ipAddress: true,
         deviceInfo: true,
         createdAt: true,
@@ -141,12 +191,15 @@ export const getUserSessions = async (
       },
     });
 
-    const currentSessionKey = req.headers.authorization?.replace('Bearer ', '');
-
     const maskedSessions = sessions.map((session) => ({
-      ...session,
-      sessionKey: `****${session.sessionKey.slice(-8)}`,
-      isCurrent: session.sessionKey === currentSessionKey,
+      id: session.id,
+      ipAddress: session.ipAddress,
+      deviceInfo: session.deviceInfo,
+      createdAt: session.createdAt,
+      lastUsedAt: session.lastUsedAt,
+      expiresAt: session.expiresAt,
+      sessionKey: `****${session.sessionKeySuffix ?? 'unknown'}`,
+      isCurrent: session.id === req.session?.id,
     }));
 
     res.json({
@@ -224,12 +277,14 @@ export const logoutAllOtherSessions = async (
       return;
     }
 
+    const currentSessionKeyHash = hashSessionKey(currentSessionKey);
+
     const result = await prisma.session.updateMany({
       where: {
         userId: req.user.id,
         isActive: true,
         sessionKey: {
-          not: currentSessionKey,
+          not: currentSessionKeyHash,
         },
       },
       data: {
@@ -278,10 +333,14 @@ export const logoutAllSessions = async (
 };
 
 export const validateSession = async (sessionKey: string): Promise<SessionRecord | null> => {
+  const sessionKeyHash = hashSessionKey(sessionKey);
+
+  let session: SessionRecord | null;
+
   try {
-    const session = await prisma.session.findUnique({
+    session = await prisma.session.findUnique({
       where: {
-        sessionKey,
+        sessionKey: sessionKeyHash,
       },
       include: {
         user: {
@@ -289,6 +348,30 @@ export const validateSession = async (sessionKey: string): Promise<SessionRecord
         },
       },
     });
+
+    if (!session) {
+      const legacySession = await prisma.session.findUnique({
+        where: {
+          sessionKey,
+        },
+        include: {
+          user: {
+            select: sessionUserSelect,
+          },
+        },
+      });
+
+      if (legacySession && !isHashedSessionKey(legacySession.sessionKey)) {
+        void migrateLegacySessionKey(
+          legacySession.id,
+          sessionKeyHash,
+          getSessionKeySuffix(sessionKey),
+        );
+        session = legacySession;
+      } else {
+        session = legacySession;
+      }
+    }
 
     if (!session || !session.isActive || session.expiresAt < new Date()) {
       return null;
@@ -298,10 +381,9 @@ export const validateSession = async (sessionKey: string): Promise<SessionRecord
       return null;
     }
 
-    await prisma.session.update({
-      where: { sessionKey },
-      data: { lastUsedAt: new Date() },
-    });
+    if (shouldRefreshLastUsedAt(session.lastUsedAt)) {
+      void refreshSessionLastUsedAt(session.id);
+    }
 
     return session;
   } catch (error) {

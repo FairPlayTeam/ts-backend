@@ -1,16 +1,23 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, VideoProcessingStatus } from '@prisma/client';
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticateSession, requireModerator } from '../lib/sessionAuth.js';
 import { registerRoute } from '../lib/docs.js';
 import { createUserSearchWhere, getProxiedThumbnailUrl } from '../lib/utils.js';
 import { validate, moderationSchema } from '../middleware/validation.js';
+import { parsePagination } from '../lib/pagination.js';
+import { getPublicVideoId, resolveVideoByIdentifier } from '../lib/videoIds.js';
 
 const router = Router();
 
 const DEFAULT_PAGE_SIZE = 20;
 const MODERATOR_VIDEO_SORT_FIELDS = ['createdAt', 'title'] as const;
-const VIDEO_PROCESSING_STATUSES = ['uploading', 'processing', 'done'] as const;
+const VIDEO_PROCESSING_STATUSES = [
+  VideoProcessingStatus.uploading,
+  VideoProcessingStatus.processing,
+  VideoProcessingStatus.failed,
+  VideoProcessingStatus.done,
+] as const;
 const VIDEO_MODERATION_STATUSES = ['pending', 'approved', 'rejected'] as const;
 const VIDEO_VISIBILITIES = ['public', 'unlisted', 'private'] as const;
 
@@ -31,9 +38,6 @@ const isModerationStatus = (value: string): value is ModerationStatus =>
 
 const isVisibility = (value: string): value is Visibility =>
   VIDEO_VISIBILITIES.includes(value as Visibility);
-
-const parsePageNumber = (value: string | undefined, fallback: number) =>
-  Math.max(1, Number.parseInt(value ?? String(fallback), 10) || fallback);
 
 const parseSortDirection = (value: string | undefined): SortDirection =>
   value === 'asc' ? 'asc' : 'desc';
@@ -98,14 +102,13 @@ router.get('/videos', async (req: Request, res: Response): Promise<void> => {
       visibility,
       userId,
       search,
-      page = '1',
-      limit = String(DEFAULT_PAGE_SIZE),
       sort = 'createdAt:desc',
     } = req.query as Record<string, string>;
 
-    const pageNumber = parsePageNumber(page, 1);
-    const limitNumber = parsePageNumber(limit, DEFAULT_PAGE_SIZE);
-    const skip = (pageNumber - 1) * limitNumber;
+    const { page: pageNumber, limit: limitNumber, skip } = parsePagination(req.query, {
+      defaultLimit: DEFAULT_PAGE_SIZE,
+      maxLimit: 100,
+    });
     const where = buildModeratorVideosWhere({
       processingStatus,
       moderationStatus,
@@ -129,7 +132,7 @@ router.get('/videos', async (req: Request, res: Response): Promise<void> => {
     ]);
 
     const videosWithUrls = rows.map((video) => ({
-      id: video.id,
+      id: getPublicVideoId(video),
       title: video.title,
       user: video.user,
       processingStatus: video.processingStatus,
@@ -164,7 +167,7 @@ registerRoute({
   auth: true,
   roles: ['moderator', 'admin'],
   query: {
-    processingStatus: 'uploading|processing|done (optional)',
+    processingStatus: 'uploading|processing|failed|done (optional)',
     moderationStatus: 'pending|approved|rejected (optional)',
     visibility: 'public|unlisted|private (optional)',
     userId: 'Filter by owner username or ID (optional)',
@@ -181,7 +184,7 @@ registerRoute({
       "title": "string",
       "user": { "id": "string", "username": "string", "displayName": "string|null" },
       "thumbnailUrl": "string|null",
-      "processingStatus": "uploading|processing|done",
+      "processingStatus": "uploading|processing|failed|done",
       "moderationStatus": "pending|approved|rejected",
       "visibility": "public|unlisted|private",
       "createdAt": "ISO8601"
@@ -200,7 +203,7 @@ registerRoute({
     'Update only moderationStatus to approved or rejected for a video.',
   auth: true,
   roles: ['moderator', 'admin'],
-  params: { id: 'Video ID' },
+  params: { id: 'Video public ID or legacy UUID' },
   body: { action: "'approve' | 'reject'" },
   responses: {
     '200': `{
@@ -209,7 +212,7 @@ registerRoute({
     "id": "string",
     "title": "string",
     "moderationStatus": "approved|rejected",
-    "processingStatus": "uploading|processing|done"
+    "processingStatus": "uploading|processing|failed|done"
   }
 }`,
     '404': '{ "error": "Video not found" }',
@@ -231,23 +234,35 @@ router.patch(
 
       const moderationStatus = action === 'approve' ? 'approved' : 'rejected';
 
+      const video = await resolveVideoByIdentifier(id, {
+        id: true,
+      });
+
+      if (!video) {
+        res.status(404).json({ error: 'Video not found' });
+        return;
+      }
+
       const updated = await prisma.video.update({
-        where: { id },
+        where: { id: video.id },
         data: { moderationStatus },
         select: {
           id: true,
+          publicId: true,
           title: true,
           moderationStatus: true,
           processingStatus: true,
         },
       });
 
-      res.json({ message: 'Moderation updated', video: updated });
+      res.json({
+        message: 'Moderation updated',
+        video: {
+          ...updated,
+          id: getPublicVideoId(updated),
+        },
+      });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        res.status(404).json({ error: 'Video not found' });
-        return;
-      }
       console.error('Moderator update moderation error:', error);
       res.status(500).json({ error: 'Failed to update video moderation' });
     }

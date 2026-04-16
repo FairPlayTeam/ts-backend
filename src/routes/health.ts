@@ -2,16 +2,16 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { minioClient, BUCKETS } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
+import {
+  aggregateStatus,
+  createHealthyServiceCheck,
+  createUnavailableServiceCheck,
+  type ServiceCheck,
+  type ServiceStatus,
+} from '../lib/health.js';
+import { APP_VERSION } from '../lib/appInfo.js';
 
 const router = Router();
-
-type ServiceStatus = 'ok' | 'degraded' | 'down';
-
-interface ServiceCheck {
-  status: ServiceStatus;
-  latencyMs: number;
-  error?: string;
-}
 
 interface HealthResponse {
   status: ServiceStatus;
@@ -28,9 +28,9 @@ const checkDatabase = async (): Promise<ServiceCheck> => {
   const start = Date.now();
   try {
     await prisma.$queryRaw`SELECT 1`;
-    return { status: 'ok', latencyMs: Date.now() - start };
-  } catch (err: any) {
-    return { status: 'down', latencyMs: Date.now() - start, error: err?.message ?? 'Unknown error' };
+    return createHealthyServiceCheck(Date.now() - start);
+  } catch (error: unknown) {
+    return createUnavailableServiceCheck('database', start, error);
   }
 };
 
@@ -38,16 +38,10 @@ const checkStorage = async (): Promise<ServiceCheck> => {
   const start = Date.now();
   try {
     await minioClient.bucketExists(BUCKETS.VIDEOS);
-    return { status: 'ok', latencyMs: Date.now() - start };
-  } catch (err: any) {
-    return { status: 'down', latencyMs: Date.now() - start, error: err?.message ?? 'Unknown error' };
+    return createHealthyServiceCheck(Date.now() - start);
+  } catch (error: unknown) {
+    return createUnavailableServiceCheck('storage', start, error);
   }
-};
-
-const aggregateStatus = (checks: ServiceCheck[]): ServiceStatus => {
-  if (checks.every((c) => c.status === 'ok')) return 'ok';
-  if (checks.some((c) => c.status === 'down')) return 'down';
-  return 'degraded';
 };
 
 router.get('/', async (_req, res) => {
@@ -62,7 +56,7 @@ router.get('/', async (_req, res) => {
     status,
     timestamp: new Date().toISOString(),
     uptimeSeconds: Math.floor(process.uptime()),
-    version: process.env.npm_package_version ?? 'unknown',
+    version: APP_VERSION,
     services: { database, storage },
   };
 
@@ -91,7 +85,7 @@ registerRoute({
   "uptimeSeconds": 3600,
   "version": "1.0.0",
   "services": {
-    "database": { "status": "down", "latencyMs": 5001, "error": "Connection refused" },
+    "database": { "status": "down", "latencyMs": 5001, "error": "Database unavailable" },
     "storage":  { "status": "ok",   "latencyMs": 10 }
   }
 }`,

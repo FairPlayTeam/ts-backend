@@ -1,4 +1,12 @@
-const baseUrl = (process.env.BASE_URL || 'http://localhost:2353').replace(/\/$/, '');
+import { parseServerPort, resolveBaseUrl } from './serverConfig.js';
+
+export const getPublicBaseUrl = (): string =>
+  resolveBaseUrl(process.env.BASE_URL, parseServerPort(process.env.PORT));
+
+export const buildPublicUrl = (pathname: string): string => {
+  const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  return `${getPublicBaseUrl()}${normalizedPath}`;
+};
 
 export const isUUID = (str: string): boolean => {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -25,11 +33,11 @@ export const getProxiedAssetUrl = (
   if (!filename) return null;
 
   if (assetPath.includes('/profile/avatar.')) {
-    return `${baseUrl}/assets/users/${userId}/avatar/${filename}`;
+    return buildPublicUrl(`/assets/users/${userId}/avatar/${filename}`);
   }
 
   if (assetPath.includes('/profile/banner.')) {
-    return `${baseUrl}/assets/users/${userId}/banner/${filename}`;
+    return buildPublicUrl(`/assets/users/${userId}/banner/${filename}`);
   }
 
   return null;
@@ -45,5 +53,7 @@ export const getProxiedThumbnailUrl = (
   const filename = thumbnailPath.split('/').pop();
   if (!filename) return null;
 
-  return `${baseUrl}/assets/videos/${userId}/${videoId}/thumbnail/${filename}`;
+  return buildPublicUrl(
+    `/assets/videos/${userId}/${videoId}/thumbnail/${filename}`,
+  );
 };

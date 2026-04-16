@@ -52,7 +52,7 @@ export const authenticateSession = async (
 
     req.session = {
       id: session.id,
-      sessionKey: session.sessionKey,
+      sessionKey,
       expiresAt: session.expiresAt,
     };
 
@@ -114,7 +114,7 @@ export const optionalSessionAuthenticate = async (
 
         req.session = {
           id: session.id,
-          sessionKey: session.sessionKey,
+          sessionKey,
           expiresAt: session.expiresAt,
         };
       }

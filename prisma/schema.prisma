@@ -10,6 +10,7 @@ datasource db {
 enum VideoProcessingStatus {
   uploading
   processing
+  failed
   done
 }
 
@@ -124,6 +125,7 @@ model VideoView {
 
 model Video {
   id            String          @id @default(uuid()) @db.Uuid
+  publicId      String?         @unique @map("public_id")
   userId        String          @map("user_id") @db.Uuid
   title         String
   description   String?
@@ -227,6 +229,7 @@ model Follow {
 model Session {
   id        String   @id @default(uuid()) @db.Uuid
   sessionKey String  @unique @map("session_key")
+  sessionKeySuffix String? @map("session_key_suffix")
   userId    String   @map("user_id") @db.Uuid
   ipAddress String?  @map("ip_address")
   userAgent String?  @map("user_agent")
@@ -241,6 +244,7 @@ model Session {
 
   @@index([userId])
   @@index([sessionKey])
+  @@index([sessionKeySuffix])
   @@index([expiresAt])
   @@index([isActive])
   @@map("sessions")

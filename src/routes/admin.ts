@@ -13,6 +13,7 @@ import {
 import { updateUserRole } from '../controllers/userController.js';
 import { upsertCampaign } from '../controllers/campaignController.js';
 import { getProxiedAssetUrl } from '../lib/utils.js';
+import { parsePagination } from '../lib/pagination.js';
 
 const router = Router();
 
@@ -24,9 +25,6 @@ type SortDirection = 'asc' | 'desc';
 
 const isAdminUserSortField = (value: string): value is AdminUserSortField =>
   ADMIN_USER_SORT_FIELDS.includes(value as AdminUserSortField);
-
-const parsePageNumber = (value: string | undefined, fallback: number) =>
-  Math.max(1, Number.parseInt(value ?? String(fallback), 10) || fallback);
 
 const parseSortDirection = (value: string | undefined): SortDirection =>
   value === 'asc' ? 'asc' : 'desc';
@@ -71,15 +69,14 @@ router.get('/users', async (req: Request, res: Response): Promise<void> => {
   try {
     const {
       search,
-      page = '1',
-      limit = String(DEFAULT_PAGE_SIZE),
       sort = 'createdAt:desc',
       isBanned,
     } = req.query as Record<string, string>;
 
-    const pageNumber = parsePageNumber(page, 1);
-    const limitNumber = parsePageNumber(limit, DEFAULT_PAGE_SIZE);
-    const skip = (pageNumber - 1) * limitNumber;
+    const { page: pageNumber, limit: limitNumber, skip } = parsePagination(req.query, {
+      defaultLimit: DEFAULT_PAGE_SIZE,
+      maxLimit: 100,
+    });
     const where = buildAdminUsersWhere({ search, isBanned });
     const orderBy = buildAdminUsersOrderBy(sort);
 
@@ -148,7 +145,7 @@ registerRoute({
       "email": "string",
       "username": "string",
       "displayName": "string|null",
-      "thumbnailUrl": "string|null",
+      "avatarUrl": "string|null",
       "role": "user|moderator|admin",
       "isActive": true,
       "isVerified": false,
@@ -227,7 +224,7 @@ registerRoute({
   "email": "string",
   "username": "string",
   "displayName": "string|null",
-  "thumbnailUrl": "string|null",
+  "avatarUrl": "string|null",
   "role": "user|moderator|admin",
   "isActive": true,
   "isVerified": false,
@@ -330,7 +327,6 @@ registerRoute({
   params: { id: 'Username or User ID' },
   body: {
     isBanned: 'boolean',
-    publicReason: 'string?',
     privateReason: 'string?',
   },
   responses: {

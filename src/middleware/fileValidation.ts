@@ -2,6 +2,10 @@ import { Request, Response, NextFunction } from 'express';
 import { fileTypeFromBuffer, fileTypeFromFile } from 'file-type';
 import { collectUploadedFiles } from './upload.js';
 import path from 'node:path';
+import {
+    DIRECT_VIDEO_UPLOAD_MAX_BYTES,
+    MAX_IMAGE_UPLOAD_BYTES,
+} from '../lib/uploadConfig.js';
 
 const ALLOWED_VIDEO_TYPES = [
     'video/mp4',
@@ -19,8 +23,6 @@ const ALLOWED_IMAGE_TYPES = [
 const ALLOWED_VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
 const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
 
-const MAX_VIDEO_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
-const MAX_IMAGE_SIZE = 10 * 1024 * 1024;       // 10MB
 const MAX_FILES = 2;
 
 const IMAGE_FIELDS = ['thumbnail', 'avatar', 'banner', 'ad'];
@@ -50,10 +52,10 @@ export const validateFileMagicNumbers = async (
 
         const safeName = path.basename(file.originalname).replace(/[^\w.\-]/g, '_');
 
-        if (isVideoField && file.size > MAX_VIDEO_SIZE) {
+        if (isVideoField && file.size > DIRECT_VIDEO_UPLOAD_MAX_BYTES) {
             return res.status(413).json({ error: `File "${safeName}" exceeds the maximum allowed size for videos` });
         }
-        if (isImageField && file.size > MAX_IMAGE_SIZE) {
+        if (isImageField && file.size > MAX_IMAGE_UPLOAD_BYTES) {
             return res.status(413).json({ error: `File "${safeName}" exceeds the maximum allowed size for images` });
         }
 

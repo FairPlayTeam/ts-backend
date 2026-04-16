@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { registerRoute } from '../lib/docs.js';
+import { APP_API_NAME, APP_VERSION } from '../lib/appInfo.js';
 
 const router = Router();
 
 router.get('/', (_req, res) => {
   res.json({
-    message: 'fpbackend',
-    version: '1.0.0',
+    name: APP_API_NAME,
+    version: APP_VERSION,
     docs: '/docs',
   });
 });
@@ -16,7 +17,7 @@ registerRoute({
   path: '/',
   summary: 'API root: overview and endpoints',
   responses: {
-    '200': '{ "message": "fpbackend", "version": "x.x.x", "docs": "/docs"}',
+    '200': '{ "name": "Fairplay API", "version": "x.x.x", "docs": "/docs" }',
   },
 });
 

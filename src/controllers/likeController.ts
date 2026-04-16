@@ -2,6 +2,19 @@ import { Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { SessionAuthRequest } from '../lib/sessionAuth.js';
 import { isUUID } from '../lib/utils.js';
+import { canAccessVideo } from '../lib/videoAccess.js';
+
+const videoAccessSelect = {
+	userId: true,
+	visibility: true,
+	processingStatus: true,
+	moderationStatus: true,
+	user: {
+		select: {
+			isBanned: true,
+		},
+	},
+} as const;
 
 export const likeComment = async (
 	req: SessionAuthRequest,
@@ -18,10 +31,21 @@ export const likeComment = async (
 
 		const comment = await prisma.comment.findUnique({
 			where: { id: commentId },
-			select: { id: true },
+			select: {
+				id: true,
+				isDeleted: true,
+				video: {
+					select: videoAccessSelect,
+				},
+			},
 		});
-		if (!comment) {
+		if (!comment || comment.isDeleted) {
 			res.status(404).json({ error: 'Comment not found' });
+			return;
+		}
+
+		if (!canAccessVideo(comment.video, req.user)) {
+			res.status(403).json({ error: 'Video not available' });
 			return;
 		}
 
@@ -63,6 +87,27 @@ export const unlikeComment = async (
 			return;
 		}
 
+		const comment = await prisma.comment.findUnique({
+			where: { id: commentId },
+			select: {
+				id: true,
+				isDeleted: true,
+				video: {
+					select: videoAccessSelect,
+				},
+			},
+		});
+
+		if (!comment || comment.isDeleted) {
+			res.status(404).json({ error: 'Comment not found' });
+			return;
+		}
+
+		if (!canAccessVideo(comment.video, req.user)) {
+			res.status(403).json({ error: 'Video not available' });
+			return;
+		}
+
 		const [, updated] = await prisma.$transaction([
 			prisma.commentLike.delete({
 				where: { userId_commentId: { userId, commentId } },
@@ -73,12 +118,12 @@ export const unlikeComment = async (
 			}),
 		]);
 
-		const comment = await prisma.comment.findUnique({
+		const refreshedComment = await prisma.comment.findUnique({
 			where: { id: commentId },
 			select: { likeCount: true },
 		});
 
-		res.status(200).json({ message: 'Comment unliked', likeCount: comment?.likeCount ?? 0 });
+		res.status(200).json({ message: 'Comment unliked', likeCount: refreshedComment?.likeCount ?? 0 });
 	} catch (error: any) {
 		if (error?.code === 'P2025') {
 			res.status(404).json({ error: 'You have not liked this comment' });

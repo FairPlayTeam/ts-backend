@@ -101,7 +101,7 @@ registerRoute({
   summary: 'List my videos',
   auth: true,
   description:
-    'Returns all of your videos regardless of visibility or moderation status, including items that are still processing or pending moderator approval. Each item includes status fields so the client can display badges such as Pending/Processing/Rejected. Note: To fetch details or stream a video that is not publicly available (e.g., pending, private, or unapproved), the request must be authenticated as the owner.',
+    'Returns all of your videos regardless of visibility or moderation status, including items that are still processing, failed during processing, or pending moderator approval. Each item includes status fields so the client can display badges such as Pending/Processing/Failed/Rejected. Note: To fetch details or stream a video that is not publicly available (e.g., pending, private, unapproved, or processing failed), the request must be authenticated as the owner.',
   query: { page: 'number (default 1)', limit: 'number (default 20)' },
   responses: {
     '200': `{
@@ -115,7 +115,7 @@ registerRoute({
       "avgRating": 4.5,
       "ratingsCount": 10,
       "visibility": "public|unlisted|private",
-      "processingStatus": "uploading|processing|done",
+      "processingStatus": "uploading|processing|failed|done",
       "moderationStatus": "pending|approved|rejected"
     }
   ],
@@ -150,7 +150,9 @@ registerRoute({
   method: 'GET',
   path: '/videos/:id',
   summary: 'Get video details',
-  params: { id: 'Video ID' },
+  description:
+    'When playback is allowed, the `hls` URLs returned by this endpoint are absolute, canonical URLs built from BASE_URL and already include a short-lived playback token. Clients should reuse those URLs as-is for streaming.',
+  params: { id: 'Video public ID or legacy UUID' },
   responses: {
     '200': `{
   "id": "string",
@@ -184,14 +186,14 @@ registerRoute({
   description:
     'Update the title, description, or visibility of a video. Only the video owner can perform this action.',
   auth: true,
-  params: { id: 'Video ID' },
+  params: { id: 'Video public ID or legacy UUID' },
   body: {
     title: 'string (optional)',
     description: 'string (optional)',
     visibility: 'public | unlisted | private (optional)',
   },
   responses: {
-    '200': `{"message": "Video updated successfully", "video": {"id": "uuid", "title": "Updated Title", "description": "Updated description", "thumbnailUrl": "https://example.com/thumb.jpg"}}`,
+    '200': `{"message": "Video updated successfully", "video": {"id": "string", "title": "Updated Title", "description": "Updated description", "thumbnailUrl": "https://example.com/thumb.jpg"}}`,
     '403': '{ "error": "You are not authorized to edit this video" }',
     '404': '{ "error": "Video not found" }',
   },
@@ -204,7 +206,7 @@ registerRoute({
   description:
     'Delete a video permanently. Only video owner and moderators can perform this action.',
   auth: true,
-  params: { id: 'Video ID' },
+  params: { id: 'Video public ID or legacy UUID' },
   responses: {
     '200': '{ "message": "Video deleted successfully" }',
     '403': '{ "error": "You are not authorized to delete this video" }',
@@ -219,7 +221,7 @@ registerRoute({
   description:
     'Upload a new thumbnail for a video. Only the video owner can perform this action.',
   auth: true,
-  params: { id: 'Video ID' },
+  params: { id: 'Video public ID or legacy UUID' },
   body: { thumbnail: 'image file' },
   responses: {
     '200':
@@ -247,7 +249,7 @@ registerRoute({
   path: '/videos/:videoId/rating',
   summary: 'Rate a video',
   auth: true,
-  params: { videoId: 'Video ID' },
+  params: { videoId: 'Video public ID or legacy UUID' },
   body: { score: 'number (1-5)' },
   responses: {
     '200': `{"message": "Rating updated", "rating": {"id": "uuid", "score": 4, "userId": "uuid", "videoId": "uuid"}}`,
@@ -272,9 +274,9 @@ registerRoute({
   description:
     'To reply to another comment, include the `parentId` of the comment you are replying to in the request body.',
   auth: true,
-  params: { videoId: 'Video ID' },
+  params: { videoId: 'Video public ID or legacy UUID' },
   body: {
-    content: 'string (1-1000 chars)',
+    content: 'string (1-500 chars)',
     parentId: 'string (optional UUID)',
   },
   responses: {
@@ -289,7 +291,7 @@ registerRoute({
   summary: 'Get comments for a video',
   description:
     'Returns top-level (parent) comments for a video. Soft-deleted comments are preserved with their `[deleted]` content so reply threads remain accessible. Each comment includes `likeCount`, `likedByMe` (only when the request is authenticated), and `_count.replies` so clients can decide whether to fetch replies. To fetch replies for any comment, call GET /comments/:commentId/replies with pagination. Use that replies endpoint recursively to implement infinite nesting.',
-  params: { videoId: 'Video ID' },
+  params: { videoId: 'Video public ID or legacy UUID' },
   query: {
     page: 'number (default 1)',
     limit: 'number (default 20)',

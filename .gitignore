@@ -5,5 +5,4 @@ test.html
 .vscode
 benchmark.c
 benchmark
-package-lock.json
 start.sh

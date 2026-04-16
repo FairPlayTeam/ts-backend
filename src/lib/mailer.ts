@@ -1,34 +1,88 @@
 import nodemailer from 'nodemailer';
+import {
+  APP_PRODUCT_NAME,
+  EMAIL_VERIFICATION_PATH,
+} from './appInfo.js';
 
 const requiredEnv = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM', 'FRONTEND_URL', 'SMTP_PORT'] as const;
 
-for (const key of requiredEnv) {
-  if (!process.env[key]) {
-    throw new Error(`Missing environment variable: ${key}`);
+type MailerEnvKey = (typeof requiredEnv)[number];
+
+type MailerConfig = {
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPass: string;
+  smtpFrom: string;
+  frontendUrl: string;
+};
+
+export class MailerConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MailerConfigurationError';
   }
 }
 
-const port = Number(process.env.SMTP_PORT);
+let transporter: nodemailer.Transporter | null = null;
 
-if (isNaN(port) || port <= 0 || port > 65535) {
-  throw new Error(`SMTP_PORT must be a valid port number, got: ${process.env.SMTP_PORT}`);
-}
+const getMissingEnv = (): MailerEnvKey[] =>
+  requiredEnv.filter((key) => !process.env[key]);
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port,
-  secure: port === 465,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+const getMailerConfig = (): MailerConfig => {
+  const missing = getMissingEnv();
 
-function buildVerifyUrl(token: string): string {
-  const url = new URL('/verify-email', process.env.FRONTEND_URL);
+  if (missing.length > 0) {
+    throw new MailerConfigurationError(
+      `Email delivery is not configured. Missing environment variables: ${missing.join(', ')}`,
+    );
+  }
+
+  const smtpPort = Number(process.env.SMTP_PORT);
+
+  if (Number.isNaN(smtpPort) || smtpPort <= 0 || smtpPort > 65535) {
+    throw new MailerConfigurationError(
+      `SMTP_PORT must be a valid port number, got: ${process.env.SMTP_PORT}`,
+    );
+  }
+
+  return {
+    smtpHost: process.env.SMTP_HOST!,
+    smtpPort,
+    smtpUser: process.env.SMTP_USER!,
+    smtpPass: process.env.SMTP_PASS!,
+    smtpFrom: process.env.SMTP_FROM!,
+    frontendUrl: process.env.FRONTEND_URL!,
+  };
+};
+
+const getTransporter = (config: MailerConfig): nodemailer.Transporter => {
+  if (transporter) {
+    return transporter;
+  }
+
+  transporter = nodemailer.createTransport({
+    host: config.smtpHost,
+    port: config.smtpPort,
+    secure: config.smtpPort === 465,
+    auth: {
+      user: config.smtpUser,
+      pass: config.smtpPass,
+    },
+  });
+
+  return transporter;
+};
+
+function buildVerifyUrl(token: string, frontendUrl: string): string {
+  const url = new URL(EMAIL_VERIFICATION_PATH, frontendUrl);
   url.searchParams.set('token', token);
   return url.toString();
 }
+
+export const assertMailerConfigured = (): void => {
+  void getMailerConfig();
+};
 
 function buildVerificationHtml(verifyUrl: string): string {
   return `
@@ -44,7 +98,7 @@ function buildVerificationHtml(verifyUrl: string): string {
           <table width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;">
             <tr>
               <td style="background:#111111;padding:20px 32px;border-radius:12px 12px 0 0;">
-                <span style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.5px;">Rewind</span>
+                <span style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.5px;">${APP_PRODUCT_NAME}</span>
               </td>
             </tr>
             <tr>
@@ -66,7 +120,7 @@ function buildVerificationHtml(verifyUrl: string): string {
             <tr>
               <td style="background:#111111;padding:16px 32px;border-radius:0 0 12px 12px;text-align:center;">
                 <p style="margin:0;font-size:12px;color:#bbbbbb;">
-                  You received this email because you created an account on Rewind.<br/>
+                  You received this email because you created an account on ${APP_PRODUCT_NAME}.<br/>
                   If you didn't, you can safely ignore it.
                 </p>
               </td>
@@ -80,14 +134,16 @@ function buildVerificationHtml(verifyUrl: string): string {
 }
 
 export async function sendVerificationEmail(email: string, token: string): Promise<void> {
-  const verifyUrl = buildVerifyUrl(token);
+  const config = getMailerConfig();
+  const verifyUrl = buildVerifyUrl(token, config.frontendUrl);
+  const mailer = getTransporter(config);
 
   try {
-    await transporter.sendMail({
-      from: `"Rewind" <${process.env.SMTP_FROM}>`,
+    await mailer.sendMail({
+      from: `"${APP_PRODUCT_NAME}" <${config.smtpFrom}>`,
       to: email,
       subject: 'Verify your email',
-      text: `Verify your Rewind account: ${verifyUrl}\n\nThis link expires in 24 hours.\n\nIf you didn't create an account, you can safely ignore this email.`,
+      text: `Verify your ${APP_PRODUCT_NAME} account: ${verifyUrl}\n\nThis link expires in 24 hours.\n\nIf you didn't create an account, you can safely ignore this email.`,
       html: buildVerificationHtml(verifyUrl),
     });
   } catch (err) {

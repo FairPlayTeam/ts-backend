@@ -27,7 +27,8 @@ registerRoute({
   summary: 'Register a new user',
   body: { email: 'string', username: 'string', password: 'string' },
   responses: {
-    '201': `{ "message": "User registered successfully" }`,
+    '201': `{ "message": "Account created. Please verify your email." }`,
+    '503': `{"error": "Email verification is temporarily unavailable. Please try again later."}`,
   },
 });
 
@@ -92,6 +93,7 @@ registerRoute({
   body: { email: 'string' },
   responses: {
     '200': `{"message": "If this email exists and is unverified, a new link has been sent."}`,
+    '503': `{"error": "Email verification is temporarily unavailable. Please try again later."}`,
   },
 });
 

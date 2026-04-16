@@ -1,9 +1,10 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { minioClient } from '../lib/minio.js';
 import { BUCKETS } from '../lib/minio.js';
 import { registerRoute } from '../lib/docs.js';
-import { optionalSessionAuthenticate } from '../lib/sessionAuth.js';
+import { optionalSessionAuthenticate, SessionAuthRequest } from '../lib/sessionAuth.js';
+import { canAccessVideo, isStaffRole } from '../lib/videoAccess.js';
 
 const router = Router();
 
@@ -29,24 +30,9 @@ function contentTypeFor(filename: string): string {
 async function proxyUserAsset(
   bucket: string,
   objectName: string,
-  userId: string,
-  requesterId: string | null,
   res: Response,
 ) {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        isBanned: true,
-        isActive: true,
-      },
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
     const stream = await minioClient.getObject(bucket, objectName);
     res.setHeader('Content-Type', contentTypeFor(objectName));
     res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -61,23 +47,34 @@ async function proxyUserAsset(
   }
 }
 
+const canViewBannedUserAssets = (
+  requesterId: string | null,
+  requesterRole: string | null,
+  userId: string,
+): boolean => requesterId === userId || isStaffRole(requesterRole);
+
 router.get(
   '/users/:userId/avatar/:filename',
   optionalSessionAuthenticate,
-  async (req: Request, res: Response) => {
+  async (req: SessionAuthRequest, res: Response) => {
     const { userId } = req.params;
-    const requesterId = (req as any).user?.id || null;
+    const requesterId = req.user?.id ?? null;
+    const requesterRole = req.user?.role ?? null;
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { avatarUrl: true },
+      select: { avatarUrl: true, isBanned: true },
     });
 
     if (!user || !user.avatarUrl) {
       return res.status(404).json({ error: 'Avatar not found' });
     }
 
-    await proxyUserAsset(BUCKETS.USERS, user.avatarUrl, userId, requesterId, res);
+    if (user.isBanned && !canViewBannedUserAssets(requesterId, requesterRole, userId)) {
+      return res.status(404).json({ error: 'Avatar not found' });
+    }
+
+    await proxyUserAsset(BUCKETS.USERS, user.avatarUrl, res);
   },
 );
 
@@ -96,20 +93,25 @@ registerRoute({
 router.get(
   '/users/:userId/banner/:filename',
   optionalSessionAuthenticate,
-  async (req: Request, res: Response) => {
+  async (req: SessionAuthRequest, res: Response) => {
     const { userId } = req.params;
-    const requesterId = (req as any).user?.id || null;
+    const requesterId = req.user?.id ?? null;
+    const requesterRole = req.user?.role ?? null;
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { bannerUrl: true },
+      select: { bannerUrl: true, isBanned: true },
     });
 
     if (!user?.bannerUrl) {
       return res.status(404).json({ error: 'Banner not found' });
     }
 
-    await proxyUserAsset(BUCKETS.USERS, user.bannerUrl, userId, requesterId, res);
+    if (user.isBanned && !canViewBannedUserAssets(requesterId, requesterRole, userId)) {
+      return res.status(404).json({ error: 'Banner not found' });
+    }
+
+    await proxyUserAsset(BUCKETS.USERS, user.bannerUrl, res);
   },
 );
 
@@ -128,9 +130,10 @@ registerRoute({
 router.get(
   '/videos/:userId/:videoId/thumbnail/:filename',
   optionalSessionAuthenticate,
-  async (req: Request, res: Response) => {
-    const { userId, videoId, filename } = req.params;
-    const requesterId = (req as any).user?.id || null;
+  async (req: SessionAuthRequest, res: Response) => {
+    const { videoId } = req.params;
+    const requesterId = req.user?.id ?? null;
+    const requesterRole = req.user?.role ?? null;
 
     const video = await prisma.video.findUnique({
       where: { id: videoId },
@@ -140,6 +143,11 @@ router.get(
         visibility: true,
         moderationStatus: true,
         processingStatus: true,
+        user: {
+          select: {
+            isBanned: true,
+          },
+        },
       },
     });
 
@@ -147,20 +155,11 @@ router.get(
       return res.status(404).json({ error: 'Thumbnail not found' });
     }
 
-    const isPublic =
-      video.visibility === 'public' &&
-      video.moderationStatus === 'approved' &&
-      video.processingStatus === 'done';
-
-    const isOwner = video.userId === requesterId;
-    const requesterRole = (req as any).user?.role || null;
-    const isModerator = requesterRole === 'moderator' || requesterRole === 'admin';
-
-    if (!isPublic && !isOwner && !isModerator) {
+    if (!canAccessVideo(video, { id: requesterId, role: requesterRole })) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    await proxyUserAsset(BUCKETS.VIDEOS, video.thumbnail, userId, requesterId, res);
+    await proxyUserAsset(BUCKETS.VIDEOS, video.thumbnail, res);
   },
 );
 

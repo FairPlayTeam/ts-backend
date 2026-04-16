@@ -1,0 +1,2 @@
+-- Historical placeholder migration restored so Prisma can parse the migration history.
+-- The schema changes for this older step are already reflected in the current database/schema.
