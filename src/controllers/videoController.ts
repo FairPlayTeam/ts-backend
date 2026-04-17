@@ -135,6 +135,7 @@ export const getVideos = async (
           title: true,
           description: true,
           thumbnail: true,
+          duration: true,
           viewCount: true,
           createdAt: true,
           user: {
@@ -259,6 +260,7 @@ export const searchVideos = async (
           title: true,
           description: true,
           thumbnail: true,
+          duration: true,
           viewCount: true,
           createdAt: true,
           user: {
@@ -478,6 +480,7 @@ export const getUserVideos = async (
           userId: true,
           title: true,
           description: true,
+          duration: true,
           thumbnail: true,
           viewCount: true,
           createdAt: true,
