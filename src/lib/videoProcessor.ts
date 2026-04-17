@@ -148,6 +148,19 @@ type ProcessedVideo = {
     qualities: ProcessedQuality[];
 };
 
+const toFiniteNumber = (value: unknown): number | null => {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : null;
+    }
+
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+};
+
 const processVideoQualities = async (
     job: ProcessingJob
 ): Promise<ProcessedVideo> => {
@@ -279,10 +292,15 @@ const getVideoInfo = (
             const videoStream = metadata.streams.find((s) => s.codec_type === 'video');
             if (!videoStream) return reject(new Error('No video stream found'));
             const audioStream = metadata.streams.find((s) => s.codec_type === 'audio');
+            const duration =
+                toFiniteNumber(metadata.format.duration) ??
+                toFiniteNumber(videoStream.duration) ??
+                0;
+
             resolve({
                 width: videoStream.width || 0,
                 height: videoStream.height || 0,
-                duration: metadata.format.duration || 0,
+                duration,
                 hasAudio: Boolean(audioStream),
             });
         });
