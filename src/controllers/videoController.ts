@@ -187,6 +187,7 @@ export const getTopViewedVideos = async (
         title: true,
         description: true,
         thumbnail: true,
+        duration: true,
         viewCount: true,
         createdAt: true,
         user: {

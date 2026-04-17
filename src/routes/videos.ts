@@ -31,7 +31,7 @@ registerRoute({
   summary: 'Get the 3 most viewed videos',
   description: 'Returns the top 3 publicly playable videos ordered by view count (descending).',
   responses: {
-    '200': `{"videos": [{"id":"string","title":"string","description":"string|null","thumbnailUrl":"string|null","viewCount":"string","avgRating":0,"ratingsCount":0,"user":{"username":"string","displayName":"string|null"}}]}`,
+    '200': `{"videos": [{"id":"string","title":"string","description":"string|null","duration":123,"thumbnailUrl":"string|null","viewCount":"string","avgRating":0,"ratingsCount":0,"user":{"username":"string","displayName":"string|null"}}]}`,
   },
 });
 
@@ -50,11 +50,11 @@ registerRoute({
   responses: {
     '200': `{
   "results": [
-    { "type": "video", "video": { "id": "string", "title": "string", "thumbnailUrl": "string|null", "viewCount": "string", "avgRating": 4.5, "ratingsCount": 10, "user": { "username": "string", "displayName": "string|null" }, "createdAt": "ISO8601" } },
+    { "type": "video", "video": { "id": "string", "title": "string", "duration": 123, "thumbnailUrl": "string|null", "viewCount": "string", "avgRating": 4.5, "ratingsCount": 10, "user": { "username": "string", "displayName": "string|null" }, "createdAt": "ISO8601" } },
     { "type": "creator", "creator": { "id": "string", "username": "string", "displayName": "string|null", "avatarUrl": "string|null", "followerCount": 42, "videoCount": 7, "createdAt": "ISO8601" } }
   ],
   "videos": [
-    { "id": "string", "title": "string", "thumbnailUrl": "string|null", "viewCount": "string", "avgRating": 4.5, "ratingsCount": 10, "user": { "username": "string", "displayName": "string|null" }, "createdAt": "ISO8601" }
+    { "id": "string", "title": "string", "duration": 123, "thumbnailUrl": "string|null", "viewCount": "string", "avgRating": 4.5, "ratingsCount": 10, "user": { "username": "string", "displayName": "string|null" }, "createdAt": "ISO8601" }
   ],
   "creators": [
     { "id": "string", "username": "string", "displayName": "string|null", "avatarUrl": "string|null", "followerCount": 42, "videoCount": 7, "createdAt": "ISO8601" }
@@ -83,6 +83,7 @@ registerRoute({
     {
       "id": "string",
       "title": "string",
+      "duration": 123,
       "thumbnailUrl": "string|null",
       "viewCount": "string",
       "avgRating": 4.5,
@@ -110,6 +111,7 @@ registerRoute({
       "id": "string",
       "title": "string",
       "description": "string|null",
+      "duration": 123,
       "thumbnailUrl": "string|null",
       "viewCount": "string",
       "avgRating": 4.5,

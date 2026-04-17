@@ -180,9 +180,11 @@ router.get(
           select: {
             id: true,
             publicId: true,
+            userId: true,
             title: true,
             description: true,
             thumbnail: true,
+            duration: true,
             createdAt: true,
             viewCount: true,
           },
@@ -205,6 +207,7 @@ router.get(
             title: v.title,
             description: v.description,
             createdAt: v.createdAt,
+            duration: v.duration,
             viewCount: v.viewCount.toString(),
             thumbnailUrl: thumbUrl,
           };
@@ -237,7 +240,7 @@ registerRoute({
   responses: {
     '200': `{
   "videos": [
-    { "id": "string", "title": "string", "description": "string|null", "createdAt": "ISO8601", "viewCount": "string", "thumbnailUrl": "string|null" }
+    { "id": "string", "title": "string", "description": "string|null", "duration": 123, "createdAt": "ISO8601", "viewCount": "string", "thumbnailUrl": "string|null" }
   ],
   "pagination": { "page": 1, "limit": 20, "totalItems": 10, "totalPages": 1, "itemsReturned": 10 }
 }`,

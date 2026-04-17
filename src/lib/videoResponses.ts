@@ -22,6 +22,7 @@ type BaseVideoResponseSource = {
   title: string;
   description: string | null;
   thumbnail: string | null;
+  duration: number | null;
   viewCount: ViewCountSource;
   createdAt: Date | string;
   ratings: RatingSource[];
@@ -48,6 +49,7 @@ type MyVideoResponseSource = {
   title: string;
   description: string | null;
   thumbnail: string | null;
+  duration: number | null;
   viewCount: ViewCountSource;
   createdAt: Date | string;
   visibility: string;
@@ -95,6 +97,7 @@ export const mapPublicVideoSummary = (
   title: video.title,
   description: video.description,
   thumbnailUrl: getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail),
+  duration: video.duration,
   viewCount: toViewCountString(video.viewCount),
   avgRating: computeAvgRating(video.ratings),
   ratingsCount: video.ratings.length,
@@ -138,6 +141,7 @@ export const mapMyVideoItem = (video: MyVideoResponseSource) => ({
   description: video.description,
   createdAt: video.createdAt,
   thumbnailUrl: getProxiedThumbnailUrl(video.userId, video.id, video.thumbnail),
+  duration: video.duration,
   viewCount: toViewCountString(video.viewCount),
   avgRating: computeAvgRating(video.ratings),
   ratingsCount: video.ratings.length,
