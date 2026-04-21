@@ -1,26 +1,36 @@
-// Keep direct uploads below Cloudflare's 100MB request cap.
-export const DIRECT_VIDEO_UPLOAD_MAX_BYTES = 95 * 1024 * 1024;
+const MEBIBYTE = 1024 * 1024;
+
+// Keep direct video-only uploads below Cloudflare's 100MB request cap.
+export const DIRECT_VIDEO_UPLOAD_MAX_BYTES = 95 * MEBIBYTE;
 export const DIRECT_VIDEO_UPLOAD_MAX_MB = Math.round(
-  DIRECT_VIDEO_UPLOAD_MAX_BYTES / (1024 * 1024),
+  DIRECT_VIDEO_UPLOAD_MAX_BYTES / MEBIBYTE,
 );
 
-export const VIDEO_CHUNK_BYTES = 95 * 1024 * 1024;
-export const VIDEO_CHUNK_MB = Math.round(VIDEO_CHUNK_BYTES / (1024 * 1024));
-export const MAX_CHUNKED_VIDEO_UPLOAD_CHUNKS = 32;
-export const MAX_CHUNKED_VIDEO_UPLOAD_TOTAL_BYTES =
-  VIDEO_CHUNK_BYTES * MAX_CHUNKED_VIDEO_UPLOAD_CHUNKS;
+// Keep bundled direct uploads lower to leave room for thumbnails and multipart overhead.
+export const DIRECT_VIDEO_BUNDLE_MAX_BYTES = 90 * MEBIBYTE;
+export const DIRECT_VIDEO_BUNDLE_MAX_MB = Math.round(
+  DIRECT_VIDEO_BUNDLE_MAX_BYTES / MEBIBYTE,
+);
+
+export const VIDEO_CHUNK_BYTES = 24 * MEBIBYTE;
+export const VIDEO_CHUNK_MB = Math.round(VIDEO_CHUNK_BYTES / MEBIBYTE);
+export const VIDEO_CHUNK_REQUEST_MAX_BYTES = VIDEO_CHUNK_BYTES + (1 * MEBIBYTE);
+export const MAX_CHUNKED_VIDEO_UPLOAD_TOTAL_BYTES = 3040 * MEBIBYTE;
+export const MAX_CHUNKED_VIDEO_UPLOAD_CHUNKS = Math.ceil(
+  MAX_CHUNKED_VIDEO_UPLOAD_TOTAL_BYTES / VIDEO_CHUNK_BYTES,
+);
 export const MAX_CHUNKED_VIDEO_UPLOAD_TOTAL_MB = Math.round(
-  MAX_CHUNKED_VIDEO_UPLOAD_TOTAL_BYTES / (1024 * 1024),
+  MAX_CHUNKED_VIDEO_UPLOAD_TOTAL_BYTES / MEBIBYTE,
 );
 
-export const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const MAX_IMAGE_UPLOAD_BYTES = 10 * MEBIBYTE;
 export const MAX_IMAGE_UPLOAD_MB = Math.round(
-  MAX_IMAGE_UPLOAD_BYTES / (1024 * 1024),
+  MAX_IMAGE_UPLOAD_BYTES / MEBIBYTE,
 );
 
-export const MAX_THUMBNAIL_BYTES = 5 * 1024 * 1024;
+export const MAX_THUMBNAIL_BYTES = 5 * MEBIBYTE;
 export const MAX_THUMBNAIL_MB = Math.round(
-  MAX_THUMBNAIL_BYTES / (1024 * 1024),
+  MAX_THUMBNAIL_BYTES / MEBIBYTE,
 );
 
 export const getRequiredVideoChunkCount = (totalSize: number): number =>

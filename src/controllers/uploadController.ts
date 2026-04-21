@@ -28,6 +28,7 @@ import {
   MAX_CHUNKED_VIDEO_UPLOAD_TOTAL_MB,
   VIDEO_CHUNK_BYTES,
   VIDEO_CHUNK_MB,
+  getRequiredVideoChunkCount,
   validateChunkedVideoUploadPlan,
 } from '../lib/uploadConfig.js';
 import { VIDEO_QUALITIES } from '../lib/videoProfiles.js';
@@ -90,6 +91,20 @@ const rollbackCreatedVideo = async (videoId: string, userId: string): Promise<vo
     });
   } catch (error) {
     console.error(`Failed to rollback uploaded video ${videoId}:`, error);
+  }
+};
+
+const removeUploadedObject = async (
+  bucketName: string,
+  objectName: string | null,
+  context: string,
+): Promise<void> => {
+  if (!objectName) return;
+
+  try {
+    await minioClient.removeObject(bucketName, objectName);
+  } catch (error) {
+    console.error(`Failed to cleanup uploaded object for ${context}:`, error);
   }
 };
 
@@ -514,6 +529,7 @@ export const uploadVideoBundle = async (req: SessionAuthRequest, res: Response):
       return created;
     });
 
+    let uploadedThumbnailPath: string | null = null;
     try {
       if (thumbnailFile && thumbnailPath) {
         const thumbnailStream = createReadStream(thumbnailFile.path);
@@ -521,6 +537,7 @@ export const uploadVideoBundle = async (req: SessionAuthRequest, res: Response):
           'Content-Type': thumbnailFile.mimetype,
           'uploaded-by': userId,
         });
+        uploadedThumbnailPath = thumbnailPath;
       }
 
       const videoStream = createReadStream(videoFile.path);
@@ -529,6 +546,7 @@ export const uploadVideoBundle = async (req: SessionAuthRequest, res: Response):
         'uploaded-by': userId,
       });
     } catch (uploadError) {
+      await removeUploadedObject(BUCKETS.VIDEOS, uploadedThumbnailPath, `video bundle ${videoId}`);
       await rollbackCreatedVideo(videoId, userId);
       throw uploadError;
     }
@@ -558,16 +576,17 @@ export const initChunkedVideoUpload = async (req: SessionAuthRequest, res: Respo
     const tags = parseTags(req.body.tags);
     const license = parseLicense(req.body.license);
     const totalSize = parsePositiveInteger(req.body.totalSize);
-    const totalChunks = parsePositiveInteger(req.body.totalChunks);
     const originalName = typeof req.body.originalName === 'string' ? req.body.originalName : 'video';
     const mimeType = typeof req.body.mimeType === 'string' && req.body.mimeType.length > 0
       ? req.body.mimeType : null;
 
     if (!title) { res.status(400).json({ error: 'Video title is required' }); return; }
-    if (!totalSize || !totalChunks) {
-      res.status(400).json({ error: 'totalSize and totalChunks are required positive integers' });
+    if (!totalSize) {
+      res.status(400).json({ error: 'totalSize is required and must be a positive integer' });
       return;
     }
+
+    const totalChunks = parsePositiveInteger(req.body.totalChunks) ?? getRequiredVideoChunkCount(totalSize);
 
     const uploadPlanError = validateChunkedVideoUploadPlan(totalSize, totalChunks);
     if (uploadPlanError) {
@@ -664,11 +683,20 @@ export const uploadVideoChunk = async (req: SessionAuthRequest, res: Response): 
 export const completeChunkedVideoUpload = async (req: SessionAuthRequest, res: Response): Promise<void> => {
   const userId = req.user!.id;
   const { uploadId } = req.params;
+  const thumbnailFile = req.file;
   let uploadDir: string | null = null;
   let shouldCleanupUploadDir = false;
 
   try {
     if (!uploadId || !isSafeUploadId(uploadId)) { res.status(400).json({ error: 'Invalid uploadId' }); return; }
+
+    if (thumbnailFile) {
+      const validationError = await validateThumbnailRules(thumbnailFile);
+      if (validationError) {
+        res.status(validationError.status).json({ error: validationError.message });
+        return;
+      }
+    }
 
     uploadDir = getChunkUploadDir(userId, uploadId);
     const manifest = await readChunkManifest(uploadDir);
@@ -706,6 +734,9 @@ export const completeChunkedVideoUpload = async (req: SessionAuthRequest, res: R
     const videoId = generateVideoId();
     const originalPath = videoOriginalPath(userId, videoId);
     const storagePath = `${BUCKETS.VIDEOS}/${originalPath}`;
+    const thumbnailPath = thumbnailFile
+      ? `thumbnails/${userId}/${videoId}/${generateSecureFilename(thumbnailFile.originalname)}`
+      : null;
 
     const video = await prisma.$transaction(async (tx) => {
       const created = await tx.video.create({
@@ -716,6 +747,7 @@ export const completeChunkedVideoUpload = async (req: SessionAuthRequest, res: R
           title: manifest.title,
           description: manifest.description,
           tags: manifest.tags,
+          thumbnail: thumbnailPath,
           allowComments: manifest.allowComments,
           license: manifest.license,
           storagePath,
@@ -725,13 +757,24 @@ export const completeChunkedVideoUpload = async (req: SessionAuthRequest, res: R
       return created;
     });
 
-    const stream = createReadStream(assembledPath);
+    let uploadedThumbnailPath: string | null = null;
     try {
+      if (thumbnailFile && thumbnailPath) {
+        const thumbnailStream = createReadStream(thumbnailFile.path);
+        await uploadFile(BUCKETS.VIDEOS, thumbnailPath, thumbnailStream, thumbnailFile.size, {
+          'Content-Type': thumbnailFile.mimetype,
+          'uploaded-by': userId,
+        });
+        uploadedThumbnailPath = thumbnailPath;
+      }
+
+      const stream = createReadStream(assembledPath);
       await uploadFile(BUCKETS.VIDEOS, originalPath, stream, assembledStat.size, {
         'Content-Type': contentType,
         'uploaded-by': userId,
       });
     } catch (uploadError) {
+      await removeUploadedObject(BUCKETS.VIDEOS, uploadedThumbnailPath, `chunked video ${videoId}`);
       await rollbackCreatedVideo(videoId, userId);
       throw uploadError;
     }
@@ -742,7 +785,11 @@ export const completeChunkedVideoUpload = async (req: SessionAuthRequest, res: R
 
     res.json({
       message: 'Video uploaded successfully and queued for processing',
-      video: { id: getPublicVideoId(video), title: video.title },
+      video: {
+        id: getPublicVideoId(video),
+        title: video.title,
+        thumbnailUrl: getProxiedThumbnailUrl(userId, videoId, thumbnailPath),
+      },
     });
   } catch (error) {
     console.error('Chunked video upload completion error:', error);

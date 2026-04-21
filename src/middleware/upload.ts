@@ -5,8 +5,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import {
+  DIRECT_VIDEO_BUNDLE_MAX_BYTES,
   DIRECT_VIDEO_UPLOAD_MAX_BYTES,
-  VIDEO_CHUNK_BYTES,
+  MAX_IMAGE_UPLOAD_BYTES,
+  MAX_THUMBNAIL_BYTES,
+  VIDEO_CHUNK_REQUEST_MAX_BYTES,
 } from '../lib/uploadConfig.js';
 import { APP_SLUG } from '../lib/appInfo.js';
 
@@ -24,22 +27,51 @@ const storage = multer.diskStorage({
   },
 });
 
-export const upload = multer({
+const createUpload = ({
+  fileSize,
+  files,
+  fields,
+}: {
+  fileSize: number;
+  files: number;
+  fields: number;
+}) => multer({
   storage,
   limits: {
-    fileSize: DIRECT_VIDEO_UPLOAD_MAX_BYTES,
-    files: 4,
-    fields: 10,
+    fileSize,
+    files,
+    fields,
   },
 });
 
-const uploadChunk = multer({
-  storage,
-  limits: {
-    fileSize: VIDEO_CHUNK_BYTES,
-    files: 1,
-    fields: 5
-  },
+export const upload = createUpload({
+  fileSize: DIRECT_VIDEO_UPLOAD_MAX_BYTES,
+  files: 4,
+  fields: 10,
+});
+
+const uploadVideoBundleBase = createUpload({
+  fileSize: DIRECT_VIDEO_BUNDLE_MAX_BYTES,
+  files: 2,
+  fields: 10,
+});
+
+const uploadChunk = createUpload({
+  fileSize: VIDEO_CHUNK_REQUEST_MAX_BYTES,
+  files: 1,
+  fields: 5,
+});
+
+const uploadImage = createUpload({
+  fileSize: MAX_IMAGE_UPLOAD_BYTES,
+  files: 1,
+  fields: 5,
+});
+
+const uploadThumbnail = createUpload({
+  fileSize: MAX_THUMBNAIL_BYTES,
+  files: 1,
+  fields: 5,
 });
 
 export const collectUploadedFiles = (req: Request): Express.Multer.File[] => {
@@ -99,18 +131,33 @@ export const uploadFields = withTempFileCleanup(
 );
 
 export const uploadVideoBundle = withTempFileCleanup(
-  upload.fields([
+  uploadVideoBundleBase.fields([
     { name: 'video', maxCount: 1 },
     { name: 'thumbnail', maxCount: 1 },
   ]),
 );
 
+const resolveSingleUpload = (fieldName: string): RequestHandler => {
+  switch (fieldName) {
+    case 'video':
+      return upload.single(fieldName);
+    case 'thumbnail':
+      return uploadThumbnail.single(fieldName);
+    case 'avatar':
+    case 'banner':
+    case 'ad':
+      return uploadImage.single(fieldName);
+    default:
+      return upload.single(fieldName);
+  }
+};
+
 const singleUploadCache = new Map<string, RequestHandler>();
 export const uploadSingle = (fieldName: string): RequestHandler => {
   if (!singleUploadCache.has(fieldName)) {
-    singleUploadCache.set(fieldName, withTempFileCleanup(upload.single(fieldName)));
+    singleUploadCache.set(fieldName, withTempFileCleanup(resolveSingleUpload(fieldName)));
   }
-  return singleUploadCache.get(fieldName)!
-}
+  return singleUploadCache.get(fieldName)!;
+};
 
 export const uploadChunkSingle = withTempFileCleanup(uploadChunk.single('chunk'));

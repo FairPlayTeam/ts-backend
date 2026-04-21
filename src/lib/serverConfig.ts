@@ -11,10 +11,15 @@ export class ServerConfigurationError extends Error {
 
 export const parseTrustProxy = (
   rawValue: string | undefined,
+  nodeEnv?: string,
 ): TrustProxySetting => {
   const value = rawValue?.trim();
 
   if (!value) {
+    if (nodeEnv === 'development') {
+      return 'loopback';
+    }
+
     return false;
   }
 

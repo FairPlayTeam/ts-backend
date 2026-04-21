@@ -15,6 +15,11 @@ describe('parseTrustProxy', () => {
     expect(parseTrustProxy('')).toBe(false);
   });
 
+  it('defaults to loopback in development when unset', () => {
+    expect(parseTrustProxy(undefined, 'development')).toBe('loopback');
+    expect(parseTrustProxy('', 'development')).toBe('loopback');
+  });
+
   it('parses booleans and proxy counts', () => {
     expect(parseTrustProxy('true')).toBe(true);
     expect(parseTrustProxy('false')).toBe(false);
