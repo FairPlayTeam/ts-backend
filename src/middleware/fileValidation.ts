@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
     DIRECT_VIDEO_UPLOAD_MAX_BYTES,
     MAX_IMAGE_UPLOAD_BYTES,
+    MAX_THUMBNAIL_BYTES,
 } from '../lib/uploadConfig.js';
 
 const ALLOWED_VIDEO_TYPES = [
@@ -26,6 +27,12 @@ const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
 const MAX_FILES = 2;
 
 const IMAGE_FIELDS = ['thumbnail', 'avatar', 'banner', 'ad'];
+
+const getMaxImageBytes = (fieldName: string): number =>
+    fieldName === 'thumbnail' ? MAX_THUMBNAIL_BYTES : MAX_IMAGE_UPLOAD_BYTES;
+
+const getImageLabel = (fieldName: string): string =>
+    fieldName === 'thumbnail' ? 'thumbnails' : 'images';
 
 export const validateFileMagicNumbers = async (
     req: Request,
@@ -55,8 +62,10 @@ export const validateFileMagicNumbers = async (
         if (isVideoField && file.size > DIRECT_VIDEO_UPLOAD_MAX_BYTES) {
             return res.status(413).json({ error: `File "${safeName}" exceeds the maximum allowed size for videos` });
         }
-        if (isImageField && file.size > MAX_IMAGE_UPLOAD_BYTES) {
-            return res.status(413).json({ error: `File "${safeName}" exceeds the maximum allowed size for images` });
+        if (isImageField && file.size > getMaxImageBytes(file.fieldname)) {
+            return res.status(413).json({
+                error: `File "${safeName}" exceeds the maximum allowed size for ${getImageLabel(file.fieldname)}`
+            });
         }
 
         const ext = path.extname(file.originalname).toLowerCase();

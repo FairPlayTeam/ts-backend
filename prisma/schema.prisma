@@ -77,12 +77,23 @@ model User {
   dailyViews    VideoView[]
 
   emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens PasswordResetToken[]
   updatedCampaigns Campaign[] @relation("CampaignUpdatedBy")
 
   @@map("users")
 }
 
 model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String   @db.Uuid @unique
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PasswordResetToken {
   id        String   @id @default(cuid())
   userId    String   @db.Uuid @unique
   token     String   @unique

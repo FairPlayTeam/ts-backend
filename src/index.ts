@@ -40,10 +40,11 @@ const parseCleanupIntervalMs = (): number => {
 };
 
 const cleanupIntervalMs = parseCleanupIntervalMs();
+const nodeEnv = process.env.NODE_ENV;
 
 const app = express();
-const trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
-const isProduction = process.env.NODE_ENV === 'production';
+const trustProxy = parseTrustProxy(process.env.TRUST_PROXY, nodeEnv);
+const isProduction = nodeEnv === 'production';
 const port = parseServerPort(process.env.PORT);
 const baseUrl = resolveBaseUrl(process.env.BASE_URL, port);
 const jsonBodyLimitBytes = parseJsonBodyLimitBytes(
@@ -153,7 +154,7 @@ const startServer = async () => {
     app.listen(port, () => {
       console.log(`Server running on http://localhost:${port}`);
       console.log(`Public base URL: ${baseUrl}`);
-      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`Environment: ${nodeEnv || 'development'}`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

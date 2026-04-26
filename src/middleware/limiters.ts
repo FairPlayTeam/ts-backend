@@ -1,5 +1,6 @@
 import rateLimit from 'express-rate-limit';
 import type { Request } from 'express';
+import { MAX_CHUNKED_VIDEO_UPLOAD_CHUNKS } from '../lib/uploadConfig.js';
 
 const getClientKey = (req: Request): string =>
     req.ip ?? req.socket.remoteAddress ?? 'unknown';
@@ -51,10 +52,33 @@ export const uploadLimiter = rateLimit({
     },
 });
 
+export const passwordResetRequestLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: {
+        error: 'Too many password reset requests, please try again after 15 minutes.',
+    },
+});
+
+export const passwordResetConfirmLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 20,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    message: {
+        error: 'Too many password reset attempts, please try again after 15 minutes.',
+    },
+});
+
+const chunkUploadLimitPerWindow = Math.max(240, MAX_CHUNKED_VIDEO_UPLOAD_CHUNKS * 5);
+
 // Allows chunked uploads to progress while still protecting the API from abuse.
 export const chunkUploadLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
-    limit: 240,
+    limit: chunkUploadLimitPerWindow,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     keyGenerator: userAwareKey,

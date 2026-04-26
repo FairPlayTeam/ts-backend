@@ -9,19 +9,28 @@ import { getProxiedAssetUrl } from '../lib/utils.js';
 import {
   assertMailerConfigured,
   MailerConfigurationError,
+  sendPasswordResetEmail,
   sendVerificationEmail,
 } from '../lib/mailer.js';
 
-const EMAIL_VERIFICATION_UNAVAILABLE_RESPONSE = {
-  error: 'Email verification is temporarily unavailable. Please try again later.',
+const EMAIL_DELIVERY_UNAVAILABLE_RESPONSE = {
+  error: 'Email delivery is temporarily unavailable. Please try again later.',
 };
+const PASSWORD_RESET_REQUEST_GENERIC_RESPONSE = {
+  message: 'If this email exists and is eligible for password reset, a reset link has been sent.',
+};
+const INVALID_PASSWORD_RESET_RESPONSE = {
+  error: 'Invalid or expired password reset link.',
+};
+const EMAIL_VERIFICATION_TOKEN_TTL_MS = 1000 * 60 * 60 * 24;
+const PASSWORD_RESET_TOKEN_TTL_MS = 1000 * 60 * 60;
 
 const respondWhenMailerUnavailable = (
   res: Response,
   error: unknown,
 ): boolean => {
   if (error instanceof MailerConfigurationError) {
-    res.status(503).json(EMAIL_VERIFICATION_UNAVAILABLE_RESPONSE);
+    res.status(503).json(EMAIL_DELIVERY_UNAVAILABLE_RESPONSE);
     return true;
   }
 
@@ -32,6 +41,18 @@ function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+function generateToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function getExpiryDate(ttlMs: number): Date {
+  return new Date(Date.now() + ttlMs);
+}
+
+function getBcryptRounds(): number {
+  return Number(process.env.BCRYPT_ROUNDS ?? 12);
+}
+
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, username, password } = req.body;
@@ -39,8 +60,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
     const usernameNorm = String(username).trim().toLowerCase();
     const emailNorm = String(email).trim().toLowerCase();
-    const saltRounds = Number(process.env.BCRYPT_ROUNDS ?? 12);
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await bcrypt.hash(password, getBcryptRounds());
 
     try {
       const user = await prisma.user.create({
@@ -52,7 +72,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         select: { id: true, email: true, username: true, role: true },
       });
 
-      const token = crypto.randomBytes(32).toString('hex');
+      const token = generateToken();
       const tokenHash = hashToken(token);
 
       await prisma.$transaction([
@@ -61,7 +81,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
           data: {
             userId: user.id,
             token: tokenHash,
-            expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+            expiresAt: getExpiryDate(EMAIL_VERIFICATION_TOKEN_TTL_MS),
           },
         }),
       ]);
@@ -78,7 +98,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
           );
         });
 
-        res.status(503).json(EMAIL_VERIFICATION_UNAVAILABLE_RESPONSE);
+        res.status(503).json(EMAIL_DELIVERY_UNAVAILABLE_RESPONSE);
         return;
       }
 
@@ -283,7 +303,7 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const token = crypto.randomBytes(32).toString('hex');
+    const token = generateToken();
     const tokenHash = hashToken(token);
 
 
@@ -295,7 +315,7 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
         data: {
           userId: user.id,
           token: tokenHash,
-          expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+          expiresAt: getExpiryDate(EMAIL_VERIFICATION_TOKEN_TTL_MS),
         },
       }),
     ]);
@@ -308,7 +328,7 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
         return;
       }
 
-      res.status(503).json(EMAIL_VERIFICATION_UNAVAILABLE_RESPONSE);
+      res.status(503).json(EMAIL_DELIVERY_UNAVAILABLE_RESPONSE);
       return;
     }
 
@@ -320,6 +340,157 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
 
     console.error('Resend verification error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const requestPasswordReset = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { email } = req.body;
+    assertMailerConfigured();
+
+    const user = await prisma.user.findUnique({
+      where: { email: String(email).trim().toLowerCase() },
+      select: {
+        id: true,
+        email: true,
+        isActive: true,
+        isVerified: true,
+        isBanned: true,
+      },
+    });
+
+    if (!user || !user.isActive || user.isBanned || !user.isVerified) {
+      res.json(PASSWORD_RESET_REQUEST_GENERIC_RESPONSE);
+      return;
+    }
+
+    const token = generateToken();
+    const tokenHash = hashToken(token);
+
+    await prisma.$transaction([
+      prisma.passwordResetToken.deleteMany({
+        where: { userId: user.id },
+      }),
+      prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          token: tokenHash,
+          expiresAt: getExpiryDate(PASSWORD_RESET_TOKEN_TTL_MS),
+        },
+      }),
+    ]);
+
+    try {
+      await sendPasswordResetEmail(user.email, token);
+    } catch (mailErr) {
+      console.error('Password reset email failed:', mailErr);
+      await prisma.passwordResetToken
+        .deleteMany({ where: { userId: user.id } })
+        .catch((cleanupError) => {
+          console.error(
+            `Failed to cleanup password reset tokens for user ${user.id}:`,
+            cleanupError,
+          );
+        });
+    }
+
+    res.json(PASSWORD_RESET_REQUEST_GENERIC_RESPONSE);
+  } catch (error) {
+    if (respondWhenMailerUnavailable(res, error)) {
+      return;
+    }
+
+    console.error('Request password reset error:', error);
+    res
+      .status(500)
+      .json({ error: 'Internal server error during password reset request' });
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token, password } = req.body;
+    const tokenHash = hashToken(String(token).trim());
+
+    const record = await prisma.passwordResetToken.findUnique({
+      where: { token: tokenHash },
+      include: {
+        user: {
+          select: {
+            id: true,
+            passwordHash: true,
+            isActive: true,
+            isBanned: true,
+          },
+        },
+      },
+    });
+
+    if (!record || record.expiresAt < new Date()) {
+      if (record) {
+        await prisma.passwordResetToken.deleteMany({
+          where: { userId: record.userId },
+        });
+      }
+
+      res.status(400).json(INVALID_PASSWORD_RESET_RESPONSE);
+      return;
+    }
+
+    if (record.user.isBanned) {
+      res.status(403).json({ error: 'This account has been banned.' });
+      return;
+    }
+
+    if (!record.user.isActive) {
+      res.status(401).json({ error: 'Account is deactivated.' });
+      return;
+    }
+
+    const isCurrentPassword = await bcrypt.compare(password, record.user.passwordHash);
+
+    if (isCurrentPassword) {
+      res
+        .status(400)
+        .json({ error: 'New password must be different from the current password.' });
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(password, getBcryptRounds());
+
+    const sessionsLoggedOut = await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: record.userId },
+        data: { passwordHash: hashedPassword },
+      });
+
+      const revokedSessions = await tx.session.updateMany({
+        where: {
+          userId: record.userId,
+          isActive: true,
+        },
+        data: {
+          isActive: false,
+        },
+      });
+
+      await tx.passwordResetToken.deleteMany({
+        where: { userId: record.userId },
+      });
+
+      return revokedSessions.count;
+    });
+
+    res.json({
+      message: 'Password has been reset successfully. Please log in with your new password.',
+      sessionsLoggedOut,
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Internal server error during password reset' });
   }
 };
 

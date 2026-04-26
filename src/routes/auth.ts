@@ -1,6 +1,14 @@
 import { Router } from 'express';
 import { authenticateSession } from '../lib/sessionAuth.js';
-import { register, login, verifyEmail, resendVerification, getProfile } from '../controllers/authController.js';
+import {
+  register,
+  login,
+  verifyEmail,
+  resendVerification,
+  requestPasswordReset,
+  resetPassword,
+  getProfile,
+} from '../controllers/authController.js';
 import { updateProfile } from '../controllers/userController.js';
 import {
   getUserSessions,
@@ -8,12 +16,18 @@ import {
   logoutAllOtherSessions,
   logoutAllSessions,
 } from '../controllers/sessionController.js';
-import { authLimiter } from '../middleware/limiters.js';
+import {
+  authLimiter,
+  passwordResetConfirmLimiter,
+  passwordResetRequestLimiter,
+} from '../middleware/limiters.js';
 import {
   validate,
   registerSchema,
   loginSchema,
   resendVerificationSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
   updateProfileSchema,
 } from '../middleware/validation.js';
 import { registerRoute } from '../lib/docs.js';
@@ -28,7 +42,7 @@ registerRoute({
   body: { email: 'string', username: 'string', password: 'string' },
   responses: {
     '201': `{ "message": "Account created. Please verify your email." }`,
-    '503': `{"error": "Email verification is temporarily unavailable. Please try again later."}`,
+    '503': `{"error": "Email delivery is temporarily unavailable. Please try again later."}`,
   },
 });
 
@@ -93,7 +107,44 @@ registerRoute({
   body: { email: 'string' },
   responses: {
     '200': `{"message": "If this email exists and is unverified, a new link has been sent."}`,
-    '503': `{"error": "Email verification is temporarily unavailable. Please try again later."}`,
+    '503': `{"error": "Email delivery is temporarily unavailable. Please try again later."}`,
+  },
+});
+
+router.post(
+  '/forgot-password',
+  passwordResetRequestLimiter,
+  validate(forgotPasswordSchema),
+  requestPasswordReset,
+);
+registerRoute({
+  method: 'POST',
+  path: '/auth/forgot-password',
+  summary: 'Request a password reset email',
+  body: { email: 'string' },
+  responses: {
+    '200': `{"message": "If this email exists and is eligible for password reset, a reset link has been sent."}`,
+    '503': `{"error": "Email delivery is temporarily unavailable. Please try again later."}`,
+  },
+});
+
+router.post(
+  '/reset-password',
+  passwordResetConfirmLimiter,
+  validate(resetPasswordSchema),
+  resetPassword,
+);
+registerRoute({
+  method: 'POST',
+  path: '/auth/reset-password',
+  summary: 'Reset account password using an emailed token',
+  body: { token: 'Password reset token', password: 'string' },
+  responses: {
+    '200': `{
+  "message": "Password has been reset successfully. Please log in with your new password.",
+  "sessionsLoggedOut": 3
+}`,
+    '400': `{"error": "Invalid or expired password reset link."}`,
   },
 });
 

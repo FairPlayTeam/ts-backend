@@ -52,14 +52,14 @@ Then fill in the values you want to use.
 
 Important environment notes:
 
-* `FRONTEND_URL` is used to build email verification links
+* `FRONTEND_URL` is used to build email verification and password reset links
 * `PLAYBACK_TOKEN_SECRET` should be set in production to sign short-lived HLS playback URLs returned by `GET /videos/:id`
 * `PLAYBACK_TOKEN_TTL_SECONDS` controls how long those signed playback URLs stay valid (default: 3600 seconds)
 * `TRUST_PROXY` should be set in production if the API is behind Nginx, Caddy, Cloudflare, or another reverse proxy. Use `1` for a single trusted proxy hop, or `true` if your full proxy chain is trusted.
 * `JSON_BODY_LIMIT_BYTES` and `URLENCODED_BODY_LIMIT_BYTES` cap non-file request payloads globally (defaults: 1MB JSON, 256KB URL-encoded)
 * `CLEANUP_INTERVAL_MINUTES` controls how often expired sessions and stale chunk upload folders are cleaned up
-* `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` are required to send verification emails
-* The API can start without SMTP configured, but registration and resend-verification endpoints will return `503` until those values are set
+* `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` are required to send verification and password reset emails
+* The API can start without SMTP configured, but registration, resend-verification, and forgot-password endpoints will return `503` until those values are set
 * Direct upload endpoints accept videos up to **95MB** to stay under Cloudflare's request limit; use the chunked upload flow for larger files
 * Chunked uploads are capped to protect temporary disk usage and currently allow up to **3040MB** total
 

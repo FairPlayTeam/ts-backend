@@ -20,6 +20,7 @@ import {
 import { registerRoute } from '../lib/docs.js';
 import { chunkUploadLimiter, uploadLimiter } from '../middleware/limiters.js';
 import {
+  DIRECT_VIDEO_BUNDLE_MAX_MB,
   DIRECT_VIDEO_UPLOAD_MAX_MB,
   MAX_CHUNKED_VIDEO_UPLOAD_CHUNKS,
   MAX_CHUNKED_VIDEO_UPLOAD_TOTAL_MB,
@@ -69,16 +70,16 @@ registerRoute({
     allowComments: 'boolean (optional, default: true)',
     license: 'all_rights_reserved|cc_by|cc_by_sa|cc_by_nd|cc_by_nc|cc_by_nc_sa|cc_by_nc_nd|cc0 (optional)',
     totalSize: 'number (bytes)',
-    totalChunks: 'number',
+    totalChunks: 'number (optional, server computes it if omitted)',
     originalName: 'string?',
     mimeType: 'string?',
   },
   responses: {
     '201': `{
   "uploadId": "uuid",
-  "chunkSizeBytes": 99614720,
-  "chunkSizeMB": 95,
-  "totalChunks": 6,
+  "chunkSizeBytes": 25165824,
+  "chunkSizeMB": 24,
+  "totalChunks": 25,
   "totalSize": 624951296
 }`,
   },
@@ -115,6 +116,8 @@ registerRoute({
 router.post(
   '/video-chunks/:uploadId/complete',
   chunkUploadLimiter,
+  uploadSingle('thumbnail'),
+  validateFileMagicNumbers,
   completeChunkedVideoUpload,
 );
 registerRoute({
@@ -123,12 +126,16 @@ registerRoute({
   summary: 'Finalize chunked video upload and queue processing',
   auth: true,
   params: { uploadId: 'Upload session ID (UUID)' },
+  body: {
+    thumbnail: 'image file (optional)',
+  },
   responses: {
     '200': `{
   "message": "Video uploaded successfully and queued for processing",
   "video": {
     "id": "string",
-    "title": "string"
+    "title": "string",
+    "thumbnailUrl": "string|null"
   }
 }`,
   },
@@ -160,7 +167,7 @@ router.post(
 registerRoute({
   method: 'POST',
   path: '/upload/video-bundle',
-  summary: `Upload a video bundle up to ${DIRECT_VIDEO_UPLOAD_MAX_MB}MB with an optional thumbnail`,
+  summary: `Upload a video bundle up to ${DIRECT_VIDEO_BUNDLE_MAX_MB}MB with an optional thumbnail`,
   auth: true,
   body: {
     title: 'string',
