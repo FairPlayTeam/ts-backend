@@ -1,265 +1,82 @@
 import { Router } from 'express';
-import { authenticateSession } from '../lib/sessionAuth.js';
+import { ApiErrorSchema, ValidationErrorSchema, registerRoute } from '../docs/registry.js';
+import { authLimiter } from '../middleware/limiters.js';
+import { validate } from '../middleware/validation.js';
+import { register } from '../controllers/auth.controller.js';
 import {
-  register,
-  login,
-  verifyEmail,
-  resendVerification,
-  requestPasswordReset,
-  resetPassword,
-  getProfile,
-} from '../controllers/authController.js';
-import { updateProfile } from '../controllers/userController.js';
-import {
-  getUserSessions,
-  logoutSession,
-  logoutAllOtherSessions,
-  logoutAllSessions,
-} from '../controllers/sessionController.js';
-import {
-  authLimiter,
-  passwordResetConfirmLimiter,
-  passwordResetRequestLimiter,
-} from '../middleware/limiters.js';
-import {
-  validate,
+  registerBodySchema,
+  registerResponseSchema,
   registerSchema,
-  loginSchema,
-  resendVerificationSchema,
-  forgotPasswordSchema,
-  resetPasswordSchema,
-  updateProfileSchema,
-} from '../middleware/validation.js';
-import { registerRoute } from '../lib/docs.js';
+} from '../controllers/auth.schemas.js';
 
 const router = Router();
 
 router.post('/register', authLimiter, validate(registerSchema), register);
+
 registerRoute({
-  method: 'POST',
+  method: 'post',
   path: '/auth/register',
   summary: 'Register a new user',
-  body: { email: 'string', username: 'string', password: 'string' },
-  responses: {
-    '201': `{ "message": "Account created. Please verify your email." }`,
-    '503': `{"error": "Email delivery is temporarily unavailable. Please try again later."}`,
-  },
-});
-
-router.post('/login', authLimiter, validate(loginSchema), login);
-registerRoute({
-  method: 'POST',
-  path: '/auth/login',
-  summary: 'Login user',
-  body: { emailOrUsername: 'string', password: 'string' },
-  responses: {
-    '200': `{
-  "message": "Login successful",
-  "user": {
-    "id": "uuid",
-    "email": "user@example.com",
-    "username": "johndoe",
-    "role": "user"
-  },
-  "sessionKey": "fp_sess_a1b2c3d4e5f6...",
-  "session": {
-    "id": "uuid",
-    "expiresAt": "2024-10-20T13:30:00Z",
-    "deviceInfo": "Mac",
-    "ipAddress": "192.168.1.1"
-  }
-}`,
-  },
-});
-
-router.get('/verify-email', verifyEmail);
-registerRoute({
-  method: 'GET',
-  path: '/auth/verify-email',
-  summary: 'Verify user email address',
-  description:
-    'Validates the token sent by email, marks the account as verified, and creates a new authenticated session.',
-  query: { token: 'Verification token received by email' },
-  responses: {
-    '200': `{
-  "message": "Email successfully verified",
-  "user": {
-    "id": "uuid",
-    "email": "user@example.com",
-    "username": "johndoe",
-    "role": "user"
-  },
-  "sessionKey": "fp_sess_a1b2c3d4e5f6...",
-  "session": {
-    "id": "uuid",
-    "expiresAt": "2024-10-20T13:30:00Z"
-  }
-}`,
-    '400': `{"error": "Invalid or expired verification link."}`,
-  },
-});
-
-router.post('/resend-verification', authLimiter, validate(resendVerificationSchema), resendVerification);
-registerRoute({
-  method: 'POST',
-  path: '/auth/resend-verification',
-  summary: 'Resend email verification link',
-  body: { email: 'string' },
-  responses: {
-    '200': `{"message": "If this email exists and is unverified, a new link has been sent."}`,
-    '503': `{"error": "Email delivery is temporarily unavailable. Please try again later."}`,
-  },
-});
-
-router.post(
-  '/forgot-password',
-  passwordResetRequestLimiter,
-  validate(forgotPasswordSchema),
-  requestPasswordReset,
-);
-registerRoute({
-  method: 'POST',
-  path: '/auth/forgot-password',
-  summary: 'Request a password reset email',
-  body: { email: 'string' },
-  responses: {
-    '200': `{"message": "If this email exists and is eligible for password reset, a reset link has been sent."}`,
-    '503': `{"error": "Email delivery is temporarily unavailable. Please try again later."}`,
-  },
-});
-
-router.post(
-  '/reset-password',
-  passwordResetConfirmLimiter,
-  validate(resetPasswordSchema),
-  resetPassword,
-);
-registerRoute({
-  method: 'POST',
-  path: '/auth/reset-password',
-  summary: 'Reset account password using an emailed token',
-  body: { token: 'Password reset token', password: 'string' },
-  responses: {
-    '200': `{
-  "message": "Password has been reset successfully. Please log in with your new password.",
-  "sessionsLoggedOut": 3
-}`,
-    '400': `{"error": "Invalid or expired password reset link."}`,
-  },
-});
-
-router.get('/me', authenticateSession, getProfile);
-registerRoute({
-  method: 'GET',
-  path: '/auth/me',
-  summary: 'Get current user profile',
-  auth: true,
-  responses: {
-    '200': `{
-  "id": "uuid",
-  "email": "user@example.com",
-  "username": "johndoe",
-  "displayName": "John Doe",
-  "avatarUrl": "https://example.com/avatar.jpg",
-  "bannerUrl": "https://example.com/banner.jpg",
-  "bio": "Hello world!",
-  "role": "user",
-  "isVerified": false,
-  "followerCount": 42,
-  "totalViews": "1337",
-  "createdAt": "2024-01-01T00:00:00Z"
-}`,
-  },
-});
-
-router.patch(
-  '/me',
-  authenticateSession,
-  validate(updateProfileSchema),
-  updateProfile,
-);
-registerRoute({
-  method: 'PATCH',
-  path: '/auth/me',
-  summary: 'Update current user profile',
-  auth: true,
-  body: {
-    displayName: 'string (optional)',
-    bio: 'string (optional)',
+  tags: ['Auth'],
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: registerBodySchema,
+        },
+      },
+    },
   },
   responses: {
-    '200': `{"message": "Profile updated successfully", "user": {"id": "uuid", "displayName": "John Doe", "bio": "Updated bio"}}`,
-  },
-});
-
-router.get('/sessions', authenticateSession, getUserSessions);
-registerRoute({
-  method: 'GET',
-  path: '/auth/sessions',
-  summary: 'Get all active sessions for current user',
-  description:
-    'Returns all active sessions. Use the "id" field to logout specific sessions via DELETE /auth/sessions/:sessionId',
-  auth: true,
-  responses: {
-    '200': `{
-  "sessions": [
-    {
-      "id": "uuid",
-      "sessionKey": "****c3d4e5f6",
-      "ipAddress": "192.168.1.1",
-      "deviceInfo": "Mac",
-      "createdAt": "2024-09-20T10:00:00Z",
-      "lastUsedAt": "2024-09-20T13:30:00Z",
-      "expiresAt": "2024-10-20T10:00:00Z",
-      "isCurrent": true
-    }
-  ],
-  "total": 1
-}`,
-  },
-});
-
-router.delete('/sessions/all', authenticateSession, logoutAllSessions);
-registerRoute({
-  method: 'DELETE',
-  path: '/auth/sessions/all',
-  summary: 'Logout from all sessions including current',
-  auth: true,
-  responses: {
-    '200': `{
-  "message": "All sessions logged out successfully",
-  "sessionsLoggedOut": 4
-}`,
-  },
-});
-
-router.delete(
-  '/sessions/others/all',
-  authenticateSession,
-  logoutAllOtherSessions,
-);
-registerRoute({
-  method: 'DELETE',
-  path: '/auth/sessions/others/all',
-  summary: 'Logout from all other sessions (keep current)',
-  auth: true,
-  responses: {
-    '200': `{
-  "message": "All other sessions logged out successfully",
-  "sessionsLoggedOut": 3
-}`,
-  },
-});
-
-router.delete('/sessions/:sessionId', authenticateSession, logoutSession);
-registerRoute({
-  method: 'DELETE',
-  path: '/auth/sessions/:sessionId',
-  summary: 'Logout from a specific session',
-  auth: true,
-  params: { sessionId: 'Session UUID' },
-  responses: {
-    '200': `{"message": "Session logged out successfully"}`,
+    201: {
+      description: 'Account created',
+      content: {
+        'application/json': {
+          schema: registerResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Invalid request body',
+      content: {
+        'application/json': {
+          schema: ValidationErrorSchema,
+        },
+      },
+    },
+    409: {
+      description: 'Email or username already in use',
+      content: {
+        'application/json': {
+          schema: ApiErrorSchema,
+        },
+      },
+    },
+    429: {
+      description: 'Too many auth attempts',
+      content: {
+        'application/json': {
+          schema: ApiErrorSchema,
+        },
+      },
+    },
+    503: {
+      description: 'Email delivery is unavailable',
+      content: {
+        'application/json': {
+          schema: ApiErrorSchema,
+        },
+      },
+    },
+    500: {
+      description: 'Internal server error',
+      content: {
+        'application/json': {
+          schema: ApiErrorSchema,
+        },
+      },
+    },
   },
 });
 

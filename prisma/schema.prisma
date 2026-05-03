@@ -1,262 +1,68 @@
 generator client {
-  provider = "prisma-client-js"
+    provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-enum VideoProcessingStatus {
-  uploading
-  processing
-  failed
-  done
-}
-
-enum VideoModerationStatus {
-  pending
-  approved
-  rejected
-}
-
-enum VideoVisibility {
-  public
-  unlisted
-  private
-}
-
-enum VideoLicense {
-  all_rights_reserved
-  cc_by
-  cc_by_sa
-  cc_by_nd
-  cc_by_nc
-  cc_by_nc_sa
-  cc_by_nc_nd
-  cc0
+    provider = "postgresql"
 }
 
 enum UserRole {
-  user
-  moderator
-  admin
+    user
+    moderator
+    admin
 }
 
 model User {
-  id           String    @id @default(uuid()) @db.Uuid
-  email        String    @unique
-  username     String    @unique
-  passwordHash String    @map("password_hash")
-  displayName  String?   @map("display_name")
-  avatarUrl    String?   @map("avatar_url")
-  bannerUrl    String?   @map("banner_url")
-  bio          String?
-  role         UserRole  @default(user)
-  isActive     Boolean   @default(true) @map("is_active")
-  isVerified   Boolean   @default(false) @map("is_verified")
-  isBanned     Boolean   @default(false) @map("is_banned")
-  banReasonPrivate String? @map("ban_reason_private")
-  bannedAt     DateTime? @map("banned_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-  lastLogin    DateTime? @map("last_login")
+    id String @id @default(uuid()) @db.Uuid
+    email String @unique
+    username String @unique
+    passwordHash String @map("password_hash")
+    role UserRole @default(user)
+    isActive Boolean @default(true) @map("is_active")
+    isVerified Boolean @default(false) @map("is_verified")
+    isBanned Boolean @default(false) @map("is_banned")
+    bannedAt DateTime? @map("banned_at")
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+    lastLogin DateTime? @map("last_login")
 
-  followerCount Int     @default(0) @map("follower_count")
-  followingCount Int    @default(0) @map("following_count")
-  videoCount    Int     @default(0) @map("video_count")
-  totalViews    BigInt  @default(0) @map("total_views")
+    sessions Session[]
 
-  videos        Video[]
-  following     Follow[]       @relation("UserFollowing")
-  followers     Follow[]       @relation("UserFollowers")
-  ratings       Rating[]
-  comments      Comment[]
-  commentLikes  CommentLike[]
-  sessions      Session[]
-  dailyViews    VideoView[]
+    emailVerificationTokens EmailVerificationToken[]
 
-  emailVerificationTokens EmailVerificationToken[]
-  passwordResetTokens PasswordResetToken[]
-  updatedCampaigns Campaign[] @relation("CampaignUpdatedBy")
-
-  @@map("users")
+    @@map("users")
 }
 
 model EmailVerificationToken {
-  id        String   @id @default(cuid())
-  userId    String   @db.Uuid @unique
-  token     String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+    id String @id @default(cuid())
+    userId String @db.Uuid @unique @map("user_id")
+    token String @unique
+    expiresAt DateTime @map("expires_at")
+    createdAt DateTime @default(now()) @map("created_at")
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model PasswordResetToken {
-  id        String   @id @default(cuid())
-  userId    String   @db.Uuid @unique
-  token     String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model Campaign {
-  id          String   @id @default("active")
-  title       String
-  description String
-  link        String
-  thumbnailUrl String  @map("thumbnail_url")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  updatedById String?  @map("updated_by_id") @db.Uuid
-
-  updatedBy User? @relation("CampaignUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-
-  @@map("campaigns")
-}
-
-model VideoView {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  videoId   String   @map("video_id") @db.Uuid
-  date      DateTime @map("date")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, videoId, date])
-  @@index([videoId])
-  @@index([userId])
-  @@map("daily_video_views")
-}
-
-model Video {
-  id            String          @id @default(uuid()) @db.Uuid
-  publicId      String?         @unique @map("public_id")
-  userId        String          @map("user_id") @db.Uuid
-  title         String
-  description   String?
-  thumbnail     String?
-  duration      Int?
-  tags          String[]
-  viewCount     BigInt          @default(0) @map("view_count")
-  likeCount     Int             @default(0) @map("like_count")
-  processingStatus VideoProcessingStatus @default(uploading)
-  moderationStatus VideoModerationStatus @default(pending)
-  visibility    VideoVisibility @default(public)
-  allowComments Boolean         @default(true) @map("allow_comments")
-  license       VideoLicense    @default(all_rights_reserved)
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
-  publishedAt   DateTime?       @map("published_at")
-
-  storagePath   String? @map("storage_path")
-  qualities     Json?
-
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ratings  Rating[]
-  comments Comment[]
-  dailyViews VideoView[]
-
-  @@index([userId])
-  @@index([processingStatus])
-  @@index([moderationStatus])
-  @@index([visibility])
-  @@index([createdAt])
-  @@map("videos")
-}
-
-model Rating {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  videoId   String   @map("video_id") @db.Uuid
-  score     Int      @db.SmallInt
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, videoId])
-  @@index([videoId])
-  @@map("ratings")
-}
-
-model Comment {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  videoId   String   @map("video_id") @db.Uuid
-  content   String
-  likeCount Int      @default(0) @map("like_count")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  parentId  String?  @map("parent_id") @db.Uuid
-  parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies   Comment[] @relation("CommentReplies")
-  likes     CommentLike[]
-  isDeleted Boolean   @default(false)
-  
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
-
-  @@index([videoId])
-  @@index([parentId])
-  @@index([createdAt])
-  @@map("comments")
-}
-
-model CommentLike {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  commentId String   @map("comment_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, commentId])
-  @@map("comment_likes")
-}
-
-model Follow {
-  id          String   @id @default(uuid()) @db.Uuid
-  followerId  String   @map("follower_id") @db.Uuid
-  followingId String   @map("following_id") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  follower  User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
-  following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
-
-  @@unique([followerId, followingId])
-  @@index([followerId])
-  @@index([followingId])
-  @@map("follows")
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Session {
-  id        String   @id @default(uuid()) @db.Uuid
-  sessionKey String  @unique @map("session_key")
-  sessionKeySuffix String? @map("session_key_suffix")
-  userId    String   @map("user_id") @db.Uuid
-  ipAddress String?  @map("ip_address")
-  userAgent String?  @map("user_agent")
-  deviceInfo String? @map("device_info")
-  isActive  Boolean  @default(true) @map("is_active")
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  lastUsedAt DateTime @default(now()) @map("last_used_at")
+    id String @id @default(uuid()) @db.Uuid
+    sessionKey String @unique @map("session_key")
+    sessionKeySuffix String? @map("session_key_suffix")
+    userId String @map("user_id") @db.Uuid
+    ipAddress String? @map("ip_address")
+    userAgent String? @map("user_agent")
+    deviceInfo String? @map("device_info")
+    isActive Boolean @default(true) @map("is_active")
+    expiresAt DateTime @map("expires_at")
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+    lastUsedAt DateTime @default(now()) @map("last_used_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
-  @@index([sessionKey])
-  @@index([sessionKeySuffix])
-  @@index([expiresAt])
-  @@index([isActive])
-  @@map("sessions")
+    @@index([userId])
+    @@index([sessionKey])
+    @@index([sessionKeySuffix])
+    @@index([expiresAt])
+    @@index([isActive])
+    @@map("sessions")
 }

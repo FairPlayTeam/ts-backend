@@ -1,8 +1,18 @@
 import { Router } from 'express';
-import { registerRoute } from '../lib/docs.js';
-import { APP_API_NAME, APP_VERSION } from '../lib/appInfo.js';
+import '../docs/zod.js';
+import { z } from 'zod';
+import { registerRoute } from '../docs/registry.js';
+import { APP_API_NAME, APP_VERSION } from '../config/constants.js';
 
 const router = Router();
+
+const apiMetadataResponseSchema = z
+  .object({
+    name: z.string().openapi({ example: APP_API_NAME }),
+    version: z.string().openapi({ example: APP_VERSION }),
+    docs: z.string().openapi({ example: '/docs' }),
+  })
+  .openapi('ApiMetadataResponse');
 
 router.get('/', (_req, res) => {
   res.json({
@@ -13,11 +23,19 @@ router.get('/', (_req, res) => {
 });
 
 registerRoute({
-  method: 'GET',
+  method: 'get',
   path: '/',
-  summary: 'API root: overview and endpoints',
+  summary: 'API metadata',
+  tags: ['System'],
   responses: {
-    '200': '{ "name": "Fairplay API", "version": "x.x.x", "docs": "/docs" }',
+    200: {
+      description: 'API is running',
+      content: {
+        'application/json': {
+          schema: apiMetadataResponseSchema,
+        },
+      },
+    },
   },
 });
 
