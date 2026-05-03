@@ -17,6 +17,12 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "postinstall": "bunx prisma generate",
+    "prisma:generate": "bunx prisma generate",
+    "prisma:migrate": "bun run prisma:migrate:dev",
+    "prisma:migrate:dev": "bunx prisma migrate dev",
+    "prisma:migrate:deploy": "bunx prisma migrate deploy",
+    "prisma:migrate:status": "bunx prisma migrate status",
     "prisma:studio": "bunx prisma studio"
   },
   "devDependencies": {

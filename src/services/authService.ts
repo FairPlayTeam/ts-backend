@@ -4,6 +4,9 @@ import config from '../config/env.js';
 import { generateToken, hashToken } from '../lib/crypto.js';
 import { EMAIL_VERIFICATION_TOKEN_TTL_MS } from '../config/constants.js';
 import { sendVerificationEmail } from './mailer/mailer.service.js';
+import { isPrismaUniqueError } from '../lib/prisma.js';
+import { MailerConfigurationError, MailerDeliveryError } from './mailer/mailer.errors.js';
+import { UserAlreadyExistsError, VerificationEmailUnavailableError } from './auth.errors.js';
 
 type RegisterInput = {
   email: string;
@@ -46,26 +49,34 @@ export const createAuthService = (deps: AuthDependencies) => {
         deps.clock.now().getTime() + deps.config.emailVerificationTokenTtlMs,
       );
 
-      const user = await deps.prisma.$transaction(async (tx) => {
-        const createdUser = await tx.user.create({
-          data: {
-            email: emailNorm,
-            username: usernameNorm,
-            passwordHash: hashedPassword,
-          },
-          select: { id: true, email: true, username: true, role: true },
-        });
+      const user = await deps.prisma
+        .$transaction(async (tx) => {
+          const createdUser = await tx.user.create({
+            data: {
+              email: emailNorm,
+              username: usernameNorm,
+              passwordHash: hashedPassword,
+            },
+            select: { id: true, email: true, username: true, role: true },
+          });
 
-        await tx.emailVerificationToken.create({
-          data: {
-            userId: createdUser.id,
-            token: tokenHash,
-            expiresAt,
-          },
-        });
+          await tx.emailVerificationToken.create({
+            data: {
+              userId: createdUser.id,
+              token: tokenHash,
+              expiresAt,
+            },
+          });
 
-        return createdUser;
-      });
+          return createdUser;
+        })
+        .catch((err) => {
+          if (isPrismaUniqueError(err)) {
+            throw new UserAlreadyExistsError(err);
+          }
+
+          throw err;
+        });
 
       try {
         await deps.mailer.sendVerificationEmail(user.email, token);
@@ -73,6 +84,10 @@ export const createAuthService = (deps: AuthDependencies) => {
         await deps.prisma.user.delete({ where: { id: user.id } }).catch((cleanupError) => {
           console.error('Failed to roll back user after verification email failure:', cleanupError);
         });
+        if (err instanceof MailerConfigurationError || err instanceof MailerDeliveryError) {
+          throw new VerificationEmailUnavailableError(err);
+        }
+
         throw err;
       }
 

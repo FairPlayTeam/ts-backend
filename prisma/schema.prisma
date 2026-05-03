@@ -41,6 +41,8 @@ model EmailVerificationToken {
     createdAt DateTime @default(now()) @map("created_at")
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@map("email_verification_token")
 }
 
 model Session {

@@ -1,13 +1,15 @@
 import { HttpError } from '../errors/http.js';
-import { isPrismaUniqueError } from '../lib/prisma.js';
-import { MailerConfigurationError, MailerDeliveryError } from '../services/mailer/mailer.errors.js';
+import {
+  UserAlreadyExistsError,
+  VerificationEmailUnavailableError,
+} from '../services/auth.errors.js';
 
 export function toAuthHttpError(err: unknown): Error {
-  if (isPrismaUniqueError(err)) {
+  if (err instanceof UserAlreadyExistsError) {
     return new HttpError(409, 'Conflict', 'User already exists', err);
   }
 
-  if (err instanceof MailerConfigurationError || err instanceof MailerDeliveryError) {
+  if (err instanceof VerificationEmailUnavailableError) {
     return new HttpError(503, 'ServiceUnavailable', 'Email delivery failed', err);
   }
 
