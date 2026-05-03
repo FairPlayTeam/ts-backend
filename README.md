@@ -6,6 +6,7 @@
 FairPlay backend API built with TypeScript, Express, Prisma, and Bun.
 
 ## New V2 features and improvements
+
 - Full OpenAPI and Swagger support
 - Better architecture
 - Global cleanup

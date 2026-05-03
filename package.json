@@ -8,13 +8,15 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "bun --watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
     "start": "bun src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
+    "check": "bun run typecheck && bun run lint && bun run format:check && bun run test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "bun test",
-    "typecheck": "tsc --noEmit",
     "prisma:studio": "bunx prisma studio"
   },
   "devDependencies": {
