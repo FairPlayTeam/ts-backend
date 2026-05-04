@@ -98,7 +98,7 @@ export const parseTrustProxy = (
   return value;
 };
 
-export const parseBodySizeLimitBytes = (
+const parseBodySizeLimitBytes = (
   rawValue: string | undefined,
   fallback: number,
   envName: string,
@@ -152,7 +152,7 @@ export const parseAllowedOrigins = (rawValue: string | undefined): string[] => {
   ];
 };
 
-export const parseSmtpPort = (rawPort: string | undefined): number => {
+const parseSmtpPort = (rawPort: string | undefined): number => {
   const value = readRequiredEnv(rawPort, 'SMTP_PORT');
   const smtpPort = Number(value);
 
@@ -163,7 +163,7 @@ export const parseSmtpPort = (rawPort: string | undefined): number => {
   return smtpPort;
 };
 
-export const parseFrontendUrl = (rawUrl: string | undefined): string =>
+const parseFrontendUrl = (rawUrl: string | undefined): string =>
   parseRequiredUrl(rawUrl, 'FRONTEND_URL');
 
 type RawMailerConfig = {

@@ -35,7 +35,6 @@
     "@typescript-eslint/parser": "^8.59.1",
     "dotenv": "^17.4.2",
     "eslint": "^10.3.0",
-    "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.3",
     "typescript": "^5",
     "typescript-eslint": "^8.59.1"
@@ -50,8 +49,6 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.4.1",
     "nodemailer": "^8.0.7",
-    "openapi3-ts": "^4.5.0",
-    "pg": "^8.14.1",
     "prisma": "^7.8.0",
     "swagger-ui-express": "^5.0.1",
     "zod": "^4.4.1"

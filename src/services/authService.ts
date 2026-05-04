@@ -98,16 +98,16 @@ export const createAuthService = (deps: AuthDependencies) => {
   };
 };
 
-export const bcryptHasher = {
+const bcryptHasher = {
   hash: (password: string, rounds: number) => bcrypt.hash(password, rounds),
 };
 
-export const tokenService = {
+const tokenService = {
   generate: () => generateToken(),
   hash: (token: string) => hashToken(token),
 };
 
-export const systemClock = {
+const systemClock = {
   now: () => new Date(),
 };
 

@@ -2,7 +2,7 @@ import './zod.js';
 import { OpenAPIRegistry, type RouteConfig } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 
-export type RouteDoc = RouteConfig;
+type RouteDoc = RouteConfig;
 
 export const registry = new OpenAPIRegistry();
 
@@ -14,7 +14,7 @@ export const ApiErrorSchema = registry.register(
   }),
 );
 
-export const ValidationErrorDetailSchema = registry.register(
+const ValidationErrorDetailSchema = registry.register(
   'ValidationErrorDetail',
   z.object({
     field: z.string().openapi({ example: 'body.email' }),

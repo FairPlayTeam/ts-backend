@@ -1,4 +1,3 @@
-export const APP_SLUG = 'fairplay-api';
 export const APP_PRODUCT_NAME = 'FairPlay';
 export const APP_API_NAME = `${APP_PRODUCT_NAME} API`;
 export const EMAIL_VERIFICATION_PATH = '/verify-email';
