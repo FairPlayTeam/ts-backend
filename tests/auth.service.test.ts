@@ -1,10 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
 import { createAuthService } from '../src/services/authService.js';
-import {
-  UserAlreadyExistsError,
-  VerificationEmailUnavailableError,
-} from '../src/services/auth.errors.js';
+import { UserAlreadyExistsError } from '../src/services/auth.errors.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
 
 type AuthDeps = Parameters<typeof createAuthService>[0];
@@ -14,9 +11,9 @@ const fixedNow = new Date('2026-01-01T00:00:00.000Z');
 function createTestDeps(overrides: Partial<AuthDeps> = {}) {
   const calls = {
     userCreate: undefined as unknown,
-    userDelete: undefined as unknown,
     tokenCreate: undefined as unknown,
     sentEmail: undefined as unknown,
+    warning: undefined as unknown,
   };
 
   const tx = {
@@ -42,11 +39,6 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
   const deps = {
     prisma: {
       $transaction: async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
-      user: {
-        delete: async (args: unknown) => {
-          calls.userDelete = args;
-        },
-      },
     },
     hasher: {
       hash: async () => 'hashed-password',
@@ -66,6 +58,11 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     config: {
       bcryptRounds: 12,
       emailVerificationTokenTtlMs: 1000,
+    },
+    logger: {
+      warn: (message: string, error?: unknown) => {
+        calls.warning = { message, error };
+      },
     },
     ...overrides,
   } as unknown as AuthDeps;
@@ -136,11 +133,12 @@ describe('auth service', () => {
     ).rejects.toBeInstanceOf(UserAlreadyExistsError);
   });
 
-  test('throws VerificationEmailUnavailableError when email delivery fails', async () => {
+  test('keeps the user registered when verification email delivery fails', async () => {
+    const mailerError = new MailerDeliveryError('Email failed');
     const { deps, calls } = createTestDeps({
       mailer: {
         sendVerificationEmail: async () => {
-          throw new MailerDeliveryError('Email failed');
+          throw mailerError;
         },
       },
     });
@@ -153,10 +151,13 @@ describe('auth service', () => {
         username: 'fairplay_user',
         password: 'Password1!',
       }),
-    ).rejects.toBeInstanceOf(VerificationEmailUnavailableError);
+    ).resolves.toEqual({
+      message: 'Account created. Please verify your email.',
+    });
 
-    expect(calls.userDelete).toEqual({
-      where: { id: 'user-id' },
+    expect(calls.warning).toEqual({
+      message: 'Verification email could not be sent after registration',
+      error: mailerError,
     });
   });
 });

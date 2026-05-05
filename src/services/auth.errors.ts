@@ -4,10 +4,3 @@ export class UserAlreadyExistsError extends Error {
     this.name = 'UserAlreadyExistsError';
   }
 }
-
-export class VerificationEmailUnavailableError extends Error {
-  constructor(cause?: unknown) {
-    super('Email delivery failed', { cause });
-    this.name = 'VerificationEmailUnavailableError';
-  }
-}

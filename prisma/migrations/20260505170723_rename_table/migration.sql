@@ -20,14 +20,14 @@ CREATE TABLE "users" (
 );
 
 -- CreateTable
-CREATE TABLE "EmailVerificationToken" (
+CREATE TABLE "email_verification_token" (
     "id" TEXT NOT NULL,
     "user_id" UUID NOT NULL,
     "token" TEXT NOT NULL,
     "expires_at" TIMESTAMP(3) NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "EmailVerificationToken_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "email_verification_token_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -55,10 +55,10 @@ CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 CREATE UNIQUE INDEX "users_username_key" ON "users"("username");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "EmailVerificationToken_user_id_key" ON "EmailVerificationToken"("user_id");
+CREATE UNIQUE INDEX "email_verification_token_user_id_key" ON "email_verification_token"("user_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "EmailVerificationToken_token_key" ON "EmailVerificationToken"("token");
+CREATE UNIQUE INDEX "email_verification_token_token_key" ON "email_verification_token"("token");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "sessions_session_key_key" ON "sessions"("session_key");
@@ -79,7 +79,7 @@ CREATE INDEX "sessions_expires_at_idx" ON "sessions"("expires_at");
 CREATE INDEX "sessions_is_active_idx" ON "sessions"("is_active");
 
 -- AddForeignKey
-ALTER TABLE "EmailVerificationToken" ADD CONSTRAINT "EmailVerificationToken_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "email_verification_token" ADD CONSTRAINT "email_verification_token_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

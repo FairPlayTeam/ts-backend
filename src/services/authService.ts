@@ -6,7 +6,7 @@ import { EMAIL_VERIFICATION_TOKEN_TTL_MS } from '../config/constants.js';
 import { sendVerificationEmail } from './mailer/mailer.service.js';
 import { isPrismaUniqueError } from '../lib/prisma.js';
 import { MailerConfigurationError, MailerDeliveryError } from './mailer/mailer.errors.js';
-import { UserAlreadyExistsError, VerificationEmailUnavailableError } from './auth.errors.js';
+import { UserAlreadyExistsError } from './auth.errors.js';
 
 type RegisterInput = {
   email: string;
@@ -15,7 +15,7 @@ type RegisterInput = {
 };
 
 type AuthDependencies = {
-  prisma: Pick<typeof prisma, '$transaction' | 'user'>;
+  prisma: Pick<typeof prisma, '$transaction'>;
   hasher: {
     hash(password: string, rounds: number): Promise<string>;
   };
@@ -32,6 +32,9 @@ type AuthDependencies = {
   config: {
     bcryptRounds: number;
     emailVerificationTokenTtlMs: number;
+  };
+  logger: {
+    warn(message: string, error?: unknown): void;
   };
 };
 
@@ -81,14 +84,11 @@ export const createAuthService = (deps: AuthDependencies) => {
       try {
         await deps.mailer.sendVerificationEmail(user.email, token);
       } catch (err) {
-        await deps.prisma.user.delete({ where: { id: user.id } }).catch((cleanupError) => {
-          console.error('Failed to roll back user after verification email failure:', cleanupError);
-        });
         if (err instanceof MailerConfigurationError || err instanceof MailerDeliveryError) {
-          throw new VerificationEmailUnavailableError(err);
+          deps.logger.warn('Verification email could not be sent after registration', err);
+        } else {
+          throw err;
         }
-
-        throw err;
       }
 
       return {
@@ -121,4 +121,5 @@ export const authService = createAuthService({
     bcryptRounds: config.bcryptRounds,
     emailVerificationTokenTtlMs: EMAIL_VERIFICATION_TOKEN_TTL_MS,
   },
+  logger: console,
 });

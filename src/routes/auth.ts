@@ -61,14 +61,6 @@ registerRoute({
         },
       },
     },
-    503: {
-      description: 'Email delivery is unavailable',
-      content: {
-        'application/json': {
-          schema: ApiErrorSchema,
-        },
-      },
-    },
     500: {
       description: 'Internal server error',
       content: {
