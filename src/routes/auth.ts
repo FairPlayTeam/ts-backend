@@ -2,14 +2,16 @@ import { Router } from 'express';
 import { ApiErrorSchema, ValidationErrorSchema, registerRoute } from '../docs/registry.js';
 import { authLimiter } from '../middleware/limiters.js';
 import { validate } from '../middleware/validation.js';
-import { register } from '../controllers/auth.controller.js';
+import { createAuthController } from '../controllers/auth.controller.js';
 import {
   registerBodySchema,
   registerResponseSchema,
   registerSchema,
 } from '../controllers/auth.schemas.js';
+import { authService } from '../services/authService.js';
 
 const router = Router();
+const { register } = createAuthController({ authService });
 
 router.post('/register', authLimiter, validate(registerSchema), register);
 
@@ -42,6 +44,14 @@ registerRoute({
       content: {
         'application/json': {
           schema: ValidationErrorSchema,
+        },
+      },
+    },
+    413: {
+      description: 'Payload too large',
+      content: {
+        'application/json': {
+          schema: ApiErrorSchema,
         },
       },
     },
