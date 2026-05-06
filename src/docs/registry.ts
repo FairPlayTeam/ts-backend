@@ -1,6 +1,7 @@
 import './zod.js';
 import { OpenAPIRegistry, type RouteConfig } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
+import { API_ERROR_CODES } from '../errors/http.js';
 
 type RouteDoc = RouteConfig;
 
@@ -9,7 +10,7 @@ export const registry = new OpenAPIRegistry();
 export const ApiErrorSchema = registry.register(
   'ApiError',
   z.object({
-    error: z.string(),
+    error: z.enum(API_ERROR_CODES),
     message: z.string(),
   }),
 );

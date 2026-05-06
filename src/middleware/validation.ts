@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z, ZodError } from 'zod';
+import { ValidationError } from '../errors/http.js';
 
 type ParsedRequestParts = {
   body?: unknown;
@@ -9,13 +10,13 @@ type ParsedRequestParts = {
 
 const formatZodErrors = (error: ZodError) =>
   error.issues.map(({ path, message }) => ({
-    field: path.filter((p): p is string => typeof p === 'string').join('.') || 'unknown',
+    field: path.map(String).join('.') || 'unknown',
     message,
   }));
 
 export const validate =
   (schema: z.ZodTypeAny) =>
-  (req: Request, res: Response, next: NextFunction): void => {
+  (req: Request, _res: Response, next: NextFunction): void => {
     const result = schema.safeParse({
       body: req.body,
       query: req.query,
@@ -23,12 +24,7 @@ export const validate =
     });
 
     if (!result.success) {
-      res.status(400).json({
-        error: 'ValidationError',
-        message: 'Request validation failed',
-        details: formatZodErrors(result.error),
-      });
-      return;
+      return next(new ValidationError(formatZodErrors(result.error)));
     }
 
     const data = result.data as ParsedRequestParts;

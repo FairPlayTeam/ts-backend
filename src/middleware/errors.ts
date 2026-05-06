@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
-import { HttpError, isHttpError } from '../errors/http.js';
+import { HttpError, isHttpError, type ApiErrorResponse } from '../errors/http.js';
 
 type HttpStatusError = Error & {
   expose?: unknown;
@@ -33,19 +33,23 @@ const toHttpError = (err: unknown): HttpError => {
     const status = getHttpStatus(err);
 
     if (err.type === 'entity.parse.failed' && status === 400) {
-      return new HttpError(400, 'InvalidJson', 'Request body contains invalid JSON', err);
+      return new HttpError(400, 'InvalidJson', 'Request body contains invalid JSON', {
+        cause: err,
+      });
     }
 
     if (err.type === 'entity.too.large' && status === 413) {
-      return new HttpError(413, 'PayloadTooLarge', 'Request body is too large', err);
+      return new HttpError(413, 'PayloadTooLarge', 'Request body is too large', {
+        cause: err,
+      });
     }
 
     if (status !== null && status < 500 && err.expose !== false) {
-      return new HttpError(status, 'BadRequest', err.message, err);
+      return new HttpError(status, 'BadRequest', err.message, { cause: err });
     }
   }
 
-  return new HttpError(500, 'InternalServerError', 'Unexpected error', err);
+  return new HttpError(500, 'InternalServerError', 'Unexpected error', { cause: err });
 };
 
 export const notFoundHandler: RequestHandler = (req, _res, next) => {
@@ -61,8 +65,14 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     console.error('Unhandled request error:', err);
   }
 
-  res.status(httpError.statusCode).json({
+  const response: ApiErrorResponse = {
     error: httpError.code,
     message: httpError.message,
-  });
+  };
+
+  if (httpError.statusCode < 500 && httpError.exposeDetails && httpError.details !== undefined) {
+    response.details = httpError.details;
+  }
+
+  res.status(httpError.statusCode).json(response);
 };
