@@ -8,7 +8,7 @@ import {
   registerResponseSchema,
   registerSchema,
 } from '../controllers/auth.schemas.js';
-import { authService } from '../services/authService.js';
+import { authService } from '../services/auth.service.js';
 
 const router = Router();
 const { register } = createAuthController({ authService });

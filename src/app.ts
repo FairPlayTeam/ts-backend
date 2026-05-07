@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 
+import crypto from 'node:crypto';
+import { pinoHttp } from 'pino-http';
+import { logger } from './lib/logger.js';
 import loadRoutes from './routing/loadRoutes.js';
 import { generateOpenApi } from './docs/openapi.js';
 import { HttpError } from './errors/http.js';
@@ -13,10 +16,47 @@ type CreateAppConfig = Pick<
   'allowedOrigins' | 'baseUrl' | 'isProduction' | 'jsonBodyLimitBytes' | 'trustProxy'
 >;
 
+const getRequestId = (rawRequestId: string | string[] | undefined): string => {
+  if (Array.isArray(rawRequestId)) {
+    return rawRequestId[0] ?? crypto.randomUUID();
+  }
+
+  return rawRequestId ?? crypto.randomUUID();
+};
+
+const getHeader = (rawHeader: string | string[] | undefined): string | undefined =>
+  Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+
 export async function createApp(config: CreateAppConfig) {
   const app = express();
 
   app.set('trust proxy', config.trustProxy);
+
+  app.use(
+    pinoHttp({
+      logger,
+      genReqId: (req) => getRequestId(req.headers['x-request-id']),
+      autoLogging: {
+        ignore: (req) => req.url === '/favicon.ico',
+      },
+      serializers: {
+        req(req) {
+          return {
+            id: req.id,
+            method: req.method,
+            url: req.url,
+            remoteAddress: req.remoteAddress,
+            userAgent: getHeader(req.headers['user-agent']),
+          };
+        },
+        res(res) {
+          return {
+            statusCode: res.statusCode,
+          };
+        },
+      },
+    }),
+  );
 
   app.use(
     cors({

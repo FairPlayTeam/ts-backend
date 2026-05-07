@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
-import { createAuthService } from '../src/services/authService.js';
+import { createAuthService } from '../src/services/auth.service.js';
 import { UserAlreadyExistsError } from '../src/services/auth.errors.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
 
@@ -60,8 +60,8 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
       emailVerificationTokenTtlMs: 1000,
     },
     logger: {
-      warn: (message: string, error?: unknown) => {
-        calls.warning = { message, error };
+      warn: (data: object, message: string) => {
+        calls.warning = { data, message };
       },
     },
     ...overrides,
@@ -156,8 +156,8 @@ describe('auth service', () => {
     });
 
     expect(calls.warning).toEqual({
+      data: { err: mailerError },
       message: 'Verification email could not be sent after registration',
-      error: mailerError,
     });
   });
 });

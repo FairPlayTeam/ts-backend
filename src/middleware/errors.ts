@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { HttpError, isHttpError, type ApiErrorResponse } from '../errors/http.js';
+import { logger } from '../lib/logger.js';
 
 type HttpStatusError = Error & {
   expose?: unknown;
@@ -62,7 +63,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   const httpError = toHttpError(err);
 
   if (httpError.statusCode >= 500 && !isHttpError(err)) {
-    console.error('Unhandled request error:', err);
+    logger.error({ err }, 'Unhandled request error');
   }
 
   const response: ApiErrorResponse = {

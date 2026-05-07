@@ -7,6 +7,7 @@ import { sendVerificationEmail } from './mailer/mailer.service.js';
 import { isPrismaUniqueError } from '../lib/prisma.js';
 import { MailerConfigurationError, MailerDeliveryError } from './mailer/mailer.errors.js';
 import { UserAlreadyExistsError } from './auth.errors.js';
+import { logger } from '../lib/logger.js';
 
 type RegisterInput = {
   email: string;
@@ -34,7 +35,7 @@ type AuthDependencies = {
     emailVerificationTokenTtlMs: number;
   };
   logger: {
-    warn(message: string, error?: unknown): void;
+    warn(data: object, message: string): void;
   };
 };
 
@@ -85,7 +86,7 @@ export const createAuthService = (deps: AuthDependencies) => {
         await deps.mailer.sendVerificationEmail(user.email, token);
       } catch (err) {
         if (err instanceof MailerConfigurationError || err instanceof MailerDeliveryError) {
-          deps.logger.warn('Verification email could not be sent after registration', err);
+          deps.logger.warn({ err }, 'Verification email could not be sent after registration');
         } else {
           throw err;
         }
@@ -121,5 +122,5 @@ export const authService = createAuthService({
     bcryptRounds: config.bcryptRounds,
     emailVerificationTokenTtlMs: EMAIL_VERIFICATION_TOKEN_TTL_MS,
   },
-  logger: console,
+  logger,
 });

@@ -1,5 +1,6 @@
 import type { Express, Router as ExpressRouter } from 'express';
 import { readdir, stat } from 'node:fs/promises';
+import { logger } from '../lib/logger.js';
 
 type RouteRegister = (app: Express, routePath: string) => void | Promise<void>;
 
@@ -48,7 +49,7 @@ async function loadRoutes(app: Express, routesDirUrl: URL) {
   try {
     await stat(routesDirUrl);
   } catch {
-    console.warn('Routes directory not found:', routesDirUrl.toString());
+    logger.warn({ path: routesDirUrl.toString() }, 'Routes directory not found');
     return;
   }
 
@@ -65,12 +66,12 @@ async function loadRoutes(app: Express, routesDirUrl: URL) {
 
     if (router && typeof router === 'function') {
       app.use(routePath, router as ExpressRouter);
-      console.log(`Mounted ${fileUrl.pathname} -> ${routePath}`);
+      logger.info({ file: rel, route: routePath }, 'route mounted');
     } else if (typeof mod.register === 'function') {
       await mod.register(app, routePath);
-      console.log(`Registered via register(): ${fileUrl.pathname} -> ${routePath}`);
+      logger.info({ file: rel, route: routePath }, 'Route registered');
     } else {
-      console.warn(`Skipped ${fileUrl.pathname}: no default Router or register(app, route) export`);
+      logger.warn({ file: rel }, 'Skipped path, no default Router or register(app, route) export');
     }
   }
 }
