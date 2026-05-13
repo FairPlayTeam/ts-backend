@@ -14,6 +14,7 @@ This repository contains the backend API for the v2 rewrite.
 ## Tech stack
 
 This repository contains the FairPlay backend API built with:
+
 - Typescript
 - Express.js
 - PostgreSQL
@@ -55,22 +56,26 @@ Then fill in the values you want to use.
 
 ### Used env variables:
 
-* `PORT` port of the backend, for example 3000. That mean your backend will be available at http://localhost:3000
-* `DATABASE_URL` the URL to your postgres instance, for example `postgresql://myuser:mypass@localhost:5432/mydb?schema=public`, which means your database will be accessible at the user `myuser`, using the `mypass` password, at `localhost:5432`, on the `mydb` database, and on the schema `public`
-* `BASE_URL` the URL leading to your backend, for example `http://localhost:3000`
-* `BCRYPT_ROUNDS` how many iterations bcrypt will perform to hash passwords, for example `12`
-* `JSON_BODY_LIMIT_BYTES` a fixed limit for JSON body size
-* `TRUST_PROXY` indicate if express can trust the proxy, if it's running behind a proxy, for example `true`, `false`, or `loopback`
-* `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` are required to send emails. You can customize these values depending on the SMTP provider you're using.
-* `FRONTEND_URL` the URL of your frontend, for example `http://localhost:3001`. It's mainly used to generate verification links for email verification.
+- `PORT` port of the backend, for example 3000. That mean your backend will be available at http://localhost:3000
+- `DATABASE_URL` the URL to your postgres instance, for example `postgresql://myuser:mypass@localhost:5432/mydb?schema=public`, which means your database will be accessible at the user `myuser`, using the `mypass` password, at `localhost:5432`, on the `mydb` database, and on the schema `public`
+- `BASE_URL` the URL leading to your backend, for example `http://localhost:3000`
+- `BCRYPT_ROUNDS` how many iterations bcrypt will perform to hash passwords, for example `12`
+- `JSON_BODY_LIMIT_BYTES` a fixed limit for JSON body size
+- `TRUST_PROXY` indicate if express can trust the proxy, if it's running behind a proxy, for example `false` or `loopback`
+- `CORS_ORIGINS` allowed URLs for requests
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` are required to send emails. You can customize these values depending on the SMTP provider you're using.
+- `FRONTEND_URL` the URL of your frontend, for example `http://localhost:3001`. It's mainly used to generate verification links for email verification.
 
 ## API documentation:
 
 Since we're now adding OpenAPI to the backend, you can now access a full detailed documentation about our routes. Once your backend is launched, go to:
+
 ```text
 http://localhost:3000/docs
 ```
+
 or
+
 ```text
 http://localhost:3000/openapi.json
 ```
@@ -89,7 +94,9 @@ bun run format:check
 bun run format
 bun test
 ```
+
 or if you want to verify everything at once:
+
 ```bash
 bun run check
 ```
