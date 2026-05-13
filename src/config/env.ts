@@ -8,7 +8,19 @@ import {
   parseServerPort,
   parseTrustProxy,
   readRequiredEnv,
+  ServerConfigurationError,
 } from './env.parsers.js';
+
+const isProduction = parseIsProduction(process.env.NODE_ENV);
+
+const mailer = parseMailerConfig({
+  smtpHost: process.env.SMTP_HOST,
+  smtpPort: process.env.SMTP_PORT,
+  smtpUser: process.env.SMTP_USER,
+  smtpPass: process.env.SMTP_PASS,
+  smtpFrom: process.env.SMTP_FROM,
+  frontendUrl: process.env.FRONTEND_URL,
+});
 
 const config = {
   port: parseServerPort(process.env.PORT),
@@ -17,17 +29,16 @@ const config = {
   baseUrl: parseRequiredUrl(process.env.BASE_URL, 'BASE_URL'),
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY, process.env.NODE_ENV),
   jsonBodyLimitBytes: parseJsonBodyLimitBytes(process.env.JSON_BODY_LIMIT_BYTES),
-  isProduction: parseIsProduction(process.env.NODE_ENV),
+  isProduction,
   allowedOrigins: parseAllowedOrigins(process.env.CORS_ORIGINS),
-  mailer: parseMailerConfig({
-    smtpHost: process.env.SMTP_HOST,
-    smtpPort: process.env.SMTP_PORT,
-    smtpUser: process.env.SMTP_USER,
-    smtpPass: process.env.SMTP_PASS,
-    smtpFrom: process.env.SMTP_FROM,
-    frontendUrl: process.env.FRONTEND_URL,
-  }),
+  mailer,
 };
+
+if (isProduction && !mailer) {
+  throw new ServerConfigurationError(
+    'Email delivery must be configured in production. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, and FRONTEND_URL.',
+  );
+}
 
 export type Config = typeof config;
 
