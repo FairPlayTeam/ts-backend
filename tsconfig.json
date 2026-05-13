@@ -5,6 +5,8 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
 
+    "types": ["bun-types"],
+
     "rootDir": ".",
     "outDir": "./dist",
 
