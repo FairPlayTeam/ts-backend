@@ -1,6 +1,7 @@
 import type { Express, Router as ExpressRouter } from 'express';
 import { readdir, stat } from 'node:fs/promises';
 import { logger } from '../lib/logger.js';
+import { apiLimiter } from '../middleware/limiters.js';
 
 type RouteRegister = (app: Express, routePath: string) => void | Promise<void>;
 
@@ -65,7 +66,7 @@ async function loadRoutes(app: Express, routesDirUrl: URL) {
     const router = mod.default;
 
     if (router && typeof router === 'function') {
-      app.use(routePath, router as ExpressRouter);
+      app.use(routePath, apiLimiter, router as ExpressRouter);
       logger.info({ file: rel, route: routePath }, 'route mounted');
     } else if (typeof mod.register === 'function') {
       await mod.register(app, routePath);
