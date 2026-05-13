@@ -17,10 +17,18 @@ describe('OpenAPI generation', () => {
 
     const document = generateOpenApi();
 
-    expect(Object.keys(document.paths).sort()).toEqual(['/', '/auth/register', '/health']);
+    expect(Object.keys(document.paths).sort()).toEqual([
+      '/',
+      '/auth/register',
+      '/auth/resend-verification',
+      '/health',
+    ]);
     expect(document.paths['/auth/register']?.post?.requestBody).toBeDefined();
     expect(document.paths['/auth/register']?.post?.responses?.[413]).toBeDefined();
+    expect(document.paths['/auth/resend-verification']?.post?.requestBody).toBeDefined();
     expect(document.components?.schemas?.RegisterRequest).toBeDefined();
     expect(document.components?.schemas?.RegisterResponse).toBeDefined();
+    expect(document.components?.schemas?.ResendVerificationRequest).toBeDefined();
+    expect(document.components?.schemas?.ResendVerificationResponse).toBeDefined();
   });
 });

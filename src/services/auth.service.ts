@@ -1,13 +1,5 @@
-import { prisma } from '../lib/prisma.js';
-import bcrypt from 'bcryptjs';
-import config from '../config/env.js';
-import { generateToken, hashToken } from '../lib/crypto.js';
-import { EMAIL_VERIFICATION_TOKEN_TTL_MS } from '../config/constants.js';
-import { sendVerificationEmail } from './mailer/mailer.service.js';
-import { isPrismaUniqueError } from '../lib/prisma.js';
 import { MailerConfigurationError, MailerDeliveryError } from './mailer/mailer.errors.js';
 import { UserAlreadyExistsError } from './auth.errors.js';
-import { logger } from '../lib/logger.js';
 
 type RegisterInput = {
   email: string;
@@ -15,8 +7,43 @@ type RegisterInput = {
   password: string;
 };
 
+type ResendVerificationInput = {
+  email: string;
+};
+
+type TransactionClient = {
+  user: {
+    create(args: unknown): Promise<{
+      id: string;
+      email: string;
+      username: string;
+      role: string;
+    }>;
+
+    findUnique(args: unknown): Promise<{
+      id: string;
+      email: string;
+      isVerified: boolean;
+    } | null>;
+  };
+
+  emailVerificationToken: {
+    create(args: unknown): Promise<unknown>;
+    upsert(args: unknown): Promise<unknown>;
+  };
+};
+
+type Prisma = {
+  $transaction<T>(fn: (tx: TransactionClient) => Promise<T>): Promise<T>;
+};
+
+const REGISTER_SUCCESS_MESSAGE = 'Account created. Please verify your email.';
+const RESEND_VERIFICATION_SUCCESS_MESSAGE =
+  'If this email exists and is unverified, a new link has been sent.';
+
 type AuthDependencies = {
-  prisma: Pick<typeof prisma, '$transaction'>;
+  isUniqueError(err: unknown): boolean;
+  prisma: Prisma;
   hasher: {
     hash(password: string, rounds: number): Promise<string>;
   };
@@ -39,18 +66,29 @@ type AuthDependencies = {
   };
 };
 
+const normalizeEmail = (email: string): string => email.trim().toLowerCase();
+
+const getEmailVerificationExpiresAt = (now: Date, emailVerificationTokenTtlMs: number): Date =>
+  new Date(now.getTime() + emailVerificationTokenTtlMs);
+
+const isExpectedMailerError = (
+  err: unknown,
+): err is MailerConfigurationError | MailerDeliveryError =>
+  err instanceof MailerConfigurationError || err instanceof MailerDeliveryError;
+
 export const createAuthService = (deps: AuthDependencies) => {
   return {
     async register({ email, username, password }: RegisterInput) {
       const usernameNorm = username.trim().toLowerCase();
-      const emailNorm = email.trim().toLowerCase();
+      const emailNorm = normalizeEmail(email);
 
       const hashedPassword = await deps.hasher.hash(password, deps.config.bcryptRounds);
 
       const token = deps.token.generate();
       const tokenHash = deps.token.hash(token);
-      const expiresAt = new Date(
-        deps.clock.now().getTime() + deps.config.emailVerificationTokenTtlMs,
+      const expiresAt = getEmailVerificationExpiresAt(
+        deps.clock.now(),
+        deps.config.emailVerificationTokenTtlMs,
       );
 
       const user = await deps.prisma
@@ -75,7 +113,7 @@ export const createAuthService = (deps: AuthDependencies) => {
           return createdUser;
         })
         .catch((err) => {
-          if (isPrismaUniqueError(err)) {
+          if (deps.isUniqueError(err)) {
             throw new UserAlreadyExistsError(err);
           }
 
@@ -85,7 +123,7 @@ export const createAuthService = (deps: AuthDependencies) => {
       try {
         await deps.mailer.sendVerificationEmail(user.email, token);
       } catch (err) {
-        if (err instanceof MailerConfigurationError || err instanceof MailerDeliveryError) {
+        if (isExpectedMailerError(err)) {
           deps.logger.warn({ err }, 'Verification email could not be sent after registration');
         } else {
           throw err;
@@ -93,34 +131,62 @@ export const createAuthService = (deps: AuthDependencies) => {
       }
 
       return {
-        message: 'Account created. Please verify your email.',
+        message: REGISTER_SUCCESS_MESSAGE,
+      };
+    },
+
+    async resendVerification({ email }: ResendVerificationInput) {
+      const emailNorm = normalizeEmail(email);
+      const token = deps.token.generate();
+      const tokenHash = deps.token.hash(token);
+      const expiresAt = getEmailVerificationExpiresAt(
+        deps.clock.now(),
+        deps.config.emailVerificationTokenTtlMs,
+      );
+
+      // TRADEOFF: we invalidate the old token before sending the email.
+      // If SMTP delivery fails, the user must request another verification email.
+      const user = await deps.prisma.$transaction(async (tx) => {
+        const existingUser = await tx.user.findUnique({
+          where: { email: emailNorm },
+          select: { id: true, email: true, isVerified: true },
+        });
+
+        if (!existingUser || existingUser.isVerified) {
+          return null;
+        }
+
+        await tx.emailVerificationToken.upsert({
+          where: { userId: existingUser.id },
+          update: {
+            token: tokenHash,
+            expiresAt,
+          },
+          create: {
+            userId: existingUser.id,
+            token: tokenHash,
+            expiresAt,
+          },
+        });
+
+        return { email: existingUser.email };
+      });
+
+      if (user) {
+        try {
+          await deps.mailer.sendVerificationEmail(user.email, token);
+        } catch (err) {
+          if (isExpectedMailerError(err)) {
+            deps.logger.warn({ err }, 'Verification email could not be sent after resend request');
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      return {
+        message: RESEND_VERIFICATION_SUCCESS_MESSAGE,
       };
     },
   };
 };
-
-const bcryptHasher = {
-  hash: (password: string, rounds: number) => bcrypt.hash(password, rounds),
-};
-
-const tokenService = {
-  generate: () => generateToken(),
-  hash: (token: string) => hashToken(token),
-};
-
-const systemClock = {
-  now: () => new Date(),
-};
-
-export const authService = createAuthService({
-  prisma,
-  hasher: bcryptHasher,
-  token: tokenService,
-  mailer: { sendVerificationEmail },
-  clock: systemClock,
-  config: {
-    bcryptRounds: config.bcryptRounds,
-    emailVerificationTokenTtlMs: EMAIL_VERIFICATION_TOKEN_TTL_MS,
-  },
-  logger,
-});

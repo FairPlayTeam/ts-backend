@@ -7,7 +7,6 @@ import {
 } from '../../config/constants.js';
 import { buildTransactionalEmailHtml, buildTransactionalEmailText } from './mailer.templates.js';
 import { MailerConfigurationError, MailerDeliveryError } from './mailer.errors.js';
-import appConfig from '../../config/env.js';
 
 type MailTransporter = Pick<nodemailer.Transporter, 'sendMail'>;
 
@@ -108,8 +107,3 @@ export const createMailerService = (deps: MailerDependencies) => {
     },
   };
 };
-
-export const mailerService = createMailerService({ config: appConfig.mailer });
-
-export const sendVerificationEmail = (email: string, token: string): Promise<void> =>
-  mailerService.sendVerificationEmail(email, token);

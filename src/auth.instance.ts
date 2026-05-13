@@ -1,0 +1,35 @@
+import bcrypt from 'bcryptjs';
+import config from './config/env.js';
+import { isPrismaUniqueError, prisma } from './lib/prisma.js';
+import { generateToken, hashToken } from './lib/crypto.js';
+import { EMAIL_VERIFICATION_TOKEN_TTL_MS } from './config/constants.js';
+import { sendVerificationEmail } from './mailer.instance.js';
+import { logger } from './lib/logger.js';
+import { createAuthService } from './services/auth.service.js';
+
+const bcryptHasher = {
+  hash: (password: string, rounds: number) => bcrypt.hash(password, rounds),
+};
+
+const tokenService = {
+  generate: () => generateToken(),
+  hash: (token: string) => hashToken(token),
+};
+
+const systemClock = {
+  now: () => new Date(),
+};
+
+export const authService = createAuthService({
+  prisma,
+  isUniqueError: isPrismaUniqueError,
+  hasher: bcryptHasher,
+  token: tokenService,
+  mailer: { sendVerificationEmail },
+  clock: systemClock,
+  config: {
+    bcryptRounds: config.bcryptRounds,
+    emailVerificationTokenTtlMs: EMAIL_VERIFICATION_TOKEN_TTL_MS,
+  },
+  logger,
+});

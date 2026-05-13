@@ -1,9 +1,10 @@
 import type { NextFunction, Request, Response } from 'express';
 import { toAuthHttpError } from './auth.errors.js';
-import type { RegisterRequestBody } from './auth.schemas.js';
+import type { RegisterRequestBody, ResendVerificationRequestBody } from './auth.schemas.js';
 
 type AuthService = {
   register(input: RegisterRequestBody): Promise<{ message: string }>;
+  resendVerification(input: ResendVerificationRequestBody): Promise<{ message: string }>;
 };
 
 type AuthControllerDependencies = {
@@ -27,5 +28,21 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     }
   };
 
-  return { register };
+  const resendVerification = async (
+    req: Request<unknown, unknown, ResendVerificationRequestBody>,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const result = await deps.authService.resendVerification(req.body);
+
+      return res.status(200).json({
+        message: result.message,
+      });
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
+  };
+
+  return { register, resendVerification };
 };

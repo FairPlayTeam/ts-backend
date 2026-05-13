@@ -8,6 +8,13 @@ import {
   USERNAME_MIN_LENGTH,
 } from '../config/constants.js';
 
+const emailSchema = z
+  .string()
+  .trim()
+  .email('Invalid email format')
+  .max(EMAIL_MAX_LENGTH)
+  .openapi({ example: 'user@example.com' });
+
 const passwordSchema = z
   .string()
   .min(PASSWORD_MIN_LENGTH, `Password must be at least ${PASSWORD_MIN_LENGTH} characters`)
@@ -27,12 +34,7 @@ const passwordSchema = z
 
 export const registerBodySchema = z
   .object({
-    email: z
-      .string()
-      .trim()
-      .email('Invalid email format')
-      .max(EMAIL_MAX_LENGTH)
-      .openapi({ example: 'user@example.com' }),
+    email: emailSchema,
     username: z
       .string()
       .trim()
@@ -49,10 +51,30 @@ export const registerSchema = z.object({
   body: registerBodySchema,
 });
 
+export const resendVerificationBodySchema = z
+  .object({
+    email: emailSchema,
+  })
+  .strict()
+  .openapi('ResendVerificationRequest');
+
+export const resendVerificationSchema = z.object({
+  body: resendVerificationBodySchema,
+});
+
 export const registerResponseSchema = z
   .object({
     message: z.string().openapi({ example: 'Account created. Please verify your email.' }),
   })
   .openapi('RegisterResponse');
 
+export const resendVerificationResponseSchema = z
+  .object({
+    message: z
+      .string()
+      .openapi({ example: 'If this email exists and is unverified, a new link has been sent.' }),
+  })
+  .openapi('ResendVerificationResponse');
+
 export type RegisterRequestBody = z.infer<typeof registerSchema>['body'];
+export type ResendVerificationRequestBody = z.infer<typeof resendVerificationSchema>['body'];

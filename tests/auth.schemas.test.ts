@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { registerSchema } from '../src/controllers/auth.schemas.js';
+import { registerSchema, resendVerificationSchema } from '../src/controllers/auth.schemas.js';
 
 const validRegisterBody = {
   email: 'user@example.com',
@@ -30,6 +30,39 @@ describe('registerSchema', () => {
       body: {
         ...validRegisterBody,
         password: 'password',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('resendVerificationSchema', () => {
+  test('accepts a valid resend verification payload', () => {
+    const result = resendVerificationSchema.safeParse({
+      body: {
+        email: 'user@example.com',
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  test('rejects invalid resend verification emails', () => {
+    const result = resendVerificationSchema.safeParse({
+      body: {
+        email: 'not-an-email',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects unexpected resend verification properties', () => {
+    const result = resendVerificationSchema.safeParse({
+      body: {
+        email: 'user@example.com',
+        token: 'unexpected',
       },
     });
 
