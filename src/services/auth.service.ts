@@ -1,3 +1,4 @@
+import type { PrismaClient } from '@prisma/client';
 import { MailerConfigurationError, MailerDeliveryError } from './mailer/mailer.errors.js';
 import { UserAlreadyExistsError } from './auth.errors.js';
 
@@ -11,31 +12,7 @@ type ResendVerificationInput = {
   email: string;
 };
 
-type TransactionClient = {
-  user: {
-    create(args: unknown): Promise<{
-      id: string;
-      email: string;
-      username: string;
-      role: string;
-    }>;
-
-    findUnique(args: unknown): Promise<{
-      id: string;
-      email: string;
-      isVerified: boolean;
-    } | null>;
-  };
-
-  emailVerificationToken: {
-    create(args: unknown): Promise<unknown>;
-    upsert(args: unknown): Promise<unknown>;
-  };
-};
-
-type Prisma = {
-  $transaction<T>(fn: (tx: TransactionClient) => Promise<T>): Promise<T>;
-};
+type Prisma = Pick<PrismaClient, '$transaction'>;
 
 const REGISTER_SUCCESS_MESSAGE = 'Account created. Please verify your email.';
 const RESEND_VERIFICATION_SUCCESS_MESSAGE =
