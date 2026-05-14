@@ -40,7 +40,7 @@ export const registerBodySchema = z
       .trim()
       .min(USERNAME_MIN_LENGTH)
       .max(USERNAME_MAX_LENGTH)
-      .regex(/^[a-zA-Z0-9_]+$/)
+      .regex(/^[a-z0-9_]+$/)
       .openapi({ example: 'fairplay_user' }),
     password: passwordSchema,
   })
