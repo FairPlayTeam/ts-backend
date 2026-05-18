@@ -31,7 +31,20 @@ type VerifyEmailInput = {
   userAgent?: string | undefined;
 };
 
-type Prisma = Pick<PrismaClient, '$transaction' | 'emailVerificationToken' | 'user'>;
+type AuthenticatedSession = {
+  user: {
+    id: string;
+    email: string;
+    username: string;
+    role: string;
+  };
+  session: {
+    id: string;
+    expiresAt: Date;
+  };
+};
+
+type Prisma = Pick<PrismaClient, '$transaction' | 'emailVerificationToken' | 'session' | 'user'>;
 
 const REGISTER_SUCCESS_MESSAGE = 'Account created. Please verify your email.';
 const LOGIN_SUCCESS_MESSAGE = 'Login successful';
@@ -323,6 +336,52 @@ export const createAuthService = (deps: AuthDependencies) => {
         },
         sessionKey,
         session,
+      };
+    },
+
+    async validateSession(sessionKey: string): Promise<AuthenticatedSession | null> {
+      const sessionKeyHash = deps.token.hash(sessionKey);
+      const now = deps.clock.now();
+
+      const session = await deps.prisma.session.findUnique({
+        where: { sessionKey: sessionKeyHash },
+        select: {
+          id: true,
+          expiresAt: true,
+          isActive: true,
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+              role: true,
+              isBanned: true,
+            },
+          },
+        },
+      });
+
+      if (!session || !session.isActive || session.expiresAt <= now || session.user.isBanned) {
+        return null;
+      }
+
+      await deps.prisma.session.update({
+        where: { id: session.id },
+        data: { lastUsedAt: now },
+        select: { id: true },
+      });
+
+      return {
+        user: {
+          id: session.user.id,
+          email: session.user.email,
+          username: session.user.username,
+          role: session.user.role,
+        },
+        session: {
+          id: session.id,
+          expiresAt: session.expiresAt,
+        },
       };
     },
 

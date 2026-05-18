@@ -49,6 +49,11 @@ const verifyEmailResult = {
   message: 'Email successfully verified',
 };
 
+const validatedSession = {
+  user: loginResult.user,
+  session: loginResult.session,
+};
+
 const createMockResponse = () => {
   const state: {
     statusCode?: number;
@@ -82,6 +87,7 @@ describe('auth controller', () => {
         },
         login: async () => loginResult,
         verifyEmail: async () => verifyEmailResult,
+        validateSession: async () => validatedSession,
         resendVerification: async () => ({
           message: 'If this email exists and is unverified, a new link has been sent.',
         }),
@@ -114,6 +120,7 @@ describe('auth controller', () => {
         },
         login: async () => loginResult,
         verifyEmail: async () => verifyEmailResult,
+        validateSession: async () => validatedSession,
         resendVerification: async () => ({
           message: 'If this email exists and is unverified, a new link has been sent.',
         }),
@@ -142,6 +149,7 @@ describe('auth controller', () => {
         register: async () => ({ message: 'Account created. Please verify your email.' }),
         login: async () => loginResult,
         verifyEmail: async () => verifyEmailResult,
+        validateSession: async () => validatedSession,
         resendVerification: async (input) => {
           receivedInput = input;
           return {
@@ -181,6 +189,7 @@ describe('auth controller', () => {
           return loginResult;
         },
         verifyEmail: async () => verifyEmailResult,
+        validateSession: async () => validatedSession,
         resendVerification: async () => ({
           message: 'If this email exists and is unverified, a new link has been sent.',
         }),
@@ -232,6 +241,7 @@ describe('auth controller', () => {
           receivedInput = input;
           return verifyEmailResult;
         },
+        validateSession: async () => validatedSession,
         resendVerification: async () => ({
           message: 'If this email exists and is unverified, a new link has been sent.',
         }),

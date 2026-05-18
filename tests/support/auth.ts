@@ -24,6 +24,10 @@ export const createStubAuthService = (): AuthService => ({
     ...sessionResult,
     message: 'Email successfully verified',
   }),
+  validateSession: async () => ({
+    user: sessionResult.user,
+    session: sessionResult.session,
+  }),
   resendVerification: async () => ({
     message: 'If this email exists and is unverified, a new link has been sent.',
   }),

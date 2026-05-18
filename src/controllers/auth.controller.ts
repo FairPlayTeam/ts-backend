@@ -22,6 +22,11 @@ type AuthSessionResult = {
   };
 };
 
+type ValidatedAuthSession = {
+  user: AuthSessionResult['user'];
+  session: AuthSessionResult['session'];
+};
+
 export type AuthService = {
   register(input: RegisterRequestBody): Promise<{ message: string }>;
   login(
@@ -36,6 +41,7 @@ export type AuthService = {
       userAgent?: string | undefined;
     },
   ): Promise<AuthSessionResult>;
+  validateSession(sessionKey: string): Promise<ValidatedAuthSession | null>;
   resendVerification(input: ResendVerificationRequestBody): Promise<{ message: string }>;
 };
 

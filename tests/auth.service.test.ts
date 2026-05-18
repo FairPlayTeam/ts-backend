@@ -25,6 +25,8 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     tokenFindUnique: undefined as unknown,
     tokenUpsert: undefined as unknown,
     sessionCreate: undefined as unknown,
+    sessionFindUnique: undefined as unknown,
+    sessionUpdate: undefined as unknown,
     comparedPassword: undefined as unknown,
     sentEmail: undefined as unknown,
     warning: undefined as unknown,
@@ -121,6 +123,29 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
           calls.tokenDeleteMany = args;
 
           return { count: 1 };
+        },
+      },
+      session: {
+        findUnique: async (args: unknown) => {
+          calls.sessionFindUnique = args;
+
+          return {
+            id: 'session-id',
+            expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+            isActive: true,
+            user: {
+              id: 'user-id',
+              email: 'user@example.com',
+              username: 'fairplay_user',
+              role: 'user',
+              isBanned: false,
+            },
+          };
+        },
+        update: async (args: unknown) => {
+          calls.sessionUpdate = args;
+
+          return { id: 'session-id' };
         },
       },
     },
@@ -622,6 +647,125 @@ describe('auth service', () => {
         token: 'plain-token',
       }),
     ).rejects.toBeInstanceOf(AccountBannedError);
+  });
+
+  test('validates an active session and touches its last used timestamp', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await expect(service.validateSession('plain-token')).resolves.toEqual({
+      user: {
+        id: 'user-id',
+        email: 'user@example.com',
+        username: 'fairplay_user',
+        role: 'user',
+      },
+      session: {
+        id: 'session-id',
+        expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+      },
+    });
+
+    expect(calls.sessionFindUnique).toEqual({
+      where: { sessionKey: 'hashed-plain-token' },
+      select: {
+        id: true,
+        expiresAt: true,
+        isActive: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            role: true,
+            isBanned: true,
+          },
+        },
+      },
+    });
+
+    expect(calls.sessionUpdate).toEqual({
+      where: { id: 'session-id' },
+      data: { lastUsedAt: fixedNow },
+      select: { id: true },
+    });
+  });
+
+  test('rejects missing sessions without touching last used timestamp', async () => {
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        ...createTestDeps().deps.prisma,
+        session: {
+          findUnique: async () => null,
+          update: async () => {
+            throw new Error('Should not update a missing session');
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+
+    await expect(service.validateSession('missing-token')).resolves.toBeNull();
+    expect(calls.sessionUpdate).toBeUndefined();
+  });
+
+  test('rejects inactive, expired, and banned-user sessions', async () => {
+    const invalidSessions = [
+      {
+        id: 'inactive-session',
+        expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+        isActive: false,
+        user: {
+          id: 'user-id',
+          email: 'user@example.com',
+          username: 'fairplay_user',
+          role: 'user',
+          isBanned: false,
+        },
+      },
+      {
+        id: 'expired-session',
+        expiresAt: fixedNow,
+        isActive: true,
+        user: {
+          id: 'user-id',
+          email: 'user@example.com',
+          username: 'fairplay_user',
+          role: 'user',
+          isBanned: false,
+        },
+      },
+      {
+        id: 'banned-user-session',
+        expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+        isActive: true,
+        user: {
+          id: 'user-id',
+          email: 'user@example.com',
+          username: 'fairplay_user',
+          role: 'user',
+          isBanned: true,
+        },
+      },
+    ];
+
+    for (const invalidSession of invalidSessions) {
+      const { deps, calls } = createTestDeps({
+        prisma: {
+          ...createTestDeps().deps.prisma,
+          session: {
+            findUnique: async () => invalidSession,
+            update: async () => {
+              throw new Error('Should not update an invalid session');
+            },
+          },
+        } as unknown as AuthDeps['prisma'],
+      });
+      const service = createAuthService(deps);
+
+      await expect(service.validateSession('plain-token')).resolves.toBeNull();
+      expect(calls.sessionUpdate).toBeUndefined();
+    }
   });
 
   test('resends a verification email for an unverified user', async () => {
