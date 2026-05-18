@@ -6,6 +6,7 @@ import { createApp } from '../src/app.js';
 import { HttpError } from '../src/errors/http.js';
 import { errorHandler } from '../src/middleware/errors.js';
 import { authRateLimitExceededHandler } from '../src/middleware/limiters.js';
+import { createStubAuthService } from './support/auth.js';
 
 type ErrorResponse = {
   error: string;
@@ -44,16 +45,16 @@ const createMockResponse = () => {
 
 describe('error handling', () => {
   beforeAll(async () => {
-    process.env.DATABASE_URL ??= 'postgresql://user:password@localhost:5432/fairplay';
-    process.env.BASE_URL ??= 'http://localhost:3000';
-
-    const app = await createApp({
-      allowedOrigins: [],
-      baseUrl: 'http://localhost:3000/',
-      isProduction: false,
-      jsonBodyLimitBytes: 64,
-      trustProxy: false,
-    });
+    const app = await createApp(
+      {
+        allowedOrigins: [],
+        baseUrl: 'http://localhost:3000/',
+        isProduction: false,
+        jsonBodyLimitBytes: 64,
+        trustProxy: false,
+      },
+      { authService: createStubAuthService() },
+    );
 
     server = app.listen(0);
     const address = server.address();

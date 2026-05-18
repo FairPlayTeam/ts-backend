@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
 import { createAuthService } from '../src/services/auth.service.js';
-import { UserAlreadyExistsError } from '../src/services/auth.errors.js';
+import {
+  AccountBannedError,
+  EmailNotVerifiedError,
+  InvalidEmailVerificationTokenError,
+  InvalidCredentialsError,
+  UserAlreadyExistsError,
+} from '../src/services/auth.errors.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
 
 type AuthDeps = Parameters<typeof createAuthService>[0];
@@ -11,9 +17,15 @@ const fixedNow = new Date('2026-01-01T00:00:00.000Z');
 function createTestDeps(overrides: Partial<AuthDeps> = {}) {
   const calls = {
     userFindUnique: undefined as unknown,
+    userFindFirst: undefined as unknown,
     userCreate: undefined as unknown,
+    userUpdate: undefined as unknown,
     tokenCreate: undefined as unknown,
+    tokenDeleteMany: undefined as unknown,
+    tokenFindUnique: undefined as unknown,
     tokenUpsert: undefined as unknown,
+    sessionCreate: undefined as unknown,
+    comparedPassword: undefined as unknown,
     sentEmail: undefined as unknown,
     warning: undefined as unknown,
   };
@@ -39,6 +51,9 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
           role: 'user',
         };
       },
+      update: async (args: unknown) => {
+        calls.userUpdate = args;
+      },
     },
     emailVerificationToken: {
       create: async (args: unknown) => {
@@ -47,16 +62,75 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
       upsert: async (args: unknown) => {
         calls.tokenUpsert = args;
       },
+      deleteMany: async (args: unknown) => {
+        calls.tokenDeleteMany = args;
+
+        return { count: 1 };
+      },
+    },
+    session: {
+      create: async (args: unknown) => {
+        calls.sessionCreate = args;
+
+        return {
+          id: 'session-id',
+          expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+        };
+      },
     },
   };
 
   const deps = {
     prisma: {
       $transaction: async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
+      user: {
+        findFirst: async (args: unknown) => {
+          calls.userFindFirst = args;
+
+          return {
+            id: 'user-id',
+            email: 'user@example.com',
+            username: 'fairplay_user',
+            role: 'user',
+            passwordHash: 'hashed-password',
+            isVerified: true,
+            isBanned: false,
+          };
+        },
+      },
+      emailVerificationToken: {
+        findUnique: async (args: unknown) => {
+          calls.tokenFindUnique = args;
+
+          return {
+            id: 'verification-token-id',
+            userId: 'user-id',
+            token: 'hashed-plain-token',
+            expiresAt: new Date('2026-01-01T00:00:01.000Z'),
+            createdAt: fixedNow,
+            user: {
+              id: 'user-id',
+              email: 'user@example.com',
+              username: 'fairplay_user',
+              role: 'user',
+              isBanned: false,
+            },
+          };
+        },
+        deleteMany: async (args: unknown) => {
+          calls.tokenDeleteMany = args;
+
+          return { count: 1 };
+        },
+      },
     },
     isUniqueError: () => false,
     hasher: {
       hash: async () => 'hashed-password',
+      compare: async (password: string, hash: string) => {
+        calls.comparedPassword = { password, hash };
+        return true;
+      },
     },
     token: {
       generate: () => 'plain-token',
@@ -73,6 +147,7 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     config: {
       bcryptRounds: 12,
       emailVerificationTokenTtlMs: 1000,
+      sessionTtlMs: 30 * 24 * 60 * 60 * 1000,
     },
     logger: {
       warn: (data: object, message: string) => {
@@ -176,6 +251,377 @@ describe('auth service', () => {
       data: { err: mailerError },
       message: 'Verification email could not be sent after registration',
     });
+  });
+
+  test('logs in a verified active user and creates a hashed session', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await expect(
+      service.login({
+        emailOrUsername: ' USER@Example.COM ',
+        password: 'Password1!',
+        ipAddress: '127.0.0.1',
+        userAgent: 'bun-test',
+      }),
+    ).resolves.toEqual({
+      message: 'Login successful',
+      user: {
+        id: 'user-id',
+        email: 'user@example.com',
+        username: 'fairplay_user',
+        role: 'user',
+      },
+      sessionKey: 'plain-token',
+      session: {
+        id: 'session-id',
+        expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+      },
+    });
+
+    expect(calls.userFindFirst).toEqual({
+      where: {
+        OR: [{ email: 'user@example.com' }, { username: 'user@example.com' }],
+      },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+        passwordHash: true,
+        isVerified: true,
+        isBanned: true,
+      },
+    });
+
+    expect(calls.comparedPassword).toEqual({
+      password: 'Password1!',
+      hash: 'hashed-password',
+    });
+
+    expect(calls.sessionCreate).toEqual({
+      data: {
+        sessionKey: 'hashed-plain-token',
+        sessionKeySuffix: 'in-token',
+        userId: 'user-id',
+        ipAddress: '127.0.0.1',
+        userAgent: 'bun-test',
+        deviceInfo: 'bun-test',
+        expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+      },
+      select: {
+        id: true,
+        expiresAt: true,
+      },
+    });
+
+    expect(calls.userUpdate).toEqual({
+      where: { id: 'user-id' },
+      data: { lastLogin: fixedNow },
+    });
+  });
+
+  test('rejects login with generic invalid credentials for missing users', async () => {
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        $transaction: async () => {
+          throw new Error('Should not create a session for missing users');
+        },
+        user: {
+          findFirst: async () => null,
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+
+    const service = createAuthService(deps);
+
+    await expect(
+      service.login({
+        emailOrUsername: 'missing@example.com',
+        password: 'Password1!',
+      }),
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
+
+    const comparedPassword = calls.comparedPassword as { password: string; hash: string };
+    expect(comparedPassword.password).toBe('Password1!');
+    expect(typeof comparedPassword.hash).toBe('string');
+    expect(comparedPassword.hash.length).toBeGreaterThan(0);
+  });
+
+  test('rejects login with generic invalid credentials for wrong passwords', async () => {
+    const { deps } = createTestDeps({
+      hasher: {
+        hash: async () => 'hashed-password',
+        compare: async () => false,
+      },
+    });
+
+    const service = createAuthService(deps);
+
+    await expect(
+      service.login({
+        emailOrUsername: 'user@example.com',
+        password: 'WrongPassword1!',
+      }),
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
+  });
+
+  test('rejects login for banned users after password verification', async () => {
+    const { deps } = createTestDeps({
+      prisma: {
+        ...createTestDeps().deps.prisma,
+        user: {
+          findFirst: async () => ({
+            id: 'user-id',
+            email: 'user@example.com',
+            username: 'fairplay_user',
+            role: 'user',
+            passwordHash: 'hashed-password',
+            isVerified: true,
+            isBanned: true,
+          }),
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+
+    const service = createAuthService(deps);
+
+    await expect(
+      service.login({
+        emailOrUsername: 'user@example.com',
+        password: 'Password1!',
+      }),
+    ).rejects.toBeInstanceOf(AccountBannedError);
+  });
+
+  test('rejects login for unverified users after password verification', async () => {
+    const { deps } = createTestDeps({
+      prisma: {
+        ...createTestDeps().deps.prisma,
+        user: {
+          findFirst: async () => ({
+            id: 'user-id',
+            email: 'user@example.com',
+            username: 'fairplay_user',
+            role: 'user',
+            passwordHash: 'hashed-password',
+            isVerified: false,
+            isBanned: false,
+          }),
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+
+    const service = createAuthService(deps);
+
+    await expect(
+      service.login({
+        emailOrUsername: 'user@example.com',
+        password: 'Password1!',
+      }),
+    ).rejects.toBeInstanceOf(EmailNotVerifiedError);
+  });
+
+  test('verifies an email token and creates a hashed session', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await expect(
+      service.verifyEmail({
+        token: 'plain-token',
+        ipAddress: '127.0.0.1',
+        userAgent: 'bun-test',
+      }),
+    ).resolves.toEqual({
+      message: 'Email successfully verified',
+      user: {
+        id: 'user-id',
+        email: 'user@example.com',
+        username: 'fairplay_user',
+        role: 'user',
+      },
+      sessionKey: 'plain-token',
+      session: {
+        id: 'session-id',
+        expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+      },
+    });
+
+    expect(calls.tokenFindUnique).toEqual({
+      where: { token: 'hashed-plain-token' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            role: true,
+            isBanned: true,
+          },
+        },
+      },
+    });
+
+    expect(calls.userUpdate).toEqual({
+      where: { id: 'user-id' },
+      data: { isVerified: true, lastLogin: fixedNow },
+    });
+
+    expect(calls.tokenDeleteMany).toEqual({
+      where: { token: 'hashed-plain-token' },
+    });
+
+    expect(calls.sessionCreate).toEqual({
+      data: {
+        sessionKey: 'hashed-plain-token',
+        sessionKeySuffix: 'in-token',
+        userId: 'user-id',
+        ipAddress: '127.0.0.1',
+        userAgent: 'bun-test',
+        deviceInfo: 'bun-test',
+        expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+      },
+      select: {
+        id: true,
+        expiresAt: true,
+      },
+    });
+  });
+
+  test('rejects missing email verification tokens', async () => {
+    const { deps } = createTestDeps({
+      prisma: {
+        ...createTestDeps().deps.prisma,
+        emailVerificationToken: {
+          findUnique: async () => null,
+          deleteMany: async () => {
+            throw new Error('Should not delete a missing verification token');
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+
+    const service = createAuthService(deps);
+
+    await expect(
+      service.verifyEmail({
+        token: 'plain-token',
+      }),
+    ).rejects.toBeInstanceOf(InvalidEmailVerificationTokenError);
+  });
+
+  test('deletes and rejects expired email verification tokens', async () => {
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        ...createTestDeps().deps.prisma,
+        emailVerificationToken: {
+          findUnique: async () => ({
+            id: 'verification-token-id',
+            userId: 'user-id',
+            token: 'hashed-plain-token',
+            expiresAt: fixedNow,
+            createdAt: fixedNow,
+            user: {
+              id: 'user-id',
+              email: 'user@example.com',
+              username: 'fairplay_user',
+              role: 'user',
+              isBanned: false,
+            },
+          }),
+          deleteMany: async (args: unknown) => {
+            calls.tokenDeleteMany = args;
+
+            return { count: 1 };
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+
+    const service = createAuthService(deps);
+
+    await expect(
+      service.verifyEmail({
+        token: 'plain-token',
+      }),
+    ).rejects.toBeInstanceOf(InvalidEmailVerificationTokenError);
+
+    expect(calls.tokenDeleteMany).toEqual({
+      where: { token: 'hashed-plain-token' },
+    });
+  });
+
+  test('rejects already consumed email verification tokens cleanly', async () => {
+    const { deps } = createTestDeps({
+      prisma: {
+        ...createTestDeps().deps.prisma,
+        $transaction: async (
+          callback: (transaction: {
+            emailVerificationToken: { deleteMany(): Promise<{ count: number }> };
+            user: { update(): Promise<never> };
+            session: { create(): Promise<never> };
+          }) => Promise<unknown>,
+        ) =>
+          callback({
+            emailVerificationToken: {
+              deleteMany: async () => ({ count: 0 }),
+            },
+            user: {
+              update: async () => {
+                throw new Error('Should not update a user for an already consumed token');
+              },
+            },
+            session: {
+              create: async () => {
+                throw new Error('Should not create a session for an already consumed token');
+              },
+            },
+          }),
+      } as unknown as AuthDeps['prisma'],
+    });
+
+    const service = createAuthService(deps);
+
+    await expect(
+      service.verifyEmail({
+        token: 'plain-token',
+      }),
+    ).rejects.toBeInstanceOf(InvalidEmailVerificationTokenError);
+  });
+
+  test('rejects email verification for banned users', async () => {
+    const { deps } = createTestDeps({
+      prisma: {
+        ...createTestDeps().deps.prisma,
+        emailVerificationToken: {
+          findUnique: async () => ({
+            id: 'verification-token-id',
+            userId: 'user-id',
+            token: 'hashed-plain-token',
+            expiresAt: new Date('2026-01-01T00:00:01.000Z'),
+            createdAt: fixedNow,
+            user: {
+              id: 'user-id',
+              email: 'user@example.com',
+              username: 'fairplay_user',
+              role: 'user',
+              isBanned: true,
+            },
+          }),
+          deleteMany: async () => {
+            throw new Error('Should not delete a banned user verification token');
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+
+    const service = createAuthService(deps);
+
+    await expect(
+      service.verifyEmail({
+        token: 'plain-token',
+      }),
+    ).rejects.toBeInstanceOf(AccountBannedError);
   });
 
   test('resends a verification email for an unverified user', async () => {

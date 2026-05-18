@@ -13,6 +13,7 @@ const emailSchema = z
   .trim()
   .email('Invalid email format')
   .max(EMAIL_MAX_LENGTH)
+  .transform((v) => v.toLowerCase())
   .openapi({ example: 'user@example.com' });
 
 const passwordSchema = z
@@ -40,7 +41,8 @@ export const registerBodySchema = z
       .trim()
       .min(USERNAME_MIN_LENGTH)
       .max(USERNAME_MAX_LENGTH)
-      .regex(/^[a-z0-9_]+$/)
+      .regex(/^[a-z0-9_]+$/i, 'Username may only contain letters, numbers, and underscores')
+      .transform((v) => v.toLowerCase())
       .openapi({ example: 'fairplay_user' }),
     password: passwordSchema,
   })
@@ -49,6 +51,51 @@ export const registerBodySchema = z
 
 export const registerSchema = z.object({
   body: registerBodySchema,
+});
+
+export const loginBodySchema = z
+  .object({
+    emailOrUsername: z
+      .string()
+      .trim()
+      .min(1, 'Email or username is required')
+      .max(EMAIL_MAX_LENGTH)
+      .transform((value) => value.toLowerCase())
+      .openapi({ example: 'user@example.com' }),
+    password: z
+      .string()
+      .min(1, 'Password is required')
+      .max(PASSWORD_MAX_LENGTH, `Password must be at most ${PASSWORD_MAX_LENGTH} characters`)
+      .openapi({
+        format: 'password',
+        example: 'Password1!',
+      }),
+  })
+  .strict()
+  .openapi('LoginRequest');
+
+export const loginSchema = z.object({
+  body: loginBodySchema,
+});
+
+export const verifyEmailBodySchema = z
+  .object({
+    token: z
+      .string()
+      .trim()
+      .length(64, 'Verification token must be 64 characters')
+      .regex(/^[a-f0-9]+$/i, 'Verification token must be hexadecimal')
+      .transform((value) => value.toLowerCase())
+      .openapi({
+        description: 'Raw email verification token from the frontend verification link.',
+        example: 'd9f1f7d7b9d24e5c9f9b6a81a9a2eb1b2c1b0c9e7d6f5a4b3c2d1e0f9a8b7c6d',
+      }),
+  })
+  .strict()
+  .openapi('VerifyEmailRequest');
+
+export const verifyEmailSchema = z.object({
+  body: verifyEmailBodySchema,
 });
 
 export const resendVerificationBodySchema = z
@@ -68,6 +115,32 @@ export const registerResponseSchema = z
   })
   .openapi('RegisterResponse');
 
+export const loginResponseSchema = z
+  .object({
+    message: z.string().openapi({ example: 'Login successful' }),
+    user: z.object({
+      id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
+      email: z.string().email().openapi({ example: 'user@example.com' }),
+      username: z.string().openapi({ example: 'fairplay_user' }),
+      role: z.string().openapi({ example: 'user' }),
+    }),
+    sessionKey: z.string().openapi({
+      description: 'Bearer session key. Returned once at login and stored hashed server-side.',
+      example: 'd9f1f7d7b9d24e5c9f9b6a81a9a2eb1b2c1b0c9e7d6f5a4b3c2d1e0f9a8b7c6d',
+    }),
+    session: z.object({
+      id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+      expiresAt: z.string().datetime().openapi({ example: '2026-01-31T00:00:00.000Z' }),
+    }),
+  })
+  .openapi('LoginResponse');
+
+export const verifyEmailResponseSchema = loginResponseSchema
+  .extend({
+    message: z.string().openapi({ example: 'Email successfully verified' }),
+  })
+  .openapi('VerifyEmailResponse');
+
 export const resendVerificationResponseSchema = z
   .object({
     message: z
@@ -77,4 +150,6 @@ export const resendVerificationResponseSchema = z
   .openapi('ResendVerificationResponse');
 
 export type RegisterRequestBody = z.infer<typeof registerSchema>['body'];
+export type LoginRequestBody = z.infer<typeof loginSchema>['body'];
+export type VerifyEmailRequestBody = z.infer<typeof verifyEmailSchema>['body'];
 export type ResendVerificationRequestBody = z.infer<typeof resendVerificationSchema>['body'];

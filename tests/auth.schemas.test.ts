@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { registerSchema, resendVerificationSchema } from '../src/controllers/auth.schemas.js';
+import {
+  loginSchema,
+  registerSchema,
+  resendVerificationSchema,
+  verifyEmailSchema,
+} from '../src/controllers/auth.schemas.js';
 
 const validRegisterBody = {
   email: 'user@example.com',
@@ -12,6 +17,25 @@ describe('registerSchema', () => {
     const result = registerSchema.safeParse({ body: validRegisterBody });
 
     expect(result.success).toBe(true);
+  });
+
+  test('normalizes register email and username casing', () => {
+    const result = registerSchema.safeParse({
+      body: {
+        email: ' USER@Example.COM ',
+        username: ' FairPlay_User ',
+        password: 'Password1!',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.body).toEqual({
+        email: 'user@example.com',
+        username: 'fairplay_user',
+        password: 'Password1!',
+      });
+    }
   });
 
   test('rejects unexpected body properties', () => {
@@ -63,6 +87,81 @@ describe('resendVerificationSchema', () => {
       body: {
         email: 'user@example.com',
         token: 'unexpected',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('loginSchema', () => {
+  test('accepts a valid login payload and normalizes the identifier', () => {
+    const result = loginSchema.safeParse({
+      body: {
+        emailOrUsername: ' USER@Example.COM ',
+        password: 'Password1!',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.body.emailOrUsername).toBe('user@example.com');
+    }
+  });
+
+  test('rejects empty login identifiers', () => {
+    const result = loginSchema.safeParse({
+      body: {
+        emailOrUsername: ' ',
+        password: 'Password1!',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects unexpected login properties', () => {
+    const result = loginSchema.safeParse({
+      body: {
+        emailOrUsername: 'user@example.com',
+        password: 'Password1!',
+        rememberMe: true,
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('verifyEmailSchema', () => {
+  test('accepts a valid verification token and normalizes it', () => {
+    const result = verifyEmailSchema.safeParse({
+      body: {
+        token: 'A'.repeat(64),
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.body.token).toBe('a'.repeat(64));
+    }
+  });
+
+  test('rejects malformed verification tokens', () => {
+    const result = verifyEmailSchema.safeParse({
+      body: {
+        token: 'not-a-token',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects unexpected verification properties', () => {
+    const result = verifyEmailSchema.safeParse({
+      body: {
+        token: 'a'.repeat(64),
+        email: 'user@example.com',
       },
     });
 

@@ -1,6 +1,12 @@
 import type { PrismaClient } from '@prisma/client';
 import { MailerConfigurationError, MailerDeliveryError } from './mailer/mailer.errors.js';
-import { UserAlreadyExistsError } from './auth.errors.js';
+import {
+  AccountBannedError,
+  EmailNotVerifiedError,
+  InvalidEmailVerificationTokenError,
+  InvalidCredentialsError,
+  UserAlreadyExistsError,
+} from './auth.errors.js';
 
 type RegisterInput = {
   email: string;
@@ -8,21 +14,38 @@ type RegisterInput = {
   password: string;
 };
 
+type LoginInput = {
+  emailOrUsername: string;
+  password: string;
+  ipAddress?: string | undefined;
+  userAgent?: string | undefined;
+};
+
 type ResendVerificationInput = {
   email: string;
 };
 
-type Prisma = Pick<PrismaClient, '$transaction'>;
+type VerifyEmailInput = {
+  token: string;
+  ipAddress?: string | undefined;
+  userAgent?: string | undefined;
+};
+
+type Prisma = Pick<PrismaClient, '$transaction' | 'emailVerificationToken' | 'user'>;
 
 const REGISTER_SUCCESS_MESSAGE = 'Account created. Please verify your email.';
+const LOGIN_SUCCESS_MESSAGE = 'Login successful';
+const VERIFY_EMAIL_SUCCESS_MESSAGE = 'Email successfully verified';
 const RESEND_VERIFICATION_SUCCESS_MESSAGE =
   'If this email exists and is unverified, a new link has been sent.';
+const MISSING_USER_PASSWORD_HASH = '$2b$12$7g84a6zb7kmHybVdMfIeEuIPU7Lvt5SbjKaX5xIUgQdQwut8EMhNe';
 
 type AuthDependencies = {
   isUniqueError(err: unknown): boolean;
   prisma: Prisma;
   hasher: {
     hash(password: string, rounds: number): Promise<string>;
+    compare(password: string, hash: string): Promise<boolean>;
   };
   token: {
     generate(): string;
@@ -37,6 +60,7 @@ type AuthDependencies = {
   config: {
     bcryptRounds: number;
     emailVerificationTokenTtlMs: number;
+    sessionTtlMs: number;
   };
   logger: {
     warn(data: object, message: string): void;
@@ -44,9 +68,14 @@ type AuthDependencies = {
 };
 
 const normalizeEmail = (email: string): string => email.trim().toLowerCase();
+const normalizeIdentifier = (identifier: string): string => identifier.trim().toLowerCase();
+const getSessionKeySuffix = (sessionKey: string): string => sessionKey.slice(-8);
 
 const getEmailVerificationExpiresAt = (now: Date, emailVerificationTokenTtlMs: number): Date =>
   new Date(now.getTime() + emailVerificationTokenTtlMs);
+
+const getSessionExpiresAt = (now: Date, sessionTtlMs: number): Date =>
+  new Date(now.getTime() + sessionTtlMs);
 
 const isExpectedMailerError = (
   err: unknown,
@@ -54,6 +83,66 @@ const isExpectedMailerError = (
   err instanceof MailerConfigurationError || err instanceof MailerDeliveryError;
 
 export const createAuthService = (deps: AuthDependencies) => {
+  const prepareSession = ({
+    ipAddress,
+    userAgent,
+  }: {
+    ipAddress?: string | undefined;
+    userAgent?: string | undefined;
+  }) => {
+    const now = deps.clock.now();
+    const expiresAt = getSessionExpiresAt(now, deps.config.sessionTtlMs);
+    const sessionKey = deps.token.generate();
+    const sessionKeyHash = deps.token.hash(sessionKey);
+
+    return {
+      now,
+      sessionKey,
+      sessionData: {
+        sessionKey: sessionKeyHash,
+        sessionKeySuffix: getSessionKeySuffix(sessionKey),
+        ipAddress: ipAddress ?? null,
+        userAgent: userAgent ?? null,
+        deviceInfo: userAgent ?? null,
+        expiresAt,
+      },
+    };
+  };
+
+  const createSession = async ({
+    userId,
+    ipAddress,
+    userAgent,
+  }: {
+    userId: string;
+    ipAddress?: string | undefined;
+    userAgent?: string | undefined;
+  }) => {
+    const { now, sessionKey, sessionData } = prepareSession({ ipAddress, userAgent });
+
+    const session = await deps.prisma.$transaction(async (tx) => {
+      const createdSession = await tx.session.create({
+        data: {
+          ...sessionData,
+          userId,
+        },
+        select: {
+          id: true,
+          expiresAt: true,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: userId },
+        data: { lastLogin: now },
+      });
+
+      return createdSession;
+    });
+
+    return { sessionKey, session };
+  };
+
   return {
     async register({ email, username, password }: RegisterInput) {
       const usernameNorm = username.trim().toLowerCase();
@@ -109,6 +198,131 @@ export const createAuthService = (deps: AuthDependencies) => {
 
       return {
         message: REGISTER_SUCCESS_MESSAGE,
+      };
+    },
+
+    async login({ emailOrUsername, password, ipAddress, userAgent }: LoginInput) {
+      const lookup = normalizeIdentifier(emailOrUsername);
+
+      const user = await deps.prisma.user.findFirst({
+        where: {
+          OR: [{ email: lookup }, { username: lookup }],
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          role: true,
+          passwordHash: true,
+          isVerified: true,
+          isBanned: true,
+        },
+      });
+
+      const isPasswordValid = await deps.hasher.compare(
+        password,
+        user?.passwordHash ?? MISSING_USER_PASSWORD_HASH,
+      );
+
+      if (!user || !isPasswordValid) {
+        throw new InvalidCredentialsError();
+      }
+
+      if (user.isBanned) {
+        throw new AccountBannedError();
+      }
+
+      if (!user.isVerified) {
+        throw new EmailNotVerifiedError();
+      }
+
+      const { sessionKey, session } = await createSession({
+        userId: user.id,
+        ipAddress,
+        userAgent,
+      });
+
+      return {
+        message: LOGIN_SUCCESS_MESSAGE,
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+        },
+        sessionKey,
+        session,
+      };
+    },
+
+    async verifyEmail({ token, ipAddress, userAgent }: VerifyEmailInput) {
+      const tokenHash = deps.token.hash(token);
+      const { now, sessionKey, sessionData } = prepareSession({ ipAddress, userAgent });
+
+      const record = await deps.prisma.emailVerificationToken.findUnique({
+        where: { token: tokenHash },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              username: true,
+              role: true,
+              isBanned: true,
+            },
+          },
+        },
+      });
+
+      if (!record) {
+        throw new InvalidEmailVerificationTokenError();
+      }
+
+      if (record.expiresAt <= now) {
+        await deps.prisma.emailVerificationToken.deleteMany({ where: { token: tokenHash } });
+        throw new InvalidEmailVerificationTokenError();
+      }
+
+      if (record.user.isBanned) {
+        throw new AccountBannedError();
+      }
+
+      const session = await deps.prisma.$transaction(async (tx) => {
+        const consumedToken = await tx.emailVerificationToken.deleteMany({
+          where: { token: tokenHash },
+        });
+
+        if (consumedToken.count !== 1) {
+          throw new InvalidEmailVerificationTokenError();
+        }
+
+        await tx.user.update({
+          where: { id: record.userId },
+          data: { isVerified: true, lastLogin: now },
+        });
+
+        return tx.session.create({
+          data: {
+            ...sessionData,
+            userId: record.userId,
+          },
+          select: {
+            id: true,
+            expiresAt: true,
+          },
+        });
+      });
+
+      return {
+        message: VERIFY_EMAIL_SUCCESS_MESSAGE,
+        user: {
+          id: record.user.id,
+          email: record.user.email,
+          username: record.user.username,
+          role: record.user.role,
+        },
+        sessionKey,
+        session,
       };
     },
 

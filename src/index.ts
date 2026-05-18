@@ -2,12 +2,13 @@ import type { Server } from 'node:http';
 
 import config from './config/env.js';
 import { createApp } from './app.js';
+import { authService } from './auth.instance.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
-const app = await createApp(config);
+const app = await createApp(config, { authService });
 
 const server = app.listen(config.port, () => {
   logger.info({ port: config.port }, 'Server started');

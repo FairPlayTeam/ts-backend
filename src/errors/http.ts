@@ -7,6 +7,7 @@ export const API_ERROR_CODES = [
   'NotFound',
   'PayloadTooLarge',
   'TooManyRequests',
+  'Unauthorized',
   'ValidationError',
 ] as const;
 

@@ -18,7 +18,6 @@ model User {
     username String @unique @db.VarChar(20)
     passwordHash String @map("password_hash")
     role UserRole @default(user)
-    isActive Boolean @default(true) @map("is_active")
     isVerified Boolean @default(false) @map("is_verified")
     isBanned Boolean @default(false) @map("is_banned")
     bannedAt DateTime? @map("banned_at")
@@ -62,7 +61,6 @@ model Session {
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@index([userId])
-    @@index([sessionKey])
     @@index([sessionKeySuffix])
     @@index([expiresAt])
     @@index([isActive])

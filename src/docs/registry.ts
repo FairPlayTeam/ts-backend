@@ -32,10 +32,14 @@ export const ValidationErrorSchema = registry.register(
   }),
 );
 
+export const ApiOrValidationErrorSchema = registry.register(
+  'ApiOrValidationError',
+  z.union([ApiErrorSchema, ValidationErrorSchema]),
+);
+
 registry.registerComponent('securitySchemes', 'bearerAuth', {
   type: 'http',
   scheme: 'bearer',
-  bearerFormat: 'JWT',
 });
 
 const registeredPaths = new Set<string>();

@@ -1,34 +1,53 @@
 import { describe, expect, test } from 'bun:test';
 import { createApp } from '../src/app.js';
 import { generateOpenApi } from '../src/docs/openapi.js';
+import { createStubAuthService } from './support/auth.js';
 
 describe('OpenAPI generation', () => {
   test('includes auto-loaded routes and Zod request schemas', async () => {
-    process.env.DATABASE_URL ??= 'postgresql://user:password@localhost:5432/fairplay';
-    process.env.BASE_URL ??= 'http://localhost:3000';
-
-    await createApp({
-      allowedOrigins: [],
-      baseUrl: 'http://localhost:3000/',
-      isProduction: false,
-      jsonBodyLimitBytes: 1024 * 1024,
-      trustProxy: false,
-    });
+    await createApp(
+      {
+        allowedOrigins: [],
+        baseUrl: 'http://localhost:3000/',
+        isProduction: false,
+        jsonBodyLimitBytes: 1024 * 1024,
+        trustProxy: false,
+      },
+      { authService: createStubAuthService() },
+    );
 
     const document = generateOpenApi();
 
     expect(Object.keys(document.paths).sort()).toEqual([
       '/',
+      '/auth/login',
       '/auth/register',
       '/auth/resend-verification',
+      '/auth/verify-email',
       '/health',
     ]);
+    expect(document.paths['/auth/login']?.post?.requestBody).toBeDefined();
+    expect(document.paths['/auth/login']?.post?.responses?.[401]).toBeDefined();
+    expect(document.paths['/auth/login']?.post?.responses?.[403]).toBeDefined();
     expect(document.paths['/auth/register']?.post?.requestBody).toBeDefined();
     expect(document.paths['/auth/register']?.post?.responses?.[413]).toBeDefined();
     expect(document.paths['/auth/resend-verification']?.post?.requestBody).toBeDefined();
+    expect(document.paths['/auth/verify-email']?.post?.requestBody).toBeDefined();
+    expect(document.paths['/auth/verify-email']?.post?.responses?.[400]).toBeDefined();
+    expect(
+      document.paths['/auth/verify-email']?.post?.responses?.[400]?.content?.['application/json']
+        ?.schema,
+    ).toEqual({
+      $ref: '#/components/schemas/ApiOrValidationError',
+    });
+    expect(document.components?.schemas?.LoginRequest).toBeDefined();
+    expect(document.components?.schemas?.LoginResponse).toBeDefined();
+    expect(document.components?.schemas?.ApiOrValidationError).toBeDefined();
     expect(document.components?.schemas?.RegisterRequest).toBeDefined();
     expect(document.components?.schemas?.RegisterResponse).toBeDefined();
     expect(document.components?.schemas?.ResendVerificationRequest).toBeDefined();
     expect(document.components?.schemas?.ResendVerificationResponse).toBeDefined();
+    expect(document.components?.schemas?.VerifyEmailRequest).toBeDefined();
+    expect(document.components?.schemas?.VerifyEmailResponse).toBeDefined();
   });
 });

@@ -10,11 +10,16 @@ import { generateOpenApi } from './docs/openapi.js';
 import { HttpError } from './errors/http.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import type { Config } from './config/env.js';
+import type { AuthService } from './controllers/auth.controller.js';
 
 type CreateAppConfig = Pick<
   Config,
   'allowedOrigins' | 'baseUrl' | 'isProduction' | 'jsonBodyLimitBytes' | 'trustProxy'
 >;
+
+type CreateAppDependencies = {
+  authService: AuthService;
+};
 
 const getRequestId = (rawRequestId: string | string[] | undefined): string => {
   if (Array.isArray(rawRequestId)) {
@@ -27,7 +32,7 @@ const getRequestId = (rawRequestId: string | string[] | undefined): string => {
 const getHeader = (rawHeader: string | string[] | undefined): string | undefined =>
   Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
 
-export async function createApp(config: CreateAppConfig) {
+export async function createApp(config: CreateAppConfig, deps: CreateAppDependencies) {
   const app = express();
 
   app.set('trust proxy', config.trustProxy);
@@ -86,7 +91,7 @@ export async function createApp(config: CreateAppConfig) {
 
   app.use(express.json({ limit: config.jsonBodyLimitBytes }));
 
-  await loadRoutes(app, new URL('./routes/', import.meta.url));
+  await loadRoutes(app, new URL('./routes/', import.meta.url), deps);
 
   const openApiDoc = generateOpenApi({ serverUrl: config.baseUrl });
 

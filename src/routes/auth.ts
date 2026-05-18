@@ -1,28 +1,60 @@
 import { Router } from 'express';
-import { ApiErrorSchema, ValidationErrorSchema, registerRoute } from '../docs/registry.js';
+import { ApiErrorSchema, ApiOrValidationErrorSchema, registerRoute } from '../docs/registry.js';
 import { authLimiter } from '../middleware/limiters.js';
 import { validate } from '../middleware/validation.js';
-import { createAuthController } from '../controllers/auth.controller.js';
+import { createAuthController, type AuthService } from '../controllers/auth.controller.js';
 import {
+  loginBodySchema,
+  loginResponseSchema,
+  loginSchema,
   registerBodySchema,
   registerResponseSchema,
   registerSchema,
   resendVerificationBodySchema,
   resendVerificationResponseSchema,
   resendVerificationSchema,
+  verifyEmailBodySchema,
+  verifyEmailResponseSchema,
+  verifyEmailSchema,
 } from '../controllers/auth.schemas.js';
-import { authService } from '../auth.instance.js';
+import { jsonResponse } from '../docs/openapi.helpers.js';
 
-const router = Router();
-const { register, resendVerification } = createAuthController({ authService });
+type AuthRouterDependencies = {
+  authService: AuthService;
+};
 
-router.post('/register', authLimiter, validate(registerSchema), register);
-router.post(
-  '/resend-verification',
-  authLimiter,
-  validate(resendVerificationSchema),
-  resendVerification,
-);
+const createAuthRouter = ({ authService }: AuthRouterDependencies) => {
+  const router = Router();
+  const { register, login, verifyEmail, resendVerification } = createAuthController({
+    authService,
+  });
+
+  router.post('/register', authLimiter, validate(registerSchema), register);
+  router.post('/login', authLimiter, validate(loginSchema), login);
+  router.post('/verify-email', authLimiter, validate(verifyEmailSchema), verifyEmail);
+  router.post(
+    '/resend-verification',
+    authLimiter,
+    validate(resendVerificationSchema),
+    resendVerification,
+  );
+
+  return router;
+};
+
+export const createRouter = createAuthRouter;
+
+const commonErrorResponses = {
+  413: jsonResponse('Payload too large', ApiErrorSchema),
+
+  429: jsonResponse('Too many requests', ApiErrorSchema),
+
+  500: jsonResponse('Internal server error', ApiErrorSchema),
+};
+
+const badRequestErrorResponse = {
+  400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+};
 
 registerRoute({
   method: 'post',
@@ -40,54 +72,66 @@ registerRoute({
     },
   },
   responses: {
-    201: {
-      description: 'Account created',
+    201: jsonResponse('Account created', registerResponseSchema),
+
+    ...badRequestErrorResponse,
+
+    409: jsonResponse('Email or username already in use', ApiErrorSchema),
+
+    ...commonErrorResponses,
+  },
+});
+
+registerRoute({
+  method: 'post',
+  path: '/auth/login',
+  summary: 'Log in with an email or username',
+  tags: ['Auth'],
+  request: {
+    body: {
+      required: true,
       content: {
         'application/json': {
-          schema: registerResponseSchema,
+          schema: loginBodySchema,
         },
       },
     },
-    400: {
-      description: 'Invalid request body',
+  },
+  responses: {
+    200: jsonResponse('Login successful', loginResponseSchema),
+
+    401: jsonResponse('Invalid credentials', ApiErrorSchema),
+
+    403: jsonResponse('Account is not allowed to log in', ApiErrorSchema),
+
+    ...badRequestErrorResponse,
+    ...commonErrorResponses,
+  },
+});
+
+registerRoute({
+  method: 'post',
+  path: '/auth/verify-email',
+  summary: 'Verify an email address',
+  tags: ['Auth'],
+  request: {
+    body: {
+      required: true,
       content: {
         'application/json': {
-          schema: ValidationErrorSchema,
+          schema: verifyEmailBodySchema,
         },
       },
     },
-    413: {
-      description: 'Payload too large',
-      content: {
-        'application/json': {
-          schema: ApiErrorSchema,
-        },
-      },
-    },
-    409: {
-      description: 'Email or username already in use',
-      content: {
-        'application/json': {
-          schema: ApiErrorSchema,
-        },
-      },
-    },
-    429: {
-      description: 'Too many auth attempts',
-      content: {
-        'application/json': {
-          schema: ApiErrorSchema,
-        },
-      },
-    },
-    500: {
-      description: 'Internal server error',
-      content: {
-        'application/json': {
-          schema: ApiErrorSchema,
-        },
-      },
-    },
+  },
+  responses: {
+    200: jsonResponse('Email verified and session created', verifyEmailResponseSchema),
+
+    ...badRequestErrorResponse,
+
+    403: jsonResponse('Account is not allowed to verify email', ApiErrorSchema),
+
+    ...commonErrorResponses,
   },
 });
 
@@ -107,47 +151,9 @@ registerRoute({
     },
   },
   responses: {
-    200: {
-      description: 'Verification resend request accepted',
-      content: {
-        'application/json': {
-          schema: resendVerificationResponseSchema,
-        },
-      },
-    },
-    400: {
-      description: 'Invalid request body',
-      content: {
-        'application/json': {
-          schema: ValidationErrorSchema,
-        },
-      },
-    },
-    413: {
-      description: 'Payload too large',
-      content: {
-        'application/json': {
-          schema: ApiErrorSchema,
-        },
-      },
-    },
-    429: {
-      description: 'Too many auth attempts',
-      content: {
-        'application/json': {
-          schema: ApiErrorSchema,
-        },
-      },
-    },
-    500: {
-      description: 'Internal server error',
-      content: {
-        'application/json': {
-          schema: ApiErrorSchema,
-        },
-      },
-    },
+    200: jsonResponse('Verification resend request accepted', resendVerificationResponseSchema),
+
+    ...badRequestErrorResponse,
+    ...commonErrorResponses,
   },
 });
-
-export default router;

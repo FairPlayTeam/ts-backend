@@ -3,11 +3,18 @@ import { readdir, stat } from 'node:fs/promises';
 import { logger } from '../lib/logger.js';
 import { apiLimiter } from '../middleware/limiters.js';
 
-type RouteRegister = (app: Express, routePath: string) => void | Promise<void>;
+type RouteFactory<TContext> = (context: TContext) => unknown;
 
-type RouteModule = {
+type RouteRegister<TContext> = (
+  app: Express,
+  routePath: string,
+  context: TContext,
+) => void | Promise<void>;
+
+type RouteModule<TContext> = {
+  createRouter?: RouteFactory<TContext>;
   default?: unknown;
-  register?: RouteRegister;
+  register?: RouteRegister<TContext>;
 };
 
 function routePathFromFile(relativeFile: string): string {
@@ -46,7 +53,7 @@ async function walkFiles(dirUrl: URL, acc: URL[] = []): Promise<URL[]> {
   return acc;
 }
 
-async function loadRoutes(app: Express, routesDirUrl: URL) {
+async function loadRoutes<TContext>(app: Express, routesDirUrl: URL, context: TContext) {
   try {
     await stat(routesDirUrl);
   } catch {
@@ -62,17 +69,30 @@ async function loadRoutes(app: Express, routesDirUrl: URL) {
     const rel = fileUrl.toString().slice(routesDirUrl.toString().length);
     const routePath = normalizeRoutePath(routePathFromFile(rel));
 
-    const mod = (await import(fileUrl.toString())) as RouteModule;
+    const mod = (await import(fileUrl.toString())) as RouteModule<TContext>;
+    const routerFactory = mod.createRouter;
     const router = mod.default;
 
-    if (router && typeof router === 'function') {
+    if (typeof routerFactory === 'function') {
+      const createdRouter = routerFactory(context);
+
+      if (createdRouter && typeof createdRouter === 'function') {
+        app.use(routePath, apiLimiter, createdRouter as ExpressRouter);
+        logger.info({ file: rel, route: routePath }, 'route mounted');
+      } else {
+        logger.warn({ file: rel }, 'Skipped route factory, no Router returned');
+      }
+    } else if (router && typeof router === 'function') {
       app.use(routePath, apiLimiter, router as ExpressRouter);
       logger.info({ file: rel, route: routePath }, 'route mounted');
     } else if (typeof mod.register === 'function') {
-      await mod.register(app, routePath);
+      await mod.register(app, routePath, context);
       logger.info({ file: rel, route: routePath }, 'Route registered');
     } else {
-      logger.warn({ file: rel }, 'Skipped path, no default Router or register(app, route) export');
+      logger.warn(
+        { file: rel },
+        'Skipped path, no createRouter(context), default Router, or register(app, route, context) export',
+      );
     }
   }
 }
