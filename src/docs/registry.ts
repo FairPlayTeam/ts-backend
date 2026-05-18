@@ -40,6 +40,8 @@ export const ApiOrValidationErrorSchema = registry.register(
 registry.registerComponent('securitySchemes', 'bearerAuth', {
   type: 'http',
   scheme: 'bearer',
+  bearerFormat: 'Session key',
+  description: 'Paste the sessionKey returned by /auth/login or /auth/verify-email.',
 });
 
 const registeredPaths = new Set<string>();

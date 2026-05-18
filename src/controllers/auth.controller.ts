@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import type { AuthenticatedRequest } from '../middleware/auth.js';
 import { toAuthHttpError } from './auth.errors.js';
 import type {
   LoginRequestBody,
@@ -56,6 +57,14 @@ const toAuthSessionResponse = (result: AuthSessionResult) => ({
   session: {
     id: result.session.id,
     expiresAt: result.session.expiresAt.toISOString(),
+  },
+});
+
+const toAuthenticatedSessionResponse = (req: AuthenticatedRequest) => ({
+  user: req.user,
+  session: {
+    id: req.session.id,
+    expiresAt: req.session.expiresAt.toISOString(),
   },
 });
 
@@ -130,5 +139,9 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     }
   };
 
-  return { register, login, verifyEmail, resendVerification };
+  const me = (req: Request, res: Response) => {
+    return res.status(200).json(toAuthenticatedSessionResponse(req as AuthenticatedRequest));
+  };
+
+  return { register, login, verifyEmail, resendVerification, me };
 };

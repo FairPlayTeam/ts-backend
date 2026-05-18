@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { NextFunction, Request, Response } from 'express';
 import { createAuthController } from '../src/controllers/auth.controller.js';
+import type { AuthenticatedRequest } from '../src/middleware/auth.js';
 import type {
   LoginRequestBody,
   RegisterRequestBody,
@@ -271,6 +272,38 @@ describe('auth controller', () => {
       ...verifyEmailResult,
       session: {
         id: verifyEmailResult.session.id,
+        expiresAt: '2026-01-31T00:00:00.000Z',
+      },
+    });
+  });
+
+  test('returns the authenticated user profile from request context', () => {
+    const { response, state } = createMockResponse();
+    const controller = createAuthController({
+      authService: {
+        register: async () => ({ message: 'Account created. Please verify your email.' }),
+        login: async () => loginResult,
+        verifyEmail: async () => verifyEmailResult,
+        validateSession: async () => validatedSession,
+        resendVerification: async () => ({
+          message: 'If this email exists and is unverified, a new link has been sent.',
+        }),
+      },
+    });
+
+    controller.me(
+      {
+        user: validatedSession.user,
+        session: validatedSession.session,
+      } as AuthenticatedRequest,
+      response,
+    );
+
+    expect(state.statusCode).toBe(200);
+    expect(state.body).toEqual({
+      user: validatedSession.user,
+      session: {
+        id: validatedSession.session.id,
         expiresAt: '2026-01-31T00:00:00.000Z',
       },
     });

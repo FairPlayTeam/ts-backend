@@ -21,6 +21,7 @@ describe('OpenAPI generation', () => {
     expect(Object.keys(document.paths).sort()).toEqual([
       '/',
       '/auth/login',
+      '/auth/me',
       '/auth/register',
       '/auth/resend-verification',
       '/auth/verify-email',
@@ -29,6 +30,15 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/login']?.post?.requestBody).toBeDefined();
     expect(document.paths['/auth/login']?.post?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/login']?.post?.responses?.[403]).toBeDefined();
+    expect(document.components?.securitySchemes?.bearerAuth).toEqual({
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'Session key',
+      description: 'Paste the sessionKey returned by /auth/login or /auth/verify-email.',
+    });
+    expect(document.paths['/auth/me']?.get?.requestBody).toBeUndefined();
+    expect(document.paths['/auth/me']?.get?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths['/auth/me']?.get?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/register']?.post?.requestBody).toBeDefined();
     expect(document.paths['/auth/register']?.post?.responses?.[413]).toBeDefined();
     expect(document.paths['/auth/resend-verification']?.post?.requestBody).toBeDefined();
@@ -42,6 +52,7 @@ describe('OpenAPI generation', () => {
     });
     expect(document.components?.schemas?.LoginRequest).toBeDefined();
     expect(document.components?.schemas?.LoginResponse).toBeDefined();
+    expect(document.components?.schemas?.CurrentUserResponse).toBeDefined();
     expect(document.components?.schemas?.ApiOrValidationError).toBeDefined();
     expect(document.components?.schemas?.RegisterRequest).toBeDefined();
     expect(document.components?.schemas?.RegisterResponse).toBeDefined();

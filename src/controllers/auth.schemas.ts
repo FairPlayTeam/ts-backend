@@ -109,6 +109,18 @@ export const resendVerificationSchema = z.object({
   body: resendVerificationBodySchema,
 });
 
+const authUserResponseSchema = z.object({
+  id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
+  email: z.string().email().openapi({ example: 'user@example.com' }),
+  username: z.string().openapi({ example: 'fairplay_user' }),
+  role: z.string().openapi({ example: 'user' }),
+});
+
+const authSessionResponseSchema = z.object({
+  id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+  expiresAt: z.string().datetime().openapi({ example: '2026-01-31T00:00:00.000Z' }),
+});
+
 export const registerResponseSchema = z
   .object({
     message: z.string().openapi({ example: 'Account created. Please verify your email.' }),
@@ -118,20 +130,12 @@ export const registerResponseSchema = z
 export const loginResponseSchema = z
   .object({
     message: z.string().openapi({ example: 'Login successful' }),
-    user: z.object({
-      id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
-      email: z.string().email().openapi({ example: 'user@example.com' }),
-      username: z.string().openapi({ example: 'fairplay_user' }),
-      role: z.string().openapi({ example: 'user' }),
-    }),
+    user: authUserResponseSchema,
     sessionKey: z.string().openapi({
       description: 'Bearer session key. Returned once at login and stored hashed server-side.',
       example: 'd9f1f7d7b9d24e5c9f9b6a81a9a2eb1b2c1b0c9e7d6f5a4b3c2d1e0f9a8b7c6d',
     }),
-    session: z.object({
-      id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
-      expiresAt: z.string().datetime().openapi({ example: '2026-01-31T00:00:00.000Z' }),
-    }),
+    session: authSessionResponseSchema,
   })
   .openapi('LoginResponse');
 
@@ -148,6 +152,13 @@ export const resendVerificationResponseSchema = z
       .openapi({ example: 'If this email exists and is unverified, a new link has been sent.' }),
   })
   .openapi('ResendVerificationResponse');
+
+export const currentUserResponseSchema = z
+  .object({
+    user: authUserResponseSchema,
+    session: authSessionResponseSchema,
+  })
+  .openapi('CurrentUserResponse');
 
 export type RegisterRequestBody = z.infer<typeof registerSchema>['body'];
 export type LoginRequestBody = z.infer<typeof loginSchema>['body'];

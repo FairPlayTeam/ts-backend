@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { ApiErrorSchema, ApiOrValidationErrorSchema, registerRoute } from '../docs/registry.js';
+import { createAuthenticateSession } from '../middleware/auth.js';
 import { authLimiter } from '../middleware/limiters.js';
 import { validate } from '../middleware/validation.js';
 import { createAuthController, type AuthService } from '../controllers/auth.controller.js';
 import {
+  currentUserResponseSchema,
   loginBodySchema,
   loginResponseSchema,
   loginSchema,
@@ -25,9 +27,10 @@ type AuthRouterDependencies = {
 
 const createAuthRouter = ({ authService }: AuthRouterDependencies) => {
   const router = Router();
-  const { register, login, verifyEmail, resendVerification } = createAuthController({
+  const { register, login, verifyEmail, resendVerification, me } = createAuthController({
     authService,
   });
+  const authenticateSession = createAuthenticateSession({ authService });
 
   router.post('/register', authLimiter, validate(registerSchema), register);
   router.post('/login', authLimiter, validate(loginSchema), login);
@@ -38,6 +41,7 @@ const createAuthRouter = ({ authService }: AuthRouterDependencies) => {
     validate(resendVerificationSchema),
     resendVerification,
   );
+  router.get('/me', authenticateSession, me);
 
   return router;
 };
@@ -154,6 +158,21 @@ registerRoute({
     200: jsonResponse('Verification resend request accepted', resendVerificationResponseSchema),
 
     ...badRequestErrorResponse,
+    ...commonErrorResponses,
+  },
+});
+
+registerRoute({
+  method: 'get',
+  path: '/auth/me',
+  summary: 'Get current user profile data',
+  tags: ['Auth'],
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: jsonResponse('Current user profile', currentUserResponseSchema),
+
+    401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
     ...commonErrorResponses,
   },
 });

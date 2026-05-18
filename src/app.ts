@@ -99,7 +99,16 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     res.json(openApiDoc);
   });
 
-  app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiDoc));
+  app.use(
+    '/docs',
+    swaggerUi.serve,
+    swaggerUi.setup(openApiDoc, {
+      explorer: true,
+      swaggerOptions: {
+        persistAuthorization: true,
+      },
+    }),
+  );
   app.use(notFoundHandler);
   app.use(errorHandler);
 
