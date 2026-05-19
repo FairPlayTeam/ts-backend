@@ -6,6 +6,7 @@ import { validate } from '../middleware/validation.js';
 import { createAuthController, type AuthService } from '../controllers/auth.controller.js';
 import {
   currentUserResponseSchema,
+  logoutAllSessionsResponseSchema,
   loginBodySchema,
   loginResponseSchema,
   loginSchema,
@@ -28,9 +29,10 @@ type AuthRouterDependencies = {
 
 const createAuthRouter = ({ authService }: AuthRouterDependencies) => {
   const router = Router();
-  const { register, login, verifyEmail, resendVerification, me, sessions } = createAuthController({
-    authService,
-  });
+  const { register, login, verifyEmail, resendVerification, me, sessions, logoutAll } =
+    createAuthController({
+      authService,
+    });
   const authenticateSession = createAuthenticateSession({ authService });
 
   router.post('/register', authLimiter, validate(registerSchema), register);
@@ -44,6 +46,7 @@ const createAuthRouter = ({ authService }: AuthRouterDependencies) => {
   );
   router.get('/me', authenticateSession, me);
   router.get('/sessions', authenticateSession, sessions);
+  router.delete('/sessions/all', authenticateSession, logoutAll);
 
   return router;
 };
@@ -187,6 +190,21 @@ registerRoute({
   security: [{ bearerAuth: [] }],
   responses: {
     200: jsonResponse('Current user active sessions', userSessionsResponseSchema),
+
+    401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+    ...commonErrorResponses,
+  },
+});
+
+registerRoute({
+  method: 'delete',
+  path: '/auth/sessions/all',
+  summary: 'Logout from all sessions including current',
+  tags: ['Auth'],
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: jsonResponse('All sessions logged out successfully', logoutAllSessionsResponseSchema),
 
     401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
 

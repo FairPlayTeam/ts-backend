@@ -49,6 +49,10 @@ type ListUserSessionsInput = {
   currentSessionId: string;
 };
 
+type LogoutAllSessionsInput = {
+  userId: string;
+};
+
 type UserSessionSummary = {
   id: string;
   sessionKeySuffix: string | null;
@@ -68,6 +72,7 @@ const LOGIN_SUCCESS_MESSAGE = 'Login successful';
 const VERIFY_EMAIL_SUCCESS_MESSAGE = 'Email successfully verified';
 const RESEND_VERIFICATION_SUCCESS_MESSAGE =
   'If this email exists and is unverified, a new link has been sent.';
+const LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE = 'All sessions logged out successfully';
 const MISSING_USER_PASSWORD_HASH = '$2b$12$7g84a6zb7kmHybVdMfIeEuIPU7Lvt5SbjKaX5xIUgQdQwut8EMhNe';
 
 type AuthDependencies = {
@@ -498,6 +503,25 @@ export const createAuthService = (deps: AuthDependencies) => {
           isCurrent: session.id === currentSessionId,
         })),
         total: sessions.length,
+      };
+    },
+
+    async logoutAllSessions({
+      userId,
+    }: LogoutAllSessionsInput): Promise<{ message: string; sessionsLoggedOut: number }> {
+      const result = await deps.prisma.session.updateMany({
+        where: {
+          userId,
+          isActive: true,
+        },
+        data: {
+          isActive: false,
+        },
+      });
+
+      return {
+        message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
+        sessionsLoggedOut: result.count,
       };
     },
   };

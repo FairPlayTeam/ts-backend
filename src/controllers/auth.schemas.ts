@@ -179,6 +179,13 @@ export const userSessionsResponseSchema = z
   })
   .openapi('UserSessionsResponse');
 
+export const logoutAllSessionsResponseSchema = z
+  .object({
+    message: z.string().openapi({ example: 'All sessions logged out successfully' }),
+    sessionsLoggedOut: z.number().int().nonnegative().openapi({ example: 3 }),
+  })
+  .openapi('LogoutAllSessionsResponse');
+
 export type RegisterRequestBody = z.infer<typeof registerSchema>['body'];
 export type LoginRequestBody = z.infer<typeof loginSchema>['body'];
 export type VerifyEmailRequestBody = z.infer<typeof verifyEmailSchema>['body'];

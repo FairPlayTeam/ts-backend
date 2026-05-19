@@ -49,4 +49,8 @@ export const createStubAuthService = (): AuthService => ({
     message: 'If this email exists and is unverified, a new link has been sent.',
   }),
   getUserSessions: async () => userSessionsResult,
+  logoutAllSessions: async () => ({
+    message: 'All sessions logged out successfully',
+    sessionsLoggedOut: 1,
+  }),
 });

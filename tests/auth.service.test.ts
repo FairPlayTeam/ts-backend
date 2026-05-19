@@ -28,6 +28,7 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     sessionFindMany: undefined as unknown,
     sessionFindUnique: undefined as unknown,
     sessionUpdate: undefined as unknown,
+    sessionUpdateMany: undefined as unknown,
     comparedPassword: undefined as unknown,
     sentEmail: undefined as unknown,
     warning: undefined as unknown,
@@ -173,6 +174,11 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
           calls.sessionUpdate = args;
 
           return { id: 'session-id' };
+        },
+        updateMany: async (args: unknown) => {
+          calls.sessionUpdateMany = args;
+
+          return { count: 2 };
         },
       },
     },
@@ -852,6 +858,26 @@ describe('auth service', () => {
       },
       orderBy: {
         lastUsedAt: 'desc',
+      },
+    });
+  });
+
+  test('logs out all active user sessions', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await expect(service.logoutAllSessions({ userId: 'user-id' })).resolves.toEqual({
+      message: 'All sessions logged out successfully',
+      sessionsLoggedOut: 2,
+    });
+
+    expect(calls.sessionUpdateMany).toEqual({
+      where: {
+        userId: 'user-id',
+        isActive: true,
+      },
+      data: {
+        isActive: false,
       },
     });
   });
