@@ -15,6 +15,23 @@ const sessionResult = {
   },
 };
 
+const userSessionsResult = {
+  sessions: [
+    {
+      id: sessionResult.session.id,
+      sessionKeySuffix: 'sion-key',
+      ipAddress: '127.0.0.1',
+      userAgent: 'bun-test',
+      deviceInfo: 'bun-test',
+      isCurrent: true,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
+      expiresAt: sessionResult.session.expiresAt,
+    },
+  ],
+  total: 1,
+};
+
 export const createStubAuthService = (): AuthService => ({
   register: async () => ({
     message: 'Account created. Please verify your email.',
@@ -31,4 +48,5 @@ export const createStubAuthService = (): AuthService => ({
   resendVerification: async () => ({
     message: 'If this email exists and is unverified, a new link has been sent.',
   }),
+  getUserSessions: async () => userSessionsResult,
 });

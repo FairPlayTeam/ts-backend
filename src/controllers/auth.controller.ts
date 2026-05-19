@@ -28,6 +28,18 @@ type ValidatedAuthSession = {
   session: AuthSessionResult['session'];
 };
 
+type UserSessionSummary = {
+  id: string;
+  sessionKeySuffix: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  deviceInfo: string | null;
+  isCurrent: boolean;
+  createdAt: Date;
+  lastUsedAt: Date;
+  expiresAt: Date;
+};
+
 export type AuthService = {
   register(input: RegisterRequestBody): Promise<{ message: string }>;
   login(
@@ -44,6 +56,10 @@ export type AuthService = {
   ): Promise<AuthSessionResult>;
   validateSession(sessionKey: string): Promise<ValidatedAuthSession | null>;
   resendVerification(input: ResendVerificationRequestBody): Promise<{ message: string }>;
+  getUserSessions(input: {
+    userId: string;
+    currentSessionId: string;
+  }): Promise<{ sessions: UserSessionSummary[]; total: number }>;
 };
 
 type AuthControllerDependencies = {
@@ -66,6 +82,27 @@ const toAuthenticatedSessionResponse = (req: AuthenticatedRequest) => ({
     id: req.session.id,
     expiresAt: req.session.expiresAt.toISOString(),
   },
+});
+
+const toUserSessionsResponse = ({
+  sessions,
+  total,
+}: {
+  sessions: UserSessionSummary[];
+  total: number;
+}) => ({
+  sessions: sessions.map((session) => ({
+    id: session.id,
+    sessionKeySuffix: session.sessionKeySuffix,
+    ipAddress: session.ipAddress,
+    userAgent: session.userAgent,
+    deviceInfo: session.deviceInfo,
+    isCurrent: session.isCurrent,
+    createdAt: session.createdAt.toISOString(),
+    lastUsedAt: session.lastUsedAt.toISOString(),
+    expiresAt: session.expiresAt.toISOString(),
+  })),
+  total,
 });
 
 export const createAuthController = (deps: AuthControllerDependencies) => {
@@ -143,5 +180,19 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     return res.status(200).json(toAuthenticatedSessionResponse(req as AuthenticatedRequest));
   };
 
-  return { register, login, verifyEmail, resendVerification, me };
+  const sessions = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const result = await deps.authService.getUserSessions({
+        userId: authenticatedReq.user.id,
+        currentSessionId: authenticatedReq.session.id,
+      });
+
+      return res.status(200).json(toUserSessionsResponse(result));
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
+  };
+
+  return { register, login, verifyEmail, resendVerification, me, sessions };
 };

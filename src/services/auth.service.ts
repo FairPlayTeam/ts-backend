@@ -44,6 +44,23 @@ type AuthenticatedSession = {
   };
 };
 
+type ListUserSessionsInput = {
+  userId: string;
+  currentSessionId: string;
+};
+
+type UserSessionSummary = {
+  id: string;
+  sessionKeySuffix: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  deviceInfo: string | null;
+  isCurrent: boolean;
+  createdAt: Date;
+  lastUsedAt: Date;
+  expiresAt: Date;
+};
+
 type Prisma = Pick<PrismaClient, '$transaction' | 'emailVerificationToken' | 'session' | 'user'>;
 
 const REGISTER_SUCCESS_MESSAGE = 'Account created. Please verify your email.';
@@ -436,6 +453,51 @@ export const createAuthService = (deps: AuthDependencies) => {
 
       return {
         message: RESEND_VERIFICATION_SUCCESS_MESSAGE,
+      };
+    },
+
+    async getUserSessions({
+      userId,
+      currentSessionId,
+    }: ListUserSessionsInput): Promise<{ sessions: UserSessionSummary[]; total: number }> {
+      const now = deps.clock.now();
+
+      const sessions = await deps.prisma.session.findMany({
+        where: {
+          userId,
+          isActive: true,
+          expiresAt: {
+            gt: now,
+          },
+        },
+        select: {
+          id: true,
+          sessionKeySuffix: true,
+          ipAddress: true,
+          userAgent: true,
+          deviceInfo: true,
+          createdAt: true,
+          lastUsedAt: true,
+          expiresAt: true,
+        },
+        orderBy: {
+          lastUsedAt: 'desc',
+        },
+      });
+
+      return {
+        sessions: sessions.map((session) => ({
+          id: session.id,
+          sessionKeySuffix: session.sessionKeySuffix,
+          ipAddress: session.ipAddress,
+          userAgent: session.userAgent,
+          deviceInfo: session.deviceInfo,
+          createdAt: session.createdAt,
+          lastUsedAt: session.lastUsedAt,
+          expiresAt: session.expiresAt,
+          isCurrent: session.id === currentSessionId,
+        })),
+        total: sessions.length,
       };
     },
   };

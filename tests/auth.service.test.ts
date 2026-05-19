@@ -25,6 +25,7 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     tokenFindUnique: undefined as unknown,
     tokenUpsert: undefined as unknown,
     sessionCreate: undefined as unknown,
+    sessionFindMany: undefined as unknown,
     sessionFindUnique: undefined as unknown,
     sessionUpdate: undefined as unknown,
     comparedPassword: undefined as unknown,
@@ -126,6 +127,32 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
         },
       },
       session: {
+        findMany: async (args: unknown) => {
+          calls.sessionFindMany = args;
+
+          return [
+            {
+              id: 'session-id',
+              sessionKeySuffix: 'in-token',
+              ipAddress: '127.0.0.1',
+              userAgent: 'bun-test',
+              deviceInfo: 'bun-test',
+              createdAt: fixedNow,
+              lastUsedAt: fixedNow,
+              expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+            },
+            {
+              id: 'other-session-id',
+              sessionKeySuffix: null,
+              ipAddress: null,
+              userAgent: null,
+              deviceInfo: null,
+              createdAt: fixedNow,
+              lastUsedAt: new Date('2026-01-01T00:00:01.000Z'),
+              expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+            },
+          ];
+        },
         findUnique: async (args: unknown) => {
           calls.sessionFindUnique = args;
 
@@ -766,6 +793,67 @@ describe('auth service', () => {
       await expect(service.validateSession('plain-token')).resolves.toBeNull();
       expect(calls.sessionUpdate).toBeUndefined();
     }
+  });
+
+  test('lists active user sessions and marks the current session', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await expect(
+      service.getUserSessions({
+        userId: 'user-id',
+        currentSessionId: 'session-id',
+      }),
+    ).resolves.toEqual({
+      sessions: [
+        {
+          id: 'session-id',
+          sessionKeySuffix: 'in-token',
+          ipAddress: '127.0.0.1',
+          userAgent: 'bun-test',
+          deviceInfo: 'bun-test',
+          createdAt: fixedNow,
+          lastUsedAt: fixedNow,
+          expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+          isCurrent: true,
+        },
+        {
+          id: 'other-session-id',
+          sessionKeySuffix: null,
+          ipAddress: null,
+          userAgent: null,
+          deviceInfo: null,
+          createdAt: fixedNow,
+          lastUsedAt: new Date('2026-01-01T00:00:01.000Z'),
+          expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+          isCurrent: false,
+        },
+      ],
+      total: 2,
+    });
+
+    expect(calls.sessionFindMany).toEqual({
+      where: {
+        userId: 'user-id',
+        isActive: true,
+        expiresAt: {
+          gt: fixedNow,
+        },
+      },
+      select: {
+        id: true,
+        sessionKeySuffix: true,
+        ipAddress: true,
+        userAgent: true,
+        deviceInfo: true,
+        createdAt: true,
+        lastUsedAt: true,
+        expiresAt: true,
+      },
+      orderBy: {
+        lastUsedAt: 'desc',
+      },
+    });
   });
 
   test('resends a verification email for an unverified user', async () => {

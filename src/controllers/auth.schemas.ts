@@ -160,6 +160,25 @@ export const currentUserResponseSchema = z
   })
   .openapi('CurrentUserResponse');
 
+export const userSessionsResponseSchema = z
+  .object({
+    sessions: z.array(
+      z.object({
+        id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+        sessionKeySuffix: z.string().nullable().openapi({ example: '9a8b7c6d' }),
+        ipAddress: z.string().nullable().openapi({ example: '127.0.0.1' }),
+        userAgent: z.string().nullable().openapi({ example: 'Mozilla/5.0' }),
+        deviceInfo: z.string().nullable().openapi({ example: 'Mozilla/5.0' }),
+        isCurrent: z.boolean().openapi({ example: true }),
+        createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
+        lastUsedAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
+        expiresAt: z.string().datetime().openapi({ example: '2026-01-31T00:00:00.000Z' }),
+      }),
+    ),
+    total: z.number().int().nonnegative().openapi({ example: 1 }),
+  })
+  .openapi('UserSessionsResponse');
+
 export type RegisterRequestBody = z.infer<typeof registerSchema>['body'];
 export type LoginRequestBody = z.infer<typeof loginSchema>['body'];
 export type VerifyEmailRequestBody = z.infer<typeof verifyEmailSchema>['body'];

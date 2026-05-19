@@ -15,6 +15,7 @@ import {
   resendVerificationBodySchema,
   resendVerificationResponseSchema,
   resendVerificationSchema,
+  userSessionsResponseSchema,
   verifyEmailBodySchema,
   verifyEmailResponseSchema,
   verifyEmailSchema,
@@ -27,7 +28,7 @@ type AuthRouterDependencies = {
 
 const createAuthRouter = ({ authService }: AuthRouterDependencies) => {
   const router = Router();
-  const { register, login, verifyEmail, resendVerification, me } = createAuthController({
+  const { register, login, verifyEmail, resendVerification, me, sessions } = createAuthController({
     authService,
   });
   const authenticateSession = createAuthenticateSession({ authService });
@@ -42,6 +43,7 @@ const createAuthRouter = ({ authService }: AuthRouterDependencies) => {
     resendVerification,
   );
   router.get('/me', authenticateSession, me);
+  router.get('/sessions', authenticateSession, sessions);
 
   return router;
 };
@@ -170,6 +172,21 @@ registerRoute({
   security: [{ bearerAuth: [] }],
   responses: {
     200: jsonResponse('Current user profile', currentUserResponseSchema),
+
+    401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+    ...commonErrorResponses,
+  },
+});
+
+registerRoute({
+  method: 'get',
+  path: '/auth/sessions',
+  summary: 'Get current user active sessions',
+  tags: ['Auth'],
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: jsonResponse('Current user active sessions', userSessionsResponseSchema),
 
     401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
 

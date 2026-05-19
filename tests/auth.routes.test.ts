@@ -88,4 +88,40 @@ describe('auth routes', () => {
       message: 'Bearer session token is required',
     });
   });
+
+  test('returns active sessions for a valid bearer session', async () => {
+    const response = await fetch(`${baseUrl}/auth/sessions`, {
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      sessions: [
+        {
+          id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+          sessionKeySuffix: 'sion-key',
+          ipAddress: '127.0.0.1',
+          userAgent: 'bun-test',
+          deviceInfo: 'bun-test',
+          isCurrent: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          lastUsedAt: '2026-01-01T00:00:00.000Z',
+          expiresAt: '2026-01-31T00:00:00.000Z',
+        },
+      ],
+      total: 1,
+    });
+  });
+
+  test('requires a bearer session for the active sessions route', async () => {
+    const response = await fetch(`${baseUrl}/auth/sessions`);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: 'Unauthorized',
+      message: 'Bearer session token is required',
+    });
+  });
 });

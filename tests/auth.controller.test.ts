@@ -55,6 +55,23 @@ const validatedSession = {
   session: loginResult.session,
 };
 
+const userSessionsResult = {
+  sessions: [
+    {
+      id: loginResult.session.id,
+      sessionKeySuffix: 'sion-key',
+      ipAddress: '127.0.0.1',
+      userAgent: 'bun-test',
+      deviceInfo: 'bun-test',
+      isCurrent: true,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
+      expiresAt: loginResult.session.expiresAt,
+    },
+  ],
+  total: 1,
+};
+
 const createMockResponse = () => {
   const state: {
     statusCode?: number;
@@ -92,6 +109,7 @@ describe('auth controller', () => {
         resendVerification: async () => ({
           message: 'If this email exists and is unverified, a new link has been sent.',
         }),
+        getUserSessions: async () => userSessionsResult,
       },
     });
 
@@ -125,6 +143,7 @@ describe('auth controller', () => {
         resendVerification: async () => ({
           message: 'If this email exists and is unverified, a new link has been sent.',
         }),
+        getUserSessions: async () => userSessionsResult,
       },
     });
 
@@ -157,6 +176,7 @@ describe('auth controller', () => {
             message: 'If this email exists and is unverified, a new link has been sent.',
           };
         },
+        getUserSessions: async () => userSessionsResult,
       },
     });
 
@@ -194,6 +214,7 @@ describe('auth controller', () => {
         resendVerification: async () => ({
           message: 'If this email exists and is unverified, a new link has been sent.',
         }),
+        getUserSessions: async () => userSessionsResult,
       },
     });
 
@@ -246,6 +267,7 @@ describe('auth controller', () => {
         resendVerification: async () => ({
           message: 'If this email exists and is unverified, a new link has been sent.',
         }),
+        getUserSessions: async () => userSessionsResult,
       },
     });
 
@@ -288,6 +310,7 @@ describe('auth controller', () => {
         resendVerification: async () => ({
           message: 'If this email exists and is unverified, a new link has been sent.',
         }),
+        getUserSessions: async () => userSessionsResult,
       },
     });
 
@@ -306,6 +329,61 @@ describe('auth controller', () => {
         id: validatedSession.session.id,
         expiresAt: '2026-01-31T00:00:00.000Z',
       },
+    });
+  });
+
+  test('returns active sessions for the authenticated user', async () => {
+    let receivedInput: { userId: string; currentSessionId: string } | undefined;
+    let receivedError: unknown;
+    const { response, state } = createMockResponse();
+    const controller = createAuthController({
+      authService: {
+        register: async () => ({ message: 'Account created. Please verify your email.' }),
+        login: async () => loginResult,
+        verifyEmail: async () => verifyEmailResult,
+        validateSession: async () => validatedSession,
+        resendVerification: async () => ({
+          message: 'If this email exists and is unverified, a new link has been sent.',
+        }),
+        getUserSessions: async (input) => {
+          receivedInput = input;
+          return userSessionsResult;
+        },
+      },
+    });
+
+    await controller.sessions(
+      {
+        user: validatedSession.user,
+        session: validatedSession.session,
+      } as AuthenticatedRequest,
+      response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedInput).toEqual({
+      userId: validatedSession.user.id,
+      currentSessionId: validatedSession.session.id,
+    });
+    expect(receivedError).toBeUndefined();
+    expect(state.statusCode).toBe(200);
+    expect(state.body).toEqual({
+      sessions: [
+        {
+          id: loginResult.session.id,
+          sessionKeySuffix: 'sion-key',
+          ipAddress: '127.0.0.1',
+          userAgent: 'bun-test',
+          deviceInfo: 'bun-test',
+          isCurrent: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          lastUsedAt: '2026-01-01T00:00:00.000Z',
+          expiresAt: '2026-01-31T00:00:00.000Z',
+        },
+      ],
+      total: 1,
     });
   });
 });

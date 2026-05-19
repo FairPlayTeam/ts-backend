@@ -24,6 +24,7 @@ describe('OpenAPI generation', () => {
       '/auth/me',
       '/auth/register',
       '/auth/resend-verification',
+      '/auth/sessions',
       '/auth/verify-email',
       '/health',
     ]);
@@ -39,6 +40,10 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/me']?.get?.requestBody).toBeUndefined();
     expect(document.paths['/auth/me']?.get?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/auth/me']?.get?.responses?.[401]).toBeDefined();
+    expect(document.paths['/auth/sessions']?.get?.requestBody).toBeUndefined();
+    expect(document.paths['/auth/sessions']?.get?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths['/auth/sessions']?.get?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/sessions']?.get?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/register']?.post?.requestBody).toBeDefined();
     expect(document.paths['/auth/register']?.post?.responses?.[413]).toBeDefined();
     expect(document.paths['/auth/resend-verification']?.post?.requestBody).toBeDefined();
@@ -60,5 +65,6 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.ResendVerificationResponse).toBeDefined();
     expect(document.components?.schemas?.VerifyEmailRequest).toBeDefined();
     expect(document.components?.schemas?.VerifyEmailResponse).toBeDefined();
+    expect(document.components?.schemas?.UserSessionsResponse).toBeDefined();
   });
 });
