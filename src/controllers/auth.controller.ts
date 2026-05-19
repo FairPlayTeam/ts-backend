@@ -63,6 +63,10 @@ export type AuthService = {
   logoutAllSessions(input: {
     userId: string;
   }): Promise<{ message: string; sessionsLoggedOut: number }>;
+  logoutOtherSessions(input: {
+    userId: string;
+    currentSessionId: string;
+  }): Promise<{ message: string; sessionsLoggedOut: number }>;
 };
 
 type AuthControllerDependencies = {
@@ -213,5 +217,31 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     }
   };
 
-  return { register, login, verifyEmail, resendVerification, me, sessions, logoutAll };
+  const logoutOthers = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const result = await deps.authService.logoutOtherSessions({
+        userId: authenticatedReq.user.id,
+        currentSessionId: authenticatedReq.session.id,
+      });
+
+      return res.status(200).json({
+        message: result.message,
+        sessionsLoggedOut: result.sessionsLoggedOut,
+      });
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
+  };
+
+  return {
+    register,
+    login,
+    verifyEmail,
+    resendVerification,
+    me,
+    sessions,
+    logoutAll,
+    logoutOthers,
+  };
 };

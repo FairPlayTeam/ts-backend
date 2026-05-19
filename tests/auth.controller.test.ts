@@ -114,6 +114,10 @@ describe('auth controller', () => {
           message: 'All sessions logged out successfully',
           sessionsLoggedOut: 1,
         }),
+        logoutOtherSessions: async () => ({
+          message: 'Other sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
       },
     });
 
@@ -152,6 +156,10 @@ describe('auth controller', () => {
           message: 'All sessions logged out successfully',
           sessionsLoggedOut: 1,
         }),
+        logoutOtherSessions: async () => ({
+          message: 'Other sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
       },
     });
 
@@ -187,6 +195,10 @@ describe('auth controller', () => {
         getUserSessions: async () => userSessionsResult,
         logoutAllSessions: async () => ({
           message: 'All sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
+        logoutOtherSessions: async () => ({
+          message: 'Other sessions logged out successfully',
           sessionsLoggedOut: 1,
         }),
       },
@@ -229,6 +241,10 @@ describe('auth controller', () => {
         getUserSessions: async () => userSessionsResult,
         logoutAllSessions: async () => ({
           message: 'All sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
+        logoutOtherSessions: async () => ({
+          message: 'Other sessions logged out successfully',
           sessionsLoggedOut: 1,
         }),
       },
@@ -288,6 +304,10 @@ describe('auth controller', () => {
           message: 'All sessions logged out successfully',
           sessionsLoggedOut: 1,
         }),
+        logoutOtherSessions: async () => ({
+          message: 'Other sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
       },
     });
 
@@ -335,6 +355,10 @@ describe('auth controller', () => {
           message: 'All sessions logged out successfully',
           sessionsLoggedOut: 1,
         }),
+        logoutOtherSessions: async () => ({
+          message: 'Other sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
       },
     });
 
@@ -375,6 +399,10 @@ describe('auth controller', () => {
         },
         logoutAllSessions: async () => ({
           message: 'All sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
+        logoutOtherSessions: async () => ({
+          message: 'Other sessions logged out successfully',
           sessionsLoggedOut: 1,
         }),
       },
@@ -436,6 +464,10 @@ describe('auth controller', () => {
             sessionsLoggedOut: 3,
           };
         },
+        logoutOtherSessions: async () => ({
+          message: 'Other sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
       },
     });
 
@@ -458,6 +490,57 @@ describe('auth controller', () => {
     expect(state.body).toEqual({
       message: 'All sessions logged out successfully',
       sessionsLoggedOut: 3,
+    });
+  });
+
+  test('logs out other sessions while keeping the current authenticated session', async () => {
+    let receivedInput: { userId: string; currentSessionId: string } | undefined;
+    let receivedError: unknown;
+    const { response, state } = createMockResponse();
+    const controller = createAuthController({
+      authService: {
+        register: async () => ({ message: 'Account created. Please verify your email.' }),
+        login: async () => loginResult,
+        verifyEmail: async () => verifyEmailResult,
+        validateSession: async () => validatedSession,
+        resendVerification: async () => ({
+          message: 'If this email exists and is unverified, a new link has been sent.',
+        }),
+        getUserSessions: async () => userSessionsResult,
+        logoutAllSessions: async () => ({
+          message: 'All sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
+        logoutOtherSessions: async (input) => {
+          receivedInput = input;
+          return {
+            message: 'Other sessions logged out successfully',
+            sessionsLoggedOut: 2,
+          };
+        },
+      },
+    });
+
+    await controller.logoutOthers(
+      {
+        user: validatedSession.user,
+        session: validatedSession.session,
+      } as AuthenticatedRequest,
+      response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedInput).toEqual({
+      userId: validatedSession.user.id,
+      currentSessionId: validatedSession.session.id,
+    });
+    expect(receivedError).toBeUndefined();
+    expect(state.statusCode).toBe(200);
+    expect(state.body).toEqual({
+      message: 'Other sessions logged out successfully',
+      sessionsLoggedOut: 2,
     });
   });
 });

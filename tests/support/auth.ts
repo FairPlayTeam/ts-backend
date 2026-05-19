@@ -53,4 +53,8 @@ export const createStubAuthService = (): AuthService => ({
     message: 'All sessions logged out successfully',
     sessionsLoggedOut: 1,
   }),
+  logoutOtherSessions: async () => ({
+    message: 'Other sessions logged out successfully',
+    sessionsLoggedOut: 1,
+  }),
 });

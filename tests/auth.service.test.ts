@@ -882,6 +882,34 @@ describe('auth service', () => {
     });
   });
 
+  test('logs out other active user sessions while keeping the current session', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await expect(
+      service.logoutOtherSessions({
+        userId: 'user-id',
+        currentSessionId: 'session-id',
+      }),
+    ).resolves.toEqual({
+      message: 'Other sessions logged out successfully',
+      sessionsLoggedOut: 2,
+    });
+
+    expect(calls.sessionUpdateMany).toEqual({
+      where: {
+        userId: 'user-id',
+        isActive: true,
+        id: {
+          not: 'session-id',
+        },
+      },
+      data: {
+        isActive: false,
+      },
+    });
+  });
+
   test('resends a verification email for an unverified user', async () => {
     const { deps, calls } = createTestDeps();
     const service = createAuthService(deps);

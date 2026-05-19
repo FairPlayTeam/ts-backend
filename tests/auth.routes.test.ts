@@ -151,4 +151,31 @@ describe('auth routes', () => {
       message: 'Bearer session token is required',
     });
   });
+
+  test('logs out other sessions for a valid bearer session', async () => {
+    const response = await fetch(`${baseUrl}/auth/sessions/others/all`, {
+      method: 'DELETE',
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      message: 'Other sessions logged out successfully',
+      sessionsLoggedOut: 1,
+    });
+  });
+
+  test('requires a bearer session to log out other sessions', async () => {
+    const response = await fetch(`${baseUrl}/auth/sessions/others/all`, {
+      method: 'DELETE',
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: 'Unauthorized',
+      message: 'Bearer session token is required',
+    });
+  });
 });
