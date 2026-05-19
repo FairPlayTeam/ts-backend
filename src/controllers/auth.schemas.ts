@@ -109,6 +109,20 @@ export const resendVerificationSchema = z.object({
   body: resendVerificationBodySchema,
 });
 
+export const logoutSessionParamsSchema = z
+  .object({
+    sessionId: z
+      .string()
+      .uuid('Session id must be a valid UUID')
+      .openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+  })
+  .strict()
+  .openapi('LogoutSessionParams');
+
+export const logoutSessionSchema = z.object({
+  params: logoutSessionParamsSchema,
+});
+
 const authUserResponseSchema = z.object({
   id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
   email: z.string().email().openapi({ example: 'user@example.com' }),
@@ -193,7 +207,15 @@ export const logoutOtherSessionsResponseSchema = z
   })
   .openapi('LogoutOtherSessionsResponse');
 
+export const logoutSessionResponseSchema = z
+  .object({
+    message: z.string().openapi({ example: 'Session logged out successfully' }),
+    sessionsLoggedOut: z.number().int().nonnegative().openapi({ example: 1 }),
+  })
+  .openapi('LogoutSessionResponse');
+
 export type RegisterRequestBody = z.infer<typeof registerSchema>['body'];
 export type LoginRequestBody = z.infer<typeof loginSchema>['body'];
 export type VerifyEmailRequestBody = z.infer<typeof verifyEmailSchema>['body'];
 export type ResendVerificationRequestBody = z.infer<typeof resendVerificationSchema>['body'];
+export type LogoutSessionParams = z.infer<typeof logoutSessionSchema>['params'];

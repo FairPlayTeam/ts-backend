@@ -8,6 +8,9 @@ import {
   currentUserResponseSchema,
   logoutAllSessionsResponseSchema,
   logoutOtherSessionsResponseSchema,
+  logoutSessionParamsSchema,
+  logoutSessionResponseSchema,
+  logoutSessionSchema,
   loginBodySchema,
   loginResponseSchema,
   loginSchema,
@@ -39,6 +42,7 @@ const createAuthRouter = ({ authService }: AuthRouterDependencies) => {
     sessions,
     logoutAll,
     logoutOthers,
+    logoutSession,
   } = createAuthController({
     authService,
   });
@@ -57,6 +61,12 @@ const createAuthRouter = ({ authService }: AuthRouterDependencies) => {
   router.get('/sessions', authenticateSession, sessions);
   router.delete('/sessions/all', authenticateSession, logoutAll);
   router.delete('/sessions/others/all', authenticateSession, logoutOthers);
+  router.delete(
+    '/sessions/:sessionId',
+    authenticateSession,
+    validate(logoutSessionSchema),
+    logoutSession,
+  );
 
   return router;
 };
@@ -230,6 +240,26 @@ registerRoute({
   security: [{ bearerAuth: [] }],
   responses: {
     200: jsonResponse('Other sessions logged out successfully', logoutOtherSessionsResponseSchema),
+
+    401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+    ...commonErrorResponses,
+  },
+});
+
+registerRoute({
+  method: 'delete',
+  path: '/auth/sessions/{sessionId}',
+  summary: 'Logout from a specific session',
+  tags: ['Auth'],
+  security: [{ bearerAuth: [] }],
+  request: {
+    params: logoutSessionParamsSchema,
+  },
+  responses: {
+    200: jsonResponse('Session logged out successfully', logoutSessionResponseSchema),
+
+    ...badRequestErrorResponse,
 
     401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
 

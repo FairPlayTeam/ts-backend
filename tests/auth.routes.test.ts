@@ -178,4 +178,52 @@ describe('auth routes', () => {
       message: 'Bearer session token is required',
     });
   });
+
+  test('logs out a specific session for a valid bearer session', async () => {
+    const response = await fetch(`${baseUrl}/auth/sessions/123e4567-e89b-12d3-a456-426614174000`, {
+      method: 'DELETE',
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      message: 'Session logged out successfully',
+      sessionsLoggedOut: 1,
+    });
+  });
+
+  test('rejects malformed session ids when logging out a specific session', async () => {
+    const response = await fetch(`${baseUrl}/auth/sessions/not-a-session-id`, {
+      method: 'DELETE',
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'ValidationError',
+      message: 'Request validation failed',
+      details: [
+        {
+          field: 'params.sessionId',
+          message: 'Session id must be a valid UUID',
+        },
+      ],
+    });
+  });
+
+  test('requires a bearer session to log out a specific session', async () => {
+    const response = await fetch(`${baseUrl}/auth/sessions/123e4567-e89b-12d3-a456-426614174000`, {
+      method: 'DELETE',
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: 'Unauthorized',
+      message: 'Bearer session token is required',
+    });
+  });
 });

@@ -178,7 +178,9 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
         updateMany: async (args: unknown) => {
           calls.sessionUpdateMany = args;
 
-          return { count: 2 };
+          const updateArgs = args as { where?: { id?: unknown } };
+
+          return { count: typeof updateArgs.where?.id === 'string' ? 1 : 2 };
         },
       },
     },
@@ -903,6 +905,32 @@ describe('auth service', () => {
         id: {
           not: 'session-id',
         },
+      },
+      data: {
+        isActive: false,
+      },
+    });
+  });
+
+  test('logs out one active user session', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await expect(
+      service.logoutSession({
+        userId: 'user-id',
+        sessionId: 'target-session-id',
+      }),
+    ).resolves.toEqual({
+      message: 'Session logged out successfully',
+      sessionsLoggedOut: 1,
+    });
+
+    expect(calls.sessionUpdateMany).toEqual({
+      where: {
+        id: 'target-session-id',
+        userId: 'user-id',
+        isActive: true,
       },
       data: {
         isActive: false,

@@ -3,6 +3,7 @@ import type { AuthenticatedRequest } from '../middleware/auth.js';
 import { toAuthHttpError } from './auth.errors.js';
 import type {
   LoginRequestBody,
+  LogoutSessionParams,
   RegisterRequestBody,
   ResendVerificationRequestBody,
   VerifyEmailRequestBody,
@@ -66,6 +67,10 @@ export type AuthService = {
   logoutOtherSessions(input: {
     userId: string;
     currentSessionId: string;
+  }): Promise<{ message: string; sessionsLoggedOut: number }>;
+  logoutSession(input: {
+    userId: string;
+    sessionId: string;
   }): Promise<{ message: string; sessionsLoggedOut: number }>;
 };
 
@@ -234,6 +239,24 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     }
   };
 
+  const logoutSession = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const { sessionId } = req.params as LogoutSessionParams;
+      const result = await deps.authService.logoutSession({
+        userId: authenticatedReq.user.id,
+        sessionId,
+      });
+
+      return res.status(200).json({
+        message: result.message,
+        sessionsLoggedOut: result.sessionsLoggedOut,
+      });
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
+  };
+
   return {
     register,
     login,
@@ -243,5 +266,6 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     sessions,
     logoutAll,
     logoutOthers,
+    logoutSession,
   };
 };

@@ -27,6 +27,7 @@ describe('OpenAPI generation', () => {
       '/auth/sessions',
       '/auth/sessions/all',
       '/auth/sessions/others/all',
+      '/auth/sessions/{sessionId}',
       '/auth/verify-email',
       '/health',
     ]);
@@ -56,6 +57,20 @@ describe('OpenAPI generation', () => {
     ]);
     expect(document.paths['/auth/sessions/others/all']?.delete?.responses?.[200]).toBeDefined();
     expect(document.paths['/auth/sessions/others/all']?.delete?.responses?.[401]).toBeDefined();
+    expect(document.paths['/auth/sessions/{sessionId}']?.delete?.requestBody).toBeUndefined();
+    expect(document.paths['/auth/sessions/{sessionId}']?.delete?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+    expect(document.paths['/auth/sessions/{sessionId}']?.delete?.parameters).toEqual([
+      expect.objectContaining({
+        name: 'sessionId',
+        in: 'path',
+        required: true,
+      }),
+    ]);
+    expect(document.paths['/auth/sessions/{sessionId}']?.delete?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/sessions/{sessionId}']?.delete?.responses?.[400]).toBeDefined();
+    expect(document.paths['/auth/sessions/{sessionId}']?.delete?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/register']?.post?.requestBody).toBeDefined();
     expect(document.paths['/auth/register']?.post?.responses?.[413]).toBeDefined();
     expect(document.paths['/auth/resend-verification']?.post?.requestBody).toBeDefined();
@@ -80,5 +95,6 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.UserSessionsResponse).toBeDefined();
     expect(document.components?.schemas?.LogoutAllSessionsResponse).toBeDefined();
     expect(document.components?.schemas?.LogoutOtherSessionsResponse).toBeDefined();
+    expect(document.components?.schemas?.LogoutSessionResponse).toBeDefined();
   });
 });

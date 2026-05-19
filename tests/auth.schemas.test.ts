@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   loginSchema,
+  logoutSessionSchema,
   registerSchema,
   resendVerificationSchema,
   verifyEmailSchema,
@@ -162,6 +163,39 @@ describe('verifyEmailSchema', () => {
       body: {
         token: 'a'.repeat(64),
         email: 'user@example.com',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('logoutSessionSchema', () => {
+  test('accepts a valid session id param', () => {
+    const result = logoutSessionSchema.safeParse({
+      params: {
+        sessionId: '123e4567-e89b-12d3-a456-426614174000',
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  test('rejects malformed session id params', () => {
+    const result = logoutSessionSchema.safeParse({
+      params: {
+        sessionId: 'not-a-session-id',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects unexpected session params', () => {
+    const result = logoutSessionSchema.safeParse({
+      params: {
+        sessionId: '123e4567-e89b-12d3-a456-426614174000',
+        userId: '123e4567-e89b-12d3-a456-426614174001',
       },
     });
 
