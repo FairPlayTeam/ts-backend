@@ -5,6 +5,7 @@ import {
   parseIsProduction,
   parseJsonBodyLimitBytes,
   parseMailerConfig,
+  parseOptionalUrl,
   parseRequiredUrl,
   parseTrustProxy,
   readRequiredEnv,
@@ -17,6 +18,12 @@ describe('env parsers', () => {
 
   test('normalizes required URLs', () => {
     expect(parseRequiredUrl('http://localhost:3000', 'BASE_URL')).toBe('http://localhost:3000/');
+  });
+
+  test('parses optional URLs', () => {
+    expect(parseOptionalUrl(undefined, 'REDIS_URL')).toBeNull();
+    expect(parseOptionalUrl('redis://localhost:6379', 'REDIS_URL')).toBe('redis://localhost:6379');
+    expect(() => parseOptionalUrl('not-a-url', 'REDIS_URL')).toThrow(ServerConfigurationError);
   });
 
   test('parses trust proxy values', () => {

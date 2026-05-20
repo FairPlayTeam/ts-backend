@@ -63,6 +63,7 @@ Then fill in the values you want to use.
 - `JSON_BODY_LIMIT_BYTES` a fixed limit for JSON body size
 - `TRUST_PROXY` indicate if express can trust the proxy, if it's running behind a proxy, for example `false` or `loopback`
 - `CORS_ORIGINS` allowed URLs for requests
+- `REDIS_URL` Redis connection URL used for distributed rate limiting, for example `redis://localhost:6379`
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` are required to send emails. You can customize these values depending on the SMTP provider you're using.
 - `FRONTEND_URL` the URL of your frontend, for example `http://localhost:3001`. It's mainly used to generate verification links for email verification.
 

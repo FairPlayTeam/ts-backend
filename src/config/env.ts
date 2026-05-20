@@ -4,6 +4,7 @@ import {
   parseMailerConfig,
   parseIsProduction,
   parseJsonBodyLimitBytes,
+  parseOptionalUrl,
   parseRequiredUrl,
   parseServerPort,
   parseTrustProxy,
@@ -31,12 +32,19 @@ const config = {
   jsonBodyLimitBytes: parseJsonBodyLimitBytes(process.env.JSON_BODY_LIMIT_BYTES),
   isProduction,
   allowedOrigins: parseAllowedOrigins(process.env.CORS_ORIGINS),
+  redisUrl: parseOptionalUrl(process.env.REDIS_URL, 'REDIS_URL'),
   mailer,
 };
 
 if (isProduction && !mailer) {
   throw new ServerConfigurationError(
     'Email delivery must be configured in production. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, and FRONTEND_URL.',
+  );
+}
+
+if (isProduction && !config.redisUrl) {
+  throw new ServerConfigurationError(
+    'REDIS_URL is required in production for distributed rate limiting.',
   );
 }
 

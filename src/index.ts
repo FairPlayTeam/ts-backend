@@ -5,6 +5,7 @@ import { createApp } from './app.js';
 import { authService } from './auth.instance.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
+import { closeRedisClient } from './lib/redis.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
@@ -46,6 +47,7 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
   try {
     await closeServer(server);
     await prisma.$disconnect();
+    await closeRedisClient();
 
     clearTimeout(timeout);
     logger.info('Graceful shutdown completed');

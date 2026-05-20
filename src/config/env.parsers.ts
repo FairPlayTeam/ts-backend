@@ -56,6 +56,20 @@ export const parseRequiredUrl = (rawData: string | undefined, name: string): str
   }
 };
 
+export const parseOptionalUrl = (rawData: string | undefined, name: string): string | null => {
+  const value = rawData?.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return new URL(value).toString();
+  } catch {
+    throw new ServerConfigurationError(`${name} must be a valid URL, got: ${value}`);
+  }
+};
+
 export const parseTrustProxy = (
   rawValue: string | undefined,
   nodeEnv?: string,
