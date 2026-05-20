@@ -1,4 +1,4 @@
-import type { AuthService } from '../../src/controllers/auth.controller.js';
+import type { AuthService } from '../../src/services/auth.types.js';
 
 const sessionResult = {
   message: 'Login successful',

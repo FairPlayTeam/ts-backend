@@ -10,7 +10,7 @@ import { generateOpenApi } from './docs/openapi.js';
 import { HttpError } from './errors/http.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import type { Config } from './config/env.js';
-import type { AuthService } from './controllers/auth.controller.js';
+import type { AuthService } from './services/auth.types.js';
 
 type CreateAppConfig = Pick<
   Config,

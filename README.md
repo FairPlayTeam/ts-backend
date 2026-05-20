@@ -15,7 +15,7 @@ This repository contains the backend API for the v2 rewrite.
 
 This repository contains the FairPlay backend API built with:
 
-- Typescript
+- TypeScript
 - Express.js
 - PostgreSQL
 - Prisma
@@ -56,7 +56,7 @@ Then fill in the values you want to use.
 
 ### Used env variables:
 
-- `PORT` port of the backend, for example 3000. That mean your backend will be available at http://localhost:3000
+- `PORT` Specifies the port on which the backend listens (e.g. 3000). The service will be available at http://localhost:3000
 - `DATABASE_URL` the URL to your postgres instance, for example `postgresql://myuser:mypass@localhost:5432/mydb?schema=public`, which means your database will be accessible at the user `myuser`, using the `mypass` password, at `localhost:5432`, on the `mydb` database, and on the schema `public`
 - `BASE_URL` the URL leading to your backend, for example `http://localhost:3000`
 - `BCRYPT_ROUNDS` how many iterations bcrypt will perform to hash passwords, for example `12`
