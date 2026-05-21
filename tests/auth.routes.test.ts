@@ -7,6 +7,7 @@ import { createStubAuthService } from './support/auth.js';
 let server: Server;
 let baseUrl: string;
 let receivedSessionKey: string | undefined;
+let receivedProfileUpdate: unknown;
 
 describe('auth routes', () => {
   beforeAll(async () => {
@@ -25,6 +26,10 @@ describe('auth routes', () => {
           validateSession: async (sessionKey) => {
             receivedSessionKey = sessionKey;
             return authService.validateSession(sessionKey);
+          },
+          updateProfile: async (input) => {
+            receivedProfileUpdate = input;
+            return authService.updateProfile(input);
           },
         },
       },
@@ -70,6 +75,8 @@ describe('auth routes', () => {
         id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
         email: 'user@example.com',
         username: 'fairplay_user',
+        displayName: 'Fairplay User',
+        bio: 'Definitely not an undercover Y**tube employee.',
         role: 'user',
       },
       session: {
@@ -81,6 +88,81 @@ describe('auth routes', () => {
 
   test('requires a bearer session for the current user route', async () => {
     const response = await fetch(`${baseUrl}/auth/me`);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: 'Unauthorized',
+      message: 'Bearer session token is required',
+    });
+  });
+
+  test('updates the current user profile for a valid bearer session', async () => {
+    receivedProfileUpdate = undefined;
+
+    const response = await fetch(`${baseUrl}/auth/me`, {
+      method: 'PATCH',
+      headers: {
+        authorization: 'Bearer test-session-key',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        displayName: ' Updated Name ',
+        bio: null,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(receivedProfileUpdate).toEqual({
+      userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      displayName: 'Updated Name',
+      bio: null,
+    });
+    expect(await response.json()).toEqual({
+      message: 'Profile updated successfully',
+      user: {
+        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+        email: 'user@example.com',
+        username: 'fairplay_user',
+        displayName: 'Updated Name',
+        bio: null,
+        role: 'user',
+      },
+    });
+  });
+
+  test('rejects empty profile update payloads', async () => {
+    const response = await fetch(`${baseUrl}/auth/me`, {
+      method: 'PATCH',
+      headers: {
+        authorization: 'Bearer test-session-key',
+        'content-type': 'application/json',
+      },
+      body: '{}',
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'ValidationError',
+      message: 'Request validation failed',
+      details: [
+        {
+          field: 'body',
+          message: 'At least one profile field must be provided',
+        },
+      ],
+    });
+  });
+
+  test('requires a bearer session to update the current user profile', async () => {
+    const response = await fetch(`${baseUrl}/auth/me`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        displayName: 'Updated Name',
+      }),
+    });
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({

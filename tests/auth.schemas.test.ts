@@ -4,6 +4,7 @@ import {
   logoutSessionSchema,
   registerSchema,
   resendVerificationSchema,
+  updateProfileSchema,
   verifyEmailSchema,
 } from '../src/controllers/auth.schemas.js';
 
@@ -196,6 +197,55 @@ describe('logoutSessionSchema', () => {
       params: {
         sessionId: '123e4567-e89b-12d3-a456-426614174000',
         userId: '123e4567-e89b-12d3-a456-426614174001',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('updateProfileSchema', () => {
+  test('accepts and normalizes a valid profile update payload', () => {
+    const result = updateProfileSchema.safeParse({
+      body: {
+        displayName: ' Fairplay User ',
+        bio: ' Definitely not an undercover Y**tube employee. ',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.body).toEqual({
+        displayName: 'Fairplay User',
+        bio: 'Definitely not an undercover Y**tube employee.',
+      });
+    }
+  });
+
+  test('accepts null profile fields for clearing values', () => {
+    const result = updateProfileSchema.safeParse({
+      body: {
+        displayName: null,
+        bio: null,
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  test('rejects empty profile update payloads', () => {
+    const result = updateProfileSchema.safeParse({
+      body: {},
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects unexpected profile update properties', () => {
+    const result = updateProfileSchema.safeParse({
+      body: {
+        displayName: 'Fairplay User',
+        role: 'admin',
       },
     });
 

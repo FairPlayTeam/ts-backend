@@ -8,6 +8,8 @@ const sessionResult = {
     id: 'user-id',
     email: 'user@example.com',
     username: 'fairplay_user',
+    displayName: 'Fairplay User',
+    bio: 'Definitely not an undercover Y**tube employee.',
     role: 'user',
   },
   session: {

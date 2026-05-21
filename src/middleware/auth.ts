@@ -1,12 +1,8 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { HttpError } from '../errors/http.js';
+import type { AuthUser } from '../services/auth.types.js';
 
-type AuthenticatedUser = {
-  id: string;
-  email: string;
-  username: string;
-  role: string;
-};
+type AuthenticatedUser = AuthUser;
 
 type AuthenticatedSession = {
   id: string;

@@ -6,6 +6,7 @@ import type {
   LoginRequestBody,
   RegisterRequestBody,
   ResendVerificationRequestBody,
+  UpdateProfileRequestBody,
   VerifyEmailRequestBody,
 } from '../src/controllers/auth.schemas.js';
 import { HttpError } from '../src/errors/http.js';
@@ -36,6 +37,8 @@ const loginResult = {
     id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
     email: 'user@example.com',
     username: 'fairplay_user',
+    displayName: 'FairPlay User',
+    bio: 'Definitely not an undercover Y**tube employee.',
     role: 'user',
   },
   sessionKey: 'plain-session-key',
@@ -122,6 +125,10 @@ describe('auth controller', () => {
           message: 'Session logged out successfully',
           sessionsLoggedOut: 1,
         }),
+        updateProfile: async () => ({
+          message: 'Profile updated successfully',
+          user: loginResult.user,
+        }),
       },
     });
 
@@ -168,6 +175,10 @@ describe('auth controller', () => {
           message: 'Session logged out successfully',
           sessionsLoggedOut: 1,
         }),
+        updateProfile: async () => ({
+          message: 'Profile updated successfully',
+          user: loginResult.user,
+        }),
       },
     });
 
@@ -212,6 +223,10 @@ describe('auth controller', () => {
         logoutSession: async () => ({
           message: 'Session logged out successfully',
           sessionsLoggedOut: 1,
+        }),
+        updateProfile: async () => ({
+          message: 'Profile updated successfully',
+          user: loginResult.user,
         }),
       },
     });
@@ -262,6 +277,10 @@ describe('auth controller', () => {
         logoutSession: async () => ({
           message: 'Session logged out successfully',
           sessionsLoggedOut: 1,
+        }),
+        updateProfile: async () => ({
+          message: 'Profile updated successfully',
+          user: loginResult.user,
         }),
       },
     });
@@ -328,6 +347,10 @@ describe('auth controller', () => {
           message: 'Session logged out successfully',
           sessionsLoggedOut: 1,
         }),
+        updateProfile: async () => ({
+          message: 'Profile updated successfully',
+          user: loginResult.user,
+        }),
       },
     });
 
@@ -383,6 +406,10 @@ describe('auth controller', () => {
           message: 'Session logged out successfully',
           sessionsLoggedOut: 1,
         }),
+        updateProfile: async () => ({
+          message: 'Profile updated successfully',
+          user: loginResult.user,
+        }),
       },
     });
 
@@ -401,6 +428,79 @@ describe('auth controller', () => {
         id: validatedSession.session.id,
         expiresAt: '2026-01-31T00:00:00.000Z',
       },
+    });
+  });
+
+  test('updates the authenticated user profile through the injected auth service', async () => {
+    let receivedInput:
+      | (UpdateProfileRequestBody & {
+          userId: string;
+        })
+      | undefined;
+    let receivedError: unknown;
+    const { response, state } = createMockResponse();
+    const updatedUser = {
+      ...loginResult.user,
+      displayName: 'Updated Name',
+      bio: null,
+    };
+    const controller = createAuthController({
+      authService: {
+        register: async () => ({ message: 'Account created. Please verify your email.' }),
+        login: async () => loginResult,
+        verifyEmail: async () => verifyEmailResult,
+        validateSession: async () => validatedSession,
+        resendVerification: async () => ({
+          message: 'If this email exists and is unverified, a new link has been sent.',
+        }),
+        getUserSessions: async () => userSessionsResult,
+        logoutAllSessions: async () => ({
+          message: 'All sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
+        logoutOtherSessions: async () => ({
+          message: 'Other sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
+        logoutSession: async () => ({
+          message: 'Session logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
+        updateProfile: async (input) => {
+          receivedInput = input;
+          return {
+            message: 'Profile updated successfully',
+            user: updatedUser,
+          };
+        },
+      },
+    });
+
+    await controller.updateMe(
+      {
+        body: {
+          displayName: 'Updated Name',
+          bio: null,
+        },
+        user: validatedSession.user,
+        session: validatedSession.session,
+      } as unknown as AuthenticatedRequest & Request<unknown, unknown, UpdateProfileRequestBody>,
+      response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedInput).toEqual({
+      userId: validatedSession.user.id,
+      displayName: 'Updated Name',
+      bio: null,
+    });
+    expect(receivedError).toBeUndefined();
+    expect(state.statusCode).toBe(200);
+    expect(state.body).toEqual({
+      message: 'Profile updated successfully',
+      user: updatedUser,
     });
   });
 
@@ -432,6 +532,10 @@ describe('auth controller', () => {
         logoutSession: async () => ({
           message: 'Session logged out successfully',
           sessionsLoggedOut: 1,
+        }),
+        updateProfile: async () => ({
+          message: 'Profile updated successfully',
+          user: loginResult.user,
         }),
       },
     });
@@ -500,6 +604,10 @@ describe('auth controller', () => {
           message: 'Session logged out successfully',
           sessionsLoggedOut: 1,
         }),
+        updateProfile: async () => ({
+          message: 'Profile updated successfully',
+          user: loginResult.user,
+        }),
       },
     });
 
@@ -553,6 +661,10 @@ describe('auth controller', () => {
         logoutSession: async () => ({
           message: 'Session logged out successfully',
           sessionsLoggedOut: 1,
+        }),
+        updateProfile: async () => ({
+          message: 'Profile updated successfully',
+          user: loginResult.user,
         }),
       },
     });
@@ -609,6 +721,10 @@ describe('auth controller', () => {
             sessionsLoggedOut: 1,
           };
         },
+        updateProfile: async () => ({
+          message: 'Profile updated successfully',
+          user: loginResult.user,
+        }),
       },
     });
 

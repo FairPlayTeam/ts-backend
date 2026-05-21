@@ -36,6 +36,8 @@ type AuthenticatedSession = {
     id: string;
     email: string;
     username: string;
+    displayName: string | null;
+    bio: string | null;
     role: string;
   };
   session: {
@@ -63,6 +65,12 @@ type LogoutSessionInput = {
   sessionId: string;
 };
 
+type UpdateProfileInput = {
+  userId: string;
+  displayName?: string | null | undefined;
+  bio?: string | null | undefined;
+};
+
 type UserSessionSummary = {
   id: string;
   sessionKeySuffix: string | null;
@@ -85,6 +93,7 @@ const RESEND_VERIFICATION_SUCCESS_MESSAGE =
 const LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE = 'All sessions logged out successfully';
 const LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE = 'Other sessions logged out successfully';
 const LOGOUT_SESSION_SUCCESS_MESSAGE = 'Session logged out successfully';
+const UPDATE_PROFILE_SUCCESS_MESSAGE = 'Profile updated successfully';
 const MISSING_USER_PASSWORD_HASH = '$2b$12$7g84a6zb7kmHybVdMfIeEuIPU7Lvt5SbjKaX5xIUgQdQwut8EMhNe';
 
 type AuthDependencies = {
@@ -210,6 +219,7 @@ export const createAuthService = (deps: AuthDependencies) => {
             data: {
               email: emailNorm,
               username: usernameNorm,
+              displayName: usernameNorm,
               passwordHash: hashedPassword,
             },
             select: { id: true, email: true, username: true, role: true },
@@ -259,6 +269,8 @@ export const createAuthService = (deps: AuthDependencies) => {
           id: true,
           email: true,
           username: true,
+          displayName: true,
+          bio: true,
           role: true,
           passwordHash: true,
           isVerified: true,
@@ -295,6 +307,8 @@ export const createAuthService = (deps: AuthDependencies) => {
           id: user.id,
           email: user.email,
           username: user.username,
+          displayName: user.displayName,
+          bio: user.bio,
           role: user.role,
         },
         sessionKey,
@@ -314,6 +328,8 @@ export const createAuthService = (deps: AuthDependencies) => {
               id: true,
               email: true,
               username: true,
+              displayName: true,
+              bio: true,
               role: true,
               isBanned: true,
             },
@@ -366,6 +382,8 @@ export const createAuthService = (deps: AuthDependencies) => {
           id: record.user.id,
           email: record.user.email,
           username: record.user.username,
+          displayName: record.user.displayName,
+          bio: record.user.bio,
           role: record.user.role,
         },
         sessionKey,
@@ -388,6 +406,8 @@ export const createAuthService = (deps: AuthDependencies) => {
               id: true,
               email: true,
               username: true,
+              displayName: true,
+              bio: true,
               role: true,
               isBanned: true,
             },
@@ -410,6 +430,8 @@ export const createAuthService = (deps: AuthDependencies) => {
           id: session.user.id,
           email: session.user.email,
           username: session.user.username,
+          displayName: session.user.displayName,
+          bio: session.user.bio,
           role: session.user.role,
         },
         session: {
@@ -578,6 +600,31 @@ export const createAuthService = (deps: AuthDependencies) => {
       return {
         message: LOGOUT_SESSION_SUCCESS_MESSAGE,
         sessionsLoggedOut: result.count,
+      };
+    },
+
+    async updateProfile({ userId, displayName, bio }: UpdateProfileInput) {
+      const data = {
+        ...(displayName !== undefined ? { displayName } : {}),
+        ...(bio !== undefined ? { bio } : {}),
+      };
+
+      const user = await deps.prisma.user.update({
+        where: { id: userId },
+        data,
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          displayName: true,
+          bio: true,
+          role: true,
+        },
+      });
+
+      return {
+        message: UPDATE_PROFILE_SUCCESS_MESSAGE,
+        user,
       };
     },
   };

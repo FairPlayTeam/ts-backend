@@ -6,6 +6,8 @@ const sessionResult = {
     id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
     email: 'user@example.com',
     username: 'fairplay_user',
+    displayName: 'Fairplay User',
+    bio: 'Definitely not an undercover Y**tube employee.',
     role: 'user',
   },
   sessionKey: 'test-session-key',
@@ -60,5 +62,14 @@ export const createStubAuthService = (): AuthService => ({
   logoutSession: async () => ({
     message: 'Session logged out successfully',
     sessionsLoggedOut: 1,
+  }),
+  updateProfile: async (input) => ({
+    message: 'Profile updated successfully',
+    user: {
+      ...sessionResult.user,
+      displayName:
+        input.displayName === undefined ? sessionResult.user.displayName : input.displayName,
+      bio: input.bio === undefined ? sessionResult.user.bio : input.bio,
+    },
   }),
 });

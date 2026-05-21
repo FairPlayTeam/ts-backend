@@ -6,6 +6,8 @@ export const APP_VERSION = process.env.npm_package_version ?? '1.0.0';
 export const EMAIL_MAX_LENGTH = 254;
 export const USERNAME_MIN_LENGTH = 3;
 export const USERNAME_MAX_LENGTH = 20;
+export const DISPLAY_NAME_MAX_LENGTH = 30;
+export const BIO_MAX_LENGTH = 200;
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 128;
 

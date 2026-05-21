@@ -6,6 +6,7 @@ import type {
   LogoutSessionParams,
   RegisterRequestBody,
   ResendVerificationRequestBody,
+  UpdateProfileRequestBody,
   VerifyEmailRequestBody,
 } from './auth.schemas.js';
 import type { AuthService, AuthSessionResult, UserSessionSummary } from '../services/auth.types.js';
@@ -193,12 +194,35 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     }
   };
 
+  const updateMe = async (
+    req: Request<unknown, unknown, UpdateProfileRequestBody>,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+
+      const result = await deps.authService.updateProfile({
+        userId: authenticatedReq.user.id,
+        ...req.body,
+      });
+
+      return res.status(200).json({
+        message: result.message,
+        user: result.user,
+      });
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
+  };
+
   return {
     register,
     login,
     verifyEmail,
     resendVerification,
     me,
+    updateMe,
     sessions,
     logoutAll,
     logoutOthers,

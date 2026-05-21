@@ -43,6 +43,11 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/me']?.get?.requestBody).toBeUndefined();
     expect(document.paths['/auth/me']?.get?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/auth/me']?.get?.responses?.[401]).toBeDefined();
+    expect(document.paths['/auth/me']?.patch?.requestBody).toBeDefined();
+    expect(document.paths['/auth/me']?.patch?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths['/auth/me']?.patch?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/me']?.patch?.responses?.[400]).toBeDefined();
+    expect(document.paths['/auth/me']?.patch?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/sessions']?.get?.requestBody).toBeUndefined();
     expect(document.paths['/auth/sessions']?.get?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/auth/sessions']?.get?.responses?.[200]).toBeDefined();
@@ -86,6 +91,8 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.LoginResponse).toBeDefined();
     expect(document.components?.schemas?.CurrentUserResponse).toBeDefined();
     expect(document.components?.schemas?.ApiOrValidationError).toBeDefined();
+    expect(document.components?.schemas?.UpdateProfileRequest).toBeDefined();
+    expect(document.components?.schemas?.UpdateProfileResponse).toBeDefined();
     expect(document.components?.schemas?.RegisterRequest).toBeDefined();
     expect(document.components?.schemas?.RegisterResponse).toBeDefined();
     expect(document.components?.schemas?.ResendVerificationRequest).toBeDefined();

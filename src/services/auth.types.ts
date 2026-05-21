@@ -1,18 +1,39 @@
-import type {
-  LoginRequestBody,
-  RegisterRequestBody,
-  ResendVerificationRequestBody,
-  VerifyEmailRequestBody,
-} from '../controllers/auth.schemas.js';
+export type AuthUser = {
+  id: string;
+  email: string;
+  username: string;
+  displayName: string | null;
+  bio: string | null;
+  role: string;
+};
+
+type RegisterInput = {
+  email: string;
+  username: string;
+  password: string;
+};
+
+type LoginInput = {
+  emailOrUsername: string;
+  password: string;
+};
+
+type VerifyEmailInput = {
+  token: string;
+};
+
+type ResendVerificationInput = {
+  email: string;
+};
+
+type UpdateProfileInput = {
+  displayName?: string | null | undefined;
+  bio?: string | null | undefined;
+};
 
 export type AuthSessionResult = {
   message: string;
-  user: {
-    id: string;
-    email: string;
-    username: string;
-    role: string;
-  };
+  user: AuthUser;
   sessionKey: string;
   session: {
     id: string;
@@ -33,26 +54,26 @@ export type UserSessionSummary = {
 };
 
 type ValidatedAuthSession = {
-  user: AuthSessionResult['user'];
+  user: AuthUser;
   session: AuthSessionResult['session'];
 };
 
 export type AuthService = {
-  register(input: RegisterRequestBody): Promise<{ message: string }>;
+  register(input: RegisterInput): Promise<{ message: string }>;
   login(
-    input: LoginRequestBody & {
+    input: LoginInput & {
       ipAddress?: string | undefined;
       userAgent?: string | undefined;
     },
   ): Promise<AuthSessionResult>;
   verifyEmail(
-    input: VerifyEmailRequestBody & {
+    input: VerifyEmailInput & {
       ipAddress?: string | undefined;
       userAgent?: string | undefined;
     },
   ): Promise<AuthSessionResult>;
   validateSession(sessionKey: string): Promise<ValidatedAuthSession | null>;
-  resendVerification(input: ResendVerificationRequestBody): Promise<{ message: string }>;
+  resendVerification(input: ResendVerificationInput): Promise<{ message: string }>;
   getUserSessions(input: {
     userId: string;
     currentSessionId: string;
@@ -68,4 +89,9 @@ export type AuthService = {
     userId: string;
     sessionId: string;
   }): Promise<{ message: string; sessionsLoggedOut: number }>;
+  updateProfile(
+    input: UpdateProfileInput & {
+      userId: string;
+    },
+  ): Promise<{ message: string; user: AuthUser }>;
 };

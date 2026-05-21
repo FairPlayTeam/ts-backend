@@ -1,6 +1,8 @@
 import '../docs/zod.js';
 import { z } from 'zod';
 import {
+  BIO_MAX_LENGTH,
+  DISPLAY_NAME_MAX_LENGTH,
   EMAIL_MAX_LENGTH,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
@@ -14,7 +16,7 @@ const emailSchema = z
   .email('Invalid email format')
   .max(EMAIL_MAX_LENGTH)
   .transform((v) => v.toLowerCase())
-  .openapi({ example: 'user@example.com' });
+  .openapi({ example: 'meal.nohan+y**tube@example.com' });
 
 const passwordSchema = z
   .string()
@@ -61,14 +63,14 @@ export const loginBodySchema = z
       .min(1, 'Email or username is required')
       .max(EMAIL_MAX_LENGTH)
       .transform((value) => value.toLowerCase())
-      .openapi({ example: 'user@example.com' }),
+      .openapi({ example: 'meal.nohan+y**tube@example.com' }),
     password: z
       .string()
       .min(1, 'Password is required')
       .max(PASSWORD_MAX_LENGTH, `Password must be at most ${PASSWORD_MAX_LENGTH} characters`)
       .openapi({
         format: 'password',
-        example: 'Password1!',
+        example: 'ILoveShorts1!',
       }),
   })
   .strict()
@@ -125,8 +127,13 @@ export const logoutSessionSchema = z.object({
 
 const authUserResponseSchema = z.object({
   id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
-  email: z.string().email().openapi({ example: 'user@example.com' }),
-  username: z.string().openapi({ example: 'fairplay_user' }),
+  email: z.string().email().openapi({ example: 'meal.nohan+y**tube@example.com' }),
+  username: z.string().openapi({ example: 'meal_nohan' }),
+  displayName: z.string().nullable().openapi({ example: 'Meal Nohan' }),
+  bio: z.string().nullable().openapi({
+    example:
+      'CEO of Y**tube. Secretly testing alternative platforms during Shorts strategy meetings.',
+  }),
   role: z.string().openapi({ example: 'user' }),
 });
 
@@ -174,6 +181,46 @@ export const currentUserResponseSchema = z
   })
   .openapi('CurrentUserResponse');
 
+export const updateProfileBodySchema = z
+  .object({
+    displayName: z
+      .string()
+      .trim()
+      .min(1, 'Display name must not be empty')
+      .max(
+        DISPLAY_NAME_MAX_LENGTH,
+        `Display name must be at most ${DISPLAY_NAME_MAX_LENGTH} characters`,
+      )
+      .nullable()
+      .optional()
+      .openapi({ example: 'Meal Nohan' }),
+    bio: z
+      .string()
+      .trim()
+      .max(BIO_MAX_LENGTH, `Bio must be at most ${BIO_MAX_LENGTH} characters`)
+      .nullable()
+      .optional()
+      .openapi({
+        example: 'Running three A/B tests to determine how many ads humans can tolerate.',
+      }),
+  })
+  .strict()
+  .refine((body) => body.displayName !== undefined || body.bio !== undefined, {
+    message: 'At least one profile field must be provided',
+  })
+  .openapi('UpdateProfileRequest');
+
+export const updateProfileSchema = z.object({
+  body: updateProfileBodySchema,
+});
+
+export const updateProfileResponseSchema = z
+  .object({
+    message: z.string().openapi({ example: 'Profile updated successfully' }),
+    user: authUserResponseSchema,
+  })
+  .openapi('UpdateProfileResponse');
+
 export const userSessionsResponseSchema = z
   .object({
     sessions: z.array(
@@ -219,3 +266,4 @@ export type LoginRequestBody = z.infer<typeof loginSchema>['body'];
 export type VerifyEmailRequestBody = z.infer<typeof verifyEmailSchema>['body'];
 export type ResendVerificationRequestBody = z.infer<typeof resendVerificationSchema>['body'];
 export type LogoutSessionParams = z.infer<typeof logoutSessionSchema>['params'];
+export type UpdateProfileRequestBody = z.infer<typeof updateProfileSchema>['body'];

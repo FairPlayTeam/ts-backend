@@ -95,10 +95,33 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
             id: 'user-id',
             email: 'user@example.com',
             username: 'fairplay_user',
+            displayName: 'Fairplay User',
+            bio: null,
             role: 'user',
             passwordHash: 'hashed-password',
             isVerified: true,
             isBanned: false,
+          };
+        },
+        update: async (args: unknown) => {
+          calls.userUpdate = args;
+          const updateArgs = args as {
+            data?: {
+              displayName?: string | null;
+              bio?: string | null;
+            };
+          };
+
+          return {
+            id: 'user-id',
+            email: 'user@example.com',
+            username: 'fairplay_user',
+            displayName: updateArgs.data?.displayName ?? 'Fairplay User',
+            bio:
+              updateArgs.data?.bio === undefined
+                ? 'Definitely not an undercover Y**tube employee.'
+                : updateArgs.data.bio,
+            role: 'user',
           };
         },
       },
@@ -116,6 +139,8 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
               id: 'user-id',
               email: 'user@example.com',
               username: 'fairplay_user',
+              displayName: 'Fairplay User',
+              bio: null,
               role: 'user',
               isBanned: false,
             },
@@ -165,6 +190,8 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
               id: 'user-id',
               email: 'user@example.com',
               username: 'fairplay_user',
+              displayName: 'Fairplay User',
+              bio: null,
               role: 'user',
               isBanned: false,
             },
@@ -239,6 +266,7 @@ describe('auth service', () => {
       data: {
         email: 'user@example.com',
         username: 'fairplay_user',
+        displayName: 'fairplay_user',
         passwordHash: 'hashed-password',
       },
       select: { id: true, email: true, username: true, role: true },
@@ -330,6 +358,8 @@ describe('auth service', () => {
         id: 'user-id',
         email: 'user@example.com',
         username: 'fairplay_user',
+        displayName: 'Fairplay User',
+        bio: null,
         role: 'user',
       },
       sessionKey: 'plain-token',
@@ -347,6 +377,8 @@ describe('auth service', () => {
         id: true,
         email: true,
         username: true,
+        displayName: true,
+        bio: true,
         role: true,
         passwordHash: true,
         isVerified: true,
@@ -498,6 +530,8 @@ describe('auth service', () => {
         id: 'user-id',
         email: 'user@example.com',
         username: 'fairplay_user',
+        displayName: 'Fairplay User',
+        bio: null,
         role: 'user',
       },
       sessionKey: 'plain-token',
@@ -515,6 +549,8 @@ describe('auth service', () => {
             id: true,
             email: true,
             username: true,
+            displayName: true,
+            bio: true,
             role: true,
             isBanned: true,
           },
@@ -693,6 +729,8 @@ describe('auth service', () => {
         id: 'user-id',
         email: 'user@example.com',
         username: 'fairplay_user',
+        displayName: 'Fairplay User',
+        bio: null,
         role: 'user',
       },
       session: {
@@ -712,6 +750,8 @@ describe('auth service', () => {
             id: true,
             email: true,
             username: true,
+            displayName: true,
+            bio: true,
             role: true,
             isBanned: true,
           },
@@ -934,6 +974,45 @@ describe('auth service', () => {
       },
       data: {
         isActive: false,
+      },
+    });
+  });
+
+  test('updates profile fields for a user', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await expect(
+      service.updateProfile({
+        userId: 'user-id',
+        displayName: 'Fairplay Creator',
+        bio: null,
+      }),
+    ).resolves.toEqual({
+      message: 'Profile updated successfully',
+      user: {
+        id: 'user-id',
+        email: 'user@example.com',
+        username: 'fairplay_user',
+        displayName: 'Fairplay Creator',
+        bio: null,
+        role: 'user',
+      },
+    });
+
+    expect(calls.userUpdate).toEqual({
+      where: { id: 'user-id' },
+      data: {
+        displayName: 'Fairplay Creator',
+        bio: null,
+      },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        displayName: true,
+        bio: true,
+        role: true,
       },
     });
   });

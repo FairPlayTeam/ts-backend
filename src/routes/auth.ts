@@ -21,6 +21,9 @@ import {
   resendVerificationBodySchema,
   resendVerificationResponseSchema,
   resendVerificationSchema,
+  updateProfileBodySchema,
+  updateProfileResponseSchema,
+  updateProfileSchema,
   userSessionsResponseSchema,
   verifyEmailBodySchema,
   verifyEmailResponseSchema,
@@ -40,6 +43,7 @@ const createAuthRouter = ({ authService }: AuthRouterDependencies) => {
     verifyEmail,
     resendVerification,
     me,
+    updateMe,
     sessions,
     logoutAll,
     logoutOthers,
@@ -59,6 +63,7 @@ const createAuthRouter = ({ authService }: AuthRouterDependencies) => {
     resendVerification,
   );
   router.get('/me', authenticateSession, me);
+  router.patch('/me', authenticateSession, validate(updateProfileSchema), updateMe);
   router.get('/sessions', authenticateSession, sessions);
   router.delete('/sessions/all', authenticateSession, logoutAll);
   router.delete('/sessions/others/all', authenticateSession, logoutOthers);
@@ -259,6 +264,33 @@ registerRoute({
   },
   responses: {
     200: jsonResponse('Session logged out successfully', logoutSessionResponseSchema),
+
+    ...badRequestErrorResponse,
+
+    401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+    ...commonErrorResponses,
+  },
+});
+
+registerRoute({
+  method: 'patch',
+  path: '/auth/me',
+  summary: 'Update current user profile',
+  tags: ['Auth'],
+  security: [{ bearerAuth: [] }],
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: updateProfileBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: jsonResponse('Profile updated successfully', updateProfileResponseSchema),
 
     ...badRequestErrorResponse,
 
