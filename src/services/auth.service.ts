@@ -71,6 +71,11 @@ type UpdateProfileInput = {
   bio?: string | null | undefined;
 };
 
+type CleanupSessionsInput = {
+  expiredBefore: Date;
+  inactiveUpdatedBefore: Date;
+};
+
 type UserSessionSummary = {
   id: string;
   sessionKeySuffix: string | null;
@@ -94,6 +99,7 @@ const LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE = 'All sessions logged out successfull
 const LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE = 'Other sessions logged out successfully';
 const LOGOUT_SESSION_SUCCESS_MESSAGE = 'Session logged out successfully';
 const UPDATE_PROFILE_SUCCESS_MESSAGE = 'Profile updated successfully';
+const CLEANUP_SESSION_SUCCESS_MESSAGE = 'Sessions cleaned up successfully';
 const MISSING_USER_PASSWORD_HASH = '$2b$12$7g84a6zb7kmHybVdMfIeEuIPU7Lvt5SbjKaX5xIUgQdQwut8EMhNe';
 const UPDATE_INTERVAL_MS = 1000 * 60 * 5;
 
@@ -632,6 +638,25 @@ export const createAuthService = (deps: AuthDependencies) => {
       return {
         message: UPDATE_PROFILE_SUCCESS_MESSAGE,
         user,
+      };
+    },
+
+    async cleanupSessions({ expiredBefore, inactiveUpdatedBefore }: CleanupSessionsInput) {
+      const result = await deps.prisma.session.deleteMany({
+        where: {
+          OR: [
+            { expiresAt: { lt: expiredBefore } },
+            {
+              isActive: false,
+              updatedAt: { lt: inactiveUpdatedBefore },
+            },
+          ],
+        },
+      });
+
+      return {
+        message: CLEANUP_SESSION_SUCCESS_MESSAGE,
+        sessionsDeleted: result.count,
       };
     },
   };

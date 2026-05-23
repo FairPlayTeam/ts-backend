@@ -72,4 +72,8 @@ export const createStubAuthService = (): AuthService => ({
       bio: input.bio === undefined ? sessionResult.user.bio : input.bio,
     },
   }),
+  cleanupSessions: async () => ({
+    message: 'Sessions cleaned up successfully',
+    sessionsDeleted: 0,
+  }),
 });

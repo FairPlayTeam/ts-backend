@@ -12,7 +12,7 @@ import type {
 import type { AuthService, AuthSessionResult, UserSessionSummary } from '../services/auth.types.js';
 
 type AuthControllerDependencies = {
-  authService: AuthService;
+  authService: Omit<AuthService, 'cleanupSessions'>;
 };
 
 const toAuthSessionResponse = (result: AuthSessionResult) => ({

@@ -53,6 +53,11 @@ export type UserSessionSummary = {
   expiresAt: Date;
 };
 
+export type CleanupSessionsResult = {
+  message: string;
+  sessionsDeleted: number;
+};
+
 type ValidatedAuthSession = {
   user: AuthUser;
   session: AuthSessionResult['session'];
@@ -94,4 +99,8 @@ export type AuthService = {
       userId: string;
     },
   ): Promise<{ message: string; user: AuthUser }>;
+  cleanupSessions(input: {
+    expiredBefore: Date;
+    inactiveUpdatedBefore: Date;
+  }): Promise<CleanupSessionsResult>;
 };

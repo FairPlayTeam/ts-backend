@@ -7,6 +7,8 @@ import {
   parseOptionalUrl,
   parseRequiredUrl,
   parseServerPort,
+  parseSessionCleanupInactiveRetentionMs,
+  parseSessionCleanupIntervalMs,
   parseTrustProxy,
   readRequiredEnv,
   ServerConfigurationError,
@@ -33,6 +35,12 @@ const config = {
   isProduction,
   allowedOrigins: parseAllowedOrigins(process.env.CORS_ORIGINS),
   redisUrl: parseOptionalUrl(process.env.REDIS_URL, 'REDIS_URL'),
+  sessionCleanupIntervalMs: parseSessionCleanupIntervalMs(
+    process.env.SESSION_CLEANUP_INTERVAL_MINUTES,
+  ),
+  sessionCleanupInactiveRetentionMs: parseSessionCleanupInactiveRetentionMs(
+    process.env.SESSION_CLEANUP_INACTIVE_RETENTION_DAYS,
+  ),
   mailer,
 };
 

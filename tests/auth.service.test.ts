@@ -29,6 +29,7 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     sessionFindUnique: undefined as unknown,
     sessionUpdate: undefined as unknown,
     sessionUpdateMany: undefined as unknown,
+    sessionDeleteMany: undefined as unknown,
     comparedPassword: undefined as unknown,
     sentEmail: undefined as unknown,
     warning: undefined as unknown,
@@ -208,6 +209,11 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
           const updateArgs = args as { where?: { id?: unknown } };
 
           return { count: typeof updateArgs.where?.id === 'string' ? 1 : 2 };
+        },
+        deleteMany: async (args: unknown) => {
+          calls.sessionDeleteMany = args;
+
+          return { count: 3 };
         },
       },
     },
@@ -1017,6 +1023,35 @@ describe('auth service', () => {
         displayName: true,
         bio: true,
         role: true,
+      },
+    });
+  });
+
+  test('cleans up expired and old inactive sessions', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+    const expiredBefore = new Date('2026-01-01T00:00:00.000Z');
+    const inactiveUpdatedBefore = new Date('2025-12-02T00:00:00.000Z');
+
+    await expect(
+      service.cleanupSessions({
+        expiredBefore,
+        inactiveUpdatedBefore,
+      }),
+    ).resolves.toEqual({
+      message: 'Sessions cleaned up successfully',
+      sessionsDeleted: 3,
+    });
+
+    expect(calls.sessionDeleteMany).toEqual({
+      where: {
+        OR: [
+          { expiresAt: { lt: expiredBefore } },
+          {
+            isActive: false,
+            updatedAt: { lt: inactiveUpdatedBefore },
+          },
+        ],
       },
     });
   });

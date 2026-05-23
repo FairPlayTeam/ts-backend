@@ -61,6 +61,8 @@ Then fill in the values you want to use.
 - `BASE_URL` the URL leading to your backend, for example `http://localhost:3000`
 - `BCRYPT_ROUNDS` how many iterations bcrypt will perform to hash passwords, for example `12`
 - `JSON_BODY_LIMIT_BYTES` a fixed limit for JSON body size
+- `SESSION_CLEANUP_INTERVAL_MINUTES` how often expired and old inactive sessions are deleted, in minutes
+- `SESSION_CLEANUP_INACTIVE_RETENTION_DAYS` how long inactive sessions are retained before deletion, in days
 - `TRUST_PROXY` indicate if express can trust the proxy, if it's running behind a proxy, for example `false` or `loopback`
 - `CORS_ORIGINS` allowed URLs for requests
 - `REDIS_URL` Redis connection URL used for distributed rate limiting, for example `redis://localhost:6379`

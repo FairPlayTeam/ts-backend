@@ -13,6 +13,7 @@ import { createLimiters } from './middleware/limiters.js';
 import type { Config } from './config/env.js';
 import type { RedisClient } from './lib/redis.js';
 import type { AuthService } from './services/auth.types.js';
+import helmet from 'helmet';
 
 type CreateAppConfig = Pick<
   Config,
@@ -49,6 +50,14 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
   });
 
   app.set('trust proxy', config.trustProxy);
+  app.disable('x-powered-by');
+
+  // Swagger UI injects inline styles/scripts, so CSP is disabled here.
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+    }),
+  );
 
   app.use(
     pinoHttp({
@@ -117,12 +126,18 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
 
   const openApiDoc = generateOpenApi({ serverUrl: config.baseUrl });
 
-  app.get('/openapi.json', (_req, res) => {
+  app.get('/openapi.json', apiLimiter, (_req, res) => {
+    res.set(
+      'Cache-Control',
+      config.isProduction ? 'public, max-age=300, stale-while-revalidate=60' : 'no-store',
+    );
+
     res.json(openApiDoc);
   });
 
   app.use(
     '/docs',
+    apiLimiter,
     swaggerUi.serve,
     swaggerUi.setup(openApiDoc, {
       explorer: true,

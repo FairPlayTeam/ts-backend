@@ -1,4 +1,10 @@
-import { DEFAULT_JSON_BODY_LIMIT_BYTES } from './constants.js';
+import {
+  DAYS_MS,
+  DEFAULT_JSON_BODY_LIMIT_BYTES,
+  MINUTE_MS,
+  SESSION_CLEANUP_INACTIVE_RETENTION_DAYS,
+  SESSION_CLEANUP_INTERVAL_MINUTES,
+} from './constants.js';
 import type { MailerConfig } from '../services/mailer/mailer.types.js';
 
 export type TrustProxySetting = boolean | number | string | string[];
@@ -136,6 +142,45 @@ const parseBodySizeLimitBytes = (
 
 export const parseJsonBodyLimitBytes = (rawValue: string | undefined): number =>
   parseBodySizeLimitBytes(rawValue, DEFAULT_JSON_BODY_LIMIT_BYTES, 'JSON_BODY_LIMIT_BYTES');
+
+const parsePositiveInteger = (
+  rawValue: string | undefined,
+  fallback: number,
+  envName: string,
+  unitName: string,
+): number => {
+  const value = rawValue?.trim();
+
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new ServerConfigurationError(
+      `${envName} must be a positive integer number of ${unitName}, got: ${value}`,
+    );
+  }
+
+  return parsed;
+};
+
+export const parseSessionCleanupIntervalMs = (rawValue: string | undefined): number =>
+  parsePositiveInteger(
+    rawValue,
+    SESSION_CLEANUP_INTERVAL_MINUTES,
+    'SESSION_CLEANUP_INTERVAL_MINUTES',
+    'minutes',
+  ) * MINUTE_MS;
+
+export const parseSessionCleanupInactiveRetentionMs = (rawValue: string | undefined): number =>
+  parsePositiveInteger(
+    rawValue,
+    SESSION_CLEANUP_INACTIVE_RETENTION_DAYS,
+    'SESSION_CLEANUP_INACTIVE_RETENTION_DAYS',
+    'days',
+  ) * DAYS_MS;
 
 export const parseIsProduction = (rawValue: string | undefined): boolean =>
   rawValue === 'production';

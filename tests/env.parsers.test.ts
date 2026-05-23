@@ -7,9 +7,15 @@ import {
   parseMailerConfig,
   parseOptionalUrl,
   parseRequiredUrl,
+  parseSessionCleanupInactiveRetentionMs,
+  parseSessionCleanupIntervalMs,
   parseTrustProxy,
   readRequiredEnv,
 } from '../src/config/env.parsers.js';
+import {
+  SESSION_CLEANUP_INACTIVE_RETENTION_MS,
+  SESSION_CLEANUP_INTERVAL_MS,
+} from '../src/config/constants.js';
 
 describe('env parsers', () => {
   test('rejects missing required values', () => {
@@ -38,6 +44,17 @@ describe('env parsers', () => {
   test('parses JSON body limit bytes', () => {
     expect(parseJsonBodyLimitBytes('2048')).toBe(2048);
     expect(() => parseJsonBodyLimitBytes('1mb')).toThrow(ServerConfigurationError);
+  });
+
+  test('parses session cleanup intervals', () => {
+    expect(parseSessionCleanupIntervalMs(undefined)).toBe(SESSION_CLEANUP_INTERVAL_MS);
+    expect(parseSessionCleanupIntervalMs('60')).toBe(60 * 60 * 1000);
+    expect(parseSessionCleanupInactiveRetentionMs(undefined)).toBe(
+      SESSION_CLEANUP_INACTIVE_RETENTION_MS,
+    );
+    expect(parseSessionCleanupInactiveRetentionMs('1')).toBe(24 * 60 * 60 * 1000);
+    expect(() => parseSessionCleanupIntervalMs('0')).toThrow(ServerConfigurationError);
+    expect(() => parseSessionCleanupInactiveRetentionMs('1h')).toThrow(ServerConfigurationError);
   });
 
   test('parses runtime mode', () => {

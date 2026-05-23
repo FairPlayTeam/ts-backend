@@ -6,6 +6,7 @@ import { authService } from './auth.instance.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 import { closeRedisClient, createRedisClient } from './lib/redis.js';
+import { createSessionCleanupJob } from './maintenance/sessionCleanup.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
@@ -25,9 +26,21 @@ const readinessChecks = {
 };
 
 const app = await createApp(config, { authService, redisClient, readinessChecks });
+const sessionCleanupJob = createSessionCleanupJob({
+  authService,
+  clock: {
+    now: () => new Date(),
+  },
+  config: {
+    intervalMs: config.sessionCleanupIntervalMs,
+    inactiveRetentionMs: config.sessionCleanupInactiveRetentionMs,
+  },
+  logger,
+});
 
 const server = app.listen(config.port, () => {
   logger.info({ port: config.port }, 'Server started');
+  sessionCleanupJob.start();
 });
 
 let isShuttingDown = false;
@@ -60,6 +73,7 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
   }, SHUTDOWN_TIMEOUT_MS);
 
   try {
+    await sessionCleanupJob.stop();
     await closeServer(server);
     await prisma.$disconnect();
     await closeRedisClient(redisClient, logger);
