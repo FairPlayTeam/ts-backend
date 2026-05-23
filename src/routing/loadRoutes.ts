@@ -11,6 +11,12 @@ type RouteRegister<TContext> = (
   context: TContext,
 ) => void | Promise<void>;
 
+type RouteFile = {
+  fileUrl: URL;
+  relativeFile: string;
+  routePath: string;
+};
+
 type RouteModule<TContext> = {
   createRouter?: RouteFactory<TContext>;
   default?: unknown;
@@ -53,6 +59,19 @@ async function walkFiles(dirUrl: URL, acc: URL[] = []): Promise<URL[]> {
   return acc;
 }
 
+const routeSpecificity = (routePath: string): number =>
+  routePath === '/' ? 0 : routePath.split('/').filter(Boolean).length;
+
+const compareRouteFiles = (left: RouteFile, right: RouteFile): number => {
+  const specificityDiff = routeSpecificity(right.routePath) - routeSpecificity(left.routePath);
+
+  if (specificityDiff !== 0) {
+    return specificityDiff;
+  }
+
+  return left.relativeFile.localeCompare(right.relativeFile);
+};
+
 async function loadRoutes<TContext>(app: Express, routesDirUrl: URL, context: TContext) {
   try {
     await stat(routesDirUrl);
@@ -61,14 +80,19 @@ async function loadRoutes<TContext>(app: Express, routesDirUrl: URL, context: TC
     return;
   }
 
-  const files = (await walkFiles(routesDirUrl)).sort((left, right) =>
-    left.pathname.localeCompare(right.pathname),
-  );
+  const routeFiles = (await walkFiles(routesDirUrl))
+    .map((fileUrl): RouteFile => {
+      const relativeFile = fileUrl.toString().slice(routesDirUrl.toString().length);
 
-  for (const fileUrl of files) {
-    const rel = fileUrl.toString().slice(routesDirUrl.toString().length);
-    const routePath = normalizeRoutePath(routePathFromFile(rel));
+      return {
+        fileUrl,
+        relativeFile,
+        routePath: normalizeRoutePath(routePathFromFile(relativeFile)),
+      };
+    })
+    .sort(compareRouteFiles);
 
+  for (const { fileUrl, relativeFile, routePath } of routeFiles) {
     const mod = (await import(fileUrl.toString())) as RouteModule<TContext>;
     const routerFactory = mod.createRouter;
     const router = mod.default;
@@ -78,19 +102,19 @@ async function loadRoutes<TContext>(app: Express, routesDirUrl: URL, context: TC
 
       if (createdRouter && typeof createdRouter === 'function') {
         app.use(routePath, apiLimiter, createdRouter as ExpressRouter);
-        logger.info({ file: rel, route: routePath }, 'route mounted');
+        logger.info({ file: relativeFile, route: routePath }, 'route mounted');
       } else {
-        logger.warn({ file: rel }, 'Skipped route factory, no Router returned');
+        logger.warn({ file: relativeFile }, 'Skipped route factory, no Router returned');
       }
     } else if (router && typeof router === 'function') {
       app.use(routePath, apiLimiter, router as ExpressRouter);
-      logger.info({ file: rel, route: routePath }, 'route mounted');
+      logger.info({ file: relativeFile, route: routePath }, 'route mounted');
     } else if (typeof mod.register === 'function') {
       await mod.register(app, routePath, context);
-      logger.info({ file: rel, route: routePath }, 'Route registered');
+      logger.info({ file: relativeFile, route: routePath }, 'Route registered');
     } else {
       logger.warn(
-        { file: rel },
+        { file: relativeFile },
         'Skipped path, no createRouter(context), default Router, or register(app, route, context) export',
       );
     }

@@ -67,6 +67,23 @@ Then fill in the values you want to use.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` are required to send emails. You can customize these values depending on the SMTP provider you're using.
 - `FRONTEND_URL` the URL of your frontend, for example `http://localhost:3001`. It's mainly used to generate verification links for email verification.
 
+## Notes
+
+### Dependency overrides
+
+Some dependencies are pinned through `package.json` `overrides` to apply security fixes before upstream packages update their dependency ranges.
+
+These overrides should be reviewed periodically and removed once the parent dependencies resolve to patched versions on their own.
+
+Current overrides:
+
+- `qs`: security fix for the version pulled by Express/body-parser.
+- `fast-uri`: security fix for the version pulled by Prisma tooling/AJV.
+- `brace-expansion`: security fix for the version pulled by ESLint tooling.
+- `hono` and `@hono/node-server`: security fixes for versions pulled by Prisma tooling.
+
+See https://bun.sh/docs/pm/overrides for more details about overrides.
+
 ## API documentation:
 
 Since we're now adding OpenAPI to the backend, you can now access a full detailed documentation about our routes. Once your backend is launched, go to:

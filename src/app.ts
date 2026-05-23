@@ -105,7 +105,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     swaggerUi.setup(openApiDoc, {
       explorer: true,
       swaggerOptions: {
-        persistAuthorization: true,
+        persistAuthorization: false,
       },
     }),
   );

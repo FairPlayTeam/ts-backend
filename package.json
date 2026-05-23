@@ -56,5 +56,12 @@
     "rate-limit-redis": "^5.0.0",
     "swagger-ui-express": "^5.0.1",
     "zod": "^4.4.3"
+  },
+  "overrides": {
+    "qs": "6.15.2",
+    "fast-uri": "3.1.2",
+    "brace-expansion": "5.0.6",
+    "hono": "4.12.22",
+    "@hono/node-server": "2.0.3"
   }
 }

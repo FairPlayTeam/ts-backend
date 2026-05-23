@@ -62,7 +62,7 @@ export const authLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   skipSuccessfulRequests: false,
-  passOnStoreError: true,
+  passOnStoreError: false,
   ...(authStore ? { store: authStore } : {}),
   handler: authRateLimitExceededHandler,
 });
