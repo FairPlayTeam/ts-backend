@@ -30,6 +30,8 @@ describe('OpenAPI generation', () => {
       '/auth/sessions/{sessionId}',
       '/auth/verify-email',
       '/health',
+      '/health/live',
+      '/health/ready',
     ]);
     expect(document.paths['/auth/login']?.post?.requestBody).toBeDefined();
     expect(document.paths['/auth/login']?.post?.responses?.[401]).toBeDefined();
@@ -103,5 +105,11 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.LogoutAllSessionsResponse).toBeDefined();
     expect(document.components?.schemas?.LogoutOtherSessionsResponse).toBeDefined();
     expect(document.components?.schemas?.LogoutSessionResponse).toBeDefined();
+    expect(document.paths['/health/live']?.get?.responses?.[200]).toBeDefined();
+    expect(document.paths['/health/ready']?.get?.responses?.[200]).toBeDefined();
+    expect(document.paths['/health/ready']?.get?.responses?.[503]).toBeDefined();
+    expect(document.components?.schemas?.LivenessResponse).toBeDefined();
+    expect(document.components?.schemas?.ReadinessResponse).toBeDefined();
+    expect(document.components?.schemas?.ReadinessUnavailableResponse).toBeDefined();
   });
 });

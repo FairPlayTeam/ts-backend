@@ -1,12 +1,12 @@
 import { Redis } from 'ioredis';
-import config from '../config/env.js';
-import { logger } from './logger.js';
+import type { Logger } from 'pino';
 
-type RedisClient = Pick<Redis, 'call' | 'disconnect' | 'quit'>;
+export type RedisClient = Pick<Redis, 'call' | 'disconnect' | 'quit'>;
 
-let redisClient: Redis | null = null;
-
-const createRedisClient = (redisUrl: string): Redis => {
+export const createRedisClient = (
+  redisUrl: string,
+  logger: Pick<Logger, 'info' | 'error' | 'warn'>,
+): Redis => {
   const client = new Redis(redisUrl, {
     lazyConnect: true,
     enableReadyCheck: true,
@@ -31,29 +31,18 @@ const createRedisClient = (redisUrl: string): Redis => {
   return client;
 };
 
-export const isRedisConfigured = (): boolean => config.redisUrl !== null;
-
-export const getRedisClient = (): RedisClient | null => {
-  if (!config.redisUrl) {
-    return null;
-  }
-
-  redisClient ??= createRedisClient(config.redisUrl);
-  return redisClient;
-};
-
-export const closeRedisClient = async (): Promise<void> => {
+export const closeRedisClient = async (
+  redisClient: RedisClient | null,
+  logger: Pick<Logger, 'warn'>,
+): Promise<void> => {
   if (!redisClient) {
     return;
   }
 
-  const client = redisClient;
-  redisClient = null;
-
   try {
-    await client.quit();
+    await redisClient.quit();
   } catch (err) {
     logger.warn({ err }, 'Redis quit failed, forcing disconnect');
-    client.disconnect();
+    redisClient.disconnect();
   }
 };

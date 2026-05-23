@@ -1,7 +1,6 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import { ApiErrorSchema, ApiOrValidationErrorSchema, registerRoute } from '../docs/registry.js';
 import { createAuthenticateSession } from '../middleware/auth.js';
-import { authLimiter } from '../middleware/limiters.js';
 import { validate } from '../middleware/validation.js';
 import { createAuthController } from '../controllers/auth.controller.js';
 import { type AuthService } from '../services/auth.types.js';
@@ -33,9 +32,10 @@ import { jsonResponse } from '../docs/openapi.helpers.js';
 
 type AuthRouterDependencies = {
   authService: AuthService;
+  authLimiter: RequestHandler;
 };
 
-const createAuthRouter = ({ authService }: AuthRouterDependencies) => {
+const createAuthRouter = ({ authService, authLimiter }: AuthRouterDependencies) => {
   const router = Router();
   const {
     register,

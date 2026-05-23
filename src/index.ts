@@ -5,11 +5,26 @@ import { createApp } from './app.js';
 import { authService } from './auth.instance.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
-import { closeRedisClient } from './lib/redis.js';
+import { closeRedisClient, createRedisClient } from './lib/redis.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
-const app = await createApp(config, { authService });
+const redisClient = config.redisUrl ? createRedisClient(config.redisUrl, logger) : null;
+
+const readinessChecks = {
+  database: async (): Promise<void> => {
+    await prisma.$queryRaw`SELECT 1`;
+  },
+  redis: async (): Promise<void> => {
+    if (!redisClient) {
+      throw new Error('Redis client is not configured');
+    }
+
+    await redisClient.ping();
+  },
+};
+
+const app = await createApp(config, { authService, redisClient, readinessChecks });
 
 const server = app.listen(config.port, () => {
   logger.info({ port: config.port }, 'Server started');
@@ -47,7 +62,7 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
   try {
     await closeServer(server);
     await prisma.$disconnect();
-    await closeRedisClient();
+    await closeRedisClient(redisClient, logger);
 
     clearTimeout(timeout);
     logger.info('Graceful shutdown completed');

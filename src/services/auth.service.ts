@@ -95,6 +95,7 @@ const LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE = 'Other sessions logged out success
 const LOGOUT_SESSION_SUCCESS_MESSAGE = 'Session logged out successfully';
 const UPDATE_PROFILE_SUCCESS_MESSAGE = 'Profile updated successfully';
 const MISSING_USER_PASSWORD_HASH = '$2b$12$7g84a6zb7kmHybVdMfIeEuIPU7Lvt5SbjKaX5xIUgQdQwut8EMhNe';
+const UPDATE_INTERVAL_MS = 1000 * 60 * 5;
 
 type AuthDependencies = {
   isUniqueError(err: unknown): boolean;
@@ -419,10 +420,16 @@ export const createAuthService = (deps: AuthDependencies) => {
         return null;
       }
 
-      await deps.prisma.session.update({
-        where: { id: session.id },
-        data: { lastUsedAt: now },
-        select: { id: true },
+      await deps.prisma.session.updateMany({
+        where: {
+          id: session.id,
+          lastUsedAt: {
+            lt: new Date(now.getTime() - UPDATE_INTERVAL_MS),
+          },
+        },
+        data: {
+          lastUsedAt: now,
+        },
       });
 
       return {

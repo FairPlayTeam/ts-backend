@@ -1,7 +1,6 @@
-import type { Express, Router as ExpressRouter } from 'express';
+import type { Express, RequestHandler, Router as ExpressRouter } from 'express';
 import { readdir, stat } from 'node:fs/promises';
 import { logger } from '../lib/logger.js';
-import { apiLimiter } from '../middleware/limiters.js';
 
 type RouteFactory<TContext> = (context: TContext) => unknown;
 
@@ -72,7 +71,12 @@ const compareRouteFiles = (left: RouteFile, right: RouteFile): number => {
   return left.relativeFile.localeCompare(right.relativeFile);
 };
 
-async function loadRoutes<TContext>(app: Express, routesDirUrl: URL, context: TContext) {
+async function loadRoutes<TContext>(
+  app: Express,
+  routesDirUrl: URL,
+  context: TContext,
+  apiLimiter: RequestHandler,
+) {
   try {
     await stat(routesDirUrl);
   } catch {

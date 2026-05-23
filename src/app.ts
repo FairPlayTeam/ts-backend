@@ -9,7 +9,9 @@ import loadRoutes from './routing/loadRoutes.js';
 import { generateOpenApi } from './docs/openapi.js';
 import { HttpError } from './errors/http.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
+import { createLimiters } from './middleware/limiters.js';
 import type { Config } from './config/env.js';
+import type { RedisClient } from './lib/redis.js';
 import type { AuthService } from './services/auth.types.js';
 
 type CreateAppConfig = Pick<
@@ -19,6 +21,13 @@ type CreateAppConfig = Pick<
 
 type CreateAppDependencies = {
   authService: AuthService;
+  redisClient?: RedisClient | null;
+  readinessChecks?: ReadinessChecks | null;
+};
+
+type ReadinessChecks = {
+  database(): Promise<void>;
+  redis(): Promise<void>;
 };
 
 const getRequestId = (rawRequestId: string | string[] | undefined): string => {
@@ -34,6 +43,10 @@ const getHeader = (rawHeader: string | string[] | undefined): string | undefined
 
 export async function createApp(config: CreateAppConfig, deps: CreateAppDependencies) {
   const app = express();
+  const { apiLimiter, authLimiter } = createLimiters({
+    redisClient: deps.redisClient ?? null,
+    logger,
+  });
 
   app.set('trust proxy', config.trustProxy);
 
@@ -91,7 +104,16 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
 
   app.use(express.json({ limit: config.jsonBodyLimitBytes }));
 
-  await loadRoutes(app, new URL('./routes/', import.meta.url), deps);
+  await loadRoutes(
+    app,
+    new URL('./routes/', import.meta.url),
+    {
+      authService: deps.authService,
+      authLimiter,
+      readinessChecks: deps.readinessChecks ?? null,
+    },
+    apiLimiter,
+  );
 
   const openApiDoc = generateOpenApi({ serverUrl: config.baseUrl });
 

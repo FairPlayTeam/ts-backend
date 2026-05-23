@@ -759,10 +759,14 @@ describe('auth service', () => {
       },
     });
 
-    expect(calls.sessionUpdate).toEqual({
-      where: { id: 'session-id' },
+    expect(calls.sessionUpdateMany).toEqual({
+      where: {
+        id: 'session-id',
+        lastUsedAt: {
+          lt: new Date('2025-12-31T23:55:00.000Z'),
+        },
+      },
       data: { lastUsedAt: fixedNow },
-      select: { id: true },
     });
   });
 
