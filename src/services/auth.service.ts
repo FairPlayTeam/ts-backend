@@ -7,86 +7,20 @@ import {
   InvalidCredentialsError,
   UserAlreadyExistsError,
 } from './auth.errors.js';
-
-type RegisterInput = {
-  email: string;
-  username: string;
-  password: string;
-};
-
-type LoginInput = {
-  emailOrUsername: string;
-  password: string;
-  ipAddress?: string | undefined;
-  userAgent?: string | undefined;
-};
-
-type ResendVerificationInput = {
-  email: string;
-};
-
-type VerifyEmailInput = {
-  token: string;
-  ipAddress?: string | undefined;
-  userAgent?: string | undefined;
-};
-
-type AuthenticatedSession = {
-  user: {
-    id: string;
-    email: string;
-    username: string;
-    displayName: string | null;
-    bio: string | null;
-    role: string;
-  };
-  session: {
-    id: string;
-    expiresAt: Date;
-  };
-};
-
-type ListUserSessionsInput = {
-  userId: string;
-  currentSessionId: string;
-};
-
-type LogoutAllSessionsInput = {
-  userId: string;
-};
-
-type LogoutOtherSessionsInput = {
-  userId: string;
-  currentSessionId: string;
-};
-
-type LogoutSessionInput = {
-  userId: string;
-  sessionId: string;
-};
-
-type UpdateProfileInput = {
-  userId: string;
-  displayName?: string | null | undefined;
-  bio?: string | null | undefined;
-};
-
-type CleanupSessionsInput = {
-  expiredBefore: Date;
-  inactiveUpdatedBefore: Date;
-};
-
-type UserSessionSummary = {
-  id: string;
-  sessionKeySuffix: string | null;
-  ipAddress: string | null;
-  userAgent: string | null;
-  deviceInfo: string | null;
-  isCurrent: boolean;
-  createdAt: Date;
-  lastUsedAt: Date;
-  expiresAt: Date;
-};
+import type {
+  RegisterInput,
+  LoginInput,
+  VerifyEmailInput,
+  ValidatedAuthSession,
+  ResendVerificationInput,
+  ListUserSessionsInput,
+  UserSessionSummary,
+  LogoutAllSessionsInput,
+  LogoutOtherSessionsInput,
+  UpdateProfileInput,
+  LogoutSessionInput,
+  CleanupSessionsInput,
+} from './auth.types.js';
 
 type Prisma = Pick<PrismaClient, '$transaction' | 'emailVerificationToken' | 'session' | 'user'>;
 
@@ -398,7 +332,7 @@ export const createAuthService = (deps: AuthDependencies) => {
       };
     },
 
-    async validateSession(sessionKey: string): Promise<AuthenticatedSession | null> {
+    async validateSession(sessionKey: string): Promise<ValidatedAuthSession | null> {
       const sessionKeyHash = deps.token.hash(sessionKey);
       const now = deps.clock.now();
 

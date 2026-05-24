@@ -1,70 +1,70 @@
 generator client {
-    provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-    provider = "postgresql"
+  provider = "postgresql"
 }
 
 enum UserRole {
-    user
-    moderator
-    admin
+  user
+  moderator
+  admin
 }
 
 model User {
-    id String @id @default(uuid()) @db.Uuid
-    email String @unique @db.VarChar(254)
-    username String @unique @db.VarChar(20)
-    displayName String? @map("display_name") @db.VarChar(30)
-    passwordHash String @map("password_hash")
-    bio String? @db.VarChar(200)
-    role UserRole @default(user)
-    isVerified Boolean @default(false) @map("is_verified")
-    isBanned Boolean @default(false) @map("is_banned")
-    bannedAt DateTime? @map("banned_at")
-    createdAt DateTime @default(now()) @map("created_at")
-    updatedAt DateTime @updatedAt @map("updated_at")
-    lastLogin DateTime? @map("last_login")
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique @db.VarChar(254)
+  username     String    @unique @db.VarChar(20)
+  displayName  String?   @map("display_name") @db.VarChar(30)
+  passwordHash String    @map("password_hash")
+  bio          String?   @db.VarChar(200)
+  role         UserRole  @default(user)
+  isVerified   Boolean   @default(false) @map("is_verified")
+  isBanned     Boolean   @default(false) @map("is_banned")
+  bannedAt     DateTime? @map("banned_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  lastLogin    DateTime? @map("last_login")
 
-    sessions Session[]
+  sessions Session[]
 
-    emailVerificationTokens EmailVerificationToken[]
+  emailVerificationTokens EmailVerificationToken[]
 
-    @@map("users")
+  @@map("users")
 }
 
 model EmailVerificationToken {
-    id String @id @default(cuid())
-    userId String @db.Uuid @unique @map("user_id")
-    token String @unique
-    expiresAt DateTime @map("expires_at")
-    createdAt DateTime @default(now()) @map("created_at")
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("user_id") @db.Uuid
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
-    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-    @@map("email_verification_token")
+  @@map("email_verification_token")
 }
 
 model Session {
-    id String @id @default(uuid()) @db.Uuid
-    sessionKey String @unique @map("session_key")
-    sessionKeySuffix String? @map("session_key_suffix")
-    userId String @map("user_id") @db.Uuid
-    ipAddress String? @map("ip_address")
-    userAgent String? @map("user_agent")
-    deviceInfo String? @map("device_info")
-    isActive Boolean @default(true) @map("is_active")
-    expiresAt DateTime @map("expires_at")
-    createdAt DateTime @default(now()) @map("created_at")
-    updatedAt DateTime @updatedAt @map("updated_at")
-    lastUsedAt DateTime @default(now()) @map("last_used_at")
+  id               String   @id @default(uuid()) @db.Uuid
+  sessionKey       String   @unique @map("session_key")
+  sessionKeySuffix String?  @map("session_key_suffix")
+  userId           String   @map("user_id") @db.Uuid
+  ipAddress        String?  @map("ip_address")
+  userAgent        String?  @map("user_agent")
+  deviceInfo       String?  @map("device_info")
+  isActive         Boolean  @default(true) @map("is_active")
+  expiresAt        DateTime @map("expires_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  lastUsedAt       DateTime @default(now()) @map("last_used_at")
 
-    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-    @@index([userId])
-    @@index([sessionKeySuffix])
-    @@index([expiresAt])
-    @@index([isActive])
-    @@map("sessions")
+  @@index([userId])
+  @@index([sessionKeySuffix])
+  @@index([expiresAt])
+  @@index([isActive])
+  @@map("sessions")
 }
