@@ -34,6 +34,7 @@ This repository contains the FairPlay backend API built with:
 ```bash
 bun install
 cp .env.example .env
+docker compose up -d
 bunx prisma migrate dev
 bun run dev
 ```
