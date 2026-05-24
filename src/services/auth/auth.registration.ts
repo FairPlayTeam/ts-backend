@@ -1,0 +1,71 @@
+import { UserAlreadyExistsError } from '../auth.errors.js';
+import type { AuthService, RegisterInput } from '../auth.types.js';
+import type { AuthDependencies } from './auth.dependencies.js';
+import {
+  getEmailVerificationExpiresAt,
+  isExpectedMailerError,
+  normalizeEmail,
+} from './auth.helpers.js';
+import { REGISTER_SUCCESS_MESSAGE } from './auth.messages.js';
+
+type RegistrationService = Pick<AuthService, 'register'>;
+
+export const createRegistrationService = (deps: AuthDependencies): RegistrationService => ({
+  async register({ email, username, password }: RegisterInput) {
+    const usernameNorm = username.trim().toLowerCase();
+    const emailNorm = normalizeEmail(email);
+
+    const hashedPassword = await deps.hasher.hash(password, deps.config.bcryptRounds);
+
+    const token = deps.token.generate();
+    const tokenHash = deps.token.hash(token);
+    const expiresAt = getEmailVerificationExpiresAt(
+      deps.clock.now(),
+      deps.config.emailVerificationTokenTtlMs,
+    );
+
+    const user = await deps.prisma
+      .$transaction(async (tx) => {
+        const createdUser = await tx.user.create({
+          data: {
+            email: emailNorm,
+            username: usernameNorm,
+            displayName: usernameNorm,
+            passwordHash: hashedPassword,
+          },
+          select: { id: true, email: true, username: true, role: true },
+        });
+
+        await tx.emailVerificationToken.create({
+          data: {
+            userId: createdUser.id,
+            token: tokenHash,
+            expiresAt,
+          },
+        });
+
+        return createdUser;
+      })
+      .catch((err) => {
+        if (deps.isUniqueError(err)) {
+          throw new UserAlreadyExistsError(err);
+        }
+
+        throw err;
+      });
+
+    try {
+      await deps.mailer.sendVerificationEmail(user.email, token);
+    } catch (err) {
+      if (isExpectedMailerError(err)) {
+        deps.logger.warn({ err }, 'Verification email could not be sent after registration');
+      } else {
+        throw err;
+      }
+    }
+
+    return {
+      message: REGISTER_SUCCESS_MESSAGE,
+    };
+  },
+});

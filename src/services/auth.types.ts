@@ -1,3 +1,8 @@
+export type Session = {
+  id: string;
+  expiresAt: Date;
+};
+
 export type AuthUser = {
   id: string;
   email: string;
@@ -40,10 +45,7 @@ export type AuthSessionResult = {
   message: string;
   user: AuthUser;
   sessionKey: string;
-  session: {
-    id: string;
-    expiresAt: Date;
-  };
+  session: Session;
 };
 
 export type UserSessionSummary = {
