@@ -6,6 +6,8 @@ import {
   EmailNotVerifiedError,
   InvalidEmailVerificationTokenError,
   InvalidCredentialsError,
+  InvalidPasswordResetTokenError,
+  PasswordResetPasswordReuseError,
   UserAlreadyExistsError,
 } from '../src/services/auth.errors.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
@@ -24,7 +26,11 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     tokenDeleteMany: undefined as unknown,
     tokenFindUnique: undefined as unknown,
     tokenUpsert: undefined as unknown,
+    passwordResetTokenDeleteMany: undefined as unknown,
+    passwordResetTokenFindUnique: undefined as unknown,
+    passwordResetTokenUpsert: undefined as unknown,
     sessionCreate: undefined as unknown,
+    sessionCount: undefined as unknown,
     sessionFindMany: undefined as unknown,
     sessionFindUnique: undefined as unknown,
     sessionUpdate: undefined as unknown,
@@ -73,6 +79,11 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
         return { count: 1 };
       },
     },
+    passwordResetToken: {
+      upsert: async (args: unknown) => {
+        calls.passwordResetTokenUpsert = args;
+      },
+    },
     session: {
       create: async (args: unknown) => {
         calls.sessionCreate = args;
@@ -87,7 +98,9 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
 
   const deps = {
     prisma: {
-      $transaction: async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
+      $transaction: async (
+        input: ((transaction: typeof tx) => Promise<unknown>) | Promise<unknown>[],
+      ) => (Array.isArray(input) ? Promise.all(input) : input(tx)),
       user: {
         findFirst: async (args: unknown) => {
           calls.userFindFirst = args;
@@ -153,6 +166,13 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
           return { count: 1 };
         },
       },
+      passwordResetToken: {
+        deleteMany: async (args: unknown) => {
+          calls.passwordResetTokenDeleteMany = args;
+
+          return { count: 1 };
+        },
+      },
       session: {
         findMany: async (args: unknown) => {
           calls.sessionFindMany = args;
@@ -179,6 +199,11 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
               expiresAt: new Date('2026-01-31T00:00:00.000Z'),
             },
           ];
+        },
+        count: async (args: unknown) => {
+          calls.sessionCount = args;
+
+          return 2;
         },
         findUnique: async (args: unknown) => {
           calls.sessionFindUnique = args;
@@ -233,6 +258,9 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
       sendVerificationEmail: async (email: string, token: string) => {
         calls.sentEmail = { email, token };
       },
+      sendPasswordResetEmail: async (email: string, token: string) => {
+        calls.sentEmail = { email, token };
+      },
     },
     clock: {
       now: () => fixedNow,
@@ -240,6 +268,7 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     config: {
       bcryptRounds: 12,
       emailVerificationTokenTtlMs: 1000,
+      passwordResetTokenTtlMs: 60 * 60 * 1000,
       sessionTtlMs: 30 * 24 * 60 * 60 * 1000,
     },
     logger: {
@@ -251,6 +280,115 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
   } as unknown as AuthDeps;
 
   return { deps, calls };
+}
+
+type PasswordResetTestUser = {
+  id: string;
+  email: string;
+  isVerified: boolean;
+  isBanned: boolean;
+} | null;
+
+function createPasswordResetTestDeps(
+  user: PasswordResetTestUser,
+  overrides: Partial<AuthDeps> = {},
+) {
+  const { deps, calls } = createTestDeps(overrides);
+  const passwordResetTx = {
+    user: {
+      findUnique: async (args: unknown) => {
+        calls.userFindUnique = args;
+
+        return user;
+      },
+    },
+    passwordResetToken: {
+      upsert: async (args: unknown) => {
+        calls.passwordResetTokenUpsert = args;
+      },
+    },
+  };
+
+  return {
+    deps: {
+      ...deps,
+      prisma: {
+        ...deps.prisma,
+        $transaction: async (callback: (transaction: typeof passwordResetTx) => Promise<unknown>) =>
+          callback(passwordResetTx),
+      } as unknown as AuthDeps['prisma'],
+    },
+    calls,
+  };
+}
+
+type PasswordResetTokenRecord = {
+  userId: string;
+  token: string;
+  expiresAt: Date;
+  user: {
+    id: string;
+    passwordHash: string;
+    isBanned: boolean;
+  };
+} | null;
+
+type PasswordResetConfirmationOptions = {
+  consumeCount?: number;
+};
+
+function createPasswordResetConfirmationTestDeps(
+  record: PasswordResetTokenRecord,
+  overrides: Partial<AuthDeps> = {},
+  options: PasswordResetConfirmationOptions = {},
+) {
+  const { deps, calls } = createTestDeps(overrides);
+  const consumeCount = options.consumeCount ?? 1;
+  const passwordResetTx = {
+    passwordResetToken: {
+      deleteMany: async (args: unknown) => {
+        calls.passwordResetTokenDeleteMany = args;
+
+        return { count: consumeCount };
+      },
+    },
+    user: {
+      update: async (args: unknown) => {
+        calls.userUpdate = args;
+      },
+    },
+    session: {
+      updateMany: async (args: unknown) => {
+        calls.sessionUpdateMany = args;
+
+        return { count: 2 };
+      },
+    },
+  };
+
+  return {
+    deps: {
+      ...deps,
+      prisma: {
+        ...deps.prisma,
+        $transaction: async (callback: (transaction: typeof passwordResetTx) => Promise<unknown>) =>
+          callback(passwordResetTx),
+        passwordResetToken: {
+          findUnique: async (args: unknown) => {
+            calls.passwordResetTokenFindUnique = args;
+
+            return record;
+          },
+          deleteMany: async (args: unknown) => {
+            calls.passwordResetTokenDeleteMany = args;
+
+            return { count: 1 };
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    },
+    calls,
+  };
 }
 
 describe('auth service', () => {
@@ -326,6 +464,7 @@ describe('auth service', () => {
         sendVerificationEmail: async () => {
           throw mailerError;
         },
+        sendPasswordResetEmail: async () => undefined,
       },
     });
 
@@ -887,6 +1026,7 @@ describe('auth service', () => {
           isCurrent: false,
         },
       ],
+      nextCursor: null,
       total: 2,
     });
 
@@ -908,10 +1048,35 @@ describe('auth service', () => {
         lastUsedAt: true,
         expiresAt: true,
       },
-      orderBy: {
-        lastUsedAt: 'desc',
+      orderBy: [{ lastUsedAt: 'desc' }, { id: 'desc' }],
+      take: 21,
+    });
+    expect(calls.sessionCount).toEqual({
+      where: {
+        userId: 'user-id',
+        isActive: true,
+        expiresAt: {
+          gt: fixedNow,
+        },
       },
     });
+  });
+
+  test('caps active session list page size', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await service.getUserSessions({
+      userId: 'user-id',
+      currentSessionId: 'session-id',
+      limit: 10_000,
+    });
+
+    expect(calls.sessionFindMany).toEqual(
+      expect.objectContaining({
+        take: 101,
+      }),
+    );
   });
 
   test('logs out all active user sessions', async () => {
@@ -1070,7 +1235,7 @@ describe('auth service', () => {
 
     expect(calls.userFindUnique).toEqual({
       where: { email: 'user@example.com' },
-      select: { id: true, email: true, isVerified: true },
+      select: { id: true, email: true, isVerified: true, isBanned: true },
     });
 
     expect(calls.tokenUpsert).toEqual({
@@ -1120,6 +1285,7 @@ describe('auth service', () => {
         sendVerificationEmail: async (email: string, token: string) => {
           calls.sentEmail = { email, token };
         },
+        sendPasswordResetEmail: async () => undefined,
       },
     });
 
@@ -1136,54 +1302,68 @@ describe('auth service', () => {
     expect(calls.sentEmail).toBeUndefined();
   });
 
-  test('keeps resend verification responses generic for verified users', async () => {
-    const calls = {
-      sentEmail: undefined as unknown,
-    };
-
-    const { deps } = createTestDeps({
-      prisma: {
-        $transaction: async (
-          callback: (transaction: {
-            user: {
-              findUnique(): Promise<{ id: string; email: string; isVerified: boolean }>;
-            };
-            emailVerificationToken: { upsert(): Promise<never> };
-          }) => Promise<unknown>,
-        ) =>
-          callback({
-            user: {
-              findUnique: async () => ({
-                id: 'user-id',
-                email: 'user@example.com',
-                isVerified: true,
-              }),
-            },
-            emailVerificationToken: {
-              upsert: async () => {
-                throw new Error('Should not rotate a token for verified users');
-              },
-            },
-          }),
-      } as unknown as AuthDeps['prisma'],
-      mailer: {
-        sendVerificationEmail: async (email: string, token: string) => {
-          calls.sentEmail = { email, token };
-        },
-      },
-    });
-
-    const service = createAuthService(deps);
-
-    await expect(
-      service.resendVerification({
+  test('keeps resend verification responses generic for verified or banned users', async () => {
+    const ineligibleUsers = [
+      {
+        id: 'user-id',
         email: 'user@example.com',
-      }),
-    ).resolves.toEqual({
-      message: 'If this email exists and is unverified, a new link has been sent.',
-    });
+        isVerified: true,
+        isBanned: false,
+      },
+      {
+        id: 'user-id',
+        email: 'user@example.com',
+        isVerified: false,
+        isBanned: true,
+      },
+    ];
 
-    expect(calls.sentEmail).toBeUndefined();
+    for (const user of ineligibleUsers) {
+      const calls = {
+        sentEmail: undefined as unknown,
+      };
+
+      const { deps } = createTestDeps({
+        prisma: {
+          $transaction: async (
+            callback: (transaction: {
+              user: {
+                findUnique(): Promise<typeof user>;
+              };
+              emailVerificationToken: { upsert(): Promise<never> };
+            }) => Promise<unknown>,
+          ) =>
+            callback({
+              user: {
+                findUnique: async () => user,
+              },
+              emailVerificationToken: {
+                upsert: async () => {
+                  throw new Error('Should not rotate a token for ineligible users');
+                },
+              },
+            }),
+        } as unknown as AuthDeps['prisma'],
+        mailer: {
+          sendVerificationEmail: async (email: string, token: string) => {
+            calls.sentEmail = { email, token };
+          },
+          sendPasswordResetEmail: async () => undefined,
+        },
+      });
+
+      const service = createAuthService(deps);
+
+      await expect(
+        service.resendVerification({
+          email: 'user@example.com',
+        }),
+      ).resolves.toEqual({
+        message: 'If this email exists and is unverified, a new link has been sent.',
+      });
+
+      expect(calls.sentEmail).toBeUndefined();
+    }
   });
 
   test('keeps resend verification accepted when email delivery fails', async () => {
@@ -1193,6 +1373,7 @@ describe('auth service', () => {
         sendVerificationEmail: async () => {
           throw mailerError;
         },
+        sendPasswordResetEmail: async () => undefined,
       },
     });
 
@@ -1210,5 +1391,335 @@ describe('auth service', () => {
       data: { err: mailerError },
       message: 'Verification email could not be sent after resend request',
     });
+  });
+
+  test('requests a password reset for verified users', async () => {
+    const { deps, calls } = createPasswordResetTestDeps({
+      id: 'user-id',
+      email: 'user@example.com',
+      isVerified: true,
+      isBanned: false,
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.requestPasswordReset({
+        email: ' USER@Example.COM ',
+      }),
+    ).resolves.toEqual({
+      message:
+        'If this email exists and is eligible for password reset, a reset link has been sent.',
+    });
+
+    expect(calls.userFindUnique).toEqual({
+      where: { email: 'user@example.com' },
+      select: {
+        id: true,
+        email: true,
+        isVerified: true,
+        isBanned: true,
+      },
+    });
+
+    expect(calls.passwordResetTokenUpsert).toEqual({
+      where: { userId: 'user-id' },
+      update: {
+        token: 'hashed-plain-token',
+        expiresAt: new Date('2026-01-01T01:00:00.000Z'),
+      },
+      create: {
+        userId: 'user-id',
+        token: 'hashed-plain-token',
+        expiresAt: new Date('2026-01-01T01:00:00.000Z'),
+      },
+    });
+
+    expect(calls.sentEmail).toEqual({
+      email: 'user@example.com',
+      token: 'plain-token',
+    });
+  });
+
+  test('keeps password reset responses generic for ineligible users', async () => {
+    const ineligibleUsers: PasswordResetTestUser[] = [
+      null,
+      {
+        id: 'user-id',
+        email: 'user@example.com',
+        isVerified: false,
+        isBanned: false,
+      },
+      {
+        id: 'user-id',
+        email: 'user@example.com',
+        isVerified: true,
+        isBanned: true,
+      },
+    ];
+
+    for (const user of ineligibleUsers) {
+      const { deps, calls } = createPasswordResetTestDeps(user);
+      const service = createAuthService(deps);
+
+      await expect(
+        service.requestPasswordReset({
+          email: 'user@example.com',
+        }),
+      ).resolves.toEqual({
+        message:
+          'If this email exists and is eligible for password reset, a reset link has been sent.',
+      });
+
+      expect(calls.passwordResetTokenUpsert).toBeUndefined();
+      expect(calls.sentEmail).toBeUndefined();
+    }
+  });
+
+  test('cleans up password reset tokens when email delivery fails', async () => {
+    const mailerError = new MailerDeliveryError('Email failed');
+    const { deps, calls } = createPasswordResetTestDeps(
+      {
+        id: 'user-id',
+        email: 'user@example.com',
+        isVerified: true,
+        isBanned: false,
+      },
+      {
+        mailer: {
+          sendVerificationEmail: async () => undefined,
+          sendPasswordResetEmail: async () => {
+            throw mailerError;
+          },
+        },
+      },
+    );
+    const service = createAuthService(deps);
+
+    await expect(
+      service.requestPasswordReset({
+        email: 'user@example.com',
+      }),
+    ).resolves.toEqual({
+      message:
+        'If this email exists and is eligible for password reset, a reset link has been sent.',
+    });
+
+    expect(calls.warning).toEqual({
+      data: { err: mailerError },
+      message: 'Password reset email could not be sent after request',
+    });
+    expect(calls.passwordResetTokenDeleteMany).toEqual({
+      where: { userId: 'user-id' },
+    });
+  });
+
+  test('resets a password, consumes the token, and revokes active sessions', async () => {
+    const { deps, calls } = createPasswordResetConfirmationTestDeps(
+      {
+        userId: 'user-id',
+        token: 'hashed-plain-token',
+        expiresAt: new Date('2026-01-01T00:00:01.000Z'),
+        user: {
+          id: 'user-id',
+          passwordHash: 'hashed-old-password',
+          isBanned: false,
+        },
+      },
+      {
+        hasher: {
+          compare: async (password: string, hash: string) => {
+            calls.comparedPassword = { password, hash };
+
+            return false;
+          },
+          hash: async () => 'hashed-new-password',
+        },
+      },
+    );
+    const service = createAuthService(deps);
+
+    await expect(
+      service.resetPassword({
+        token: 'plain-token',
+        password: 'NewPassword1!',
+      }),
+    ).resolves.toEqual({
+      message: 'Your password has been reset successfully. Please log in with your new password.',
+      sessionsLoggedOut: 2,
+    });
+
+    expect(calls.passwordResetTokenFindUnique).toEqual({
+      where: { token: 'hashed-plain-token' },
+      include: {
+        user: {
+          select: {
+            id: true,
+            passwordHash: true,
+            isBanned: true,
+          },
+        },
+      },
+    });
+    expect(calls.comparedPassword).toEqual({
+      password: 'NewPassword1!',
+      hash: 'hashed-old-password',
+    });
+    expect(calls.passwordResetTokenDeleteMany).toEqual({
+      where: {
+        token: 'hashed-plain-token',
+        expiresAt: {
+          gt: fixedNow,
+        },
+      },
+    });
+    expect(calls.userUpdate).toEqual({
+      where: { id: 'user-id' },
+      data: {
+        passwordHash: 'hashed-new-password',
+      },
+    });
+    expect(calls.sessionUpdateMany).toEqual({
+      where: {
+        userId: 'user-id',
+        isActive: true,
+      },
+      data: {
+        isActive: false,
+      },
+    });
+  });
+
+  test('rejects missing password reset tokens', async () => {
+    const { deps, calls } = createPasswordResetConfirmationTestDeps(null);
+    const service = createAuthService(deps);
+
+    await expect(
+      service.resetPassword({
+        token: 'plain-token',
+        password: 'NewPassword1!',
+      }),
+    ).rejects.toBeInstanceOf(InvalidPasswordResetTokenError);
+
+    expect(calls.passwordResetTokenDeleteMany).toBeUndefined();
+    expect(calls.userUpdate).toBeUndefined();
+  });
+
+  test('deletes and rejects expired password reset tokens', async () => {
+    const { deps, calls } = createPasswordResetConfirmationTestDeps({
+      userId: 'user-id',
+      token: 'hashed-plain-token',
+      expiresAt: fixedNow,
+      user: {
+        id: 'user-id',
+        passwordHash: 'hashed-old-password',
+        isBanned: false,
+      },
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.resetPassword({
+        token: 'plain-token',
+        password: 'NewPassword1!',
+      }),
+    ).rejects.toBeInstanceOf(InvalidPasswordResetTokenError);
+
+    expect(calls.passwordResetTokenDeleteMany).toEqual({
+      where: { token: 'hashed-plain-token' },
+    });
+    expect(calls.userUpdate).toBeUndefined();
+  });
+
+  test('rejects password reset for banned users', async () => {
+    const { deps, calls } = createPasswordResetConfirmationTestDeps({
+      userId: 'user-id',
+      token: 'hashed-plain-token',
+      expiresAt: new Date('2026-01-01T00:00:01.000Z'),
+      user: {
+        id: 'user-id',
+        passwordHash: 'hashed-old-password',
+        isBanned: true,
+      },
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.resetPassword({
+        token: 'plain-token',
+        password: 'NewPassword1!',
+      }),
+    ).rejects.toBeInstanceOf(AccountBannedError);
+
+    expect(calls.passwordResetTokenDeleteMany).toBeUndefined();
+    expect(calls.userUpdate).toBeUndefined();
+  });
+
+  test('rejects password reset when the new password matches the current password', async () => {
+    const { deps, calls } = createPasswordResetConfirmationTestDeps({
+      userId: 'user-id',
+      token: 'hashed-plain-token',
+      expiresAt: new Date('2026-01-01T00:00:01.000Z'),
+      user: {
+        id: 'user-id',
+        passwordHash: 'hashed-old-password',
+        isBanned: false,
+      },
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.resetPassword({
+        token: 'plain-token',
+        password: 'Password1!',
+      }),
+    ).rejects.toBeInstanceOf(PasswordResetPasswordReuseError);
+
+    expect(calls.comparedPassword).toEqual({
+      password: 'Password1!',
+      hash: 'hashed-old-password',
+    });
+    expect(calls.passwordResetTokenDeleteMany).toBeUndefined();
+    expect(calls.userUpdate).toBeUndefined();
+  });
+
+  test('rejects already consumed password reset tokens inside the transaction', async () => {
+    const { deps, calls } = createPasswordResetConfirmationTestDeps(
+      {
+        userId: 'user-id',
+        token: 'hashed-plain-token',
+        expiresAt: new Date('2026-01-01T00:00:01.000Z'),
+        user: {
+          id: 'user-id',
+          passwordHash: 'hashed-old-password',
+          isBanned: false,
+        },
+      },
+      {
+        hasher: {
+          compare: async () => false,
+          hash: async () => 'hashed-new-password',
+        },
+      },
+      { consumeCount: 0 },
+    );
+    const service = createAuthService(deps);
+
+    await expect(
+      service.resetPassword({
+        token: 'plain-token',
+        password: 'NewPassword1!',
+      }),
+    ).rejects.toBeInstanceOf(InvalidPasswordResetTokenError);
+
+    expect(calls.passwordResetTokenDeleteMany).toEqual({
+      where: {
+        token: 'hashed-plain-token',
+        expiresAt: {
+          gt: fixedNow,
+        },
+      },
+    });
+    expect(calls.userUpdate).toBeUndefined();
+    expect(calls.sessionUpdateMany).toBeUndefined();
   });
 });

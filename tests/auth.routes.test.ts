@@ -8,6 +8,8 @@ let server: Server;
 let baseUrl: string;
 let receivedSessionKey: string | undefined;
 let receivedProfileUpdate: unknown;
+let receivedPasswordResetRequest: unknown;
+let receivedGetSessionsRequest: unknown;
 
 describe('auth routes', () => {
   beforeAll(async () => {
@@ -30,6 +32,14 @@ describe('auth routes', () => {
           updateProfile: async (input) => {
             receivedProfileUpdate = input;
             return authService.updateProfile(input);
+          },
+          requestPasswordReset: async (input) => {
+            receivedPasswordResetRequest = input;
+            return authService.requestPasswordReset(input);
+          },
+          getUserSessions: async (input) => {
+            receivedGetSessionsRequest = input;
+            return authService.getUserSessions(input);
           },
         },
       },
@@ -171,10 +181,67 @@ describe('auth routes', () => {
     });
   });
 
-  test('returns active sessions for a valid bearer session', async () => {
-    const response = await fetch(`${baseUrl}/auth/sessions`, {
+  test('requests password reset without requiring a bearer session', async () => {
+    receivedPasswordResetRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/auth/forgot-password`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: ' USER@Example.COM ',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(receivedPasswordResetRequest).toEqual({
+      email: 'user@example.com',
+    });
+    expect(await response.json()).toEqual({
+      message:
+        'If this email exists and is eligible for password reset, a reset link has been sent.',
+    });
+  });
+
+  test('rejects password reset requests from authenticated users', async () => {
+    const response = await fetch(`${baseUrl}/auth/forgot-password`, {
+      method: 'POST',
       headers: {
         authorization: 'Bearer test-session-key',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: 'user@example.com',
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Conflict',
+      message: 'Already authenticated users cannot request a password reset',
+    });
+  });
+
+  test('returns active sessions for a valid bearer session', async () => {
+    receivedGetSessionsRequest = undefined;
+
+    const response = await fetch(
+      `${baseUrl}/auth/sessions?limit=10&cursorLastUsedAt=2026-01-01T00%3A00%3A00.000Z&cursorId=0d4e55cb-c278-4d74-a192-bf7c10888c7a`,
+      {
+        headers: {
+          authorization: 'Bearer test-session-key',
+        },
+      },
+    );
+
+    expect(receivedGetSessionsRequest).toEqual({
+      userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      currentSessionId: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+      limit: 10,
+      cursor: {
+        lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
+        id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
       },
     });
 
@@ -193,7 +260,35 @@ describe('auth routes', () => {
           expiresAt: '2026-01-31T00:00:00.000Z',
         },
       ],
+      nextCursor: {
+        lastUsedAt: '2026-01-01T00:00:00.000Z',
+        id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+      },
       total: 1,
+    });
+  });
+
+  test('rejects malformed active session pagination cursors', async () => {
+    const response = await fetch(`${baseUrl}/auth/sessions?cursorLastUsedAt=not-a-date`, {
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'ValidationError',
+      message: 'Request validation failed',
+      details: [
+        {
+          field: 'query.cursorLastUsedAt',
+          message: 'Invalid ISO datetime',
+        },
+        {
+          field: 'query',
+          message: 'cursorLastUsedAt and cursorId must be provided together',
+        },
+      ],
     });
   });
 

@@ -5,11 +5,18 @@ import type {
   LoginRequestBody,
   LogoutSessionParams,
   RegisterRequestBody,
+  RequestPasswordResetRequestBody,
   ResendVerificationRequestBody,
+  ResetPasswordRequestBody,
   UpdateProfileRequestBody,
+  UserSessionsQuery,
   VerifyEmailRequestBody,
 } from './auth.schemas.js';
-import type { AuthService, AuthSessionResult, UserSessionSummary } from '../services/auth.types.js';
+import type {
+  AuthService,
+  AuthSessionResult,
+  ListUserSessionsResult,
+} from '../services/auth.types.js';
 
 type AuthControllerDependencies = {
   authService: Omit<AuthService, 'cleanupSessions'>;
@@ -33,13 +40,7 @@ const toAuthenticatedSessionResponse = (req: AuthenticatedRequest) => ({
   },
 });
 
-const toUserSessionsResponse = ({
-  sessions,
-  total,
-}: {
-  sessions: UserSessionSummary[];
-  total: number;
-}) => ({
+const toUserSessionsResponse = ({ sessions, total, nextCursor }: ListUserSessionsResult) => ({
   sessions: sessions.map((session) => ({
     id: session.id,
     sessionKeySuffix: session.sessionKeySuffix,
@@ -52,6 +53,12 @@ const toUserSessionsResponse = ({
     expiresAt: session.expiresAt.toISOString(),
   })),
   total,
+  nextCursor: nextCursor
+    ? {
+        lastUsedAt: nextCursor.lastUsedAt.toISOString(),
+        id: nextCursor.id,
+      }
+    : null,
 });
 
 export const createAuthController = (deps: AuthControllerDependencies) => {
@@ -129,12 +136,26 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     return res.status(200).json(toAuthenticatedSessionResponse(req as AuthenticatedRequest));
   };
 
-  const sessions = async (req: Request, res: Response, next: NextFunction) => {
+  const sessions = async (
+    req: Request<unknown, unknown, unknown, UserSessionsQuery>,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
       const authenticatedReq = req as AuthenticatedRequest;
+      const { limit, cursorLastUsedAt, cursorId } = req.query;
+      const cursor =
+        cursorLastUsedAt && cursorId
+          ? {
+              lastUsedAt: new Date(cursorLastUsedAt),
+              id: cursorId,
+            }
+          : undefined;
       const result = await deps.authService.getUserSessions({
         userId: authenticatedReq.user.id,
         currentSessionId: authenticatedReq.session.id,
+        ...(limit !== undefined ? { limit } : {}),
+        ...(cursor ? { cursor } : {}),
       });
 
       return res.status(200).json(toUserSessionsResponse(result));
@@ -216,11 +237,55 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     }
   };
 
+  const requestPasswordReset = async (
+    req: Request<unknown, unknown, RequestPasswordResetRequestBody>,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { email } = req.body;
+
+      const result = await deps.authService.requestPasswordReset({
+        email,
+      });
+
+      return res.status(200).json({
+        message: result.message,
+      });
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
+  };
+
+  const resetPassword = async (
+    req: Request<unknown, unknown, ResetPasswordRequestBody>,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const { token, password } = req.body;
+
+      const result = await deps.authService.resetPassword({
+        token,
+        password,
+      });
+
+      return res.status(200).json({
+        message: result.message,
+        sessionsLoggedOut: result.sessionsLoggedOut,
+      });
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
+  };
+
   return {
     register,
     login,
     verifyEmail,
     resendVerification,
+    requestPasswordReset,
+    resetPassword,
     me,
     updateMe,
     sessions,

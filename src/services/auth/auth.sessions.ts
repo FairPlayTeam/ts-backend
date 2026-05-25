@@ -4,7 +4,7 @@ import type {
   AuthService,
   Session,
   ListUserSessionsInput,
-  UserSessionSummary,
+  ListUserSessionsResult,
   LogoutAllSessionsInput,
   LogoutOtherSessionsInput,
   LogoutSessionInput,
@@ -60,6 +60,16 @@ export type SessionService = Pick<
 };
 
 const UPDATE_INTERVAL_MS = 1000 * 60 * 5;
+const DEFAULT_USER_SESSIONS_LIMIT = 20;
+const MAX_USER_SESSIONS_LIMIT = 100;
+
+const normalizeUserSessionsLimit = (limit: number | undefined): number => {
+  if (limit === undefined || !Number.isFinite(limit)) {
+    return DEFAULT_USER_SESSIONS_LIMIT;
+  }
+
+  return Math.min(Math.max(Math.trunc(limit), 1), MAX_USER_SESSIONS_LIMIT);
+};
 
 export const createSessionService = (deps: AuthDependencies): SessionService => {
   const prepareSession = async ({
@@ -178,45 +188,59 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
     async getUserSessions({
       userId,
       currentSessionId,
-    }: ListUserSessionsInput): Promise<{ sessions: UserSessionSummary[]; total: number }> {
+      cursor,
+      limit,
+    }: ListUserSessionsInput): Promise<ListUserSessionsResult> {
       const now = deps.clock.now();
+      const pageSize = normalizeUserSessionsLimit(limit);
 
-      const sessions = await deps.prisma.session.findMany({
-        where: {
-          userId,
-          isActive: true,
-          expiresAt: {
-            gt: now,
+      const where = {
+        userId,
+        isActive: true,
+        expiresAt: { gt: now },
+        ...(cursor && {
+          OR: [
+            { lastUsedAt: { lt: cursor.lastUsedAt } },
+            { lastUsedAt: cursor.lastUsedAt, id: { lt: cursor.id } },
+          ],
+        }),
+      };
+
+      const [queriedSessions, total] = await deps.prisma.$transaction([
+        deps.prisma.session.findMany({
+          where,
+          select: {
+            id: true,
+            sessionKeySuffix: true,
+            ipAddress: true,
+            userAgent: true,
+            deviceInfo: true,
+            createdAt: true,
+            lastUsedAt: true,
+            expiresAt: true,
           },
-        },
-        select: {
-          id: true,
-          sessionKeySuffix: true,
-          ipAddress: true,
-          userAgent: true,
-          deviceInfo: true,
-          createdAt: true,
-          lastUsedAt: true,
-          expiresAt: true,
-        },
-        orderBy: {
-          lastUsedAt: 'desc',
-        },
-      });
+          orderBy: [{ lastUsedAt: 'desc' }, { id: 'desc' }],
+          take: pageSize + 1,
+        }),
+        deps.prisma.session.count({
+          where: { userId, isActive: true, expiresAt: { gt: now } },
+        }),
+      ]);
+
+      const sessions = queriedSessions.slice(0, pageSize);
+      const lastSession = sessions.at(-1);
+      const nextCursor =
+        queriedSessions.length > pageSize && lastSession
+          ? { lastUsedAt: lastSession.lastUsedAt, id: lastSession.id }
+          : null;
 
       return {
         sessions: sessions.map((session) => ({
-          id: session.id,
-          sessionKeySuffix: session.sessionKeySuffix,
-          ipAddress: session.ipAddress,
-          userAgent: session.userAgent,
-          deviceInfo: session.deviceInfo,
-          createdAt: session.createdAt,
-          lastUsedAt: session.lastUsedAt,
-          expiresAt: session.expiresAt,
+          ...session,
           isCurrent: session.id === currentSessionId,
         })),
-        total: sessions.length,
+        total,
+        nextCursor,
       };
     },
 

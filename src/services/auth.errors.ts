@@ -32,3 +32,17 @@ export class InvalidEmailVerificationTokenError extends Error {
     this.name = 'InvalidEmailVerificationTokenError';
   }
 }
+
+export class InvalidPasswordResetTokenError extends Error {
+  constructor() {
+    super('Invalid or expired password reset link.');
+    this.name = 'InvalidPasswordResetTokenError';
+  }
+}
+
+export class PasswordResetPasswordReuseError extends Error {
+  constructor() {
+    super('New password must be different from the current password');
+    this.name = 'PasswordResetPasswordReuseError';
+  }
+}

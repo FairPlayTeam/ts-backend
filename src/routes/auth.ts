@@ -1,6 +1,6 @@
 import { Router, type RequestHandler } from 'express';
 import { ApiErrorSchema, ApiOrValidationErrorSchema, registerRoute } from '../docs/registry.js';
-import { createAuthenticateSession } from '../middleware/auth.js';
+import { createAuthenticateSession, createRejectAuthenticatedSession } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
 import { createAuthController } from '../controllers/auth.controller.js';
 import { type AuthService } from '../services/auth.types.js';
@@ -17,13 +17,21 @@ import {
   registerBodySchema,
   registerResponseSchema,
   registerSchema,
+  requestPasswordResetBodySchema,
+  requestPasswordResetResponseSchema,
+  requestPasswordResetSchema,
+  resetPasswordBodySchema,
+  resetPasswordResponseSchema,
+  resetPasswordSchema,
   resendVerificationBodySchema,
   resendVerificationResponseSchema,
   resendVerificationSchema,
   updateProfileBodySchema,
   updateProfileResponseSchema,
   updateProfileSchema,
+  userSessionsQuerySchema,
   userSessionsResponseSchema,
+  userSessionsSchema,
   verifyEmailBodySchema,
   verifyEmailResponseSchema,
   verifyEmailSchema,
@@ -48,10 +56,13 @@ const createAuthRouter = ({ authService, authLimiter }: AuthRouterDependencies) 
     logoutAll,
     logoutOthers,
     logoutSession,
+    requestPasswordReset,
+    resetPassword,
   } = createAuthController({
     authService,
   });
   const authenticateSession = createAuthenticateSession({ authService });
+  const rejectAuthenticatedSession = createRejectAuthenticatedSession({ authService });
 
   router.post('/register', authLimiter, validate(registerSchema), register);
   router.post('/login', authLimiter, validate(loginSchema), login);
@@ -64,7 +75,7 @@ const createAuthRouter = ({ authService, authLimiter }: AuthRouterDependencies) 
   );
   router.get('/me', authenticateSession, me);
   router.patch('/me', authenticateSession, validate(updateProfileSchema), updateMe);
-  router.get('/sessions', authenticateSession, sessions);
+  router.get('/sessions', authenticateSession, validate(userSessionsSchema), sessions);
   router.delete('/sessions/all', authenticateSession, logoutAll);
   router.delete('/sessions/others/all', authenticateSession, logoutOthers);
   router.delete(
@@ -73,6 +84,14 @@ const createAuthRouter = ({ authService, authLimiter }: AuthRouterDependencies) 
     validate(logoutSessionSchema),
     logoutSession,
   );
+  router.post(
+    '/forgot-password',
+    authLimiter,
+    rejectAuthenticatedSession,
+    validate(requestPasswordResetSchema),
+    requestPasswordReset,
+  );
+  router.post('/reset-password', authLimiter, validate(resetPasswordSchema), resetPassword);
 
   return router;
 };
@@ -214,6 +233,9 @@ registerRoute({
   summary: 'Get current user active sessions',
   tags: ['Auth'],
   security: [{ bearerAuth: [] }],
+  request: {
+    query: userSessionsQuerySchema,
+  },
   responses: {
     200: jsonResponse('Current user active sessions', userSessionsResponseSchema),
 
@@ -295,6 +317,58 @@ registerRoute({
     ...badRequestErrorResponse,
 
     401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+    ...commonErrorResponses,
+  },
+});
+
+registerRoute({
+  method: 'post',
+  path: '/auth/forgot-password',
+  summary: 'Request a password reset email',
+  tags: ['Auth'],
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: requestPasswordResetBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: jsonResponse('Password reset request accepted', requestPasswordResetResponseSchema),
+
+    ...badRequestErrorResponse,
+
+    409: jsonResponse('Already authenticated', ApiErrorSchema),
+
+    ...commonErrorResponses,
+  },
+});
+
+registerRoute({
+  method: 'post',
+  path: '/auth/reset-password',
+  summary: 'Reset account password using an emailed token',
+  tags: ['Auth'],
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: resetPasswordBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: jsonResponse('Password reset successfully', resetPasswordResponseSchema),
+
+    ...badRequestErrorResponse,
+
+    403: jsonResponse('Account is not allowed to reset password', ApiErrorSchema),
 
     ...commonErrorResponses,
   },

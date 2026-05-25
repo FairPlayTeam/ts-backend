@@ -1,6 +1,7 @@
 export const APP_PRODUCT_NAME = 'FairPlay';
 export const APP_API_NAME = `${APP_PRODUCT_NAME} API`;
 export const EMAIL_VERIFICATION_PATH = '/verify-email';
+export const PASSWORD_RESET_PATH = '/reset-password';
 export const APP_VERSION = process.env.npm_package_version ?? '1.0.0';
 
 export const EMAIL_MAX_LENGTH = 254;
@@ -15,7 +16,9 @@ export const HOUR_MS = 1000 * 60 * 60;
 export const DAYS_MS = 24 * HOUR_MS;
 export const MINUTE_MS = 1000 * 60;
 
+export const PASSWORD_RESET_TOKEN_TTL_DAYS = 1;
 export const EMAIL_VERIFICATION_TOKEN_TTL_DAYS = 7;
+export const PASSWORD_RESET_TOKEN_TTL_MS = PASSWORD_RESET_TOKEN_TTL_DAYS * DAYS_MS;
 export const EMAIL_VERIFICATION_TOKEN_TTL_MS = EMAIL_VERIFICATION_TOKEN_TTL_DAYS * DAYS_MS;
 
 export const SESSION_TTL_DAYS = 30;

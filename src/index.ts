@@ -16,13 +16,11 @@ const readinessChecks = {
   database: async (): Promise<void> => {
     await prisma.$queryRaw`SELECT 1`;
   },
-  redis: async (): Promise<void> => {
-    if (!redisClient) {
-      throw new Error('Redis client is not configured');
-    }
-
-    await redisClient.ping();
-  },
+  ...(redisClient && {
+    redis: async (): Promise<void> => {
+      await redisClient.ping();
+    },
+  }),
 };
 
 const app = await createApp(config, { authService, redisClient, readinessChecks });

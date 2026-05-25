@@ -2,8 +2,12 @@ import bcrypt from 'bcryptjs';
 import config from './config/env.js';
 import { isPrismaUniqueError, prisma } from './lib/prisma.js';
 import { generateToken, hashToken } from './lib/crypto.js';
-import { EMAIL_VERIFICATION_TOKEN_TTL_MS, SESSION_TTL_MS } from './config/constants.js';
-import { sendVerificationEmail } from './mailer.instance.js';
+import {
+  EMAIL_VERIFICATION_TOKEN_TTL_MS,
+  PASSWORD_RESET_TOKEN_TTL_MS,
+  SESSION_TTL_MS,
+} from './config/constants.js';
+import { sendVerificationEmail, sendPasswordResetEmail } from './mailer.instance.js';
 import { logger } from './lib/logger.js';
 import { createAuthService } from './services/auth.service.js';
 
@@ -26,11 +30,12 @@ export const authService = createAuthService({
   isUniqueError: isPrismaUniqueError,
   hasher: bcryptHasher,
   token: tokenService,
-  mailer: { sendVerificationEmail },
+  mailer: { sendVerificationEmail, sendPasswordResetEmail },
   clock: systemClock,
   config: {
     bcryptRounds: config.bcryptRounds,
     emailVerificationTokenTtlMs: EMAIL_VERIFICATION_TOKEN_TTL_MS,
+    passwordResetTokenTtlMs: PASSWORD_RESET_TOKEN_TTL_MS,
     sessionTtlMs: SESSION_TTL_MS,
   },
   logger,

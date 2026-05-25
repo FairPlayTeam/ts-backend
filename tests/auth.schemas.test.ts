@@ -3,8 +3,10 @@ import {
   loginSchema,
   logoutSessionSchema,
   registerSchema,
+  requestPasswordResetSchema,
   resendVerificationSchema,
   updateProfileSchema,
+  userSessionsSchema,
   verifyEmailSchema,
 } from '../src/controllers/auth.schemas.js';
 
@@ -86,6 +88,32 @@ describe('resendVerificationSchema', () => {
 
   test('rejects unexpected resend verification properties', () => {
     const result = resendVerificationSchema.safeParse({
+      body: {
+        email: 'user@example.com',
+        token: 'unexpected',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('requestPasswordResetSchema', () => {
+  test('accepts a valid password reset request payload and normalizes email', () => {
+    const result = requestPasswordResetSchema.safeParse({
+      body: {
+        email: ' USER@Example.COM ',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.body.email).toBe('user@example.com');
+    }
+  });
+
+  test('rejects unexpected password reset request properties', () => {
+    const result = requestPasswordResetSchema.safeParse({
       body: {
         email: 'user@example.com',
         token: 'unexpected',
@@ -197,6 +225,47 @@ describe('logoutSessionSchema', () => {
       params: {
         sessionId: '123e4567-e89b-12d3-a456-426614174000',
         userId: '123e4567-e89b-12d3-a456-426614174001',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('userSessionsSchema', () => {
+  test('accepts valid pagination query params and coerces limit', () => {
+    const result = userSessionsSchema.safeParse({
+      query: {
+        limit: '25',
+        cursorLastUsedAt: '2026-01-01T00:00:00.000Z',
+        cursorId: '123e4567-e89b-12d3-a456-426614174000',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.query).toEqual({
+        limit: 25,
+        cursorLastUsedAt: '2026-01-01T00:00:00.000Z',
+        cursorId: '123e4567-e89b-12d3-a456-426614174000',
+      });
+    }
+  });
+
+  test('rejects incomplete pagination cursors', () => {
+    const result = userSessionsSchema.safeParse({
+      query: {
+        cursorLastUsedAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects limits above the maximum', () => {
+    const result = userSessionsSchema.safeParse({
+      query: {
+        limit: '101',
       },
     });
 

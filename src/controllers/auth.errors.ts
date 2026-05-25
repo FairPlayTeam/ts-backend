@@ -4,6 +4,8 @@ import {
   EmailNotVerifiedError,
   InvalidEmailVerificationTokenError,
   InvalidCredentialsError,
+  InvalidPasswordResetTokenError,
+  PasswordResetPasswordReuseError,
   UserAlreadyExistsError,
 } from '../services/auth.errors.js';
 
@@ -17,6 +19,13 @@ export function toAuthHttpError(err: unknown): Error {
   }
 
   if (err instanceof InvalidEmailVerificationTokenError) {
+    return new HttpError(400, 'BadRequest', err.message, { cause: err });
+  }
+
+  if (
+    err instanceof InvalidPasswordResetTokenError ||
+    err instanceof PasswordResetPasswordReuseError
+  ) {
     return new HttpError(400, 'BadRequest', err.message, { cause: err });
   }
 

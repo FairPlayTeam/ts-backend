@@ -28,7 +28,7 @@ type CreateAppDependencies = {
 
 type ReadinessChecks = {
   database(): Promise<void>;
-  redis(): Promise<void>;
+  redis?(): Promise<void>;
 };
 
 const getRequestId = (rawRequestId: string | string[] | undefined): string => {

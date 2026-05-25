@@ -73,6 +73,17 @@ export type ValidatedAuthSession = {
 export type ListUserSessionsInput = {
   userId: string;
   currentSessionId: string;
+  cursor?: { lastUsedAt: Date; id: string };
+  limit?: number;
+};
+
+export type ListUserSessionsResult = {
+  sessions: UserSessionSummary[];
+  total: number;
+  nextCursor: {
+    lastUsedAt: Date;
+    id: string;
+  } | null;
 };
 
 export type LogoutAllSessionsInput = {
@@ -94,15 +105,22 @@ export type CleanupSessionsInput = {
   inactiveUpdatedBefore: Date;
 };
 
+export type RequestPasswordResetInput = {
+  email: string;
+};
+
+export type ResetPasswordInput = {
+  token: string;
+  password: string;
+};
+
 export type AuthService = {
   register(input: RegisterInput): Promise<{ message: string }>;
   login(input: LoginInput): Promise<AuthSessionResult>;
   verifyEmail(input: VerifyEmailInput): Promise<AuthSessionResult>;
   validateSession(sessionKey: string): Promise<ValidatedAuthSession | null>;
   resendVerification(input: ResendVerificationInput): Promise<{ message: string }>;
-  getUserSessions(
-    input: ListUserSessionsInput,
-  ): Promise<{ sessions: UserSessionSummary[]; total: number }>;
+  getUserSessions(input: ListUserSessionsInput): Promise<ListUserSessionsResult>;
   logoutAllSessions(
     input: LogoutAllSessionsInput,
   ): Promise<{ message: string; sessionsLoggedOut: number }>;
@@ -112,4 +130,6 @@ export type AuthService = {
   logoutSession(input: LogoutSessionInput): Promise<{ message: string; sessionsLoggedOut: number }>;
   updateProfile(input: UpdateProfileInput): Promise<{ message: string; user: AuthUser }>;
   cleanupSessions(input: CleanupSessionsInput): Promise<CleanupSessionsResult>;
+  requestPasswordReset(input: RequestPasswordResetInput): Promise<{ message: string }>;
+  resetPassword(input: ResetPasswordInput): Promise<{ message: string; sessionsLoggedOut: number }>;
 };

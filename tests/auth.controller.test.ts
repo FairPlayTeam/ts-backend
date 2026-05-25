@@ -5,8 +5,10 @@ import type { AuthenticatedRequest } from '../src/middleware/auth.js';
 import type {
   LoginRequestBody,
   RegisterRequestBody,
+  RequestPasswordResetRequestBody,
   ResendVerificationRequestBody,
   UpdateProfileRequestBody,
+  UserSessionsQuery,
   VerifyEmailRequestBody,
 } from '../src/controllers/auth.schemas.js';
 import { HttpError } from '../src/errors/http.js';
@@ -19,6 +21,10 @@ const registerBody: RegisterRequestBody = {
 };
 
 const resendVerificationBody: ResendVerificationRequestBody = {
+  email: 'user@example.com',
+};
+
+const requestPasswordResetBody: RequestPasswordResetRequestBody = {
   email: 'user@example.com',
 };
 
@@ -72,6 +78,10 @@ const userSessionsResult = {
       expiresAt: loginResult.session.expiresAt,
     },
   ],
+  nextCursor: {
+    lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
+    id: loginResult.session.id,
+  },
   total: 1,
 };
 
@@ -129,6 +139,15 @@ describe('auth controller', () => {
           message: 'Profile updated successfully',
           user: loginResult.user,
         }),
+        requestPasswordReset: async () => ({
+          message:
+            'If this email exists and is eligible for password reset, a reset link has been sent.',
+        }),
+        resetPassword: async () => ({
+          message:
+            'Your password has been reset successfully. Please log in with your new password.',
+          sessionsLoggedOut: 1,
+        }),
       },
     });
 
@@ -179,6 +198,15 @@ describe('auth controller', () => {
           message: 'Profile updated successfully',
           user: loginResult.user,
         }),
+        requestPasswordReset: async () => ({
+          message:
+            'If this email exists and is eligible for password reset, a reset link has been sent.',
+        }),
+        resetPassword: async () => ({
+          message:
+            'Your password has been reset successfully. Please log in with your new password.',
+          sessionsLoggedOut: 1,
+        }),
       },
     });
 
@@ -228,6 +256,15 @@ describe('auth controller', () => {
           message: 'Profile updated successfully',
           user: loginResult.user,
         }),
+        requestPasswordReset: async () => ({
+          message:
+            'If this email exists and is eligible for password reset, a reset link has been sent.',
+        }),
+        resetPassword: async () => ({
+          message:
+            'Your password has been reset successfully. Please log in with your new password.',
+          sessionsLoggedOut: 1,
+        }),
       },
     });
 
@@ -244,6 +281,72 @@ describe('auth controller', () => {
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
       message: 'If this email exists and is unverified, a new link has been sent.',
+    });
+  });
+
+  test('requests password reset through the injected auth service', async () => {
+    let receivedInput: RequestPasswordResetRequestBody | undefined;
+    let receivedError: unknown;
+    const { response, state } = createMockResponse();
+    const controller = createAuthController({
+      authService: {
+        register: async () => ({ message: 'Account created. Please verify your email.' }),
+        login: async () => loginResult,
+        verifyEmail: async () => verifyEmailResult,
+        validateSession: async () => validatedSession,
+        resendVerification: async () => ({
+          message: 'If this email exists and is unverified, a new link has been sent.',
+        }),
+        getUserSessions: async () => userSessionsResult,
+        logoutAllSessions: async () => ({
+          message: 'All sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
+        logoutOtherSessions: async () => ({
+          message: 'Other sessions logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
+        logoutSession: async () => ({
+          message: 'Session logged out successfully',
+          sessionsLoggedOut: 1,
+        }),
+        updateProfile: async () => ({
+          message: 'Profile updated successfully',
+          user: loginResult.user,
+        }),
+        requestPasswordReset: async (input) => {
+          receivedInput = input;
+          return {
+            message:
+              'If this email exists and is eligible for password reset, a reset link has been sent.',
+          };
+        },
+        resetPassword: async () => ({
+          message:
+            'Your password has been reset successfully. Please log in with your new password.',
+          sessionsLoggedOut: 1,
+        }),
+      },
+    });
+
+    await controller.requestPasswordReset(
+      { body: requestPasswordResetBody } as Request<
+        unknown,
+        unknown,
+        RequestPasswordResetRequestBody
+      >,
+      response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedInput).toEqual(requestPasswordResetBody);
+    expect(receivedError).toBeUndefined();
+    expect(state.statusCode).toBe(200);
+    expect(state.body).toEqual({
+      message:
+        'If this email exists and is eligible for password reset, a reset link has been sent.',
     });
   });
 
@@ -281,6 +384,15 @@ describe('auth controller', () => {
         updateProfile: async () => ({
           message: 'Profile updated successfully',
           user: loginResult.user,
+        }),
+        requestPasswordReset: async () => ({
+          message:
+            'If this email exists and is eligible for password reset, a reset link has been sent.',
+        }),
+        resetPassword: async () => ({
+          message:
+            'Your password has been reset successfully. Please log in with your new password.',
+          sessionsLoggedOut: 1,
         }),
       },
     });
@@ -351,6 +463,15 @@ describe('auth controller', () => {
           message: 'Profile updated successfully',
           user: loginResult.user,
         }),
+        requestPasswordReset: async () => ({
+          message:
+            'If this email exists and is eligible for password reset, a reset link has been sent.',
+        }),
+        resetPassword: async () => ({
+          message:
+            'Your password has been reset successfully. Please log in with your new password.',
+          sessionsLoggedOut: 1,
+        }),
       },
     });
 
@@ -409,6 +530,15 @@ describe('auth controller', () => {
         updateProfile: async () => ({
           message: 'Profile updated successfully',
           user: loginResult.user,
+        }),
+        requestPasswordReset: async () => ({
+          message:
+            'If this email exists and is eligible for password reset, a reset link has been sent.',
+        }),
+        resetPassword: async () => ({
+          message:
+            'Your password has been reset successfully. Please log in with your new password.',
+          sessionsLoggedOut: 1,
         }),
       },
     });
@@ -473,6 +603,15 @@ describe('auth controller', () => {
             user: updatedUser,
           };
         },
+        requestPasswordReset: async () => ({
+          message:
+            'If this email exists and is eligible for password reset, a reset link has been sent.',
+        }),
+        resetPassword: async () => ({
+          message:
+            'Your password has been reset successfully. Please log in with your new password.',
+          sessionsLoggedOut: 1,
+        }),
       },
     });
 
@@ -505,7 +644,14 @@ describe('auth controller', () => {
   });
 
   test('returns active sessions for the authenticated user', async () => {
-    let receivedInput: { userId: string; currentSessionId: string } | undefined;
+    let receivedInput:
+      | {
+          userId: string;
+          currentSessionId: string;
+          limit?: number;
+          cursor?: { lastUsedAt: Date; id: string };
+        }
+      | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
     const controller = createAuthController({
@@ -537,6 +683,15 @@ describe('auth controller', () => {
           message: 'Profile updated successfully',
           user: loginResult.user,
         }),
+        requestPasswordReset: async () => ({
+          message:
+            'If this email exists and is eligible for password reset, a reset link has been sent.',
+        }),
+        resetPassword: async () => ({
+          message:
+            'Your password has been reset successfully. Please log in with your new password.',
+          sessionsLoggedOut: 1,
+        }),
       },
     });
 
@@ -544,7 +699,12 @@ describe('auth controller', () => {
       {
         user: validatedSession.user,
         session: validatedSession.session,
-      } as AuthenticatedRequest,
+        query: {
+          limit: 10,
+          cursorLastUsedAt: '2026-01-01T00:00:00.000Z',
+          cursorId: loginResult.session.id,
+        },
+      } as AuthenticatedRequest & Request<unknown, unknown, unknown, UserSessionsQuery>,
       response,
       ((err?: unknown) => {
         receivedError = err;
@@ -554,6 +714,11 @@ describe('auth controller', () => {
     expect(receivedInput).toEqual({
       userId: validatedSession.user.id,
       currentSessionId: validatedSession.session.id,
+      limit: 10,
+      cursor: {
+        lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
+        id: loginResult.session.id,
+      },
     });
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
@@ -572,6 +737,10 @@ describe('auth controller', () => {
         },
       ],
       total: 1,
+      nextCursor: {
+        lastUsedAt: '2026-01-01T00:00:00.000Z',
+        id: loginResult.session.id,
+      },
     });
   });
 
@@ -607,6 +776,15 @@ describe('auth controller', () => {
         updateProfile: async () => ({
           message: 'Profile updated successfully',
           user: loginResult.user,
+        }),
+        requestPasswordReset: async () => ({
+          message:
+            'If this email exists and is eligible for password reset, a reset link has been sent.',
+        }),
+        resetPassword: async () => ({
+          message:
+            'Your password has been reset successfully. Please log in with your new password.',
+          sessionsLoggedOut: 1,
         }),
       },
     });
@@ -666,6 +844,15 @@ describe('auth controller', () => {
           message: 'Profile updated successfully',
           user: loginResult.user,
         }),
+        requestPasswordReset: async () => ({
+          message:
+            'If this email exists and is eligible for password reset, a reset link has been sent.',
+        }),
+        resetPassword: async () => ({
+          message:
+            'Your password has been reset successfully. Please log in with your new password.',
+          sessionsLoggedOut: 1,
+        }),
       },
     });
 
@@ -724,6 +911,15 @@ describe('auth controller', () => {
         updateProfile: async () => ({
           message: 'Profile updated successfully',
           user: loginResult.user,
+        }),
+        requestPasswordReset: async () => ({
+          message:
+            'If this email exists and is eligible for password reset, a reset link has been sent.',
+        }),
+        resetPassword: async () => ({
+          message:
+            'Your password has been reset successfully. Please log in with your new password.',
+          sessionsLoggedOut: 1,
         }),
       },
     });

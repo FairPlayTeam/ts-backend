@@ -6,7 +6,7 @@ import { jsonResponse } from '../docs/openapi.helpers.js';
 
 type ReadinessChecks = {
   database(): Promise<void>;
-  redis(): Promise<void>;
+  redis?(): Promise<void>;
 };
 
 type HealthRouterDependencies = {
@@ -27,7 +27,7 @@ const readinessSchema = z
     status: z.literal('ok').openapi({ example: 'ok' }),
     services: z.object({
       database: z.literal('ok').openapi({ example: 'ok' }),
-      redis: z.literal('ok').openapi({ example: 'ok' }),
+      redis: z.literal('ok').optional().openapi({ example: 'ok' }),
     }),
   })
   .openapi('ReadinessResponse');
@@ -37,7 +37,7 @@ const readinessUnavailableSchema = z
     status: z.literal('error').openapi({ example: 'error' }),
     services: z.object({
       database: serviceStatusSchema.openapi({ example: 'ok' }),
-      redis: serviceStatusSchema.openapi({ example: 'error' }),
+      redis: serviceStatusSchema.optional().openapi({ example: 'error' }),
     }),
   })
   .openapi('ReadinessUnavailableResponse');
@@ -53,29 +53,25 @@ const createReadinessResponse = async (checks: ReadinessChecks | null) => {
   if (!checks) {
     return {
       statusCode: 503,
-      body: {
-        status: 'error',
-        services: {
-          database: 'error',
-          redis: 'error',
-        },
-      },
+      body: { status: 'error', services: { database: 'error' } },
     } as const;
   }
 
-  const [database, redis] = await Promise.allSettled([checks.database(), checks.redis()]);
+  const [database, redis] = await Promise.allSettled([checks.database(), checks.redis?.()]);
+
+  const redisStatus = checks.redis ? (redis.status === 'fulfilled' ? 'ok' : 'error') : undefined;
+
+  const allOk = database.status === 'fulfilled' && (!checks.redis || redis.status === 'fulfilled');
+
   const body = {
-    status: database.status === 'fulfilled' && redis.status === 'fulfilled' ? 'ok' : 'error',
+    status: allOk ? 'ok' : 'error',
     services: {
       database: database.status === 'fulfilled' ? 'ok' : 'error',
-      redis: redis.status === 'fulfilled' ? 'ok' : 'error',
+      ...(redisStatus !== undefined && { redis: redisStatus }),
     },
   } as const;
 
-  return {
-    statusCode: body.status === 'ok' ? 200 : 503,
-    body,
-  } as const;
+  return { statusCode: allOk ? 200 : 503, body } as const;
 };
 
 const createHealthRouter = ({ readinessChecks = null }: HealthRouterDependencies = {}) => {

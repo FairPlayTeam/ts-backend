@@ -9,6 +9,9 @@ export const getEmailVerificationExpiresAt = (
   emailVerificationTokenTtlMs: number,
 ): Date => new Date(now.getTime() + emailVerificationTokenTtlMs);
 
+export const getPasswordResetExpiresAt = (now: Date, passwordResetTokenTtlMs: number): Date =>
+  new Date(now.getTime() + passwordResetTokenTtlMs);
+
 export const getSessionExpiresAt = (now: Date, sessionTtlMs: number): Date =>
   new Date(now.getTime() + sessionTtlMs);
 

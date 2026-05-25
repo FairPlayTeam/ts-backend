@@ -31,6 +31,10 @@ const userSessionsResult = {
       expiresAt: sessionResult.session.expiresAt,
     },
   ],
+  nextCursor: {
+    lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
+    id: sessionResult.session.id,
+  },
   total: 1,
 };
 
@@ -49,6 +53,13 @@ export const createStubAuthService = (): AuthService => ({
   }),
   resendVerification: async () => ({
     message: 'If this email exists and is unverified, a new link has been sent.',
+  }),
+  requestPasswordReset: async () => ({
+    message: 'If this email exists and is eligible for password reset, a reset link has been sent.',
+  }),
+  resetPassword: async () => ({
+    message: 'Your password has been reset successfully. Please log in with your new password.',
+    sessionsLoggedOut: 1,
   }),
   getUserSessions: async () => userSessionsResult,
   logoutAllSessions: async () => ({

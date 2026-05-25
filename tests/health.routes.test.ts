@@ -12,7 +12,7 @@ type TestServer = {
 const createTestServer = async (
   readinessChecks?: {
     database(): Promise<void>;
-    redis(): Promise<void>;
+    redis?(): Promise<void>;
   } | null,
 ): Promise<TestServer> => {
   const app = await createApp(
@@ -101,6 +101,23 @@ describe('health routes', () => {
       services: {
         database: 'ok',
         redis: 'ok',
+      },
+    });
+  });
+
+  test('returns ready when optional redis is not configured', async () => {
+    const { baseUrl, server } = await createTestServer({
+      database: async () => undefined,
+    });
+    currentServer = server;
+
+    const response = await fetch(`${baseUrl}/health/ready`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: 'ok',
+      services: {
+        database: 'ok',
       },
     });
   });

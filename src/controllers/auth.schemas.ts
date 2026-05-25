@@ -181,6 +181,78 @@ export const currentUserResponseSchema = z
   })
   .openapi('CurrentUserResponse');
 
+export const userSessionsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).optional().openapi({ example: 20 }),
+    cursorLastUsedAt: z.string().datetime().optional().openapi({
+      example: '2026-01-01T00:00:00.000Z',
+    }),
+    cursorId: z
+      .string()
+      .uuid('Cursor session id must be a valid UUID')
+      .optional()
+      .openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+  })
+  .strict()
+  .refine((query) => (query.cursorLastUsedAt === undefined) === (query.cursorId === undefined), {
+    message: 'cursorLastUsedAt and cursorId must be provided together',
+  })
+  .openapi('UserSessionsQuery');
+
+export const userSessionsSchema = z.object({
+  query: userSessionsQuerySchema,
+});
+
+export const requestPasswordResetBodySchema = z
+  .object({
+    email: emailSchema,
+  })
+  .strict()
+  .openapi('RequestPasswordResetRequest');
+
+export const requestPasswordResetResponseSchema = z
+  .object({
+    message: z.string().openapi({
+      example:
+        'If this email exists and is eligible for password reset, a reset link has been sent.',
+    }),
+  })
+  .openapi('RequestPasswordResetResponse');
+
+export const requestPasswordResetSchema = z.object({
+  body: requestPasswordResetBodySchema,
+});
+
+export const resetPasswordBodySchema = z
+  .object({
+    token: z
+      .string()
+      .trim()
+      .length(64, 'Reset token must be 64 characters')
+      .regex(/^[a-f0-9]+$/i, 'Reset token must be hexadecimal')
+      .transform((value) => value.toLowerCase())
+      .openapi({
+        description: 'Raw reset password token from the frontend verification link.',
+        example: 'd9f1f7d7b9d24e5c9f9b6a81a9a2eb1b2c1b0c9e7d6f5a4b3c2d1e0f9a8b7c6d',
+      }),
+    password: passwordSchema,
+  })
+  .strict()
+  .openapi('ResetPasswordRequest');
+
+export const resetPasswordResponseSchema = z
+  .object({
+    message: z.string().openapi({
+      example: 'Your password has been reset successfully. Please log in with your new password.',
+    }),
+    sessionsLoggedOut: z.number().int().nonnegative().openapi({ example: 3 }),
+  })
+  .openapi('ResetPasswordResponse');
+
+export const resetPasswordSchema = z.object({
+  body: resetPasswordBodySchema,
+});
+
 export const updateProfileBodySchema = z
   .object({
     displayName: z
@@ -237,6 +309,12 @@ export const userSessionsResponseSchema = z
       }),
     ),
     total: z.number().int().nonnegative().openapi({ example: 1 }),
+    nextCursor: z
+      .object({
+        lastUsedAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
+        id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+      })
+      .nullable(),
   })
   .openapi('UserSessionsResponse');
 
@@ -265,5 +343,8 @@ export type RegisterRequestBody = z.infer<typeof registerSchema>['body'];
 export type LoginRequestBody = z.infer<typeof loginSchema>['body'];
 export type VerifyEmailRequestBody = z.infer<typeof verifyEmailSchema>['body'];
 export type ResendVerificationRequestBody = z.infer<typeof resendVerificationSchema>['body'];
+export type RequestPasswordResetRequestBody = z.infer<typeof requestPasswordResetSchema>['body'];
+export type ResetPasswordRequestBody = z.infer<typeof resetPasswordSchema>['body'];
+export type UserSessionsQuery = z.infer<typeof userSessionsSchema>['query'];
 export type LogoutSessionParams = z.infer<typeof logoutSessionSchema>['params'];
 export type UpdateProfileRequestBody = z.infer<typeof updateProfileSchema>['body'];

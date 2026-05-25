@@ -58,6 +58,27 @@ describe('mailer service', () => {
     expect(firstEmail?.html).toContain('http://localhost:5173/verify-email?token=plain-token');
   });
 
+  test('sends password reset emails through the configured transporter', async () => {
+    const sentEmails: unknown[] = [];
+    const service = createMailerService({
+      config: mailerConfig,
+      createTransporter: () => ({
+        sendMail: async (email: unknown) => {
+          sentEmails.push(email);
+        },
+      }),
+    });
+
+    await service.sendPasswordResetEmail('user@example.com', 'plain-token');
+
+    const email = sentEmails.at(0) as SentMail | undefined;
+
+    expect(email).toBeDefined();
+    expect(email?.subject).toBe('Reset your password');
+    expect(email?.text).toContain('http://localhost:5173/reset-password?token=plain-token');
+    expect(email?.html).toContain('http://localhost:5173/reset-password?token=plain-token');
+  });
+
   test('fails clearly when mailer configuration is missing', async () => {
     const service = createMailerService({ config: null });
 

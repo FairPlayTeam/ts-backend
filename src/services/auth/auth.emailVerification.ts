@@ -110,10 +110,10 @@ export const createVerificationService = (
     const user = await deps.prisma.$transaction(async (tx) => {
       const existingUser = await tx.user.findUnique({
         where: { email: emailNorm },
-        select: { id: true, email: true, isVerified: true },
+        select: { id: true, email: true, isVerified: true, isBanned: true },
       });
 
-      if (!existingUser || existingUser.isVerified) {
+      if (!existingUser || existingUser.isVerified || existingUser.isBanned) {
         return null;
       }
 

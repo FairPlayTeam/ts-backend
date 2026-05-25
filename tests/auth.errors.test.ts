@@ -5,6 +5,8 @@ import {
   AccountBannedError,
   InvalidEmailVerificationTokenError,
   InvalidCredentialsError,
+  InvalidPasswordResetTokenError,
+  PasswordResetPasswordReuseError,
   UserAlreadyExistsError,
 } from '../src/services/auth.errors.js';
 
@@ -35,6 +37,22 @@ describe('auth error mapping', () => {
 
   test('maps invalid email verification tokens to an HTTP bad request', () => {
     const error = toAuthHttpError(new InvalidEmailVerificationTokenError());
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).statusCode).toBe(400);
+    expect((error as HttpError).code).toBe('BadRequest');
+  });
+
+  test('maps invalid password reset tokens to an HTTP bad request', () => {
+    const error = toAuthHttpError(new InvalidPasswordResetTokenError());
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).statusCode).toBe(400);
+    expect((error as HttpError).code).toBe('BadRequest');
+  });
+
+  test('maps password reset password reuse to an HTTP bad request', () => {
+    const error = toAuthHttpError(new PasswordResetPasswordReuseError());
 
     expect(error).toBeInstanceOf(HttpError);
     expect((error as HttpError).statusCode).toBe(400);

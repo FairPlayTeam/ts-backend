@@ -62,7 +62,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
 
   const httpError = toHttpError(err);
 
-  if (httpError.statusCode >= 500 && !isHttpError(err)) {
+  if (httpError.statusCode >= 500) {
     logger.error({ err }, 'Unhandled request error');
   }
 

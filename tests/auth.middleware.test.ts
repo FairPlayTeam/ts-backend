@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { NextFunction, Request, Response } from 'express';
-import { createAuthenticateSession, type AuthenticatedRequest } from '../src/middleware/auth.js';
+import {
+  createAuthenticateSession,
+  createRejectAuthenticatedSession,
+  type AuthenticatedRequest,
+} from '../src/middleware/auth.js';
 import { HttpError } from '../src/errors/http.js';
 
 const sessionResult = {
@@ -141,5 +145,61 @@ describe('auth session middleware', () => {
     );
 
     expect(receivedError).toBe(validationError);
+  });
+
+  test('rejects valid sessions on public guest-only auth routes', async () => {
+    let receivedSessionKey: string | undefined;
+    let receivedError: unknown;
+    const rejectAuthenticatedSession = createRejectAuthenticatedSession({
+      authService: {
+        validateSession: async (sessionKey) => {
+          receivedSessionKey = sessionKey;
+          return sessionResult;
+        },
+      },
+    });
+
+    await rejectAuthenticatedSession(
+      createRequest('Bearer plain-session-token'),
+      {} as Response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedSessionKey).toBe('plain-session-token');
+    expect(receivedError).toBeInstanceOf(HttpError);
+    expect((receivedError as HttpError).statusCode).toBe(409);
+    expect((receivedError as HttpError).code).toBe('Conflict');
+    expect((receivedError as HttpError).message).toBe(
+      'Already authenticated users cannot request a password reset',
+    );
+  });
+
+  test('allows guest-only auth routes when the bearer session is missing or invalid', async () => {
+    const observedErrors: unknown[] = [];
+    const rejectAuthenticatedSession = createRejectAuthenticatedSession({
+      authService: {
+        validateSession: async () => null,
+      },
+    });
+
+    await rejectAuthenticatedSession(
+      createRequest(),
+      {} as Response,
+      ((err?: unknown) => {
+        observedErrors.push(err);
+      }) as NextFunction,
+    );
+
+    await rejectAuthenticatedSession(
+      createRequest('Bearer invalid-token'),
+      {} as Response,
+      ((err?: unknown) => {
+        observedErrors.push(err);
+      }) as NextFunction,
+    );
+
+    expect(observedErrors).toEqual([undefined, undefined]);
   });
 });

@@ -14,6 +14,19 @@ const formatZodErrors = (error: ZodError) =>
     message,
   }));
 
+const assignRequestPart = <Key extends keyof ParsedRequestParts>(
+  req: Request,
+  key: Key,
+  value: ParsedRequestParts[Key],
+): void => {
+  Object.defineProperty(req, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+};
+
 export const validate =
   (schema: z.ZodTypeAny) =>
   (req: Request, _res: Response, next: NextFunction): void => {
@@ -29,9 +42,9 @@ export const validate =
 
     const data = result.data as ParsedRequestParts;
 
-    if ('body' in data) req.body = data.body;
-    if ('query' in data) req.query = data.query as Request['query'];
-    if ('params' in data) req.params = data.params as Request['params'];
+    if ('body' in data) assignRequestPart(req, 'body', data.body);
+    if ('query' in data) assignRequestPart(req, 'query', data.query);
+    if ('params' in data) assignRequestPart(req, 'params', data.params);
 
     next();
   };

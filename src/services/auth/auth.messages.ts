@@ -8,3 +8,7 @@ export const LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE = 'Other sessions logged out 
 export const LOGOUT_SESSION_SUCCESS_MESSAGE = 'Session logged out successfully';
 export const UPDATE_PROFILE_SUCCESS_MESSAGE = 'Profile updated successfully';
 export const CLEANUP_SESSION_SUCCESS_MESSAGE = 'Sessions cleaned up successfully';
+export const RESET_PASSWORD_EMAIL_MESSAGE =
+  'If this email exists and is eligible for password reset, a reset link has been sent.';
+export const RESET_PASSWORD_SUCCESS_MESSAGE =
+  'Your password has been reset successfully. Please log in with your new password.';

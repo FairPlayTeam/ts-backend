@@ -20,10 +20,12 @@ describe('OpenAPI generation', () => {
 
     expect(Object.keys(document.paths).sort()).toEqual([
       '/',
+      '/auth/forgot-password',
       '/auth/login',
       '/auth/me',
       '/auth/register',
       '/auth/resend-verification',
+      '/auth/reset-password',
       '/auth/sessions',
       '/auth/sessions/all',
       '/auth/sessions/others/all',
@@ -51,6 +53,22 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/me']?.patch?.responses?.[400]).toBeDefined();
     expect(document.paths['/auth/me']?.patch?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/sessions']?.get?.requestBody).toBeUndefined();
+    expect(document.paths['/auth/sessions']?.get?.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'limit',
+          in: 'query',
+        }),
+        expect.objectContaining({
+          name: 'cursorLastUsedAt',
+          in: 'query',
+        }),
+        expect.objectContaining({
+          name: 'cursorId',
+          in: 'query',
+        }),
+      ]),
+    );
     expect(document.paths['/auth/sessions']?.get?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/auth/sessions']?.get?.responses?.[200]).toBeDefined();
     expect(document.paths['/auth/sessions']?.get?.responses?.[401]).toBeDefined();
@@ -80,6 +98,13 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/sessions/{sessionId}']?.delete?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/register']?.post?.requestBody).toBeDefined();
     expect(document.paths['/auth/register']?.post?.responses?.[413]).toBeDefined();
+    expect(document.paths['/auth/forgot-password']?.post?.requestBody).toBeDefined();
+    expect(document.paths['/auth/forgot-password']?.post?.security).toBeUndefined();
+    expect(document.paths['/auth/forgot-password']?.post?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/forgot-password']?.post?.responses?.[409]).toBeDefined();
+    expect(document.paths['/auth/reset-password']?.post?.requestBody).toBeDefined();
+    expect(document.paths['/auth/reset-password']?.post?.security).toBeUndefined();
+    expect(document.paths['/auth/reset-password']?.post?.responses?.[200]).toBeDefined();
     expect(document.paths['/auth/resend-verification']?.post?.requestBody).toBeDefined();
     expect(document.paths['/auth/verify-email']?.post?.requestBody).toBeDefined();
     expect(document.paths['/auth/verify-email']?.post?.responses?.[400]).toBeDefined();
@@ -97,6 +122,10 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.UpdateProfileResponse).toBeDefined();
     expect(document.components?.schemas?.RegisterRequest).toBeDefined();
     expect(document.components?.schemas?.RegisterResponse).toBeDefined();
+    expect(document.components?.schemas?.RequestPasswordResetRequest).toBeDefined();
+    expect(document.components?.schemas?.RequestPasswordResetResponse).toBeDefined();
+    expect(document.components?.schemas?.ResetPasswordRequest).toBeDefined();
+    expect(document.components?.schemas?.ResetPasswordResponse).toBeDefined();
     expect(document.components?.schemas?.ResendVerificationRequest).toBeDefined();
     expect(document.components?.schemas?.ResendVerificationResponse).toBeDefined();
     expect(document.components?.schemas?.VerifyEmailRequest).toBeDefined();

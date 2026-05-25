@@ -65,3 +65,35 @@ export const createAuthenticateSession = ({
     }
   };
 };
+
+export const createRejectAuthenticatedSession = ({
+  authService,
+}: AuthMiddlewareDependencies): RequestHandler => {
+  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+    const sessionKey = parseBearerToken(req.headers.authorization);
+
+    if (!sessionKey) {
+      next();
+      return;
+    }
+
+    try {
+      const result = await authService.validateSession(sessionKey);
+
+      if (result) {
+        next(
+          new HttpError(
+            409,
+            'Conflict',
+            'Already authenticated users cannot request a password reset',
+          ),
+        );
+        return;
+      }
+
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+};

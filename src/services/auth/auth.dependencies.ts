@@ -1,6 +1,9 @@
 import type { PrismaClient } from '@prisma/client';
 
-type Prisma = Pick<PrismaClient, '$transaction' | 'emailVerificationToken' | 'session' | 'user'>;
+type Prisma = Pick<
+  PrismaClient,
+  '$transaction' | 'emailVerificationToken' | 'passwordResetToken' | 'session' | 'user'
+>;
 
 export type AuthDependencies = {
   isUniqueError(err: unknown): boolean;
@@ -15,6 +18,7 @@ export type AuthDependencies = {
   };
   mailer: {
     sendVerificationEmail(email: string, token: string): Promise<void>;
+    sendPasswordResetEmail(email: string, token: string): Promise<void>;
   };
   clock: {
     now(): Date;
@@ -22,6 +26,7 @@ export type AuthDependencies = {
   config: {
     bcryptRounds: number;
     emailVerificationTokenTtlMs: number;
+    passwordResetTokenTtlMs: number;
     sessionTtlMs: number;
   };
   logger: {

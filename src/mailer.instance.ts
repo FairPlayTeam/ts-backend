@@ -5,3 +5,6 @@ const mailerService = createMailerService({ config: appConfig.mailer });
 
 export const sendVerificationEmail = (email: string, token: string): Promise<void> =>
   mailerService.sendVerificationEmail(email, token);
+
+export const sendPasswordResetEmail = (email: string, token: string): Promise<void> =>
+  mailerService.sendPasswordResetEmail(email, token);
