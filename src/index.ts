@@ -5,12 +5,27 @@ import { createApp } from './app.js';
 import { authService } from './auth.instance.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
-import { closeRedisClient, createRedisClient } from './lib/redis.js';
+import { closeRedisClient, createRedisClient, connectRedisClient } from './lib/redis.js';
 import { createSessionCleanupJob } from './maintenance/sessionCleanup.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
-const redisClient = config.redisUrl ? createRedisClient(config.redisUrl, logger) : null;
+let redisClient = config.redisUrl ? createRedisClient(config.redisUrl, logger) : null;
+
+if (redisClient && config.redisUrl) {
+  try {
+    await connectRedisClient(redisClient);
+  } catch (err) {
+    if (config.isProduction) {
+      logger.fatal({ err }, 'Redis is required but unavailable at startup');
+      throw err;
+    }
+
+    logger.warn({ err }, 'Redis unavailable at startup, falling back to in-memory rate limiting');
+    redisClient.disconnect();
+    redisClient = null;
+  }
+}
 
 const readinessChecks = {
   database: async (): Promise<void> => {

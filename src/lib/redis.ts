@@ -1,7 +1,8 @@
 import { Redis } from 'ioredis';
 import type { Logger } from 'pino';
 
-export type RedisClient = Pick<Redis, 'call' | 'disconnect' | 'quit'>;
+export type RedisClient = Pick<Redis, 'call' | 'disconnect' | 'quit' | 'ping'>;
+type ConnectableRedisClient = Pick<Redis, 'connect' | 'status'>;
 
 export const createRedisClient = (
   redisUrl: string,
@@ -45,4 +46,12 @@ export const closeRedisClient = async (
     logger.warn({ err }, 'Redis quit failed, forcing disconnect');
     redisClient.disconnect();
   }
+};
+
+export const connectRedisClient = async (client: ConnectableRedisClient): Promise<void> => {
+  if (client.status === 'ready' || client.status === 'connect' || client.status === 'connecting') {
+    return;
+  }
+
+  await client.connect();
 };

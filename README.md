@@ -114,12 +114,24 @@ bun run lint:fix
 bun run format:check
 bun run format
 bun test
+bun run test:integration
 ```
 
 or if you want to verify everything at once:
 
 ```bash
 bun run check
+```
+
+### Integration tests
+
+Integration tests run with Vitest and Testcontainers. They start real PostgreSQL and Redis
+containers, apply Prisma migrations, then exercise the HTTP API through the real Express app.
+
+Docker must be running locally before launching them:
+
+```bash
+bun run test:integration
 ```
 
 ## Routes
