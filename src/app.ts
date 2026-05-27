@@ -52,12 +52,16 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
   app.set('trust proxy', config.trustProxy);
   app.disable('x-powered-by');
 
-  // Swagger UI injects inline styles/scripts, so CSP is disabled here.
-  app.use(
-    helmet({
-      contentSecurityPolicy: false,
-    }),
-  );
+  const secureHeaders = helmet();
+  const docsHeaders = helmet({ contentSecurityPolicy: false });
+
+  app.use((req, res, next) => {
+    // Swagger UI injects inline styles/scripts, so only /docs runs without CSP.
+    const headers =
+      req.path === '/docs' || req.path.startsWith('/docs/') ? docsHeaders : secureHeaders;
+
+    return headers(req, res, next);
+  });
 
   app.use(
     pinoHttp({
