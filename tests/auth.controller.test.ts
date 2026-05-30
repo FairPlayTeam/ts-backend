@@ -45,7 +45,7 @@ const loginResult = {
     username: 'fairplay_user',
     displayName: 'FairPlay User',
     bio: 'Definitely not an undercover Y**tube employee.',
-    role: 'user',
+    role: 'user' as const,
   },
   sessionKey: 'plain-session-key',
   session: {

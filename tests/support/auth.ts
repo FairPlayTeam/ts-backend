@@ -8,7 +8,7 @@ const sessionResult = {
     username: 'fairplay_user',
     displayName: 'Fairplay User',
     bio: 'Definitely not an undercover Y**tube employee.',
-    role: 'user',
+    role: 'user' as const,
   },
   sessionKey: 'test-session-key',
   session: {

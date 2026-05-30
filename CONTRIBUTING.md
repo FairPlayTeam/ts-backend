@@ -51,8 +51,14 @@ The full Swagger UI documentation will be available at /docs.
 - `TRUST_PROXY` indicate if express can trust the proxy, if it's running behind a proxy, for example `false` or `loopback`
 - `CORS_ORIGINS` allowed URLs for requests
 - `REDIS_URL` Redis connection URL used for distributed rate limiting, for example `redis://localhost:6379`
+- `RATE_LIMIT_KEY_SECRET` secret used to anonymize identifier-based rate limit keys. It must be at least 32 characters.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` are required to send emails. You can customize these values depending on the SMTP provider you're using.
 - `FRONTEND_URL` the URL of your frontend, for example `http://localhost:3001`. It's mainly used to generate verification links for email verification.
+
+### Notes
+
+Redis, SMTP, and `RATE_LIMIT_KEY_SECRET` are mandatory in production. `TRUST_PROXY` should be
+configured explicitly when the backend runs behind a reverse proxy or load balancer.
 
 ### Commit template
 

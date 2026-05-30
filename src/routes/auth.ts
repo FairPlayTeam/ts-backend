@@ -1,6 +1,6 @@
 import { Router, type RequestHandler } from 'express';
 import { ApiErrorSchema, ApiOrValidationErrorSchema, registerRoute } from '../docs/registry.js';
-import { createAuthenticateSession, createRejectAuthenticatedSession } from '../middleware/auth.js';
+import { createAuthenticateSession } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
 import { createAuthController } from '../controllers/auth.controller.js';
 import { type AuthService } from '../services/auth.types.js';
@@ -37,13 +37,27 @@ import {
   verifyEmailSchema,
 } from '../controllers/auth.schemas.js';
 import { jsonResponse } from '../docs/openapi.helpers.js';
+import { createRouteProtector } from '../middleware/routeProtection.js';
 
 type AuthRouterDependencies = {
   authService: AuthService;
   authLimiter: RequestHandler;
+  loginIdentifierLimiter: RequestHandler;
+  passwordResetEmailCooldown: RequestHandler;
+  passwordResetIdentifierLimiter: RequestHandler;
+  resendVerificationEmailCooldown: RequestHandler;
+  resendVerificationIdentifierLimiter: RequestHandler;
 };
 
-const createAuthRouter = ({ authService, authLimiter }: AuthRouterDependencies) => {
+const createAuthRouter = ({
+  authService,
+  authLimiter,
+  loginIdentifierLimiter,
+  passwordResetEmailCooldown,
+  passwordResetIdentifierLimiter,
+  resendVerificationEmailCooldown,
+  resendVerificationIdentifierLimiter,
+}: AuthRouterDependencies) => {
   const router = Router();
   const {
     register,
@@ -62,19 +76,21 @@ const createAuthRouter = ({ authService, authLimiter }: AuthRouterDependencies) 
     authService,
   });
   const authenticateSession = createAuthenticateSession({ authService });
-  const rejectAuthenticatedSession = createRejectAuthenticatedSession({ authService });
+  const protect = createRouteProtector({ authService });
 
   router.post('/register', authLimiter, validate(registerSchema), register);
-  router.post('/login', authLimiter, validate(loginSchema), login);
+  router.post('/login', authLimiter, validate(loginSchema), loginIdentifierLimiter, login);
   router.post('/verify-email', authLimiter, validate(verifyEmailSchema), verifyEmail);
   router.post(
     '/resend-verification',
     authLimiter,
     validate(resendVerificationSchema),
+    resendVerificationIdentifierLimiter,
+    resendVerificationEmailCooldown,
     resendVerification,
   );
-  router.get('/me', authenticateSession, me);
-  router.patch('/me', authenticateSession, validate(updateProfileSchema), updateMe);
+  router.get('/me', ...protect(), me);
+  router.patch('/me', ...protect(), validate(updateProfileSchema), updateMe);
   router.get('/sessions', authenticateSession, validate(userSessionsSchema), sessions);
   router.delete('/sessions/all', authenticateSession, logoutAll);
   router.delete('/sessions/others/all', authenticateSession, logoutOthers);
@@ -87,8 +103,10 @@ const createAuthRouter = ({ authService, authLimiter }: AuthRouterDependencies) 
   router.post(
     '/forgot-password',
     authLimiter,
-    rejectAuthenticatedSession,
+    ...protect({ access: 'guest' }),
     validate(requestPasswordResetSchema),
+    passwordResetIdentifierLimiter,
+    passwordResetEmailCooldown,
     requestPasswordReset,
   );
   router.post('/reset-password', authLimiter, validate(resetPasswordSchema), resetPassword);

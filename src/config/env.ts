@@ -5,6 +5,7 @@ import {
   parseIsProduction,
   parseJsonBodyLimitBytes,
   parseOptionalUrl,
+  parseRateLimitKeySecret,
   parseRequiredUrl,
   parseServerPort,
   parseSessionCleanupInactiveRetentionMs,
@@ -35,6 +36,7 @@ const config = {
   isProduction,
   allowedOrigins: parseAllowedOrigins(process.env.CORS_ORIGINS),
   redisUrl: parseOptionalUrl(process.env.REDIS_URL, 'REDIS_URL'),
+  rateLimitKeySecret: parseRateLimitKeySecret(process.env.RATE_LIMIT_KEY_SECRET, isProduction),
   sessionCleanupIntervalMs: parseSessionCleanupIntervalMs(
     process.env.SESSION_CLEANUP_INTERVAL_MINUTES,
   ),

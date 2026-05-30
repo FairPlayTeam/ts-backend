@@ -131,6 +131,7 @@ const createIntegrationApp = async (runtime: TestRuntime) =>
       baseUrl: 'http://localhost:3000',
       isProduction: false,
       jsonBodyLimitBytes: 1024 * 1024,
+      rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
       trustProxy: false,
     },
     {
@@ -450,5 +451,88 @@ describe('auth integration', () => {
     } finally {
       await closeRedisClient(secondRedisClient, testLogger);
     }
+  });
+
+  test('rate limits login attempts by normalized identifier', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const email = 'login-limit@example.com';
+
+    await runtime.authService.register({
+      email,
+      username: 'login_limit_user',
+      password: INITIAL_PASSWORD,
+    });
+
+    const verificationEmail = runtime.delivered.verification.at(-1);
+    await runtime.authService.verifyEmail({ token: verificationEmail?.token ?? '' });
+
+    for (let index = 0; index < 5; index += 1) {
+      await request(app)
+        .post('/auth/login')
+        .send({
+          emailOrUsername: ` ${email.toUpperCase()} `,
+          password: 'WrongPassword1!',
+        })
+        .expect(401)
+        .expect({
+          error: 'Unauthorized',
+          message: 'Invalid credentials',
+        });
+    }
+
+    await request(app)
+      .post('/auth/login')
+      .send({
+        emailOrUsername: email,
+        password: 'WrongPassword1!',
+      })
+      .expect(429)
+      .expect({
+        error: 'TooManyRequests',
+        message: 'Too many login attempts for this identifier, please try again after 10 minutes.',
+      });
+  });
+
+  test('keeps password reset responses generic during email cooldowns', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const email = 'reset-cooldown@example.com';
+    const expectedResponse = {
+      message:
+        'If this email exists and is eligible for password reset, a reset link has been sent.',
+    };
+
+    await runtime.authService.register({
+      email,
+      username: 'reset_cooldown_user',
+      password: INITIAL_PASSWORD,
+    });
+
+    const verificationEmail = runtime.delivered.verification.at(-1);
+    await runtime.authService.verifyEmail({ token: verificationEmail?.token ?? '' });
+    runtime.delivered.passwordReset = [];
+
+    await request(app)
+      .post('/auth/forgot-password')
+      .send({ email: ` ${email.toUpperCase()} ` })
+      .expect(200)
+      .expect(expectedResponse);
+
+    expect(runtime.delivered.passwordReset).toHaveLength(1);
+
+    await request(app)
+      .post('/auth/forgot-password')
+      .send({ email })
+      .expect(200)
+      .expect(expectedResponse);
+
+    expect(runtime.delivered.passwordReset).toHaveLength(1);
   });
 });

@@ -10,14 +10,28 @@ import { generateOpenApi } from './docs/openapi.js';
 import { HttpError } from './errors/http.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { createLimiters } from './middleware/limiters.js';
+import { createEmailCooldown } from './middleware/abuseProtection.js';
 import type { Config } from './config/env.js';
 import type { RedisClient } from './lib/redis.js';
 import type { AuthService } from './services/auth.types.js';
 import helmet from 'helmet';
+import {
+  PASSWORD_RESET_EMAIL_COOLDOWN_MS,
+  RESEND_VERIFICATION_EMAIL_COOLDOWN_MS,
+} from './config/constants.js';
+import {
+  RESEND_VERIFICATION_SUCCESS_MESSAGE,
+  RESET_PASSWORD_EMAIL_MESSAGE,
+} from './services/auth/auth.messages.js';
 
 type CreateAppConfig = Pick<
   Config,
-  'allowedOrigins' | 'baseUrl' | 'isProduction' | 'jsonBodyLimitBytes' | 'trustProxy'
+  | 'allowedOrigins'
+  | 'baseUrl'
+  | 'isProduction'
+  | 'jsonBodyLimitBytes'
+  | 'rateLimitKeySecret'
+  | 'trustProxy'
 >;
 
 type CreateAppDependencies = {
@@ -44,8 +58,33 @@ const getHeader = (rawHeader: string | string[] | undefined): string | undefined
 
 export async function createApp(config: CreateAppConfig, deps: CreateAppDependencies) {
   const app = express();
-  const { apiLimiter, authLimiter } = createLimiters({
+  const {
+    apiLimiter,
+    authLimiter,
+    loginIdentifierLimiter,
+    passwordResetIdentifierLimiter,
+    resendVerificationIdentifierLimiter,
+  } = createLimiters({
     redisClient: deps.redisClient ?? null,
+    rateLimitKeySecret: config.rateLimitKeySecret,
+    logger,
+  });
+  const passwordResetEmailCooldown = createEmailCooldown({
+    redisClient: deps.redisClient ?? null,
+    keyPrefix: 'email-cooldown:password-reset',
+    keySecret: config.rateLimitKeySecret,
+    ttlMs: PASSWORD_RESET_EMAIL_COOLDOWN_MS,
+    acceptedResponse: { message: RESET_PASSWORD_EMAIL_MESSAGE },
+    getIdentifier: (req) => (typeof req.body?.email === 'string' ? req.body.email : null),
+    logger,
+  });
+  const resendVerificationEmailCooldown = createEmailCooldown({
+    redisClient: deps.redisClient ?? null,
+    keyPrefix: 'email-cooldown:resend-verification',
+    keySecret: config.rateLimitKeySecret,
+    ttlMs: RESEND_VERIFICATION_EMAIL_COOLDOWN_MS,
+    acceptedResponse: { message: RESEND_VERIFICATION_SUCCESS_MESSAGE },
+    getIdentifier: (req) => (typeof req.body?.email === 'string' ? req.body.email : null),
     logger,
   });
 
@@ -123,7 +162,12 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     {
       authService: deps.authService,
       authLimiter,
+      loginIdentifierLimiter,
+      passwordResetEmailCooldown,
+      passwordResetIdentifierLimiter,
       readinessChecks: deps.readinessChecks ?? null,
+      resendVerificationEmailCooldown,
+      resendVerificationIdentifierLimiter,
     },
     apiLimiter,
   );

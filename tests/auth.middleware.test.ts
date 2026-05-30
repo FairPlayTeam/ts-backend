@@ -5,6 +5,7 @@ import {
   createRejectAuthenticatedSession,
   type AuthenticatedRequest,
 } from '../src/middleware/auth.js';
+import { createRouteProtector } from '../src/middleware/routeProtection.js';
 import { HttpError } from '../src/errors/http.js';
 
 const sessionResult = {
@@ -14,7 +15,7 @@ const sessionResult = {
     username: 'fairplay_user',
     displayName: 'Fairplay User',
     bio: 'Definitely not an undercover Y**tube employee.',
-    role: 'user',
+    role: 'user' as const,
   },
   session: {
     id: 'session-id',
@@ -201,5 +202,53 @@ describe('auth session middleware', () => {
     );
 
     expect(observedErrors).toEqual([undefined, undefined]);
+  });
+
+  test('enforces role-based route protection after authentication', async () => {
+    const adminSessionResult = {
+      ...sessionResult,
+      user: {
+        ...sessionResult.user,
+        role: 'admin' as const,
+      },
+    };
+    const runProtectedRoute = async (
+      validationResult: typeof sessionResult | typeof adminSessionResult,
+    ) => {
+      const errors: unknown[] = [];
+      const req = createRequest('Bearer plain-session-token');
+      const protect = createRouteProtector({
+        authService: {
+          validateSession: async () => validationResult,
+        },
+      });
+
+      for (const handler of protect({ roles: ['admin'] })) {
+        await handler(
+          req,
+          {} as Response,
+          ((err?: unknown) => {
+            if (err) {
+              errors.push(err);
+            }
+          }) as NextFunction,
+        );
+
+        if (errors.length > 0) {
+          break;
+        }
+      }
+
+      return errors;
+    };
+
+    const userErrors = await runProtectedRoute(sessionResult);
+    expect(userErrors).toHaveLength(1);
+    expect(userErrors[0]).toBeInstanceOf(HttpError);
+    expect((userErrors[0] as HttpError).statusCode).toBe(403);
+    expect((userErrors[0] as HttpError).code).toBe('Forbidden');
+    expect((userErrors[0] as HttpError).message).toBe('Insufficient permissions');
+
+    await expect(runProtectedRoute(adminSessionResult)).resolves.toEqual([]);
   });
 });

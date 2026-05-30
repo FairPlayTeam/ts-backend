@@ -1,3 +1,6 @@
+export const AUTH_ROLES = ['user', 'moderator', 'admin'] as const;
+export type AuthRole = (typeof AUTH_ROLES)[number];
+
 export type Session = {
   id: string;
   expiresAt: Date;
@@ -9,7 +12,7 @@ export type AuthUser = {
   username: string;
   displayName: string | null;
   bio: string | null;
-  role: string;
+  role: AuthRole;
 };
 
 export type RegisterInput = {

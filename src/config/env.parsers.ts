@@ -211,6 +211,39 @@ export const parseAllowedOrigins = (rawValue: string | undefined): string[] => {
   ];
 };
 
+const DEV_RATE_LIMIT_KEY_SECRET = 'development-rate-limit-key-secret-change-me';
+const PRODUCTION_RATE_LIMIT_KEY_SECRET_PLACEHOLDERS = new Set([
+  DEV_RATE_LIMIT_KEY_SECRET,
+  'change-me-with-at-least-32-characters',
+]);
+
+export const parseRateLimitKeySecret = (
+  rawValue: string | undefined,
+  isProduction: boolean,
+): string => {
+  const value = rawValue?.trim();
+
+  if (!value) {
+    if (isProduction) {
+      throw new ServerConfigurationError('RATE_LIMIT_KEY_SECRET is required in production');
+    }
+
+    return DEV_RATE_LIMIT_KEY_SECRET;
+  }
+
+  if (value.length < 32) {
+    throw new ServerConfigurationError('RATE_LIMIT_KEY_SECRET must be at least 32 characters long');
+  }
+
+  if (isProduction && PRODUCTION_RATE_LIMIT_KEY_SECRET_PLACEHOLDERS.has(value.toLowerCase())) {
+    throw new ServerConfigurationError(
+      'RATE_LIMIT_KEY_SECRET must not use a default placeholder in production',
+    );
+  }
+
+  return value;
+};
+
 const parseSmtpPort = (rawPort: string | undefined): number => {
   const value = readRequiredEnv(rawPort, 'SMTP_PORT');
   const smtpPort = Number(value);

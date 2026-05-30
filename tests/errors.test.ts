@@ -51,6 +51,7 @@ describe('error handling', () => {
         baseUrl: 'http://localhost:3000/',
         isProduction: false,
         jsonBodyLimitBytes: 64,
+        rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
         trustProxy: false,
       },
       { authService: createStubAuthService() },

@@ -6,6 +6,7 @@ import {
   parseJsonBodyLimitBytes,
   parseMailerConfig,
   parseOptionalUrl,
+  parseRateLimitKeySecret,
   parseRequiredUrl,
   parseSessionCleanupInactiveRetentionMs,
   parseSessionCleanupIntervalMs,
@@ -60,6 +61,18 @@ describe('env parsers', () => {
   test('parses runtime mode', () => {
     expect(parseIsProduction('production')).toBe(true);
     expect(parseIsProduction('development')).toBe(false);
+  });
+
+  test('parses rate limit key secrets', () => {
+    expect(parseRateLimitKeySecret(undefined, false)).toBe(
+      'development-rate-limit-key-secret-change-me',
+    );
+    expect(parseRateLimitKeySecret('a'.repeat(32), true)).toBe('a'.repeat(32));
+    expect(() => parseRateLimitKeySecret(undefined, true)).toThrow(ServerConfigurationError);
+    expect(() => parseRateLimitKeySecret('too-short', false)).toThrow(ServerConfigurationError);
+    expect(() => parseRateLimitKeySecret('change-me-with-at-least-32-characters', true)).toThrow(
+      ServerConfigurationError,
+    );
   });
 
   test('parses and normalizes allowed CORS origins', () => {
