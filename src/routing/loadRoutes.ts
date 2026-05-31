@@ -1,6 +1,7 @@
 import type { Express, RequestHandler, Router as ExpressRouter } from 'express';
 import { readdir, stat } from 'node:fs/promises';
 import { logger } from '../lib/logger.js';
+import type { RouteDoc } from '../docs/registry.js';
 
 type RouteFactory<TContext> = (context: TContext) => unknown;
 
@@ -20,6 +21,11 @@ type RouteModule<TContext> = {
   createRouter?: RouteFactory<TContext>;
   default?: unknown;
   register?: RouteRegister<TContext>;
+  routeDocs?: readonly RouteDoc[];
+};
+
+export type LoadedRoutes = {
+  openApiRouteDocs: RouteDoc[];
 };
 
 function routePathFromFile(relativeFile: string): string {
@@ -76,12 +82,12 @@ async function loadRoutes<TContext>(
   routesDirUrl: URL,
   context: TContext,
   apiLimiter: RequestHandler,
-) {
+): Promise<LoadedRoutes> {
   try {
     await stat(routesDirUrl);
   } catch {
     logger.warn({ path: routesDirUrl.toString() }, 'Routes directory not found');
-    return;
+    return { openApiRouteDocs: [] };
   }
 
   const routeFiles = (await walkFiles(routesDirUrl))
@@ -96,10 +102,13 @@ async function loadRoutes<TContext>(
     })
     .sort(compareRouteFiles);
 
+  const openApiRouteDocs: RouteDoc[] = [];
+
   for (const { fileUrl, relativeFile, routePath } of routeFiles) {
     const mod = (await import(fileUrl.toString())) as RouteModule<TContext>;
     const routerFactory = mod.createRouter;
     const router = mod.default;
+    let routeLoaded = false;
 
     if (typeof routerFactory === 'function') {
       const createdRouter = routerFactory(context);
@@ -107,22 +116,31 @@ async function loadRoutes<TContext>(
       if (createdRouter && typeof createdRouter === 'function') {
         app.use(routePath, apiLimiter, createdRouter as ExpressRouter);
         logger.info({ file: relativeFile, route: routePath }, 'route mounted');
+        routeLoaded = true;
       } else {
         logger.warn({ file: relativeFile }, 'Skipped route factory, no Router returned');
       }
     } else if (router && typeof router === 'function') {
       app.use(routePath, apiLimiter, router as ExpressRouter);
       logger.info({ file: relativeFile, route: routePath }, 'route mounted');
+      routeLoaded = true;
     } else if (typeof mod.register === 'function') {
       await mod.register(app, routePath, context);
       logger.info({ file: relativeFile, route: routePath }, 'Route registered');
+      routeLoaded = true;
     } else {
       logger.warn(
         { file: relativeFile },
         'Skipped path, no createRouter(context), default Router, or register(app, route, context) export',
       );
     }
+
+    if (routeLoaded && mod.routeDocs) {
+      openApiRouteDocs.push(...mod.routeDocs);
+    }
   }
+
+  return { openApiRouteDocs };
 }
 
 export default loadRoutes;

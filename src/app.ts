@@ -156,7 +156,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
 
   app.use(express.json({ limit: config.jsonBodyLimitBytes }));
 
-  await loadRoutes(
+  const { openApiRouteDocs } = await loadRoutes(
     app,
     new URL('./routes/', import.meta.url),
     {
@@ -172,7 +172,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     apiLimiter,
   );
 
-  const openApiDoc = generateOpenApi({ serverUrl: config.baseUrl });
+  const openApiDoc = generateOpenApi({ routeDocs: openApiRouteDocs, serverUrl: config.baseUrl });
 
   app.get('/openapi.json', apiLimiter, (_req, res) => {
     res.set(

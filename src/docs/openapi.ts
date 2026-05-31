@@ -1,12 +1,14 @@
 import { OpenApiGeneratorV3 } from '@asteasolutions/zod-to-openapi';
 import { APP_API_NAME, APP_PRODUCT_NAME, APP_VERSION } from '../config/constants.js';
-import { registry } from './registry.js';
+import { createOpenApiRegistry, type RouteDoc } from './registry.js';
 
 type GenerateOpenApiOptions = {
+  routeDocs: readonly RouteDoc[];
   serverUrl?: string;
 };
 
-export function generateOpenApi(options: GenerateOpenApiOptions = {}) {
+export function generateOpenApi(options: GenerateOpenApiOptions) {
+  const registry = createOpenApiRegistry(options.routeDocs);
   const generator = new OpenApiGeneratorV3(registry.definitions, {
     sortComponents: 'alphabetically',
   });

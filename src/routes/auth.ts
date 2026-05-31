@@ -1,5 +1,5 @@
 import { Router, type RequestHandler } from 'express';
-import { ApiErrorSchema, ApiOrValidationErrorSchema, registerRoute } from '../docs/registry.js';
+import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from '../docs/registry.js';
 import { createAuthenticateSession } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
 import { createAuthController } from '../controllers/auth.controller.js';
@@ -128,266 +128,260 @@ const badRequestErrorResponse = {
   400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
 };
 
-registerRoute({
-  method: 'post',
-  path: '/auth/register',
-  summary: 'Register a new user',
-  tags: ['Auth'],
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: registerBodySchema,
+export const routeDocs = [
+  {
+    method: 'post',
+    path: '/auth/register',
+    summary: 'Register a new user',
+    tags: ['Auth'],
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: registerBodySchema,
+          },
         },
       },
     },
+    responses: {
+      201: jsonResponse('Account created', registerResponseSchema),
+
+      ...badRequestErrorResponse,
+
+      409: jsonResponse('Email or username already in use', ApiErrorSchema),
+
+      ...commonErrorResponses,
+    },
   },
-  responses: {
-    201: jsonResponse('Account created', registerResponseSchema),
-
-    ...badRequestErrorResponse,
-
-    409: jsonResponse('Email or username already in use', ApiErrorSchema),
-
-    ...commonErrorResponses,
-  },
-});
-
-registerRoute({
-  method: 'post',
-  path: '/auth/login',
-  summary: 'Log in with an email or username',
-  tags: ['Auth'],
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: loginBodySchema,
+  {
+    method: 'post',
+    path: '/auth/login',
+    summary: 'Log in with an email or username',
+    tags: ['Auth'],
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: loginBodySchema,
+          },
         },
       },
     },
+    responses: {
+      200: jsonResponse('Login successful', loginResponseSchema),
+
+      401: jsonResponse('Invalid credentials', ApiErrorSchema),
+
+      403: jsonResponse('Account is not allowed to log in', ApiErrorSchema),
+
+      ...badRequestErrorResponse,
+      ...commonErrorResponses,
+    },
   },
-  responses: {
-    200: jsonResponse('Login successful', loginResponseSchema),
-
-    401: jsonResponse('Invalid credentials', ApiErrorSchema),
-
-    403: jsonResponse('Account is not allowed to log in', ApiErrorSchema),
-
-    ...badRequestErrorResponse,
-    ...commonErrorResponses,
-  },
-});
-
-registerRoute({
-  method: 'post',
-  path: '/auth/verify-email',
-  summary: 'Verify an email address',
-  tags: ['Auth'],
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: verifyEmailBodySchema,
+  {
+    method: 'post',
+    path: '/auth/verify-email',
+    summary: 'Verify an email address',
+    tags: ['Auth'],
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: verifyEmailBodySchema,
+          },
         },
       },
     },
+    responses: {
+      200: jsonResponse('Email verified and session created', verifyEmailResponseSchema),
+
+      ...badRequestErrorResponse,
+
+      403: jsonResponse('Account is not allowed to verify email', ApiErrorSchema),
+
+      ...commonErrorResponses,
+    },
   },
-  responses: {
-    200: jsonResponse('Email verified and session created', verifyEmailResponseSchema),
-
-    ...badRequestErrorResponse,
-
-    403: jsonResponse('Account is not allowed to verify email', ApiErrorSchema),
-
-    ...commonErrorResponses,
-  },
-});
-
-registerRoute({
-  method: 'post',
-  path: '/auth/resend-verification',
-  summary: 'Resend an email verification link',
-  tags: ['Auth'],
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: resendVerificationBodySchema,
+  {
+    method: 'post',
+    path: '/auth/resend-verification',
+    summary: 'Resend an email verification link',
+    tags: ['Auth'],
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: resendVerificationBodySchema,
+          },
         },
       },
     },
+    responses: {
+      200: jsonResponse('Verification resend request accepted', resendVerificationResponseSchema),
+
+      ...badRequestErrorResponse,
+      ...commonErrorResponses,
+    },
   },
-  responses: {
-    200: jsonResponse('Verification resend request accepted', resendVerificationResponseSchema),
+  {
+    method: 'get',
+    path: '/auth/me',
+    summary: 'Get current user profile data',
+    tags: ['Auth'],
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: jsonResponse('Current user profile', currentUserResponseSchema),
 
-    ...badRequestErrorResponse,
-    ...commonErrorResponses,
+      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      ...commonErrorResponses,
+    },
   },
-});
+  {
+    method: 'get',
+    path: '/auth/sessions',
+    summary: 'Get current user active sessions',
+    tags: ['Auth'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      query: userSessionsQuerySchema,
+    },
+    responses: {
+      200: jsonResponse('Current user active sessions', userSessionsResponseSchema),
 
-registerRoute({
-  method: 'get',
-  path: '/auth/me',
-  summary: 'Get current user profile data',
-  tags: ['Auth'],
-  security: [{ bearerAuth: [] }],
-  responses: {
-    200: jsonResponse('Current user profile', currentUserResponseSchema),
+      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
 
-    401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
-
-    ...commonErrorResponses,
+      ...commonErrorResponses,
+    },
   },
-});
+  {
+    method: 'delete',
+    path: '/auth/sessions/all',
+    summary: 'Logout from all sessions including current',
+    tags: ['Auth'],
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: jsonResponse('All sessions logged out successfully', logoutAllSessionsResponseSchema),
 
-registerRoute({
-  method: 'get',
-  path: '/auth/sessions',
-  summary: 'Get current user active sessions',
-  tags: ['Auth'],
-  security: [{ bearerAuth: [] }],
-  request: {
-    query: userSessionsQuerySchema,
+      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      ...commonErrorResponses,
+    },
   },
-  responses: {
-    200: jsonResponse('Current user active sessions', userSessionsResponseSchema),
+  {
+    method: 'delete',
+    path: '/auth/sessions/others/all',
+    summary: 'Logout from other sessions while keeping the current session',
+    tags: ['Auth'],
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: jsonResponse(
+        'Other sessions logged out successfully',
+        logoutOtherSessionsResponseSchema,
+      ),
 
-    401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
 
-    ...commonErrorResponses,
+      ...commonErrorResponses,
+    },
   },
-});
+  {
+    method: 'delete',
+    path: '/auth/sessions/{sessionId}',
+    summary: 'Logout from a specific session',
+    tags: ['Auth'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      params: logoutSessionParamsSchema,
+    },
+    responses: {
+      200: jsonResponse('Session logged out successfully', logoutSessionResponseSchema),
 
-registerRoute({
-  method: 'delete',
-  path: '/auth/sessions/all',
-  summary: 'Logout from all sessions including current',
-  tags: ['Auth'],
-  security: [{ bearerAuth: [] }],
-  responses: {
-    200: jsonResponse('All sessions logged out successfully', logoutAllSessionsResponseSchema),
+      ...badRequestErrorResponse,
 
-    401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
 
-    ...commonErrorResponses,
+      ...commonErrorResponses,
+    },
   },
-});
-
-registerRoute({
-  method: 'delete',
-  path: '/auth/sessions/others/all',
-  summary: 'Logout from other sessions while keeping the current session',
-  tags: ['Auth'],
-  security: [{ bearerAuth: [] }],
-  responses: {
-    200: jsonResponse('Other sessions logged out successfully', logoutOtherSessionsResponseSchema),
-
-    401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
-
-    ...commonErrorResponses,
-  },
-});
-
-registerRoute({
-  method: 'delete',
-  path: '/auth/sessions/{sessionId}',
-  summary: 'Logout from a specific session',
-  tags: ['Auth'],
-  security: [{ bearerAuth: [] }],
-  request: {
-    params: logoutSessionParamsSchema,
-  },
-  responses: {
-    200: jsonResponse('Session logged out successfully', logoutSessionResponseSchema),
-
-    ...badRequestErrorResponse,
-
-    401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
-
-    ...commonErrorResponses,
-  },
-});
-
-registerRoute({
-  method: 'patch',
-  path: '/auth/me',
-  summary: 'Update current user profile',
-  tags: ['Auth'],
-  security: [{ bearerAuth: [] }],
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: updateProfileBodySchema,
+  {
+    method: 'patch',
+    path: '/auth/me',
+    summary: 'Update current user profile',
+    tags: ['Auth'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: updateProfileBodySchema,
+          },
         },
       },
     },
+    responses: {
+      200: jsonResponse('Profile updated successfully', updateProfileResponseSchema),
+
+      ...badRequestErrorResponse,
+
+      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      ...commonErrorResponses,
+    },
   },
-  responses: {
-    200: jsonResponse('Profile updated successfully', updateProfileResponseSchema),
-
-    ...badRequestErrorResponse,
-
-    401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
-
-    ...commonErrorResponses,
-  },
-});
-
-registerRoute({
-  method: 'post',
-  path: '/auth/forgot-password',
-  summary: 'Request a password reset email',
-  tags: ['Auth'],
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: requestPasswordResetBodySchema,
+  {
+    method: 'post',
+    path: '/auth/forgot-password',
+    summary: 'Request a password reset email',
+    tags: ['Auth'],
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: requestPasswordResetBodySchema,
+          },
         },
       },
     },
+    responses: {
+      200: jsonResponse('Password reset request accepted', requestPasswordResetResponseSchema),
+
+      ...badRequestErrorResponse,
+
+      409: jsonResponse('Already authenticated', ApiErrorSchema),
+
+      ...commonErrorResponses,
+    },
   },
-  responses: {
-    200: jsonResponse('Password reset request accepted', requestPasswordResetResponseSchema),
-
-    ...badRequestErrorResponse,
-
-    409: jsonResponse('Already authenticated', ApiErrorSchema),
-
-    ...commonErrorResponses,
-  },
-});
-
-registerRoute({
-  method: 'post',
-  path: '/auth/reset-password',
-  summary: 'Reset account password using an emailed token',
-  tags: ['Auth'],
-  request: {
-    body: {
-      required: true,
-      content: {
-        'application/json': {
-          schema: resetPasswordBodySchema,
+  {
+    method: 'post',
+    path: '/auth/reset-password',
+    summary: 'Reset account password using an emailed token',
+    tags: ['Auth'],
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: resetPasswordBodySchema,
+          },
         },
       },
     },
+    responses: {
+      200: jsonResponse('Password reset successfully', resetPasswordResponseSchema),
+
+      ...badRequestErrorResponse,
+
+      403: jsonResponse('Account is not allowed to reset password', ApiErrorSchema),
+
+      ...commonErrorResponses,
+    },
   },
-  responses: {
-    200: jsonResponse('Password reset successfully', resetPasswordResponseSchema),
-
-    ...badRequestErrorResponse,
-
-    403: jsonResponse('Account is not allowed to reset password', ApiErrorSchema),
-
-    ...commonErrorResponses,
-  },
-});
+] satisfies RouteDoc[];

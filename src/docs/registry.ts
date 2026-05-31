@@ -1,58 +1,65 @@
-import './zod.js';
 import { OpenAPIRegistry, type RouteConfig } from '@asteasolutions/zod-to-openapi';
-import { z } from 'zod';
 import { API_ERROR_CODES } from '../errors/http.js';
+import { z } from './zod.js';
 
-type RouteDoc = RouteConfig;
+export type RouteDoc = RouteConfig;
 
-export const registry = new OpenAPIRegistry();
-
-export const ApiErrorSchema = registry.register(
-  'ApiError',
-  z.object({
+export const ApiErrorSchema = z
+  .object({
     error: z.enum(API_ERROR_CODES),
     message: z.string(),
-  }),
-);
+  })
+  .openapi('ApiError');
 
-const ValidationErrorDetailSchema = registry.register(
-  'ValidationErrorDetail',
-  z.object({
+const ValidationErrorDetailSchema = z
+  .object({
     field: z.string().openapi({ example: 'body.email' }),
     message: z.string(),
-  }),
-);
+  })
+  .openapi('ValidationErrorDetail');
 
-export const ValidationErrorSchema = registry.register(
-  'ValidationError',
-  z.object({
+export const ValidationErrorSchema = z
+  .object({
     error: z.string().openapi({ example: 'ValidationError' }),
     message: z.string().openapi({ example: 'Request validation failed' }),
     details: z.array(ValidationErrorDetailSchema),
-  }),
-);
+  })
+  .openapi('ValidationError');
 
-export const ApiOrValidationErrorSchema = registry.register(
-  'ApiOrValidationError',
-  z.union([ApiErrorSchema, ValidationErrorSchema]),
-);
+export const ApiOrValidationErrorSchema = z
+  .union([ApiErrorSchema, ValidationErrorSchema])
+  .openapi('ApiOrValidationError');
 
-registry.registerComponent('securitySchemes', 'bearerAuth', {
-  type: 'http',
-  scheme: 'bearer',
-  bearerFormat: 'Session key',
-  description: 'Paste the sessionKey returned by /auth/login or /auth/verify-email.',
-});
+const registerSharedComponents = (registry: OpenAPIRegistry): void => {
+  registry.register('ApiError', ApiErrorSchema);
+  registry.register('ValidationErrorDetail', ValidationErrorDetailSchema);
+  registry.register('ValidationError', ValidationErrorSchema);
+  registry.register('ApiOrValidationError', ApiOrValidationErrorSchema);
 
-const registeredPaths = new Set<string>();
+  registry.registerComponent('securitySchemes', 'bearerAuth', {
+    type: 'http',
+    scheme: 'bearer',
+    bearerFormat: 'Session key',
+    description: 'Paste the sessionKey returned by /auth/login or /auth/verify-email.',
+  });
+};
 
-export const registerRoute = (doc: RouteDoc): void => {
-  const key = `${doc.method.toUpperCase()} ${doc.path}`;
+export const createOpenApiRegistry = (routeDocs: readonly RouteDoc[]): OpenAPIRegistry => {
+  const registry = new OpenAPIRegistry();
+  const registeredPaths = new Set<string>();
 
-  if (registeredPaths.has(key)) {
-    throw new Error(`OpenAPI route already registered: ${key}`);
+  registerSharedComponents(registry);
+
+  for (const doc of routeDocs) {
+    const key = `${doc.method.toUpperCase()} ${doc.path}`;
+
+    if (registeredPaths.has(key)) {
+      throw new Error(`OpenAPI route already registered: ${key}`);
+    }
+
+    registeredPaths.add(key);
+    registry.registerPath(doc);
   }
 
-  registeredPaths.add(key);
-  registry.registerPath(doc);
+  return registry;
 };

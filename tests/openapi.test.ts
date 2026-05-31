@@ -1,11 +1,15 @@
 import { describe, expect, test } from 'bun:test';
+import request from 'supertest';
 import { createApp } from '../src/app.js';
+import { jsonResponse } from '../src/docs/openapi.helpers.js';
 import { generateOpenApi } from '../src/docs/openapi.js';
+import type { RouteDoc } from '../src/docs/registry.js';
+import { z } from '../src/docs/zod.js';
 import { createStubAuthService } from './support/auth.js';
 
 describe('OpenAPI generation', () => {
   test('includes auto-loaded routes and Zod request schemas', async () => {
-    await createApp(
+    const app = await createApp(
       {
         allowedOrigins: [],
         baseUrl: 'http://localhost:3000/',
@@ -17,7 +21,8 @@ describe('OpenAPI generation', () => {
       { authService: createStubAuthService() },
     );
 
-    const document = generateOpenApi();
+    const response = await request(app).get('/openapi.json').expect(200);
+    const document = response.body;
 
     expect(Object.keys(document.paths).sort()).toEqual([
       '/',
@@ -141,5 +146,32 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.LivenessResponse).toBeDefined();
     expect(document.components?.schemas?.ReadinessResponse).toBeDefined();
     expect(document.components?.schemas?.ReadinessUnavailableResponse).toBeDefined();
+  });
+
+  test('does not leak route docs between generated documents', () => {
+    const isolatedRouteDocs = [
+      {
+        method: 'get',
+        path: '/isolated',
+        responses: {
+          200: jsonResponse(
+            'Isolated response',
+            z
+              .object({
+                ok: z.literal(true).openapi({ example: true }),
+              })
+              .openapi('IsolatedOpenApiResponse'),
+          ),
+        },
+      },
+    ] satisfies RouteDoc[];
+
+    const documentWithRoute = generateOpenApi({ routeDocs: isolatedRouteDocs });
+    const documentWithoutRoute = generateOpenApi({ routeDocs: [] });
+
+    expect(documentWithRoute.paths['/isolated']).toBeDefined();
+    expect(documentWithRoute.components?.schemas?.IsolatedOpenApiResponse).toBeDefined();
+    expect(documentWithoutRoute.paths['/isolated']).toBeUndefined();
+    expect(documentWithoutRoute.components?.schemas?.IsolatedOpenApiResponse).toBeUndefined();
   });
 });

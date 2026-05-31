@@ -1,5 +1,4 @@
-import '../docs/zod.js';
-import { z } from 'zod';
+import { z } from '../docs/zod.js';
 import {
   BIO_MAX_LENGTH,
   DISPLAY_NAME_MAX_LENGTH,

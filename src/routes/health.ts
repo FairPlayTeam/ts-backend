@@ -1,8 +1,7 @@
 import { Router } from 'express';
-import '../docs/zod.js';
-import { z } from 'zod';
-import { registerRoute } from '../docs/registry.js';
+import type { RouteDoc } from '../docs/registry.js';
 import { jsonResponse } from '../docs/openapi.helpers.js';
+import { z } from '../docs/zod.js';
 
 type ReadinessChecks = {
   database(): Promise<void>;
@@ -105,33 +104,33 @@ const createHealthRouter = ({ readinessChecks = null }: HealthRouterDependencies
 
 export const createRouter = createHealthRouter;
 
-registerRoute({
-  method: 'get',
-  path: '/health/live',
-  summary: 'Liveness probe',
-  tags: ['System'],
-  responses: {
-    200: jsonResponse('Process is alive', livenessSchema),
+export const routeDocs = [
+  {
+    method: 'get',
+    path: '/health/live',
+    summary: 'Liveness probe',
+    tags: ['System'],
+    responses: {
+      200: jsonResponse('Process is alive', livenessSchema),
+    },
   },
-});
-
-registerRoute({
-  method: 'get',
-  path: '/health/ready',
-  summary: 'Readiness probe',
-  tags: ['System'],
-  responses: {
-    200: jsonResponse('Application is ready to serve traffic', readinessSchema),
-    503: jsonResponse('Application is not ready to serve traffic', readinessUnavailableSchema),
+  {
+    method: 'get',
+    path: '/health/ready',
+    summary: 'Readiness probe',
+    tags: ['System'],
+    responses: {
+      200: jsonResponse('Application is ready to serve traffic', readinessSchema),
+      503: jsonResponse('Application is not ready to serve traffic', readinessUnavailableSchema),
+    },
   },
-});
-
-registerRoute({
-  method: 'get',
-  path: '/health',
-  summary: 'Health check',
-  tags: ['System'],
-  responses: {
-    200: jsonResponse('API process is running', healthResponseSchema),
+  {
+    method: 'get',
+    path: '/health',
+    summary: 'Health check',
+    tags: ['System'],
+    responses: {
+      200: jsonResponse('API process is running', healthResponseSchema),
+    },
   },
-});
+] satisfies RouteDoc[];

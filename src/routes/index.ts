@@ -1,7 +1,6 @@
 import { Router } from 'express';
-import '../docs/zod.js';
-import { z } from 'zod';
-import { registerRoute } from '../docs/registry.js';
+import type { RouteDoc } from '../docs/registry.js';
+import { z } from '../docs/zod.js';
 import { APP_API_NAME, APP_VERSION } from '../config/constants.js';
 
 const router = Router();
@@ -22,21 +21,23 @@ router.get('/', (_req, res) => {
   });
 });
 
-registerRoute({
-  method: 'get',
-  path: '/',
-  summary: 'API metadata',
-  tags: ['System'],
-  responses: {
-    200: {
-      description: 'API is running',
-      content: {
-        'application/json': {
-          schema: apiMetadataResponseSchema,
+export const routeDocs = [
+  {
+    method: 'get',
+    path: '/',
+    summary: 'API metadata',
+    tags: ['System'],
+    responses: {
+      200: {
+        description: 'API is running',
+        content: {
+          'application/json': {
+            schema: apiMetadataResponseSchema,
+          },
         },
       },
     },
   },
-});
+] satisfies RouteDoc[];
 
 export default router;
