@@ -31,15 +31,58 @@ This repository contains the FairPlay backend API built with:
 
 ## Quick start
 
+There are two common ways to run the backend locally:
+
+- run Bun on the host while PostgreSQL and Redis run in Docker, which is the recommended
+  development flow
+- run the whole stack with Docker Compose, which is closer to the production container layout
+
+### Local development
+
 ```bash
 bun install
 cp .env.example .env
-docker compose up -d
+docker compose up -d postgres redis
 bunx prisma migrate dev
 bun run dev
 ```
 
+The API runs on http://localhost:3000 and logs are pretty-printed by the development entrypoint.
+
+### Docker Compose stack
+
+```bash
+docker compose up --build
+```
+
+The Compose stack builds the production runtime image, starts PostgreSQL and Redis on the same
+Docker network, runs the Prisma migrations once through the `migrate` service, then starts the API
+on http://localhost:3000.
+
 Make sure to read [CONTRIBUTING.md](CONTRIBUTING.md) for more complete setup instructions.
+
+## Deployment
+
+Production deployments should use the Dockerfile targets:
+
+```bash
+docker build --target runtime -t fairplay-backend:<tag> .
+docker build --target migrator -t fairplay-backend-migrator:<tag> .
+```
+
+Run the migrator image once per release, then run one or more replicas of the runtime image behind
+a reverse proxy or load balancer. Production requires shared PostgreSQL and Redis instances,
+SMTP configuration, and a strong `RATE_LIMIT_KEY_SECRET`.
+
+Managed PostgreSQL and Redis providers are supported. For example, Neon can provide the shared
+PostgreSQL service and Upstash can provide the shared Redis service. Keep provider credentials in
+deployment environment files or secret managers, never in Git.
+
+Cloudflare Tunnel deployments should prefer `TRUST_PROXY=loopback` when `cloudflared` forwards to
+the backend over `127.0.0.1:3000`. Use `/health/ready` for origin health checks.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the deployment model and
+[CONTRIBUTING.md](CONTRIBUTING.md) for the environment variables.
 
 ## Notes
 
@@ -58,9 +101,9 @@ Current overrides:
 
 See https://bun.sh/docs/pm/overrides for more details about overrides.
 
-## API documentation:
+## API Documentation
 
-Since we're now adding OpenAPI to the backend, you can now access a full detailed documentation about our routes. Once your backend is launched, go to:
+Once the backend is running, the generated OpenAPI documentation is available at:
 
 ```text
 http://localhost:3000/docs
@@ -74,7 +117,7 @@ http://localhost:3000/openapi.json
 
 ## Checks
 
-This backend contains different commands you can use to make sure the code is clean and respects conventions.
+This backend contains different commands for checking code quality and project conventions.
 
 ### Scripts
 
@@ -88,7 +131,7 @@ bun test
 bun run test:integration
 ```
 
-or if you want to verify everything at once:
+To run the standard verification suite at once:
 
 ```bash
 bun run check

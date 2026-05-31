@@ -6,7 +6,11 @@ import { authService } from './auth.instance.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 import { closeRedisClient, createRedisClient, connectRedisClient } from './lib/redis.js';
-import { createSessionCleanupJob } from './maintenance/sessionCleanup.js';
+import {
+  createRedisSessionCleanupLock,
+  createSessionCleanupJob,
+} from './maintenance/sessionCleanup.js';
+import { SESSION_CLEANUP_LOCK_TTL_MS } from './config/constants.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
@@ -48,15 +52,17 @@ const sessionCleanupJob = createSessionCleanupJob({
     intervalMs: config.sessionCleanupIntervalMs,
     inactiveRetentionMs: config.sessionCleanupInactiveRetentionMs,
   },
+  lock: redisClient
+    ? createRedisSessionCleanupLock({
+        redisClient,
+        ttlMs: SESSION_CLEANUP_LOCK_TTL_MS,
+      })
+    : null,
   logger,
 });
 
-const server = app.listen(config.port, () => {
-  logger.info({ port: config.port }, 'Server started');
-  sessionCleanupJob.start();
-});
-
 let isShuttingDown = false;
+let server: Server | null = null;
 
 const closeServer = (server: Server): Promise<void> =>
   new Promise((resolve, reject) => {
@@ -72,13 +78,21 @@ const closeServer = (server: Server): Promise<void> =>
     server.closeIdleConnections?.();
   });
 
-const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+const closeServerIfListening = async (server: Server | null): Promise<void> => {
+  if (!server?.listening) {
+    return;
+  }
+
+  await closeServer(server);
+};
+
+const shutdown = async (reason: NodeJS.Signals | 'server_error', exitCode = 0): Promise<void> => {
   if (isShuttingDown) {
     return;
   }
 
   isShuttingDown = true;
-  logger.info({ signal }, 'Graceful shutdown started');
+  logger.info({ reason }, 'Graceful shutdown started');
 
   const timeout = setTimeout(() => {
     logger.fatal({ timeoutMs: SHUTDOWN_TIMEOUT_MS }, 'Graceful shutdown timed out');
@@ -87,13 +101,13 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
 
   try {
     await sessionCleanupJob.stop();
-    await closeServer(server);
+    await closeServerIfListening(server);
     await prisma.$disconnect();
     await closeRedisClient(redisClient, logger);
 
     clearTimeout(timeout);
     logger.info('Graceful shutdown completed');
-    process.exitCode = 0;
+    process.exitCode = exitCode;
   } catch (error) {
     clearTimeout(timeout);
     logger.fatal({ err: error }, 'Graceful shutdown failed');
@@ -106,7 +120,14 @@ const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 
+server = app.listen(config.port);
+
+server.once('listening', () => {
+  logger.info({ port: config.port }, 'Server started');
+  sessionCleanupJob.start();
+});
+
 server.on('error', (error) => {
   logger.fatal({ err: error }, 'Server failed to start');
-  process.exitCode = 1;
+  void shutdown('server_error', 1);
 });

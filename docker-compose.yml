@@ -1,28 +1,75 @@
 services:
-  postgres:
-    image: postgres:17-alpine
-    container_name: fairplay-postgres
+  backend:
+    build:
+      context: .
+      target: runtime
+    image: fairplay-backend:local
+    init: true
     restart: unless-stopped
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: fairplay
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${PORT:-3000}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-fairplay}?schema=public
+      BASE_URL: ${BASE_URL:-http://localhost:3000}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
+      JSON_BODY_LIMIT_BYTES: ${JSON_BODY_LIMIT_BYTES:-1048576}
+      SESSION_CLEANUP_INTERVAL_MINUTES: ${SESSION_CLEANUP_INTERVAL_MINUTES:-60}
+      SESSION_CLEANUP_INACTIVE_RETENTION_DAYS: ${SESSION_CLEANUP_INACTIVE_RETENTION_DAYS:-30}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      REDIS_URL: redis://redis:6379
+      RATE_LIMIT_KEY_SECRET: ${RATE_LIMIT_KEY_SECRET:-local-compose-rate-limit-secret-7f4d2c1b9a8063e5}
     ports:
-      - '5432:5432'
+      - '${BACKEND_BIND_ADDRESS:-127.0.0.1}:${PORT:-3000}:${PORT:-3000}'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - fairplay
+
+  migrate:
+    build:
+      context: .
+      target: migrator
+    image: fairplay-backend-migrator:local
+    restart: 'no'
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-fairplay}?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - fairplay
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-fairplay}
+    ports:
+      - '${POSTGRES_BIND_ADDRESS:-127.0.0.1}:5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U user -d fairplay']
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 5s
       timeout: 3s
       retries: 10
+    networks:
+      - fairplay
 
   redis:
     image: redis:8-alpine
-    container_name: fairplay-redis
     restart: unless-stopped
     ports:
-      - '6379:6379'
+      - '${REDIS_BIND_ADDRESS:-127.0.0.1}:6379:6379'
     volumes:
       - redis_data:/data
     command: ['redis-server', '--appendonly', 'yes']
@@ -31,6 +78,12 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    networks:
+      - fairplay
+
+networks:
+  fairplay:
+    name: fairplay-backend-network
 
 volumes:
   postgres_data:
