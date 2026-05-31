@@ -64,10 +64,11 @@ model Session {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
   @@index([sessionKeySuffix])
   @@index([expiresAt])
-  @@index([isActive])
+  @@index([userId, isActive, expiresAt])
+  @@index([userId, isActive, lastUsedAt, id])
+  @@index([isActive, updatedAt])
   @@map("sessions")
 }
 
