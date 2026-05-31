@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
-import type { CleanupSessionsResult } from '../services/auth.types.js';
+import type { AuthService } from '../services/auth.types.js';
 import type { RedisClient } from '../lib/redis.js';
 
-const SESSION_CLEANUP_LOCK_KEY = 'maintenance:session-cleanup:lock';
+const AUTH_CLEANUP_LOCK_KEY = 'maintenance:auth-cleanup:lock';
 const RELEASE_LOCK_SCRIPT = `
 if redis.call("get", KEYS[1]) == ARGV[1] then
   return redis.call("del", KEYS[1])
@@ -11,23 +11,18 @@ end
 return 0
 `;
 
-type SessionCleanupService = {
-  cleanupSessions(input: {
-    expiredBefore: Date;
-    inactiveUpdatedBefore: Date;
-  }): Promise<CleanupSessionsResult>;
-};
+type AuthCleanupService = Pick<AuthService, 'cleanupExpiredAuthTokens' | 'cleanupSessions'>;
 
-type SessionCleanupLock = {
+type AuthCleanupLock = {
   release(): Promise<void>;
 };
 
-type SessionCleanupLockManager = {
-  acquire(): Promise<SessionCleanupLock | null>;
+type AuthCleanupLockManager = {
+  acquire(): Promise<AuthCleanupLock | null>;
 };
 
-type SessionCleanupJobDependencies = {
-  authService: SessionCleanupService;
+type AuthCleanupJobDependencies = {
+  authService: AuthCleanupService;
   clock: {
     now(): Date;
   };
@@ -35,7 +30,7 @@ type SessionCleanupJobDependencies = {
     intervalMs: number;
     inactiveRetentionMs: number;
   };
-  lock?: SessionCleanupLockManager | null;
+  lock?: AuthCleanupLockManager | null;
   logger: {
     error(data: object, message: string): void;
     info(data: object, message: string): void;
@@ -43,13 +38,13 @@ type SessionCleanupJobDependencies = {
   };
 };
 
-export type SessionCleanupJob = {
+export type AuthCleanupJob = {
   runOnce(): Promise<void>;
   start(): void;
   stop(): Promise<void>;
 };
 
-export const createRedisSessionCleanupLock = ({
+export const createRedisAuthCleanupLock = ({
   redisClient,
   ttlMs,
   tokenFactory = () => crypto.randomUUID(),
@@ -57,12 +52,12 @@ export const createRedisSessionCleanupLock = ({
   redisClient: Pick<RedisClient, 'call'>;
   ttlMs: number;
   tokenFactory?: () => string;
-}): SessionCleanupLockManager => ({
+}): AuthCleanupLockManager => ({
   async acquire() {
     const token = tokenFactory();
     const result = await redisClient.call(
       'set',
-      SESSION_CLEANUP_LOCK_KEY,
+      AUTH_CLEANUP_LOCK_KEY,
       token,
       'PX',
       String(ttlMs),
@@ -75,19 +70,19 @@ export const createRedisSessionCleanupLock = ({
 
     return {
       async release() {
-        await redisClient.call('eval', RELEASE_LOCK_SCRIPT, '1', SESSION_CLEANUP_LOCK_KEY, token);
+        await redisClient.call('eval', RELEASE_LOCK_SCRIPT, '1', AUTH_CLEANUP_LOCK_KEY, token);
       },
     };
   },
 });
 
-export const createSessionCleanupJob = ({
+export const createAuthCleanupJob = ({
   authService,
   clock,
   config,
   lock,
   logger,
-}: SessionCleanupJobDependencies): SessionCleanupJob => {
+}: AuthCleanupJobDependencies): AuthCleanupJob => {
   let timer: ReturnType<typeof setInterval> | null = null;
   let currentRun: Promise<void> | null = null;
 
@@ -99,15 +94,15 @@ export const createSessionCleanupJob = ({
     currentRun = (async () => {
       const now = clock.now();
       const inactiveUpdatedBefore = new Date(now.getTime() - config.inactiveRetentionMs);
-      let acquiredLock: SessionCleanupLock | null = null;
+      let acquiredLock: AuthCleanupLock | null = null;
 
       try {
         acquiredLock = lock ? await lock.acquire() : null;
 
         if (lock && !acquiredLock) {
           logger.info(
-            { lockKey: SESSION_CLEANUP_LOCK_KEY },
-            'Session cleanup skipped because another instance holds the lock',
+            { lockKey: AUTH_CLEANUP_LOCK_KEY },
+            'Auth cleanup skipped because another instance holds the lock',
           );
           return;
         }
@@ -117,13 +112,24 @@ export const createSessionCleanupJob = ({
           inactiveUpdatedBefore,
         });
 
-        logger.info({ sessionsDeleted: result.sessionsDeleted }, 'Session cleanup completed');
+        const tokenResult = await authService.cleanupExpiredAuthTokens({
+          expiredBefore: now,
+        });
+
+        logger.info(
+          {
+            sessionsDeleted: result.sessionsDeleted,
+            emailVerificationTokensDeleted: tokenResult.emailVerificationTokensDeleted,
+            passwordResetTokensDeleted: tokenResult.passwordResetTokensDeleted,
+          },
+          'Auth cleanup completed',
+        );
       } catch (error) {
-        logger.error({ err: error }, 'Session cleanup failed');
+        logger.error({ err: error }, 'Auth cleanup failed');
       } finally {
         if (acquiredLock) {
           await acquiredLock.release().catch((error: unknown) => {
-            logger.warn({ err: error }, 'Session cleanup lock release failed');
+            logger.warn({ err: error }, 'Auth cleanup lock release failed');
           });
         }
 
@@ -153,7 +159,7 @@ export const createSessionCleanupJob = ({
           intervalMs: config.intervalMs,
           inactiveRetentionMs: config.inactiveRetentionMs,
         },
-        'Session cleanup scheduled',
+        'Auth cleanup scheduled',
       );
     },
     async stop() {

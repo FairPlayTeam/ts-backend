@@ -6,6 +6,7 @@ import { createSessionService } from './auth/auth.sessions.js';
 import { createProfileService } from './auth/auth.profile.js';
 import { createLoginService } from './auth/auth.login.js';
 import { createResetPasswordService } from './auth/auth.resetPassword.js';
+import { createTokenCleanupService } from './auth/auth.tokenCleanup.js';
 
 export const createAuthService = (deps: AuthDependencies): AuthService => {
   const sessionService = createSessionService(deps);
@@ -16,6 +17,7 @@ export const createAuthService = (deps: AuthDependencies): AuthService => {
     ...createVerificationService(deps, sessionService),
     ...createProfileService(deps),
     ...createResetPasswordService(deps),
+    ...createTokenCleanupService(deps),
     validateSession: sessionService.validateSession,
     getUserSessions: sessionService.getUserSessions,
     logoutAllSessions: sessionService.logoutAllSessions,

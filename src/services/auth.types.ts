@@ -68,6 +68,16 @@ export type CleanupSessionsResult = {
   sessionsDeleted: number;
 };
 
+export type CleanupExpiredAuthTokensInput = {
+  expiredBefore: Date;
+};
+
+export type CleanupExpiredAuthTokensResult = {
+  message: string;
+  emailVerificationTokensDeleted: number;
+  passwordResetTokensDeleted: number;
+};
+
 export type ValidatedAuthSession = {
   user: AuthUser;
   session: AuthSessionResult['session'];
@@ -133,6 +143,9 @@ export type AuthService = {
   logoutSession(input: LogoutSessionInput): Promise<{ message: string; sessionsLoggedOut: number }>;
   updateProfile(input: UpdateProfileInput): Promise<{ message: string; user: AuthUser }>;
   cleanupSessions(input: CleanupSessionsInput): Promise<CleanupSessionsResult>;
+  cleanupExpiredAuthTokens(
+    input: CleanupExpiredAuthTokensInput,
+  ): Promise<CleanupExpiredAuthTokensResult>;
   requestPasswordReset(input: RequestPasswordResetInput): Promise<{ message: string }>;
   resetPassword(input: ResetPasswordInput): Promise<{ message: string; sessionsLoggedOut: number }>;
 };

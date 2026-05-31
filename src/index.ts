@@ -6,11 +6,8 @@ import { authService } from './auth.instance.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 import { closeRedisClient, createRedisClient, connectRedisClient } from './lib/redis.js';
-import {
-  createRedisSessionCleanupLock,
-  createSessionCleanupJob,
-} from './maintenance/sessionCleanup.js';
-import { SESSION_CLEANUP_LOCK_TTL_MS } from './config/constants.js';
+import { createRedisAuthCleanupLock, createAuthCleanupJob } from './maintenance/authCleanup.js';
+import { AUTH_CLEANUP_LOCK_TTL_MS } from './config/constants.js';
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
@@ -43,7 +40,7 @@ const readinessChecks = {
 };
 
 const app = await createApp(config, { authService, redisClient, readinessChecks });
-const sessionCleanupJob = createSessionCleanupJob({
+const authCleanupJob = createAuthCleanupJob({
   authService,
   clock: {
     now: () => new Date(),
@@ -53,9 +50,9 @@ const sessionCleanupJob = createSessionCleanupJob({
     inactiveRetentionMs: config.sessionCleanupInactiveRetentionMs,
   },
   lock: redisClient
-    ? createRedisSessionCleanupLock({
+    ? createRedisAuthCleanupLock({
         redisClient,
-        ttlMs: SESSION_CLEANUP_LOCK_TTL_MS,
+        ttlMs: AUTH_CLEANUP_LOCK_TTL_MS,
       })
     : null,
   logger,
@@ -100,7 +97,7 @@ const shutdown = async (reason: NodeJS.Signals | 'server_error', exitCode = 0): 
   }, SHUTDOWN_TIMEOUT_MS);
 
   try {
-    await sessionCleanupJob.stop();
+    await authCleanupJob.stop();
     await closeServerIfListening(server);
     await prisma.$disconnect();
     await closeRedisClient(redisClient, logger);
@@ -124,7 +121,7 @@ server = app.listen(config.port);
 
 server.once('listening', () => {
   logger.info({ port: config.port }, 'Server started');
-  sessionCleanupJob.start();
+  authCleanupJob.start();
 });
 
 server.on('error', (error) => {

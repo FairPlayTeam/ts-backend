@@ -10,7 +10,7 @@ The backend is organized around small composable factories and dependencies are 
 flowchart TD
 index["src/index.ts<br/>Bootstrap runtime"] --> app["createApp()"]
 index --> authInstance["auth.instance.ts"]
-index --> cleanup["createSessionCleanupJob()"]
+index --> cleanup["createAuthCleanupJob()"]
 index --> readiness["Readiness checks"]
 
 authInstance --> authService["createAuthService()"]
@@ -62,9 +62,9 @@ The backend instances are designed to be horizontally scalable as long as every 
 same PostgreSQL and Redis services:
 
 - user data, sessions, verification tokens, and password reset tokens are stored in PostgreSQL
-- Redis stores distributed rate limit state, cooldown state, and the session cleanup lock
-- the session cleanup job can run in every process, but only the instance holding the Redis lock
-  performs the cleanup work
+- Redis stores distributed rate limit state, cooldown state, and the auth cleanup lock
+- the auth cleanup job can run in every process, but only the instance holding the Redis lock
+  removes expired sessions and tokens
 - migrations are not run by every backend instance; they are run once through the migrator image
   before the new runtime replicas are started
 
@@ -80,7 +80,7 @@ examples of managed providers for this architecture:
 - managed PostgreSQL is still the source of truth for users, sessions, verification tokens, and
   password reset tokens
 - managed Redis is still the shared distributed store for rate limits, email cooldowns, and the
-  session cleanup lock
+  auth cleanup lock
 - every backend instance must point to the same managed PostgreSQL and Redis services
 - migrations should use the provider's direct database connection when both pooled and direct
   PostgreSQL URLs are available
@@ -177,7 +177,7 @@ The entry point is [`src/index.ts`](src/index.ts), it:
 - prepares readiness checks
 - assembles the Express app
 - starts the server
-- starts the periodic session cleanup after the server is listening
+- starts the periodic auth cleanup after the server is listening
 - and gracefully shuts down Prisma, Redis, and the HTTP server
 
 In production, Redis is required. In development, Redis can be unavailable; the backend then falls
@@ -249,7 +249,7 @@ The service contains the business rules:
 - verify a password
 - create a session
 - refuse a banned user
-- delete expired sessions
+- delete expired sessions and tokens
 - send a verification email
 
 It does not depend on Express.

@@ -1269,6 +1269,37 @@ describe('auth service', () => {
     });
   });
 
+  test('cleans up expired auth tokens', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+    const expiredBefore = new Date('2026-01-01T00:00:00.000Z');
+
+    await expect(
+      service.cleanupExpiredAuthTokens({
+        expiredBefore,
+      }),
+    ).resolves.toEqual({
+      message: 'Expired authentication tokens cleaned up successfully',
+      emailVerificationTokensDeleted: 1,
+      passwordResetTokensDeleted: 1,
+    });
+
+    expect(calls.tokenDeleteMany).toEqual({
+      where: {
+        expiresAt: {
+          lt: expiredBefore,
+        },
+      },
+    });
+    expect(calls.passwordResetTokenDeleteMany).toEqual({
+      where: {
+        expiresAt: {
+          lt: expiredBefore,
+        },
+      },
+    });
+  });
+
   test('resends a verification email for an unverified user', async () => {
     const { deps, calls } = createTestDeps();
     const service = createAuthService(deps);

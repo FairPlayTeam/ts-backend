@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  createRedisSessionCleanupLock,
-  createSessionCleanupJob,
-} from '../src/maintenance/sessionCleanup.js';
+  createRedisAuthCleanupLock,
+  createAuthCleanupJob,
+} from '../src/maintenance/authCleanup.js';
 
 const createLogger = () => {
   const logs: unknown[] = [];
@@ -17,11 +17,11 @@ const createLogger = () => {
   };
 };
 
-describe('session cleanup job', () => {
+describe('auth cleanup job', () => {
   test('runs cleanup with deterministic cutoffs', async () => {
     const calls: unknown[] = [];
     const { logs, logger } = createLogger();
-    const job = createSessionCleanupJob({
+    const job = createAuthCleanupJob({
       authService: {
         cleanupSessions: async (input) => {
           calls.push(input);
@@ -29,6 +29,15 @@ describe('session cleanup job', () => {
           return {
             message: 'Sessions cleaned up successfully',
             sessionsDeleted: 2,
+          };
+        },
+        cleanupExpiredAuthTokens: async (input) => {
+          calls.push(input);
+
+          return {
+            message: 'Expired authentication tokens cleaned up successfully',
+            emailVerificationTokensDeleted: 3,
+            passwordResetTokensDeleted: 4,
           };
         },
       },
@@ -49,18 +58,25 @@ describe('session cleanup job', () => {
         expiredBefore: new Date('2026-01-31T00:00:00.000Z'),
         inactiveUpdatedBefore: new Date('2026-01-01T00:00:00.000Z'),
       },
+      {
+        expiredBefore: new Date('2026-01-31T00:00:00.000Z'),
+      },
     ]);
     expect(logs).toContainEqual({
       level: 'info',
-      data: { sessionsDeleted: 2 },
-      message: 'Session cleanup completed',
+      data: {
+        sessionsDeleted: 2,
+        emailVerificationTokensDeleted: 3,
+        passwordResetTokensDeleted: 4,
+      },
+      message: 'Auth cleanup completed',
     });
   });
 
   test('does not overlap concurrent cleanup runs', async () => {
     let calls = 0;
     let resolveCleanup: (() => void) | undefined;
-    const job = createSessionCleanupJob({
+    const job = createAuthCleanupJob({
       authService: {
         cleanupSessions: async () => {
           calls += 1;
@@ -71,6 +87,15 @@ describe('session cleanup job', () => {
           return {
             message: 'Sessions cleaned up successfully',
             sessionsDeleted: 1,
+          };
+        },
+        cleanupExpiredAuthTokens: async () => {
+          calls += 1;
+
+          return {
+            message: 'Expired authentication tokens cleaned up successfully',
+            emailVerificationTokensDeleted: 1,
+            passwordResetTokensDeleted: 1,
           };
         },
       },
@@ -90,13 +115,13 @@ describe('session cleanup job', () => {
     expect(calls).toBe(1);
     resolveCleanup?.();
     await Promise.all([firstRun, secondRun]);
-    expect(calls).toBe(1);
+    expect(calls).toBe(2);
   });
 
   test('runs cleanup only after acquiring the distributed lock', async () => {
     const cleanupCalls: unknown[] = [];
     const redisCalls: unknown[][] = [];
-    const lock = createRedisSessionCleanupLock({
+    const lock = createRedisAuthCleanupLock({
       redisClient: {
         call: async (...args: unknown[]) => {
           redisCalls.push(args);
@@ -106,7 +131,7 @@ describe('session cleanup job', () => {
       ttlMs: 300_000,
       tokenFactory: () => 'instance-token',
     });
-    const job = createSessionCleanupJob({
+    const job = createAuthCleanupJob({
       authService: {
         cleanupSessions: async (input) => {
           cleanupCalls.push(input);
@@ -114,6 +139,15 @@ describe('session cleanup job', () => {
           return {
             message: 'Sessions cleaned up successfully',
             sessionsDeleted: 1,
+          };
+        },
+        cleanupExpiredAuthTokens: async (input) => {
+          cleanupCalls.push(input);
+
+          return {
+            message: 'Expired authentication tokens cleaned up successfully',
+            emailVerificationTokensDeleted: 1,
+            passwordResetTokensDeleted: 1,
           };
         },
       },
@@ -130,14 +164,14 @@ describe('session cleanup job', () => {
 
     await job.runOnce();
 
-    expect(cleanupCalls).toHaveLength(1);
+    expect(cleanupCalls).toHaveLength(2);
     expect(redisCalls).toEqual([
-      ['set', 'maintenance:session-cleanup:lock', 'instance-token', 'PX', '300000', 'NX'],
+      ['set', 'maintenance:auth-cleanup:lock', 'instance-token', 'PX', '300000', 'NX'],
       [
         'eval',
         expect.stringContaining('redis.call("get", KEYS[1])'),
         '1',
-        'maintenance:session-cleanup:lock',
+        'maintenance:auth-cleanup:lock',
         'instance-token',
       ],
     ]);
@@ -146,14 +180,14 @@ describe('session cleanup job', () => {
   test('skips cleanup when another instance holds the distributed lock', async () => {
     let cleanupCalls = 0;
     const { logs, logger } = createLogger();
-    const lock = createRedisSessionCleanupLock({
+    const lock = createRedisAuthCleanupLock({
       redisClient: {
         call: async () => null,
       },
       ttlMs: 300_000,
       tokenFactory: () => 'instance-token',
     });
-    const job = createSessionCleanupJob({
+    const job = createAuthCleanupJob({
       authService: {
         cleanupSessions: async () => {
           cleanupCalls += 1;
@@ -161,6 +195,15 @@ describe('session cleanup job', () => {
           return {
             message: 'Sessions cleaned up successfully',
             sessionsDeleted: 1,
+          };
+        },
+        cleanupExpiredAuthTokens: async () => {
+          cleanupCalls += 1;
+
+          return {
+            message: 'Expired authentication tokens cleaned up successfully',
+            emailVerificationTokensDeleted: 1,
+            passwordResetTokensDeleted: 1,
           };
         },
       },
@@ -180,8 +223,8 @@ describe('session cleanup job', () => {
     expect(cleanupCalls).toBe(0);
     expect(logs).toContainEqual({
       level: 'info',
-      data: { lockKey: 'maintenance:session-cleanup:lock' },
-      message: 'Session cleanup skipped because another instance holds the lock',
+      data: { lockKey: 'maintenance:auth-cleanup:lock' },
+      message: 'Auth cleanup skipped because another instance holds the lock',
     });
   });
 });

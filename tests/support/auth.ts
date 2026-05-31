@@ -87,4 +87,9 @@ export const createStubAuthService = (): AuthService => ({
     message: 'Sessions cleaned up successfully',
     sessionsDeleted: 0,
   }),
+  cleanupExpiredAuthTokens: async () => ({
+    message: 'Expired authentication tokens cleaned up successfully',
+    emailVerificationTokensDeleted: 0,
+    passwordResetTokensDeleted: 0,
+  }),
 });

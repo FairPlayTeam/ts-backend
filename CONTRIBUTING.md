@@ -187,7 +187,7 @@ The full Swagger UI documentation will be available at /docs.
 - `BASE_URL` public URL of the backend, for example `http://localhost:3000`.
 - `BCRYPT_ROUNDS` bcrypt cost factor, for example `12`.
 - `JSON_BODY_LIMIT_BYTES` maximum accepted JSON body size in bytes.
-- `SESSION_CLEANUP_INTERVAL_MINUTES` how often expired and old inactive sessions are deleted.
+- `SESSION_CLEANUP_INTERVAL_MINUTES` how often expired auth data is cleaned up.
 - `SESSION_CLEANUP_INACTIVE_RETENTION_DAYS` how long inactive sessions are retained before deletion.
 - `TRUST_PROXY` Express proxy trust setting. Use `false`, `loopback`, a hop count such as `1`, or
   an explicit proxy list. Do not use `true`. For Cloudflare Tunnel forwarding to

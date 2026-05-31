@@ -19,7 +19,7 @@ import type {
 } from '../services/auth.types.js';
 
 type AuthControllerDependencies = {
-  authService: Omit<AuthService, 'cleanupSessions'>;
+  authService: Omit<AuthService, 'cleanupExpiredAuthTokens' | 'cleanupSessions'>;
 };
 
 const toAuthSessionResponse = (result: AuthSessionResult) => ({
