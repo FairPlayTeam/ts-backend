@@ -1,11 +1,10 @@
-import { AuthService } from '../auth.types.js';
-import { AuthDependencies } from './auth.dependencies.js';
-import { UpdateProfileInput } from '../auth.types.js';
+import type { AuthService, UpdateProfileInput } from '../auth.types.js';
+import type { AuthDependencies } from './auth.dependencies.js';
 import { UPDATE_PROFILE_SUCCESS_MESSAGE } from './auth.messages.js';
 
-type profileService = Pick<AuthService, 'updateProfile'>;
+type ProfileService = Pick<AuthService, 'updateProfile'>;
 
-export const createProfileService = (deps: AuthDependencies): profileService => ({
+export const createProfileService = (deps: AuthDependencies): ProfileService => ({
   async updateProfile({ userId, displayName, bio }: UpdateProfileInput) {
     const data = {
       ...(displayName !== undefined ? { displayName } : {}),

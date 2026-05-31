@@ -32,25 +32,24 @@ export const apiRateLimitExceededHandler: RequestHandler = (_req, _res, next) =>
   next(new HttpError(429, 'TooManyRequests', API_RATE_LIMIT_MESSAGE));
 };
 
-const makeStore = (prefix: string, redis: RedisClient | null) =>
-  (() => {
-    if (!redis) {
-      return undefined;
-    }
+const makeStore = (prefix: string, redis: RedisClient | null) => {
+  if (!redis) {
+    return undefined;
+  }
 
-    return new RedisStore({
-      sendCommand: ((...args: string[]) => {
-        const [command, ...rest] = args;
+  return new RedisStore({
+    sendCommand: ((...args: string[]) => {
+      const [command, ...rest] = args;
 
-        if (!command) {
-          throw new Error('Redis command is empty');
-        }
+      if (!command) {
+        throw new Error('Redis command is empty');
+      }
 
-        return redis.call(command, ...rest);
-      }) as SendCommandFn,
-      prefix,
-    });
-  })();
+      return redis.call(command, ...rest);
+    }) as SendCommandFn,
+    prefix,
+  });
+};
 
 const getBodyString = (req: Request, key: string): string | null => {
   const body = typeof req.body === 'object' && req.body !== null ? req.body : {};

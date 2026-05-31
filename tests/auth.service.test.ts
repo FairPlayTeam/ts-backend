@@ -585,6 +585,54 @@ describe('auth service', () => {
     expect(comparedPassword.hash.length).toBeGreaterThan(0);
   });
 
+  test('uses configured bcrypt rounds for the missing-user login comparison hash', async () => {
+    let hashCall: { password: string; rounds: number } | undefined;
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        $transaction: async () => {
+          throw new Error('Should not create a session for missing users');
+        },
+        user: {
+          findFirst: async () => null,
+        },
+      } as unknown as AuthDeps['prisma'],
+      hasher: {
+        hash: async (password: string, rounds: number) => {
+          hashCall = { password, rounds };
+          return `missing-user-hash-rounds-${rounds}`;
+        },
+        compare: async (password: string, hash: string) => {
+          calls.comparedPassword = { password, hash };
+          return false;
+        },
+      },
+      config: {
+        bcryptRounds: 14,
+        emailVerificationTokenTtlMs: 1000,
+        passwordResetTokenTtlMs: 60 * 60 * 1000,
+        sessionTtlMs: 30 * 24 * 60 * 60 * 1000,
+      },
+    });
+
+    const service = createAuthService(deps);
+
+    await expect(
+      service.login({
+        emailOrUsername: 'missing@example.com',
+        password: 'Password1!',
+      }),
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
+
+    expect(hashCall).toEqual({
+      password: expect.any(String),
+      rounds: 14,
+    });
+    expect(calls.comparedPassword).toEqual({
+      password: 'Password1!',
+      hash: 'missing-user-hash-rounds-14',
+    });
+  });
+
   test('rejects login with generic invalid credentials for wrong passwords', async () => {
     const { deps } = createTestDeps({
       hasher: {

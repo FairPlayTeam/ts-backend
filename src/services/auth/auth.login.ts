@@ -9,69 +9,77 @@ import {
 import { LOGIN_SUCCESS_MESSAGE } from './auth.messages.js';
 import type { SessionService } from './auth.sessions.js';
 
-const MISSING_USER_PASSWORD_HASH = '$2b$12$7g84a6zb7kmHybVdMfIeEuIPU7Lvt5SbjKaX5xIUgQdQwut8EMhNe';
+const MISSING_USER_PASSWORD = 'missing-user-password';
 
 type LoginService = Pick<AuthService, 'login'>;
 
 export const createLoginService = (
   deps: AuthDependencies,
   sessionService: SessionService,
-): LoginService => ({
-  async login({ emailOrUsername, password, ipAddress, userAgent }: LoginInput) {
-    const lookup = normalizeIdentifier(emailOrUsername);
+): LoginService => {
+  const missingUserPasswordHash = deps.hasher.hash(MISSING_USER_PASSWORD, deps.config.bcryptRounds);
 
-    const user = await deps.prisma.user.findFirst({
-      where: {
-        OR: [{ email: lookup }, { username: lookup }],
-      },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        displayName: true,
-        bio: true,
-        role: true,
-        passwordHash: true,
-        isVerified: true,
-        isBanned: true,
-      },
-    });
+  void missingUserPasswordHash.catch((err: unknown) => {
+    deps.logger.warn({ err }, 'Missing user password hash could not be prepared');
+  });
 
-    const isPasswordValid = await deps.hasher.compare(
-      password,
-      user?.passwordHash ?? MISSING_USER_PASSWORD_HASH,
-    );
+  return {
+    async login({ emailOrUsername, password, ipAddress, userAgent }: LoginInput) {
+      const lookup = normalizeIdentifier(emailOrUsername);
 
-    if (!user || !isPasswordValid) {
-      throw new InvalidCredentialsError();
-    }
+      const user = await deps.prisma.user.findFirst({
+        where: {
+          OR: [{ email: lookup }, { username: lookup }],
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          displayName: true,
+          bio: true,
+          role: true,
+          passwordHash: true,
+          isVerified: true,
+          isBanned: true,
+        },
+      });
 
-    if (user.isBanned) {
-      throw new AccountBannedError();
-    }
+      const isPasswordValid = await deps.hasher.compare(
+        password,
+        user?.passwordHash ?? (await missingUserPasswordHash),
+      );
 
-    if (!user.isVerified) {
-      throw new EmailNotVerifiedError();
-    }
+      if (!user || !isPasswordValid) {
+        throw new InvalidCredentialsError();
+      }
 
-    const { sessionKey, session } = await sessionService.createSession({
-      userId: user.id,
-      ipAddress,
-      userAgent,
-    });
+      if (user.isBanned) {
+        throw new AccountBannedError();
+      }
 
-    return {
-      message: LOGIN_SUCCESS_MESSAGE,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        displayName: user.displayName,
-        bio: user.bio,
-        role: user.role,
-      },
-      sessionKey,
-      session,
-    };
-  },
-});
+      if (!user.isVerified) {
+        throw new EmailNotVerifiedError();
+      }
+
+      const { sessionKey, session } = await sessionService.createSession({
+        userId: user.id,
+        ipAddress,
+        userAgent,
+      });
+
+      return {
+        message: LOGIN_SUCCESS_MESSAGE,
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          displayName: user.displayName,
+          bio: user.bio,
+          role: user.role,
+        },
+        sessionKey,
+        session,
+      };
+    },
+  };
+};
