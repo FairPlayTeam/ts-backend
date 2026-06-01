@@ -120,7 +120,8 @@ describe('auth controller', () => {
         verifyEmail: async () => verifyEmailResult,
         validateSession: async () => validatedSession,
         resendVerification: async () => ({
-          message: 'If this email exists and is unverified, a new link has been sent.',
+          message:
+            'If this email exists and is eligible for email verification, a verification link has been sent.',
         }),
         getUserSessions: async () => userSessionsResult,
         logoutAllSessions: async () => ({
@@ -179,7 +180,8 @@ describe('auth controller', () => {
         verifyEmail: async () => verifyEmailResult,
         validateSession: async () => validatedSession,
         resendVerification: async () => ({
-          message: 'If this email exists and is unverified, a new link has been sent.',
+          message:
+            'If this email exists and is eligible for email verification, a verification link has been sent.',
         }),
         getUserSessions: async () => userSessionsResult,
         logoutAllSessions: async () => ({
@@ -236,7 +238,8 @@ describe('auth controller', () => {
         resendVerification: async (input) => {
           receivedInput = input;
           return {
-            message: 'If this email exists and is unverified, a new link has been sent.',
+            message:
+              'If this email exists and is eligible for email verification, a verification link has been sent.',
           };
         },
         getUserSessions: async () => userSessionsResult,
@@ -280,7 +283,8 @@ describe('auth controller', () => {
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
-      message: 'If this email exists and is unverified, a new link has been sent.',
+      message:
+        'If this email exists and is eligible for email verification, a verification link has been sent.',
     });
   });
 
@@ -295,7 +299,8 @@ describe('auth controller', () => {
         verifyEmail: async () => verifyEmailResult,
         validateSession: async () => validatedSession,
         resendVerification: async () => ({
-          message: 'If this email exists and is unverified, a new link has been sent.',
+          message:
+            'If this email exists and is eligible for email verification, a verification link has been sent.',
         }),
         getUserSessions: async () => userSessionsResult,
         logoutAllSessions: async () => ({
@@ -366,7 +371,8 @@ describe('auth controller', () => {
         verifyEmail: async () => verifyEmailResult,
         validateSession: async () => validatedSession,
         resendVerification: async () => ({
-          message: 'If this email exists and is unverified, a new link has been sent.',
+          message:
+            'If this email exists and is eligible for email verification, a verification link has been sent.',
         }),
         getUserSessions: async () => userSessionsResult,
         logoutAllSessions: async () => ({
@@ -444,7 +450,8 @@ describe('auth controller', () => {
         },
         validateSession: async () => validatedSession,
         resendVerification: async () => ({
-          message: 'If this email exists and is unverified, a new link has been sent.',
+          message:
+            'If this email exists and is eligible for email verification, a verification link has been sent.',
         }),
         getUserSessions: async () => userSessionsResult,
         logoutAllSessions: async () => ({
@@ -512,7 +519,8 @@ describe('auth controller', () => {
         verifyEmail: async () => verifyEmailResult,
         validateSession: async () => validatedSession,
         resendVerification: async () => ({
-          message: 'If this email exists and is unverified, a new link has been sent.',
+          message:
+            'If this email exists and is eligible for email verification, a verification link has been sent.',
         }),
         getUserSessions: async () => userSessionsResult,
         logoutAllSessions: async () => ({
@@ -581,7 +589,8 @@ describe('auth controller', () => {
         verifyEmail: async () => verifyEmailResult,
         validateSession: async () => validatedSession,
         resendVerification: async () => ({
-          message: 'If this email exists and is unverified, a new link has been sent.',
+          message:
+            'If this email exists and is eligible for email verification, a verification link has been sent.',
         }),
         getUserSessions: async () => userSessionsResult,
         logoutAllSessions: async () => ({
@@ -661,7 +670,8 @@ describe('auth controller', () => {
         verifyEmail: async () => verifyEmailResult,
         validateSession: async () => validatedSession,
         resendVerification: async () => ({
-          message: 'If this email exists and is unverified, a new link has been sent.',
+          message:
+            'If this email exists and is eligible for email verification, a verification link has been sent.',
         }),
         getUserSessions: async (input) => {
           receivedInput = input;
@@ -755,7 +765,8 @@ describe('auth controller', () => {
         verifyEmail: async () => verifyEmailResult,
         validateSession: async () => validatedSession,
         resendVerification: async () => ({
-          message: 'If this email exists and is unverified, a new link has been sent.',
+          message:
+            'If this email exists and is eligible for email verification, a verification link has been sent.',
         }),
         getUserSessions: async () => userSessionsResult,
         logoutAllSessions: async (input) => {
@@ -822,7 +833,8 @@ describe('auth controller', () => {
         verifyEmail: async () => verifyEmailResult,
         validateSession: async () => validatedSession,
         resendVerification: async () => ({
-          message: 'If this email exists and is unverified, a new link has been sent.',
+          message:
+            'If this email exists and is eligible for email verification, a verification link has been sent.',
         }),
         getUserSessions: async () => userSessionsResult,
         logoutAllSessions: async () => ({
@@ -890,7 +902,8 @@ describe('auth controller', () => {
         verifyEmail: async () => verifyEmailResult,
         validateSession: async () => validatedSession,
         resendVerification: async () => ({
-          message: 'If this email exists and is unverified, a new link has been sent.',
+          message:
+            'If this email exists and is eligible for email verification, a verification link has been sent.',
         }),
         getUserSessions: async () => userSessionsResult,
         logoutAllSessions: async () => ({

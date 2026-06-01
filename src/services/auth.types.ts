@@ -1,5 +1,5 @@
-export const AUTH_ROLES = ['user', 'moderator', 'admin'] as const;
-export type AuthRole = (typeof AUTH_ROLES)[number];
+type AUTH_ROLES = ['user', 'moderator', 'admin'];
+export type AuthRole = AUTH_ROLES[number];
 
 export type Session = {
   id: string;

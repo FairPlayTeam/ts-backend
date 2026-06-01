@@ -535,4 +535,40 @@ describe('auth integration', () => {
 
     expect(runtime.delivered.passwordReset).toHaveLength(1);
   });
+
+  test('keeps verification resend responses generic during email cooldowns', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const email = 'verification-cooldown@example.com';
+    const expectedResponse = {
+      message:
+        'If this email exists and is eligible for email verification, a verification link has been sent.',
+    };
+
+    await runtime.authService.register({
+      email,
+      username: 'verify_cooldown',
+      password: INITIAL_PASSWORD,
+    });
+    runtime.delivered.verification = [];
+
+    await request(app)
+      .post('/auth/resend-verification')
+      .send({ email: ` ${email.toUpperCase()} ` })
+      .expect(200)
+      .expect(expectedResponse);
+
+    expect(runtime.delivered.verification).toHaveLength(1);
+
+    await request(app)
+      .post('/auth/resend-verification')
+      .send({ email })
+      .expect(200)
+      .expect(expectedResponse);
+
+    expect(runtime.delivered.verification).toHaveLength(1);
+  });
 });

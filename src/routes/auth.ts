@@ -38,6 +38,10 @@ import {
 } from '../controllers/auth.schemas.js';
 import { jsonResponse } from '../docs/openapi.helpers.js';
 import { createRouteProtector } from '../middleware/routeProtection.js';
+import {
+  ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
+  ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
+} from '../services/auth/auth.messages.js';
 
 type AuthRouterDependencies = {
   authService: AuthService;
@@ -84,6 +88,10 @@ const createAuthRouter = ({
   router.post(
     '/resend-verification',
     authLimiter,
+    ...protect({
+      access: 'guest',
+      conflictMessage: ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
+    }),
     validate(resendVerificationSchema),
     resendVerificationIdentifierLimiter,
     resendVerificationEmailCooldown,
@@ -103,7 +111,10 @@ const createAuthRouter = ({
   router.post(
     '/forgot-password',
     authLimiter,
-    ...protect({ access: 'guest' }),
+    ...protect({
+      access: 'guest',
+      conflictMessage: ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
+    }),
     validate(requestPasswordResetSchema),
     passwordResetIdentifierLimiter,
     passwordResetEmailCooldown,
@@ -224,6 +235,9 @@ export const routeDocs = [
       200: jsonResponse('Verification resend request accepted', resendVerificationResponseSchema),
 
       ...badRequestErrorResponse,
+
+      409: jsonResponse('Already authenticated', ApiErrorSchema),
+
       ...commonErrorResponses,
     },
   },

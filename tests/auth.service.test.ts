@@ -1309,7 +1309,8 @@ describe('auth service', () => {
         email: ' USER@Example.COM ',
       }),
     ).resolves.toEqual({
-      message: 'If this email exists and is unverified, a new link has been sent.',
+      message:
+        'If this email exists and is eligible for email verification, a verification link has been sent.',
     });
 
     expect(calls.userFindUnique).toEqual({
@@ -1375,7 +1376,8 @@ describe('auth service', () => {
         email: 'missing@example.com',
       }),
     ).resolves.toEqual({
-      message: 'If this email exists and is unverified, a new link has been sent.',
+      message:
+        'If this email exists and is eligible for email verification, a verification link has been sent.',
     });
 
     expect(calls.sentEmail).toBeUndefined();
@@ -1438,7 +1440,8 @@ describe('auth service', () => {
           email: 'user@example.com',
         }),
       ).resolves.toEqual({
-        message: 'If this email exists and is unverified, a new link has been sent.',
+        message:
+          'If this email exists and is eligible for email verification, a verification link has been sent.',
       });
 
       expect(calls.sentEmail).toBeUndefined();
@@ -1463,12 +1466,16 @@ describe('auth service', () => {
         email: 'user@example.com',
       }),
     ).resolves.toEqual({
-      message: 'If this email exists and is unverified, a new link has been sent.',
+      message:
+        'If this email exists and is eligible for email verification, a verification link has been sent.',
     });
 
     expect(calls.warning).toEqual({
       data: { err: mailerError },
       message: 'Verification email could not be sent after resend request',
+    });
+    expect(calls.tokenDeleteMany).toEqual({
+      where: { userId: 'user-id' },
     });
   });
 

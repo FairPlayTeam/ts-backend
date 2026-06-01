@@ -28,7 +28,7 @@ export const authRateLimitExceededHandler: RequestHandler = (_req, _res, next) =
   next(new HttpError(429, 'TooManyRequests', AUTH_RATE_LIMIT_MESSAGE));
 };
 
-export const apiRateLimitExceededHandler: RequestHandler = (_req, _res, next) => {
+const apiRateLimitExceededHandler: RequestHandler = (_req, _res, next) => {
   next(new HttpError(429, 'TooManyRequests', API_RATE_LIMIT_MESSAGE));
 };
 

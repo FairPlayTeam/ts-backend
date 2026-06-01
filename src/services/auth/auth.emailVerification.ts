@@ -3,13 +3,13 @@ import type { AuthService, VerifyEmailInput, ResendVerificationInput } from '../
 import {
   normalizeEmail,
   getEmailVerificationExpiresAt,
-  isExpectedMailerError,
+  handleExpectedMailerError,
 } from './auth.helpers.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import type { SessionService } from './auth.sessions.js';
 import {
   VERIFY_EMAIL_SUCCESS_MESSAGE,
-  RESEND_VERIFICATION_SUCCESS_MESSAGE,
+  RESEND_VERIFICATION_EMAIL_MESSAGE,
 } from './auth.messages.js';
 
 type VerificationService = Pick<AuthService, 'verifyEmail' | 'resendVerification'>;
@@ -105,8 +105,6 @@ export const createVerificationService = (
       deps.config.emailVerificationTokenTtlMs,
     );
 
-    // TRADEOFF: we invalidate the old token before sending the email.
-    // If SMTP delivery fails, the user must request another verification email.
     const user = await deps.prisma.$transaction(async (tx) => {
       const existingUser = await tx.user.findUnique({
         where: { email: emailNorm },
@@ -130,23 +128,28 @@ export const createVerificationService = (
         },
       });
 
-      return { email: existingUser.email };
+      return { id: existingUser.id, email: existingUser.email };
     });
 
     if (user) {
       try {
         await deps.mailer.sendVerificationEmail(user.email, token);
       } catch (err) {
-        if (isExpectedMailerError(err)) {
-          deps.logger.warn({ err }, 'Verification email could not be sent after resend request');
-        } else {
-          throw err;
-        }
+        await handleExpectedMailerError({
+          err,
+          logger: deps.logger,
+          warningMessage: 'Verification email could not be sent after resend request',
+          cleanup: {
+            run: () =>
+              deps.prisma.emailVerificationToken.deleteMany({ where: { userId: user.id } }),
+            warningMessage: `Failed to cleanup email verification token for user ${user.id}`,
+          },
+        });
       }
     }
 
     return {
-      message: RESEND_VERIFICATION_SUCCESS_MESSAGE,
+      message: RESEND_VERIFICATION_EMAIL_MESSAGE,
     };
   },
 });

@@ -52,7 +52,8 @@ export const createStubAuthService = (): AuthService => ({
     session: sessionResult.session,
   }),
   resendVerification: async () => ({
-    message: 'If this email exists and is unverified, a new link has been sent.',
+    message:
+      'If this email exists and is eligible for email verification, a verification link has been sent.',
   }),
   requestPasswordReset: async () => ({
     message: 'If this email exists and is eligible for password reset, a reset link has been sent.',

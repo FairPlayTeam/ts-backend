@@ -3,7 +3,7 @@ import type { AuthService, RegisterInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
   getEmailVerificationExpiresAt,
-  isExpectedMailerError,
+  handleExpectedMailerError,
   normalizeEmail,
 } from './auth.helpers.js';
 import { REGISTER_SUCCESS_MESSAGE } from './auth.messages.js';
@@ -57,11 +57,11 @@ export const createRegistrationService = (deps: AuthDependencies): RegistrationS
     try {
       await deps.mailer.sendVerificationEmail(user.email, token);
     } catch (err) {
-      if (isExpectedMailerError(err)) {
-        deps.logger.warn({ err }, 'Verification email could not be sent after registration');
-      } else {
-        throw err;
-      }
+      await handleExpectedMailerError({
+        err,
+        logger: deps.logger,
+        warningMessage: 'Verification email could not be sent after registration',
+      });
     }
 
     return {

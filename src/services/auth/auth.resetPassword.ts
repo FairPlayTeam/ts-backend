@@ -7,7 +7,7 @@ import type { AuthService, RequestPasswordResetInput, ResetPasswordInput } from 
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
   getPasswordResetExpiresAt,
-  isExpectedMailerError,
+  handleExpectedMailerError,
   normalizeEmail,
 } from './auth.helpers.js';
 import { RESET_PASSWORD_EMAIL_MESSAGE, RESET_PASSWORD_SUCCESS_MESSAGE } from './auth.messages.js';
@@ -59,20 +59,15 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
       try {
         await deps.mailer.sendPasswordResetEmail(user.email, token);
       } catch (err) {
-        if (!isExpectedMailerError(err)) {
-          throw err;
-        }
-
-        deps.logger.warn({ err }, 'Password reset email could not be sent after request');
-
-        await deps.prisma.passwordResetToken
-          .deleteMany({ where: { userId: user.id } })
-          .catch((cleanupError: unknown) => {
-            deps.logger.warn(
-              { cleanupError },
-              `Failed to cleanup password reset token for user ${user.id}`,
-            );
-          });
+        await handleExpectedMailerError({
+          err,
+          logger: deps.logger,
+          warningMessage: 'Password reset email could not be sent after request',
+          cleanup: {
+            run: () => deps.prisma.passwordResetToken.deleteMany({ where: { userId: user.id } }),
+            warningMessage: `Failed to cleanup password reset token for user ${user.id}`,
+          },
+        });
       }
     }
 

@@ -158,6 +158,7 @@ describe('auth session middleware', () => {
           return sessionResult;
         },
       },
+      conflictMessage: 'Already authenticated users cannot request a password reset',
     });
 
     await rejectAuthenticatedSession(

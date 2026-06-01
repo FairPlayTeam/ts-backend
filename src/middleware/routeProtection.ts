@@ -24,6 +24,7 @@ type AuthenticatedProtection = {
 
 type GuestProtection = {
   access: 'guest';
+  conflictMessage?: string;
 };
 
 type ProtectionOptions = AuthenticatedProtection | GuestProtection;
@@ -53,10 +54,16 @@ const requireRoles = (roles: readonly AuthRole[]): RequestHandler => {
 
 export const createRouteProtector = ({ authService }: RouteProtectorDependencies) => {
   const authenticate = createAuthenticateSession({ authService });
-  const rejectAuthenticated = createRejectAuthenticatedSession({ authService });
 
   return (options: ProtectionOptions = {}): RequestHandler[] => {
     if (options.access === 'guest') {
+      const rejectAuthenticated = createRejectAuthenticatedSession({
+        authService,
+        ...(options.conflictMessage !== undefined
+          ? { conflictMessage: options.conflictMessage }
+          : {}),
+      });
+
       return [rejectAuthenticated];
     }
 

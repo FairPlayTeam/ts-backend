@@ -8,6 +8,7 @@ let server: Server;
 let baseUrl: string;
 let receivedSessionKey: string | undefined;
 let receivedProfileUpdate: unknown;
+let receivedResendVerificationRequest: unknown;
 let receivedPasswordResetRequest: unknown;
 let receivedGetSessionsRequest: unknown;
 
@@ -33,6 +34,10 @@ describe('auth routes', () => {
           updateProfile: async (input) => {
             receivedProfileUpdate = input;
             return authService.updateProfile(input);
+          },
+          resendVerification: async (input) => {
+            receivedResendVerificationRequest = input;
+            return authService.resendVerification(input);
           },
           requestPasswordReset: async (input) => {
             receivedPasswordResetRequest = input;
@@ -179,6 +184,48 @@ describe('auth routes', () => {
     expect(await response.json()).toEqual({
       error: 'Unauthorized',
       message: 'Bearer session token is required',
+    });
+  });
+
+  test('requests verification resend without requiring a bearer session', async () => {
+    receivedResendVerificationRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/auth/resend-verification`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: ' USER@Example.COM ',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(receivedResendVerificationRequest).toEqual({
+      email: 'user@example.com',
+    });
+    expect(await response.json()).toEqual({
+      message:
+        'If this email exists and is eligible for email verification, a verification link has been sent.',
+    });
+  });
+
+  test('rejects verification resend requests from authenticated users', async () => {
+    const response = await fetch(`${baseUrl}/auth/resend-verification`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer test-session-key',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: 'user@example.com',
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'Conflict',
+      message: 'Already authenticated users cannot request email verification',
     });
   });
 

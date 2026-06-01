@@ -25,6 +25,10 @@ type AuthMiddlewareDependencies = {
   };
 };
 
+type RejectAuthenticatedSessionDependencies = AuthMiddlewareDependencies & {
+  conflictMessage?: string;
+};
+
 const parseBearerToken = (authorization: string | undefined): string | null => {
   if (!authorization) {
     return null;
@@ -68,7 +72,8 @@ export const createAuthenticateSession = ({
 
 export const createRejectAuthenticatedSession = ({
   authService,
-}: AuthMiddlewareDependencies): RequestHandler => {
+  conflictMessage = 'Already authenticated users cannot access this route',
+}: RejectAuthenticatedSessionDependencies): RequestHandler => {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     const sessionKey = parseBearerToken(req.headers.authorization);
 
@@ -81,13 +86,7 @@ export const createRejectAuthenticatedSession = ({
       const result = await authService.validateSession(sessionKey);
 
       if (result) {
-        next(
-          new HttpError(
-            409,
-            'Conflict',
-            'Already authenticated users cannot request a password reset',
-          ),
-        );
+        next(new HttpError(409, 'Conflict', conflictMessage));
         return;
       }
 

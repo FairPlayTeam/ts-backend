@@ -20,7 +20,7 @@ import {
   RESEND_VERIFICATION_EMAIL_COOLDOWN_MS,
 } from './config/constants.js';
 import {
-  RESEND_VERIFICATION_SUCCESS_MESSAGE,
+  RESEND_VERIFICATION_EMAIL_MESSAGE,
   RESET_PASSWORD_EMAIL_MESSAGE,
 } from './services/auth/auth.messages.js';
 
@@ -83,7 +83,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     keyPrefix: 'email-cooldown:resend-verification',
     keySecret: config.rateLimitKeySecret,
     ttlMs: RESEND_VERIFICATION_EMAIL_COOLDOWN_MS,
-    acceptedResponse: { message: RESEND_VERIFICATION_SUCCESS_MESSAGE },
+    acceptedResponse: { message: RESEND_VERIFICATION_EMAIL_MESSAGE },
     getIdentifier: (req) => (typeof req.body?.email === 'string' ? req.body.email : null),
     logger,
   });

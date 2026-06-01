@@ -8,6 +8,10 @@ import {
   USERNAME_MAX_LENGTH,
   USERNAME_MIN_LENGTH,
 } from '../config/constants.js';
+import {
+  RESEND_VERIFICATION_EMAIL_MESSAGE,
+  RESET_PASSWORD_EMAIL_MESSAGE,
+} from '../services/auth/auth.messages.js';
 
 const emailSchema = z
   .string()
@@ -167,9 +171,7 @@ export const verifyEmailResponseSchema = loginResponseSchema
 
 export const resendVerificationResponseSchema = z
   .object({
-    message: z
-      .string()
-      .openapi({ example: 'If this email exists and is unverified, a new link has been sent.' }),
+    message: z.string().openapi({ example: RESEND_VERIFICATION_EMAIL_MESSAGE }),
   })
   .openapi('ResendVerificationResponse');
 
@@ -211,10 +213,7 @@ export const requestPasswordResetBodySchema = z
 
 export const requestPasswordResetResponseSchema = z
   .object({
-    message: z.string().openapi({
-      example:
-        'If this email exists and is eligible for password reset, a reset link has been sent.',
-    }),
+    message: z.string().openapi({ example: RESET_PASSWORD_EMAIL_MESSAGE }),
   })
   .openapi('RequestPasswordResetResponse');
 
