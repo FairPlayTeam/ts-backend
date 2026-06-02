@@ -123,6 +123,7 @@ This backend contains different commands for checking code quality and project c
 
 ```bash
 bun run typecheck
+bun run build
 bun run lint
 bun run lint:fix
 bun run format:check
