@@ -13,6 +13,10 @@ import { createApp } from '../../src/app.js';
 import { createAuthService } from '../../src/services/auth.service.js';
 import { generateToken, hashToken } from '../../src/lib/crypto.js';
 import { closeRedisClient, connectRedisClient, createRedisClient } from '../../src/lib/redis.js';
+import {
+  AUTH_RATE_LIMIT_MESSAGE,
+  LOGIN_IDENTIFIER_RATE_LIMIT_MESSAGE,
+} from '../../src/middleware/limiters.js';
 import { INVALID_AUTH_SESSION_MESSAGE } from '../../src/middleware/auth.js';
 import {
   LOGIN_SUCCESS_MESSAGE,
@@ -22,6 +26,10 @@ import {
   RESET_PASSWORD_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../../src/services/auth/auth.messages.js';
+import {
+  EMAIL_NOT_VERIFIED_MESSAGE,
+  INVALID_CREDENTIALS_MESSAGE,
+} from '../../src/services/auth.errors.js';
 import {
   EMAIL_VERIFICATION_TOKEN_TTL_MS,
   PASSWORD_RESET_TOKEN_TTL_MS,
@@ -289,7 +297,7 @@ describe('auth integration', () => {
       .expect(403)
       .expect({
         error: 'Forbidden',
-        message: 'Please verify your email address before logging in.',
+        message: EMAIL_NOT_VERIFIED_MESSAGE,
       });
 
     const verifyResponse = await request(app)
@@ -390,7 +398,7 @@ describe('auth integration', () => {
       .expect(401)
       .expect({
         error: 'Unauthorized',
-        message: 'Invalid credentials',
+        message: INVALID_CREDENTIALS_MESSAGE,
       });
 
     const loginResponse = await request(app)
@@ -454,7 +462,7 @@ describe('auth integration', () => {
 
       await request(secondApp).post('/auth/login').send({}).expect(429).expect({
         error: 'TooManyRequests',
-        message: 'Too many auth attempts, please try again after 10 minutes.',
+        message: AUTH_RATE_LIMIT_MESSAGE,
       });
     } finally {
       await closeRedisClient(secondRedisClient, testLogger);
@@ -488,7 +496,7 @@ describe('auth integration', () => {
         .expect(401)
         .expect({
           error: 'Unauthorized',
-          message: 'Invalid credentials',
+          message: INVALID_CREDENTIALS_MESSAGE,
         });
     }
 
@@ -501,7 +509,7 @@ describe('auth integration', () => {
       .expect(429)
       .expect({
         error: 'TooManyRequests',
-        message: 'Too many login attempts for this identifier, please try again after 10 minutes.',
+        message: LOGIN_IDENTIFIER_RATE_LIMIT_MESSAGE,
       });
   });
 

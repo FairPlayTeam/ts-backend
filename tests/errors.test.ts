@@ -5,7 +5,10 @@ import type { NextFunction, Request, Response as ExpressResponse } from 'express
 import { createApp } from '../src/app.js';
 import { HttpError, REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { errorHandler } from '../src/middleware/errors.js';
-import { authRateLimitExceededHandler } from '../src/middleware/limiters.js';
+import {
+  AUTH_RATE_LIMIT_MESSAGE,
+  authRateLimitExceededHandler,
+} from '../src/middleware/limiters.js';
 import { createStubAuthService } from './support/auth.js';
 
 type ErrorResponse = {
@@ -171,7 +174,6 @@ describe('error handling', () => {
 
   test('passes rate limit failures through the global error pipeline', () => {
     let receivedError: unknown;
-    const message = 'Too many auth attempts, please try again after 10 minutes.';
 
     authRateLimitExceededHandler(
       {} as Request,
@@ -184,7 +186,7 @@ describe('error handling', () => {
     expect(receivedError).toBeInstanceOf(HttpError);
     expect((receivedError as HttpError).statusCode).toBe(429);
     expect((receivedError as HttpError).code).toBe('TooManyRequests');
-    expect((receivedError as HttpError).message).toBe(message);
+    expect((receivedError as HttpError).message).toBe(AUTH_RATE_LIMIT_MESSAGE);
 
     const { response, state } = createMockResponse();
 
@@ -193,7 +195,7 @@ describe('error handling', () => {
     expect(state.statusCode).toBe(429);
     expect(state.body).toEqual({
       error: 'TooManyRequests',
-      message,
+      message: AUTH_RATE_LIMIT_MESSAGE,
     });
   });
 });

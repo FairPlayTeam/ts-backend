@@ -11,11 +11,11 @@ import {
 
 export function toAuthHttpError(err: unknown): Error {
   if (err instanceof UserAlreadyExistsError) {
-    return new HttpError(409, 'Conflict', 'User already exists', { cause: err });
+    return new HttpError(409, 'Conflict', err.message, { cause: err });
   }
 
   if (err instanceof InvalidCredentialsError) {
-    return new HttpError(401, 'Unauthorized', 'Invalid credentials', { cause: err });
+    return new HttpError(401, 'Unauthorized', err.message, { cause: err });
   }
 
   if (err instanceof InvalidEmailVerificationTokenError) {

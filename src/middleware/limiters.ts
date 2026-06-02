@@ -15,9 +15,9 @@ import {
 } from '../config/constants.js';
 import { hashRateLimitIdentifier } from './abuseProtection.js';
 
-const AUTH_RATE_LIMIT_MESSAGE = 'Too many auth attempts, please try again after 10 minutes.';
+export const AUTH_RATE_LIMIT_MESSAGE = 'Too many auth attempts, please try again after 10 minutes.';
 const API_RATE_LIMIT_MESSAGE = 'Too many requests, please try again after 15 minutes.';
-const LOGIN_IDENTIFIER_RATE_LIMIT_MESSAGE =
+export const LOGIN_IDENTIFIER_RATE_LIMIT_MESSAGE =
   'Too many login attempts for this identifier, please try again after 10 minutes.';
 const PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_MESSAGE =
   'Too many password reset requests for this email, please try again later.';

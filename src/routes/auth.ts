@@ -47,6 +47,7 @@ import {
   LOGOUT_SESSION_SUCCESS_MESSAGE,
   UPDATE_PROFILE_SUCCESS_MESSAGE,
 } from '../services/auth/auth.messages.js';
+import { INVALID_CREDENTIALS_MESSAGE } from '../services/auth.errors.js';
 
 type AuthRouterDependencies = {
   authService: AuthService;
@@ -188,7 +189,7 @@ export const routeDocs = [
     responses: {
       200: jsonResponse(LOGIN_SUCCESS_MESSAGE, loginResponseSchema),
 
-      401: jsonResponse('Invalid credentials', ApiErrorSchema),
+      401: jsonResponse(INVALID_CREDENTIALS_MESSAGE, ApiErrorSchema),
 
       403: jsonResponse('Account is not allowed to log in', ApiErrorSchema),
 
