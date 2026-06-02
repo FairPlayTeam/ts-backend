@@ -89,6 +89,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
   const {
     apiLimiter,
     authLimiter,
+    registrationIdentifierLimiter,
     loginIdentifierLimiter,
     passwordResetIdentifierLimiter,
     resendVerificationIdentifierLimiter,
@@ -190,6 +191,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     {
       authService: deps.authService,
       authLimiter,
+      registrationIdentifierLimiter,
       loginIdentifierLimiter,
       passwordResetEmailCooldown,
       passwordResetIdentifierLimiter,

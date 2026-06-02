@@ -10,6 +10,8 @@ import {
   LOGIN_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
   PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_MAX,
   PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
+  REGISTRATION_IDENTIFIER_RATE_LIMIT_MAX,
+  REGISTRATION_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
   RESEND_VERIFICATION_IDENTIFIER_RATE_LIMIT_MAX,
   RESEND_VERIFICATION_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
 } from '../config/constants.js';
@@ -17,6 +19,8 @@ import { hashRateLimitIdentifier } from './abuseProtection.js';
 
 export const AUTH_RATE_LIMIT_MESSAGE = 'Too many auth attempts, please try again after 10 minutes.';
 const API_RATE_LIMIT_MESSAGE = 'Too many requests, please try again after 15 minutes.';
+export const REGISTRATION_IDENTIFIER_RATE_LIMIT_MESSAGE =
+  'Too many registration attempts for this email, please try again later.';
 export const LOGIN_IDENTIFIER_RATE_LIMIT_MESSAGE =
   'Too many login attempts for this identifier, please try again after 10 minutes.';
 const PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_MESSAGE =
@@ -73,6 +77,37 @@ const createRateLimitHandler =
     next(new HttpError(429, 'TooManyRequests', message));
   };
 
+type IdentifierLimiterOptions = {
+  bodyKey: string;
+  keyPrefix: string;
+  keySecret: string;
+  limit: number;
+  message: string;
+  store: ReturnType<typeof makeStore>;
+  windowMs: number;
+};
+
+const createIdentifierLimiter = ({
+  bodyKey,
+  keyPrefix,
+  keySecret,
+  limit,
+  message,
+  store,
+  windowMs,
+}: IdentifierLimiterOptions): RequestHandler =>
+  rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    skipSuccessfulRequests: false,
+    passOnStoreError: false,
+    keyGenerator: createIdentifierKeyGenerator(keyPrefix, keySecret, bodyKey),
+    ...(store ? { store } : {}),
+    handler: createRateLimitHandler(message),
+  });
+
 export function createLimiters(deps: {
   redisClient: RedisClient | null;
   rateLimitKeySecret: string;
@@ -84,6 +119,7 @@ export function createLimiters(deps: {
 
   const apiStore = makeStore('rl:api:', deps.redisClient);
   const authStore = makeStore('rl:auth:', deps.redisClient);
+  const registrationIdentifierStore = makeStore('rl:auth:register-id:', deps.redisClient);
   const loginIdentifierStore = makeStore('rl:auth:login-id:', deps.redisClient);
   const passwordResetIdentifierStore = makeStore('rl:auth:password-reset-id:', deps.redisClient);
   const resendVerificationIdentifierStore = makeStore(
@@ -111,50 +147,41 @@ export function createLimiters(deps: {
       ...(authStore ? { store: authStore } : {}),
       handler: authRateLimitExceededHandler,
     }),
-    loginIdentifierLimiter: rateLimit({
+    registrationIdentifierLimiter: createIdentifierLimiter({
+      windowMs: REGISTRATION_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
+      limit: REGISTRATION_IDENTIFIER_RATE_LIMIT_MAX,
+      keyPrefix: 'register',
+      keySecret: deps.rateLimitKeySecret,
+      bodyKey: 'email',
+      store: registrationIdentifierStore,
+      message: REGISTRATION_IDENTIFIER_RATE_LIMIT_MESSAGE,
+    }),
+    loginIdentifierLimiter: createIdentifierLimiter({
       windowMs: LOGIN_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
       limit: LOGIN_IDENTIFIER_RATE_LIMIT_MAX,
-      standardHeaders: 'draft-7',
-      legacyHeaders: false,
-      skipSuccessfulRequests: false,
-      passOnStoreError: false,
-      keyGenerator: createIdentifierKeyGenerator(
-        'login',
-        deps.rateLimitKeySecret,
-        'emailOrUsername',
-      ),
-      ...(loginIdentifierStore ? { store: loginIdentifierStore } : {}),
-      handler: createRateLimitHandler(LOGIN_IDENTIFIER_RATE_LIMIT_MESSAGE),
+      keyPrefix: 'login',
+      keySecret: deps.rateLimitKeySecret,
+      bodyKey: 'emailOrUsername',
+      store: loginIdentifierStore,
+      message: LOGIN_IDENTIFIER_RATE_LIMIT_MESSAGE,
     }),
-    passwordResetIdentifierLimiter: rateLimit({
+    passwordResetIdentifierLimiter: createIdentifierLimiter({
       windowMs: PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
       limit: PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_MAX,
-      standardHeaders: 'draft-7',
-      legacyHeaders: false,
-      skipSuccessfulRequests: false,
-      passOnStoreError: false,
-      keyGenerator: createIdentifierKeyGenerator(
-        'password-reset',
-        deps.rateLimitKeySecret,
-        'email',
-      ),
-      ...(passwordResetIdentifierStore ? { store: passwordResetIdentifierStore } : {}),
-      handler: createRateLimitHandler(PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_MESSAGE),
+      keyPrefix: 'password-reset',
+      keySecret: deps.rateLimitKeySecret,
+      bodyKey: 'email',
+      store: passwordResetIdentifierStore,
+      message: PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_MESSAGE,
     }),
-    resendVerificationIdentifierLimiter: rateLimit({
+    resendVerificationIdentifierLimiter: createIdentifierLimiter({
       windowMs: RESEND_VERIFICATION_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
       limit: RESEND_VERIFICATION_IDENTIFIER_RATE_LIMIT_MAX,
-      standardHeaders: 'draft-7',
-      legacyHeaders: false,
-      skipSuccessfulRequests: false,
-      passOnStoreError: false,
-      keyGenerator: createIdentifierKeyGenerator(
-        'resend-verification',
-        deps.rateLimitKeySecret,
-        'email',
-      ),
-      ...(resendVerificationIdentifierStore ? { store: resendVerificationIdentifierStore } : {}),
-      handler: createRateLimitHandler(RESEND_VERIFICATION_IDENTIFIER_RATE_LIMIT_MESSAGE),
+      keyPrefix: 'resend-verification',
+      keySecret: deps.rateLimitKeySecret,
+      bodyKey: 'email',
+      store: resendVerificationIdentifierStore,
+      message: RESEND_VERIFICATION_IDENTIFIER_RATE_LIMIT_MESSAGE,
     }),
   };
 }

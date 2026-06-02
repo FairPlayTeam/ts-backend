@@ -16,6 +16,7 @@ import { closeRedisClient, connectRedisClient, createRedisClient } from '../../s
 import {
   AUTH_RATE_LIMIT_MESSAGE,
   LOGIN_IDENTIFIER_RATE_LIMIT_MESSAGE,
+  REGISTRATION_IDENTIFIER_RATE_LIMIT_MESSAGE,
 } from '../../src/middleware/limiters.js';
 import { INVALID_AUTH_SESSION_MESSAGE } from '../../src/middleware/auth.js';
 import {
@@ -33,6 +34,7 @@ import {
 import {
   EMAIL_VERIFICATION_TOKEN_TTL_MS,
   PASSWORD_RESET_TOKEN_TTL_MS,
+  REGISTRATION_IDENTIFIER_RATE_LIMIT_MAX,
   SESSION_TTL_MS,
 } from '../../src/config/constants.js';
 import type { AuthService } from '../../src/services/auth.types.js';
@@ -510,6 +512,51 @@ describe('auth integration', () => {
       .expect({
         error: 'TooManyRequests',
         message: LOGIN_IDENTIFIER_RATE_LIMIT_MESSAGE,
+      });
+  });
+
+  test('rate limits registration attempts by normalized email', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const email = 'registration-limit@example.com';
+
+    await request(app)
+      .post('/auth/register')
+      .send({
+        email: ` ${email.toUpperCase()} `,
+        username: 'registration_limit_0',
+        password: INITIAL_PASSWORD,
+      })
+      .expect(201)
+      .expect({
+        message: REGISTER_SUCCESS_MESSAGE,
+      });
+
+    for (let index = 1; index < REGISTRATION_IDENTIFIER_RATE_LIMIT_MAX; index += 1) {
+      await request(app)
+        .post('/auth/register')
+        .send({
+          email,
+          username: `registration_limit_${index}`,
+          password: INITIAL_PASSWORD,
+        })
+        .expect(409);
+    }
+
+    await request(app)
+      .post('/auth/register')
+      .send({
+        email,
+        username: 'registration_final',
+        password: INITIAL_PASSWORD,
+      })
+      .expect(429)
+      .expect({
+        error: 'TooManyRequests',
+        message: REGISTRATION_IDENTIFIER_RATE_LIMIT_MESSAGE,
       });
   });
 

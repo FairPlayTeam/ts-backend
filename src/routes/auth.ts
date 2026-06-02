@@ -52,6 +52,7 @@ import { INVALID_CREDENTIALS_MESSAGE } from '../services/auth.errors.js';
 type AuthRouterDependencies = {
   authService: AuthService;
   authLimiter: RequestHandler;
+  registrationIdentifierLimiter: RequestHandler;
   loginIdentifierLimiter: RequestHandler;
   passwordResetEmailCooldown: RequestHandler;
   passwordResetIdentifierLimiter: RequestHandler;
@@ -62,6 +63,7 @@ type AuthRouterDependencies = {
 const createAuthRouter = ({
   authService,
   authLimiter,
+  registrationIdentifierLimiter,
   loginIdentifierLimiter,
   passwordResetEmailCooldown,
   passwordResetIdentifierLimiter,
@@ -88,7 +90,13 @@ const createAuthRouter = ({
   const authenticateSession = createAuthenticateSession({ authService });
   const protect = createRouteProtector({ authService });
 
-  router.post('/register', authLimiter, validate(registerSchema), register);
+  router.post(
+    '/register',
+    authLimiter,
+    validate(registerSchema),
+    registrationIdentifierLimiter,
+    register,
+  );
   router.post('/login', authLimiter, validate(loginSchema), loginIdentifierLimiter, login);
   router.post('/verify-email', authLimiter, validate(verifyEmailSchema), verifyEmail);
   router.post(
