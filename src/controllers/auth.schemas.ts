@@ -34,7 +34,7 @@ const emailSchema = z
   .email('Invalid email format')
   .max(EMAIL_MAX_LENGTH)
   .transform((v) => v.toLowerCase())
-  .openapi({ example: 'meal.nohan+y**tube@example.com' });
+  .openapi({ example: 'creator@example.com' });
 
 const passwordSchema = z
   .string()
@@ -81,14 +81,14 @@ export const loginBodySchema = z
       .min(1, 'Email or username is required')
       .max(EMAIL_MAX_LENGTH)
       .transform((value) => value.toLowerCase())
-      .openapi({ example: 'meal.nohan+y**tube@example.com' }),
+      .openapi({ example: 'creator@example.com' }),
     password: z
       .string()
       .min(1, 'Password is required')
       .max(PASSWORD_MAX_LENGTH, `Password must be at most ${PASSWORD_MAX_LENGTH} characters`)
       .openapi({
         format: 'password',
-        example: 'ILoveShorts1!',
+        example: 'FairPlay2026!',
       }),
   })
   .strict()
@@ -145,12 +145,11 @@ export const logoutSessionSchema = z.object({
 
 const authUserResponseSchema = z.object({
   id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
-  email: z.string().email().openapi({ example: 'meal.nohan+y**tube@example.com' }),
-  username: z.string().openapi({ example: 'meal_nohan' }),
-  displayName: z.string().nullable().openapi({ example: 'Meal Nohan' }),
+  email: z.string().email().openapi({ example: 'creator@example.com' }),
+  username: z.string().openapi({ example: 'fairplay_creator' }),
+  displayName: z.string().nullable().openapi({ example: 'Neal Mohan' }),
   bio: z.string().nullable().openapi({
-    example:
-      'CEO of Y**tube. Secretly testing alternative platforms during Shorts strategy meetings.',
+    example: "A new fairplayer who is looking for a fairer way to share videos.",
   }),
   role: z.string().openapi({ example: 'user' }),
 });
@@ -276,7 +275,7 @@ export const updateProfileBodySchema = z
       )
       .nullable()
       .optional()
-      .openapi({ example: 'Meal Nohan' }),
+      .openapi({ example: 'FairPlay Creator' }),
     bio: z
       .string()
       .trim()
@@ -284,7 +283,7 @@ export const updateProfileBodySchema = z
       .nullable()
       .optional()
       .openapi({
-        example: 'Running three A/B tests to determine how many ads humans can tolerate.',
+        example: 'Sharing project updates with my subscribers.',
       }),
   })
   .strict()
