@@ -2,6 +2,12 @@ import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { HttpError, isHttpError, type ApiErrorResponse } from '../errors/http.js';
 import { logger } from '../lib/logger.js';
 
+export const INVALID_JSON_MESSAGE = 'Request body contains invalid JSON';
+export const REQUEST_BODY_TOO_LARGE_MESSAGE = 'Request body is too large';
+
+export const createRouteNotFoundMessage = (method: string, originalUrl: string): string =>
+  `Route ${method} ${originalUrl} not found`;
+
 type HttpStatusError = Error & {
   expose?: unknown;
   status?: unknown;
@@ -34,13 +40,13 @@ const toHttpError = (err: unknown): HttpError => {
     const status = getHttpStatus(err);
 
     if (err.type === 'entity.parse.failed' && status === 400) {
-      return new HttpError(400, 'InvalidJson', 'Request body contains invalid JSON', {
+      return new HttpError(400, 'InvalidJson', INVALID_JSON_MESSAGE, {
         cause: err,
       });
     }
 
     if (err.type === 'entity.too.large' && status === 413) {
-      return new HttpError(413, 'PayloadTooLarge', 'Request body is too large', {
+      return new HttpError(413, 'PayloadTooLarge', REQUEST_BODY_TOO_LARGE_MESSAGE, {
         cause: err,
       });
     }
@@ -54,7 +60,7 @@ const toHttpError = (err: unknown): HttpError => {
 };
 
 export const notFoundHandler: RequestHandler = (req, _res, next) => {
-  next(new HttpError(404, 'NotFound', `Route ${req.method} ${req.originalUrl} not found`));
+  next(new HttpError(404, 'NotFound', createRouteNotFoundMessage(req.method, req.originalUrl)));
 };
 
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {

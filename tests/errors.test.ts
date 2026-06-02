@@ -4,7 +4,12 @@ import type { AddressInfo } from 'node:net';
 import type { NextFunction, Request, Response as ExpressResponse } from 'express';
 import { createApp } from '../src/app.js';
 import { HttpError, REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
-import { errorHandler } from '../src/middleware/errors.js';
+import {
+  INVALID_JSON_MESSAGE,
+  REQUEST_BODY_TOO_LARGE_MESSAGE,
+  createRouteNotFoundMessage,
+  errorHandler,
+} from '../src/middleware/errors.js';
 import {
   AUTH_RATE_LIMIT_MESSAGE,
   authRateLimitExceededHandler,
@@ -22,6 +27,11 @@ type ErrorResponse = {
 
 let server: Server;
 let baseUrl: string;
+
+const missingRoutePath = '/missing-route';
+const missingStringValidationMessage = 'Invalid input: expected string, received undefined';
+const hiddenBadRequestMessage = 'Bad request';
+const hiddenErrorDetailMessage = 'hidden implementation detail';
 
 const readError = async (response: Response): Promise<ErrorResponse> =>
   (await response.json()) as ErrorResponse;
@@ -93,7 +103,7 @@ describe('error handling', () => {
     expect(response.status).toBe(400);
     expect(await readError(response)).toEqual({
       error: 'InvalidJson',
-      message: 'Request body contains invalid JSON',
+      message: INVALID_JSON_MESSAGE,
     });
   });
 
@@ -111,7 +121,7 @@ describe('error handling', () => {
     expect(response.status).toBe(413);
     expect(await readError(response)).toEqual({
       error: 'PayloadTooLarge',
-      message: 'Request body is too large',
+      message: REQUEST_BODY_TOO_LARGE_MESSAGE,
     });
   });
 
@@ -129,27 +139,27 @@ describe('error handling', () => {
       details: [
         {
           field: 'body.email',
-          message: 'Invalid input: expected string, received undefined',
+          message: missingStringValidationMessage,
         },
         {
           field: 'body.username',
-          message: 'Invalid input: expected string, received undefined',
+          message: missingStringValidationMessage,
         },
         {
           field: 'body.password',
-          message: 'Invalid input: expected string, received undefined',
+          message: missingStringValidationMessage,
         },
       ],
     });
   });
 
   test('keeps application 404 errors explicit', async () => {
-    const response = await fetch(`${baseUrl}/missing-route`);
+    const response = await fetch(`${baseUrl}${missingRoutePath}`);
 
     expect(response.status).toBe(404);
     expect(await readError(response)).toEqual({
       error: 'NotFound',
-      message: 'Route GET /missing-route not found',
+      message: createRouteNotFoundMessage('GET', missingRoutePath),
     });
   });
 
@@ -157,8 +167,8 @@ describe('error handling', () => {
     const { response, state } = createMockResponse();
 
     errorHandler(
-      new HttpError(400, 'BadRequest', 'Bad request', {
-        details: [{ field: 'body.secret', message: 'hidden implementation detail' }],
+      new HttpError(400, 'BadRequest', hiddenBadRequestMessage, {
+        details: [{ field: 'body.secret', message: hiddenErrorDetailMessage }],
       }),
       {} as Request,
       response,
@@ -168,7 +178,7 @@ describe('error handling', () => {
     expect(state.statusCode).toBe(400);
     expect(state.body).toEqual({
       error: 'BadRequest',
-      message: 'Bad request',
+      message: hiddenBadRequestMessage,
     });
   });
 
