@@ -5,9 +5,9 @@ import {
   parseIsProduction,
   parseJsonBodyLimitBytes,
   parseMailerConfig,
-  parseOptionalUrl,
+  parseOptionalRedisUrl,
   parseRateLimitKeySecret,
-  parseRequiredUrl,
+  parseRequiredHttpUrl,
   parseSessionCleanupInactiveRetentionMs,
   parseSessionCleanupIntervalMs,
   parseTrustProxy,
@@ -24,13 +24,29 @@ describe('env parsers', () => {
   });
 
   test('normalizes required URLs', () => {
-    expect(parseRequiredUrl('http://localhost:3000', 'BASE_URL')).toBe('http://localhost:3000/');
+    expect(parseRequiredHttpUrl('http://localhost:3000', 'BASE_URL')).toBe(
+      'http://localhost:3000/',
+    );
+    expect(parseRequiredHttpUrl('https://api.example.com/v1', 'BASE_URL')).toBe(
+      'https://api.example.com/v1',
+    );
+    expect(() => parseRequiredHttpUrl('ftp://example.com', 'BASE_URL')).toThrow(
+      ServerConfigurationError,
+    );
   });
 
-  test('parses optional URLs', () => {
-    expect(parseOptionalUrl(undefined, 'REDIS_URL')).toBeNull();
-    expect(parseOptionalUrl('redis://localhost:6379', 'REDIS_URL')).toBe('redis://localhost:6379');
-    expect(() => parseOptionalUrl('not-a-url', 'REDIS_URL')).toThrow(ServerConfigurationError);
+  test('parses optional Redis URLs', () => {
+    expect(parseOptionalRedisUrl(undefined, 'REDIS_URL')).toBeNull();
+    expect(parseOptionalRedisUrl('redis://localhost:6379', 'REDIS_URL')).toBe(
+      'redis://localhost:6379',
+    );
+    expect(parseOptionalRedisUrl('rediss://redis.example.com:6379', 'REDIS_URL')).toBe(
+      'rediss://redis.example.com:6379',
+    );
+    expect(() => parseOptionalRedisUrl('http://localhost:6379', 'REDIS_URL')).toThrow(
+      ServerConfigurationError,
+    );
+    expect(() => parseOptionalRedisUrl('not-a-url', 'REDIS_URL')).toThrow(ServerConfigurationError);
   });
 
   test('parses trust proxy values', () => {
@@ -82,6 +98,7 @@ describe('env parsers', () => {
       'https://example.com',
     ]);
     expect(() => parseAllowedOrigins('not-a-url')).toThrow(ServerConfigurationError);
+    expect(() => parseAllowedOrigins('ftp://example.com')).toThrow(ServerConfigurationError);
   });
 
   test('parses optional mailer configuration', () => {
@@ -104,6 +121,17 @@ describe('env parsers', () => {
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
         frontendUrl: 'http://localhost:5173',
+      }),
+    ).toThrow(ServerConfigurationError);
+
+    expect(() =>
+      parseMailerConfig({
+        smtpHost: 'smtp.example.com',
+        smtpPort: '587',
+        smtpUser: 'user@example.com',
+        smtpPass: 'secret',
+        smtpFrom: 'no-reply@example.com',
+        frontendUrl: 'ftp://localhost:5173',
       }),
     ).toThrow(ServerConfigurationError);
 

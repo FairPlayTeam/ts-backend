@@ -7,6 +7,9 @@ import {
 } from './constants.js';
 import type { MailerConfig } from '../services/mailer/mailer.types.js';
 
+const HTTP_URL_PROTOCOLS = ['http:', 'https:'] as const;
+const REDIS_URL_PROTOCOLS = ['redis:', 'rediss:'] as const;
+
 export type TrustProxySetting = boolean | number | string | string[];
 
 export class ServerConfigurationError extends Error {
@@ -52,28 +55,51 @@ export const parseBcryptRounds = (rawData: string | undefined, fallback = 12): n
   return rounds;
 };
 
-export const parseRequiredUrl = (rawData: string | undefined, name: string): string => {
+const formatProtocols = (protocols: readonly string[]): string =>
+  protocols.map((protocol) => protocol.replace(/:$/, '')).join(', ');
+
+const assertUrlProtocol = (url: URL, allowedProtocols: readonly string[], name: string): void => {
+  if (!allowedProtocols.includes(url.protocol)) {
+    throw new ServerConfigurationError(
+      `${name} must use one of these URL protocols: ${formatProtocols(allowedProtocols)}`,
+    );
+  }
+};
+
+const parseUrlWithProtocols = (
+  rawData: string | undefined,
+  name: string,
+  allowedProtocols: readonly string[],
+): string => {
   const value = readRequiredEnv(rawData, name);
 
   try {
-    return new URL(value).toString();
-  } catch {
+    const url = new URL(value);
+    assertUrlProtocol(url, allowedProtocols, name);
+    return url.toString();
+  } catch (error) {
+    if (error instanceof ServerConfigurationError) {
+      throw error;
+    }
+
     throw new ServerConfigurationError(`${name} must be a valid URL, got: ${value}`);
   }
 };
 
-export const parseOptionalUrl = (rawData: string | undefined, name: string): string | null => {
+export const parseRequiredHttpUrl = (rawData: string | undefined, name: string): string =>
+  parseUrlWithProtocols(rawData, name, HTTP_URL_PROTOCOLS);
+
+export const parseRedisUrl = (rawData: string | undefined, name: string): string =>
+  parseUrlWithProtocols(rawData, name, REDIS_URL_PROTOCOLS);
+
+export const parseOptionalRedisUrl = (rawData: string | undefined, name: string): string | null => {
   const value = rawData?.trim();
 
   if (!value) {
     return null;
   }
 
-  try {
-    return new URL(value).toString();
-  } catch {
-    throw new ServerConfigurationError(`${name} must be a valid URL, got: ${value}`);
-  }
+  return parseRedisUrl(value, name);
 };
 
 export const parseTrustProxy = (
@@ -199,13 +225,9 @@ export const parseAllowedOrigins = (rawValue: string | undefined): string[] => {
         .map((origin) => origin.trim())
         .filter((origin) => origin.length > 0)
         .map((origin) => {
-          try {
-            return new URL(origin).origin;
-          } catch {
-            throw new ServerConfigurationError(
-              `CORS_ORIGINS entries must be valid origins, got: ${origin}`,
-            );
-          }
+          const url = new URL(parseRequiredHttpUrl(origin, 'CORS_ORIGINS entry'));
+
+          return url.origin;
         }),
     ),
   ];
@@ -256,7 +278,7 @@ const parseSmtpPort = (rawPort: string | undefined): number => {
 };
 
 const parseFrontendUrl = (rawUrl: string | undefined): string =>
-  parseRequiredUrl(rawUrl, 'FRONTEND_URL');
+  parseRequiredHttpUrl(rawUrl, 'FRONTEND_URL');
 
 type RawMailerConfig = {
   smtpHost: string | undefined;
