@@ -13,6 +13,19 @@ import type {
 } from '../src/controllers/auth.schemas.js';
 import { HttpError } from '../src/errors/http.js';
 import { UserAlreadyExistsError } from '../src/services/auth.errors.js';
+import {
+  LOGIN_SUCCESS_MESSAGE,
+  LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
+  LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
+  LOGOUT_SESSION_SUCCESS_MESSAGE,
+  REGISTER_SUCCESS_MESSAGE,
+  RESEND_VERIFICATION_EMAIL_MESSAGE,
+  RESET_PASSWORD_EMAIL_MESSAGE,
+  RESET_PASSWORD_SUCCESS_MESSAGE,
+  UPDATE_PROFILE_SUCCESS_MESSAGE,
+  VERIFY_EMAIL_SUCCESS_MESSAGE,
+} from '../src/services/auth/auth.messages.js';
+import type { AuthService } from '../src/services/auth.types.js';
 
 const registerBody: RegisterRequestBody = {
   email: 'user@example.com',
@@ -38,7 +51,7 @@ const verifyEmailBody: VerifyEmailRequestBody = {
 };
 
 const loginResult = {
-  message: 'Login successful',
+  message: LOGIN_SUCCESS_MESSAGE,
   user: {
     id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
     email: 'user@example.com',
@@ -56,7 +69,7 @@ const loginResult = {
 
 const verifyEmailResult = {
   ...loginResult,
-  message: 'Email successfully verified',
+  message: VERIFY_EMAIL_SUCCESS_MESSAGE,
 };
 
 const validatedSession = {
@@ -85,6 +98,46 @@ const userSessionsResult = {
   total: 1,
 };
 
+type ControllerAuthService = Omit<AuthService, 'cleanupExpiredAuthTokens' | 'cleanupSessions'>;
+
+const createControllerAuthService = (
+  overrides: Partial<ControllerAuthService> = {},
+): ControllerAuthService => ({
+  register: async () => ({ message: REGISTER_SUCCESS_MESSAGE }),
+  login: async () => loginResult,
+  verifyEmail: async () => verifyEmailResult,
+  validateSession: async () => validatedSession,
+  resendVerification: async () => ({ message: RESEND_VERIFICATION_EMAIL_MESSAGE }),
+  getUserSessions: async () => userSessionsResult,
+  logoutAllSessions: async () => ({
+    message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
+    sessionsLoggedOut: 1,
+  }),
+  logoutOtherSessions: async () => ({
+    message: LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
+    sessionsLoggedOut: 1,
+  }),
+  logoutSession: async () => ({
+    message: LOGOUT_SESSION_SUCCESS_MESSAGE,
+    sessionsLoggedOut: 1,
+  }),
+  updateProfile: async () => ({
+    message: UPDATE_PROFILE_SUCCESS_MESSAGE,
+    user: loginResult.user,
+  }),
+  requestPasswordReset: async () => ({ message: RESET_PASSWORD_EMAIL_MESSAGE }),
+  resetPassword: async () => ({
+    message: RESET_PASSWORD_SUCCESS_MESSAGE,
+    sessionsLoggedOut: 1,
+  }),
+  ...overrides,
+});
+
+const createTestAuthController = (overrides?: Partial<ControllerAuthService>) =>
+  createAuthController({
+    authService: createControllerAuthService(overrides),
+  });
+
 const createMockResponse = () => {
   const state: {
     statusCode?: number;
@@ -110,45 +163,10 @@ describe('auth controller', () => {
     let receivedInput: RegisterRequestBody | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
-    const controller = createAuthController({
-      authService: {
-        register: async (input) => {
-          receivedInput = input;
-          return { message: 'Account created. Please verify your email.' };
-        },
-        login: async () => loginResult,
-        verifyEmail: async () => verifyEmailResult,
-        validateSession: async () => validatedSession,
-        resendVerification: async () => ({
-          message:
-            'If this email exists and is eligible for email verification, a verification link has been sent.',
-        }),
-        getUserSessions: async () => userSessionsResult,
-        logoutAllSessions: async () => ({
-          message: 'All sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutOtherSessions: async () => ({
-          message: 'Other sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutSession: async () => ({
-          message: 'Session logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        updateProfile: async () => ({
-          message: 'Profile updated successfully',
-          user: loginResult.user,
-        }),
-        requestPasswordReset: async () => ({
-          message:
-            'If this email exists and is eligible for password reset, a reset link has been sent.',
-        }),
-        resetPassword: async () => ({
-          message:
-            'Your password has been reset successfully. Please log in with your new password.',
-          sessionsLoggedOut: 1,
-        }),
+    const controller = createTestAuthController({
+      register: async (input) => {
+        receivedInput = input;
+        return { message: REGISTER_SUCCESS_MESSAGE };
       },
     });
 
@@ -164,51 +182,16 @@ describe('auth controller', () => {
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(201);
     expect(state.body).toEqual({
-      message: 'Account created. Please verify your email.',
+      message: REGISTER_SUCCESS_MESSAGE,
     });
   });
 
   test('maps known auth service errors before passing them to next', async () => {
     let receivedError: unknown;
     const { response } = createMockResponse();
-    const controller = createAuthController({
-      authService: {
-        register: async () => {
-          throw new UserAlreadyExistsError();
-        },
-        login: async () => loginResult,
-        verifyEmail: async () => verifyEmailResult,
-        validateSession: async () => validatedSession,
-        resendVerification: async () => ({
-          message:
-            'If this email exists and is eligible for email verification, a verification link has been sent.',
-        }),
-        getUserSessions: async () => userSessionsResult,
-        logoutAllSessions: async () => ({
-          message: 'All sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutOtherSessions: async () => ({
-          message: 'Other sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutSession: async () => ({
-          message: 'Session logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        updateProfile: async () => ({
-          message: 'Profile updated successfully',
-          user: loginResult.user,
-        }),
-        requestPasswordReset: async () => ({
-          message:
-            'If this email exists and is eligible for password reset, a reset link has been sent.',
-        }),
-        resetPassword: async () => ({
-          message:
-            'Your password has been reset successfully. Please log in with your new password.',
-          sessionsLoggedOut: 1,
-        }),
+    const controller = createTestAuthController({
+      register: async () => {
+        throw new UserAlreadyExistsError();
       },
     });
 
@@ -229,45 +212,10 @@ describe('auth controller', () => {
     let receivedInput: ResendVerificationRequestBody | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
-    const controller = createAuthController({
-      authService: {
-        register: async () => ({ message: 'Account created. Please verify your email.' }),
-        login: async () => loginResult,
-        verifyEmail: async () => verifyEmailResult,
-        validateSession: async () => validatedSession,
-        resendVerification: async (input) => {
-          receivedInput = input;
-          return {
-            message:
-              'If this email exists and is eligible for email verification, a verification link has been sent.',
-          };
-        },
-        getUserSessions: async () => userSessionsResult,
-        logoutAllSessions: async () => ({
-          message: 'All sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutOtherSessions: async () => ({
-          message: 'Other sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutSession: async () => ({
-          message: 'Session logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        updateProfile: async () => ({
-          message: 'Profile updated successfully',
-          user: loginResult.user,
-        }),
-        requestPasswordReset: async () => ({
-          message:
-            'If this email exists and is eligible for password reset, a reset link has been sent.',
-        }),
-        resetPassword: async () => ({
-          message:
-            'Your password has been reset successfully. Please log in with your new password.',
-          sessionsLoggedOut: 1,
-        }),
+    const controller = createTestAuthController({
+      resendVerification: async (input) => {
+        receivedInput = input;
+        return { message: RESEND_VERIFICATION_EMAIL_MESSAGE };
       },
     });
 
@@ -283,8 +231,7 @@ describe('auth controller', () => {
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
-      message:
-        'If this email exists and is eligible for email verification, a verification link has been sent.',
+      message: RESEND_VERIFICATION_EMAIL_MESSAGE,
     });
   });
 
@@ -292,45 +239,10 @@ describe('auth controller', () => {
     let receivedInput: RequestPasswordResetRequestBody | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
-    const controller = createAuthController({
-      authService: {
-        register: async () => ({ message: 'Account created. Please verify your email.' }),
-        login: async () => loginResult,
-        verifyEmail: async () => verifyEmailResult,
-        validateSession: async () => validatedSession,
-        resendVerification: async () => ({
-          message:
-            'If this email exists and is eligible for email verification, a verification link has been sent.',
-        }),
-        getUserSessions: async () => userSessionsResult,
-        logoutAllSessions: async () => ({
-          message: 'All sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutOtherSessions: async () => ({
-          message: 'Other sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutSession: async () => ({
-          message: 'Session logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        updateProfile: async () => ({
-          message: 'Profile updated successfully',
-          user: loginResult.user,
-        }),
-        requestPasswordReset: async (input) => {
-          receivedInput = input;
-          return {
-            message:
-              'If this email exists and is eligible for password reset, a reset link has been sent.',
-          };
-        },
-        resetPassword: async () => ({
-          message:
-            'Your password has been reset successfully. Please log in with your new password.',
-          sessionsLoggedOut: 1,
-        }),
+    const controller = createTestAuthController({
+      requestPasswordReset: async (input) => {
+        receivedInput = input;
+        return { message: RESET_PASSWORD_EMAIL_MESSAGE };
       },
     });
 
@@ -350,8 +262,7 @@ describe('auth controller', () => {
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
-      message:
-        'If this email exists and is eligible for password reset, a reset link has been sent.',
+      message: RESET_PASSWORD_EMAIL_MESSAGE,
     });
   });
 
@@ -361,45 +272,10 @@ describe('auth controller', () => {
       | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
-    const controller = createAuthController({
-      authService: {
-        register: async () => ({ message: 'Account created. Please verify your email.' }),
-        login: async (input) => {
-          receivedInput = input;
-          return loginResult;
-        },
-        verifyEmail: async () => verifyEmailResult,
-        validateSession: async () => validatedSession,
-        resendVerification: async () => ({
-          message:
-            'If this email exists and is eligible for email verification, a verification link has been sent.',
-        }),
-        getUserSessions: async () => userSessionsResult,
-        logoutAllSessions: async () => ({
-          message: 'All sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutOtherSessions: async () => ({
-          message: 'Other sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutSession: async () => ({
-          message: 'Session logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        updateProfile: async () => ({
-          message: 'Profile updated successfully',
-          user: loginResult.user,
-        }),
-        requestPasswordReset: async () => ({
-          message:
-            'If this email exists and is eligible for password reset, a reset link has been sent.',
-        }),
-        resetPassword: async () => ({
-          message:
-            'Your password has been reset successfully. Please log in with your new password.',
-          sessionsLoggedOut: 1,
-        }),
+    const controller = createTestAuthController({
+      login: async (input) => {
+        receivedInput = input;
+        return loginResult;
       },
     });
 
@@ -440,45 +316,10 @@ describe('auth controller', () => {
       | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
-    const controller = createAuthController({
-      authService: {
-        register: async () => ({ message: 'Account created. Please verify your email.' }),
-        login: async () => loginResult,
-        verifyEmail: async (input) => {
-          receivedInput = input;
-          return verifyEmailResult;
-        },
-        validateSession: async () => validatedSession,
-        resendVerification: async () => ({
-          message:
-            'If this email exists and is eligible for email verification, a verification link has been sent.',
-        }),
-        getUserSessions: async () => userSessionsResult,
-        logoutAllSessions: async () => ({
-          message: 'All sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutOtherSessions: async () => ({
-          message: 'Other sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutSession: async () => ({
-          message: 'Session logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        updateProfile: async () => ({
-          message: 'Profile updated successfully',
-          user: loginResult.user,
-        }),
-        requestPasswordReset: async () => ({
-          message:
-            'If this email exists and is eligible for password reset, a reset link has been sent.',
-        }),
-        resetPassword: async () => ({
-          message:
-            'Your password has been reset successfully. Please log in with your new password.',
-          sessionsLoggedOut: 1,
-        }),
+    const controller = createTestAuthController({
+      verifyEmail: async (input) => {
+        receivedInput = input;
+        return verifyEmailResult;
       },
     });
 
@@ -512,44 +353,7 @@ describe('auth controller', () => {
 
   test('returns the authenticated user profile from request context', () => {
     const { response, state } = createMockResponse();
-    const controller = createAuthController({
-      authService: {
-        register: async () => ({ message: 'Account created. Please verify your email.' }),
-        login: async () => loginResult,
-        verifyEmail: async () => verifyEmailResult,
-        validateSession: async () => validatedSession,
-        resendVerification: async () => ({
-          message:
-            'If this email exists and is eligible for email verification, a verification link has been sent.',
-        }),
-        getUserSessions: async () => userSessionsResult,
-        logoutAllSessions: async () => ({
-          message: 'All sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutOtherSessions: async () => ({
-          message: 'Other sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutSession: async () => ({
-          message: 'Session logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        updateProfile: async () => ({
-          message: 'Profile updated successfully',
-          user: loginResult.user,
-        }),
-        requestPasswordReset: async () => ({
-          message:
-            'If this email exists and is eligible for password reset, a reset link has been sent.',
-        }),
-        resetPassword: async () => ({
-          message:
-            'Your password has been reset successfully. Please log in with your new password.',
-          sessionsLoggedOut: 1,
-        }),
-      },
-    });
+    const controller = createTestAuthController();
 
     controller.me(
       {
@@ -582,45 +386,13 @@ describe('auth controller', () => {
       displayName: 'Updated Name',
       bio: null,
     };
-    const controller = createAuthController({
-      authService: {
-        register: async () => ({ message: 'Account created. Please verify your email.' }),
-        login: async () => loginResult,
-        verifyEmail: async () => verifyEmailResult,
-        validateSession: async () => validatedSession,
-        resendVerification: async () => ({
-          message:
-            'If this email exists and is eligible for email verification, a verification link has been sent.',
-        }),
-        getUserSessions: async () => userSessionsResult,
-        logoutAllSessions: async () => ({
-          message: 'All sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutOtherSessions: async () => ({
-          message: 'Other sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutSession: async () => ({
-          message: 'Session logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        updateProfile: async (input) => {
-          receivedInput = input;
-          return {
-            message: 'Profile updated successfully',
-            user: updatedUser,
-          };
-        },
-        requestPasswordReset: async () => ({
-          message:
-            'If this email exists and is eligible for password reset, a reset link has been sent.',
-        }),
-        resetPassword: async () => ({
-          message:
-            'Your password has been reset successfully. Please log in with your new password.',
-          sessionsLoggedOut: 1,
-        }),
+    const controller = createTestAuthController({
+      updateProfile: async (input) => {
+        receivedInput = input;
+        return {
+          message: UPDATE_PROFILE_SUCCESS_MESSAGE,
+          user: updatedUser,
+        };
       },
     });
 
@@ -647,7 +419,7 @@ describe('auth controller', () => {
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
-      message: 'Profile updated successfully',
+      message: UPDATE_PROFILE_SUCCESS_MESSAGE,
       user: updatedUser,
     });
   });
@@ -663,45 +435,10 @@ describe('auth controller', () => {
       | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
-    const controller = createAuthController({
-      authService: {
-        register: async () => ({ message: 'Account created. Please verify your email.' }),
-        login: async () => loginResult,
-        verifyEmail: async () => verifyEmailResult,
-        validateSession: async () => validatedSession,
-        resendVerification: async () => ({
-          message:
-            'If this email exists and is eligible for email verification, a verification link has been sent.',
-        }),
-        getUserSessions: async (input) => {
-          receivedInput = input;
-          return userSessionsResult;
-        },
-        logoutAllSessions: async () => ({
-          message: 'All sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutOtherSessions: async () => ({
-          message: 'Other sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutSession: async () => ({
-          message: 'Session logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        updateProfile: async () => ({
-          message: 'Profile updated successfully',
-          user: loginResult.user,
-        }),
-        requestPasswordReset: async () => ({
-          message:
-            'If this email exists and is eligible for password reset, a reset link has been sent.',
-        }),
-        resetPassword: async () => ({
-          message:
-            'Your password has been reset successfully. Please log in with your new password.',
-          sessionsLoggedOut: 1,
-        }),
+    const controller = createTestAuthController({
+      getUserSessions: async (input) => {
+        receivedInput = input;
+        return userSessionsResult;
       },
     });
 
@@ -758,45 +495,13 @@ describe('auth controller', () => {
     let receivedInput: { userId: string } | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
-    const controller = createAuthController({
-      authService: {
-        register: async () => ({ message: 'Account created. Please verify your email.' }),
-        login: async () => loginResult,
-        verifyEmail: async () => verifyEmailResult,
-        validateSession: async () => validatedSession,
-        resendVerification: async () => ({
-          message:
-            'If this email exists and is eligible for email verification, a verification link has been sent.',
-        }),
-        getUserSessions: async () => userSessionsResult,
-        logoutAllSessions: async (input) => {
-          receivedInput = input;
-          return {
-            message: 'All sessions logged out successfully',
-            sessionsLoggedOut: 3,
-          };
-        },
-        logoutOtherSessions: async () => ({
-          message: 'Other sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutSession: async () => ({
-          message: 'Session logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        updateProfile: async () => ({
-          message: 'Profile updated successfully',
-          user: loginResult.user,
-        }),
-        requestPasswordReset: async () => ({
-          message:
-            'If this email exists and is eligible for password reset, a reset link has been sent.',
-        }),
-        resetPassword: async () => ({
-          message:
-            'Your password has been reset successfully. Please log in with your new password.',
-          sessionsLoggedOut: 1,
-        }),
+    const controller = createTestAuthController({
+      logoutAllSessions: async (input) => {
+        receivedInput = input;
+        return {
+          message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
+          sessionsLoggedOut: 3,
+        };
       },
     });
 
@@ -817,7 +522,7 @@ describe('auth controller', () => {
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
-      message: 'All sessions logged out successfully',
+      message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
       sessionsLoggedOut: 3,
     });
   });
@@ -826,45 +531,13 @@ describe('auth controller', () => {
     let receivedInput: { userId: string; currentSessionId: string } | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
-    const controller = createAuthController({
-      authService: {
-        register: async () => ({ message: 'Account created. Please verify your email.' }),
-        login: async () => loginResult,
-        verifyEmail: async () => verifyEmailResult,
-        validateSession: async () => validatedSession,
-        resendVerification: async () => ({
-          message:
-            'If this email exists and is eligible for email verification, a verification link has been sent.',
-        }),
-        getUserSessions: async () => userSessionsResult,
-        logoutAllSessions: async () => ({
-          message: 'All sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutOtherSessions: async (input) => {
-          receivedInput = input;
-          return {
-            message: 'Other sessions logged out successfully',
-            sessionsLoggedOut: 2,
-          };
-        },
-        logoutSession: async () => ({
-          message: 'Session logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        updateProfile: async () => ({
-          message: 'Profile updated successfully',
-          user: loginResult.user,
-        }),
-        requestPasswordReset: async () => ({
-          message:
-            'If this email exists and is eligible for password reset, a reset link has been sent.',
-        }),
-        resetPassword: async () => ({
-          message:
-            'Your password has been reset successfully. Please log in with your new password.',
-          sessionsLoggedOut: 1,
-        }),
+    const controller = createTestAuthController({
+      logoutOtherSessions: async (input) => {
+        receivedInput = input;
+        return {
+          message: LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
+          sessionsLoggedOut: 2,
+        };
       },
     });
 
@@ -886,7 +559,7 @@ describe('auth controller', () => {
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
-      message: 'Other sessions logged out successfully',
+      message: LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
       sessionsLoggedOut: 2,
     });
   });
@@ -895,45 +568,13 @@ describe('auth controller', () => {
     let receivedInput: { userId: string; sessionId: string } | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
-    const controller = createAuthController({
-      authService: {
-        register: async () => ({ message: 'Account created. Please verify your email.' }),
-        login: async () => loginResult,
-        verifyEmail: async () => verifyEmailResult,
-        validateSession: async () => validatedSession,
-        resendVerification: async () => ({
-          message:
-            'If this email exists and is eligible for email verification, a verification link has been sent.',
-        }),
-        getUserSessions: async () => userSessionsResult,
-        logoutAllSessions: async () => ({
-          message: 'All sessions logged out successfully',
+    const controller = createTestAuthController({
+      logoutSession: async (input) => {
+        receivedInput = input;
+        return {
+          message: LOGOUT_SESSION_SUCCESS_MESSAGE,
           sessionsLoggedOut: 1,
-        }),
-        logoutOtherSessions: async () => ({
-          message: 'Other sessions logged out successfully',
-          sessionsLoggedOut: 1,
-        }),
-        logoutSession: async (input) => {
-          receivedInput = input;
-          return {
-            message: 'Session logged out successfully',
-            sessionsLoggedOut: 1,
-          };
-        },
-        updateProfile: async () => ({
-          message: 'Profile updated successfully',
-          user: loginResult.user,
-        }),
-        requestPasswordReset: async () => ({
-          message:
-            'If this email exists and is eligible for password reset, a reset link has been sent.',
-        }),
-        resetPassword: async () => ({
-          message:
-            'Your password has been reset successfully. Please log in with your new password.',
-          sessionsLoggedOut: 1,
-        }),
+        };
       },
     });
 
@@ -958,7 +599,7 @@ describe('auth controller', () => {
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
-      message: 'Session logged out successfully',
+      message: LOGOUT_SESSION_SUCCESS_MESSAGE,
       sessionsLoggedOut: 1,
     });
   });

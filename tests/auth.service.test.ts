@@ -10,6 +10,20 @@ import {
   PasswordResetPasswordReuseError,
   UserAlreadyExistsError,
 } from '../src/services/auth.errors.js';
+import {
+  CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
+  CLEANUP_SESSION_SUCCESS_MESSAGE,
+  LOGIN_SUCCESS_MESSAGE,
+  LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
+  LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
+  LOGOUT_SESSION_SUCCESS_MESSAGE,
+  REGISTER_SUCCESS_MESSAGE,
+  RESEND_VERIFICATION_EMAIL_MESSAGE,
+  RESET_PASSWORD_EMAIL_MESSAGE,
+  RESET_PASSWORD_SUCCESS_MESSAGE,
+  UPDATE_PROFILE_SUCCESS_MESSAGE,
+  VERIFY_EMAIL_SUCCESS_MESSAGE,
+} from '../src/services/auth/auth.messages.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
 
 type AuthDeps = Parameters<typeof createAuthService>[0];
@@ -403,7 +417,7 @@ describe('auth service', () => {
     });
 
     expect(result).toEqual({
-      message: 'Account created. Please verify your email.',
+      message: REGISTER_SUCCESS_MESSAGE,
     });
 
     expect(calls.userCreate).toEqual({
@@ -477,7 +491,7 @@ describe('auth service', () => {
         password: 'Password1!',
       }),
     ).resolves.toEqual({
-      message: 'Account created. Please verify your email.',
+      message: REGISTER_SUCCESS_MESSAGE,
     });
 
     expect(calls.warning).toEqual({
@@ -498,7 +512,7 @@ describe('auth service', () => {
         userAgent: 'bun-test',
       }),
     ).resolves.toEqual({
-      message: 'Login successful',
+      message: LOGIN_SUCCESS_MESSAGE,
       user: {
         id: 'user-id',
         email: 'user@example.com',
@@ -718,7 +732,7 @@ describe('auth service', () => {
         userAgent: 'bun-test',
       }),
     ).resolves.toEqual({
-      message: 'Email successfully verified',
+      message: VERIFY_EMAIL_SUCCESS_MESSAGE,
       user: {
         id: 'user-id',
         email: 'user@example.com',
@@ -1132,7 +1146,7 @@ describe('auth service', () => {
     const service = createAuthService(deps);
 
     await expect(service.logoutAllSessions({ userId: 'user-id' })).resolves.toEqual({
-      message: 'All sessions logged out successfully',
+      message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
       sessionsLoggedOut: 2,
     });
 
@@ -1157,7 +1171,7 @@ describe('auth service', () => {
         currentSessionId: 'session-id',
       }),
     ).resolves.toEqual({
-      message: 'Other sessions logged out successfully',
+      message: LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
       sessionsLoggedOut: 2,
     });
 
@@ -1185,7 +1199,7 @@ describe('auth service', () => {
         sessionId: 'target-session-id',
       }),
     ).resolves.toEqual({
-      message: 'Session logged out successfully',
+      message: LOGOUT_SESSION_SUCCESS_MESSAGE,
       sessionsLoggedOut: 1,
     });
 
@@ -1212,7 +1226,7 @@ describe('auth service', () => {
         bio: null,
       }),
     ).resolves.toEqual({
-      message: 'Profile updated successfully',
+      message: UPDATE_PROFILE_SUCCESS_MESSAGE,
       user: {
         id: 'user-id',
         email: 'user@example.com',
@@ -1252,7 +1266,7 @@ describe('auth service', () => {
         inactiveUpdatedBefore,
       }),
     ).resolves.toEqual({
-      message: 'Sessions cleaned up successfully',
+      message: CLEANUP_SESSION_SUCCESS_MESSAGE,
       sessionsDeleted: 3,
     });
 
@@ -1279,7 +1293,7 @@ describe('auth service', () => {
         expiredBefore,
       }),
     ).resolves.toEqual({
-      message: 'Expired authentication tokens cleaned up successfully',
+      message: CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
       emailVerificationTokensDeleted: 1,
       passwordResetTokensDeleted: 1,
     });
@@ -1309,8 +1323,7 @@ describe('auth service', () => {
         email: ' USER@Example.COM ',
       }),
     ).resolves.toEqual({
-      message:
-        'If this email exists and is eligible for email verification, a verification link has been sent.',
+      message: RESEND_VERIFICATION_EMAIL_MESSAGE,
     });
 
     expect(calls.userFindUnique).toEqual({
@@ -1376,8 +1389,7 @@ describe('auth service', () => {
         email: 'missing@example.com',
       }),
     ).resolves.toEqual({
-      message:
-        'If this email exists and is eligible for email verification, a verification link has been sent.',
+      message: RESEND_VERIFICATION_EMAIL_MESSAGE,
     });
 
     expect(calls.sentEmail).toBeUndefined();
@@ -1440,8 +1452,7 @@ describe('auth service', () => {
           email: 'user@example.com',
         }),
       ).resolves.toEqual({
-        message:
-          'If this email exists and is eligible for email verification, a verification link has been sent.',
+        message: RESEND_VERIFICATION_EMAIL_MESSAGE,
       });
 
       expect(calls.sentEmail).toBeUndefined();
@@ -1466,8 +1477,7 @@ describe('auth service', () => {
         email: 'user@example.com',
       }),
     ).resolves.toEqual({
-      message:
-        'If this email exists and is eligible for email verification, a verification link has been sent.',
+      message: RESEND_VERIFICATION_EMAIL_MESSAGE,
     });
 
     expect(calls.warning).toEqual({
@@ -1493,8 +1503,7 @@ describe('auth service', () => {
         email: ' USER@Example.COM ',
       }),
     ).resolves.toEqual({
-      message:
-        'If this email exists and is eligible for password reset, a reset link has been sent.',
+      message: RESET_PASSWORD_EMAIL_MESSAGE,
     });
 
     expect(calls.userFindUnique).toEqual({
@@ -1552,8 +1561,7 @@ describe('auth service', () => {
           email: 'user@example.com',
         }),
       ).resolves.toEqual({
-        message:
-          'If this email exists and is eligible for password reset, a reset link has been sent.',
+        message: RESET_PASSWORD_EMAIL_MESSAGE,
       });
 
       expect(calls.passwordResetTokenUpsert).toBeUndefined();
@@ -1586,8 +1594,7 @@ describe('auth service', () => {
         email: 'user@example.com',
       }),
     ).resolves.toEqual({
-      message:
-        'If this email exists and is eligible for password reset, a reset link has been sent.',
+      message: RESET_PASSWORD_EMAIL_MESSAGE,
     });
 
     expect(calls.warning).toEqual({
@@ -1630,7 +1637,7 @@ describe('auth service', () => {
         password: 'NewPassword1!',
       }),
     ).resolves.toEqual({
-      message: 'Your password has been reset successfully. Please log in with your new password.',
+      message: RESET_PASSWORD_SUCCESS_MESSAGE,
       sessionsLoggedOut: 2,
     });
 

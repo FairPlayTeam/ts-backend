@@ -41,6 +41,11 @@ import { createRouteProtector } from '../middleware/routeProtection.js';
 import {
   ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
   ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
+  LOGIN_SUCCESS_MESSAGE,
+  LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
+  LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
+  LOGOUT_SESSION_SUCCESS_MESSAGE,
+  UPDATE_PROFILE_SUCCESS_MESSAGE,
 } from '../services/auth/auth.messages.js';
 
 type AuthRouterDependencies = {
@@ -181,7 +186,7 @@ export const routeDocs = [
       },
     },
     responses: {
-      200: jsonResponse('Login successful', loginResponseSchema),
+      200: jsonResponse(LOGIN_SUCCESS_MESSAGE, loginResponseSchema),
 
       401: jsonResponse('Invalid credentials', ApiErrorSchema),
 
@@ -279,7 +284,7 @@ export const routeDocs = [
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
     responses: {
-      200: jsonResponse('All sessions logged out successfully', logoutAllSessionsResponseSchema),
+      200: jsonResponse(LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE, logoutAllSessionsResponseSchema),
 
       401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
 
@@ -293,10 +298,7 @@ export const routeDocs = [
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
     responses: {
-      200: jsonResponse(
-        'Other sessions logged out successfully',
-        logoutOtherSessionsResponseSchema,
-      ),
+      200: jsonResponse(LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE, logoutOtherSessionsResponseSchema),
 
       401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
 
@@ -313,7 +315,7 @@ export const routeDocs = [
       params: logoutSessionParamsSchema,
     },
     responses: {
-      200: jsonResponse('Session logged out successfully', logoutSessionResponseSchema),
+      200: jsonResponse(LOGOUT_SESSION_SUCCESS_MESSAGE, logoutSessionResponseSchema),
 
       ...badRequestErrorResponse,
 
@@ -339,7 +341,7 @@ export const routeDocs = [
       },
     },
     responses: {
-      200: jsonResponse('Profile updated successfully', updateProfileResponseSchema),
+      200: jsonResponse(UPDATE_PROFILE_SUCCESS_MESSAGE, updateProfileResponseSchema),
 
       ...badRequestErrorResponse,
 

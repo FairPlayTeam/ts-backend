@@ -7,6 +7,7 @@ import {
 } from '../src/middleware/auth.js';
 import { createRouteProtector } from '../src/middleware/routeProtection.js';
 import { HttpError } from '../src/errors/http.js';
+import { ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE } from '../src/services/auth/auth.messages.js';
 
 const sessionResult = {
   user: {
@@ -158,7 +159,7 @@ describe('auth session middleware', () => {
           return sessionResult;
         },
       },
-      conflictMessage: 'Already authenticated users cannot request a password reset',
+      conflictMessage: ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
     });
 
     await rejectAuthenticatedSession(
@@ -173,9 +174,7 @@ describe('auth session middleware', () => {
     expect(receivedError).toBeInstanceOf(HttpError);
     expect((receivedError as HttpError).statusCode).toBe(409);
     expect((receivedError as HttpError).code).toBe('Conflict');
-    expect((receivedError as HttpError).message).toBe(
-      'Already authenticated users cannot request a password reset',
-    );
+    expect((receivedError as HttpError).message).toBe(ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE);
   });
 
   test('allows guest-only auth routes when the bearer session is missing or invalid', async () => {

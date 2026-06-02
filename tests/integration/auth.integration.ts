@@ -14,6 +14,14 @@ import { createAuthService } from '../../src/services/auth.service.js';
 import { generateToken, hashToken } from '../../src/lib/crypto.js';
 import { closeRedisClient, connectRedisClient, createRedisClient } from '../../src/lib/redis.js';
 import {
+  LOGIN_SUCCESS_MESSAGE,
+  REGISTER_SUCCESS_MESSAGE,
+  RESEND_VERIFICATION_EMAIL_MESSAGE,
+  RESET_PASSWORD_EMAIL_MESSAGE,
+  RESET_PASSWORD_SUCCESS_MESSAGE,
+  VERIFY_EMAIL_SUCCESS_MESSAGE,
+} from '../../src/services/auth/auth.messages.js';
+import {
   EMAIL_VERIFICATION_TOKEN_TTL_MS,
   PASSWORD_RESET_TOKEN_TTL_MS,
   SESSION_TTL_MS,
@@ -258,7 +266,7 @@ describe('auth integration', () => {
       })
       .expect(201)
       .expect({
-        message: 'Account created. Please verify your email.',
+        message: REGISTER_SUCCESS_MESSAGE,
       });
 
     const verificationEmail = runtime.delivered.verification.at(-1);
@@ -291,7 +299,7 @@ describe('auth integration', () => {
       .expect(200);
 
     expect(verifyResponse.body).toEqual({
-      message: 'Email successfully verified',
+      message: VERIFY_EMAIL_SUCCESS_MESSAGE,
       user: {
         id: expect.any(String),
         email: TEST_EMAIL,
@@ -342,8 +350,7 @@ describe('auth integration', () => {
       })
       .expect(200)
       .expect({
-        message:
-          'If this email exists and is eligible for password reset, a reset link has been sent.',
+        message: RESET_PASSWORD_EMAIL_MESSAGE,
       });
 
     const resetEmail = runtime.delivered.passwordReset.at(-1);
@@ -360,7 +367,7 @@ describe('auth integration', () => {
       })
       .expect(200)
       .expect({
-        message: 'Your password has been reset successfully. Please log in with your new password.',
+        message: RESET_PASSWORD_SUCCESS_MESSAGE,
         sessionsLoggedOut: 1,
       });
 
@@ -395,7 +402,7 @@ describe('auth integration', () => {
 
     expect(loginResponse.body).toEqual(
       expect.objectContaining({
-        message: 'Login successful',
+        message: LOGIN_SUCCESS_MESSAGE,
         sessionKey: expect.stringMatching(/^[a-f0-9]{64}$/),
       }),
     );
@@ -505,8 +512,7 @@ describe('auth integration', () => {
     const app = await createIntegrationApp(runtime);
     const email = 'reset-cooldown@example.com';
     const expectedResponse = {
-      message:
-        'If this email exists and is eligible for password reset, a reset link has been sent.',
+      message: RESET_PASSWORD_EMAIL_MESSAGE,
     };
 
     await runtime.authService.register({
@@ -544,8 +550,7 @@ describe('auth integration', () => {
     const app = await createIntegrationApp(runtime);
     const email = 'verification-cooldown@example.com';
     const expectedResponse = {
-      message:
-        'If this email exists and is eligible for email verification, a verification link has been sent.',
+      message: RESEND_VERIFICATION_EMAIL_MESSAGE,
     };
 
     await runtime.authService.register({

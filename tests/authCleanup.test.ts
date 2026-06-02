@@ -3,6 +3,10 @@ import {
   createRedisAuthCleanupLock,
   createAuthCleanupJob,
 } from '../src/maintenance/authCleanup.js';
+import {
+  CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
+  CLEANUP_SESSION_SUCCESS_MESSAGE,
+} from '../src/services/auth/auth.messages.js';
 
 const createLogger = () => {
   const logs: unknown[] = [];
@@ -27,7 +31,7 @@ describe('auth cleanup job', () => {
           calls.push(input);
 
           return {
-            message: 'Sessions cleaned up successfully',
+            message: CLEANUP_SESSION_SUCCESS_MESSAGE,
             sessionsDeleted: 2,
           };
         },
@@ -35,7 +39,7 @@ describe('auth cleanup job', () => {
           calls.push(input);
 
           return {
-            message: 'Expired authentication tokens cleaned up successfully',
+            message: CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
             emailVerificationTokensDeleted: 3,
             passwordResetTokensDeleted: 4,
           };
@@ -85,7 +89,7 @@ describe('auth cleanup job', () => {
           });
 
           return {
-            message: 'Sessions cleaned up successfully',
+            message: CLEANUP_SESSION_SUCCESS_MESSAGE,
             sessionsDeleted: 1,
           };
         },
@@ -93,7 +97,7 @@ describe('auth cleanup job', () => {
           calls += 1;
 
           return {
-            message: 'Expired authentication tokens cleaned up successfully',
+            message: CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
             emailVerificationTokensDeleted: 1,
             passwordResetTokensDeleted: 1,
           };
@@ -137,7 +141,7 @@ describe('auth cleanup job', () => {
           cleanupCalls.push(input);
 
           return {
-            message: 'Sessions cleaned up successfully',
+            message: CLEANUP_SESSION_SUCCESS_MESSAGE,
             sessionsDeleted: 1,
           };
         },
@@ -145,7 +149,7 @@ describe('auth cleanup job', () => {
           cleanupCalls.push(input);
 
           return {
-            message: 'Expired authentication tokens cleaned up successfully',
+            message: CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
             emailVerificationTokensDeleted: 1,
             passwordResetTokensDeleted: 1,
           };
@@ -193,7 +197,7 @@ describe('auth cleanup job', () => {
           cleanupCalls += 1;
 
           return {
-            message: 'Sessions cleaned up successfully',
+            message: CLEANUP_SESSION_SUCCESS_MESSAGE,
             sessionsDeleted: 1,
           };
         },
@@ -201,7 +205,7 @@ describe('auth cleanup job', () => {
           cleanupCalls += 1;
 
           return {
-            message: 'Expired authentication tokens cleaned up successfully',
+            message: CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
             emailVerificationTokensDeleted: 1,
             passwordResetTokensDeleted: 1,
           };

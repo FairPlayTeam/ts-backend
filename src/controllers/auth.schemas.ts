@@ -9,9 +9,19 @@ import {
   USERNAME_MIN_LENGTH,
 } from '../config/constants.js';
 import {
+  LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
+  LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
+  LOGOUT_SESSION_SUCCESS_MESSAGE,
+  LOGIN_SUCCESS_MESSAGE,
+  REGISTER_SUCCESS_MESSAGE,
   RESEND_VERIFICATION_EMAIL_MESSAGE,
   RESET_PASSWORD_EMAIL_MESSAGE,
+  RESET_PASSWORD_SUCCESS_MESSAGE,
+  UPDATE_PROFILE_SUCCESS_MESSAGE,
+  VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../services/auth/auth.messages.js';
+
+const responseMessageSchema = (example: string) => z.string().openapi({ example });
 
 const emailSchema = z
   .string()
@@ -147,13 +157,13 @@ const authSessionResponseSchema = z.object({
 
 export const registerResponseSchema = z
   .object({
-    message: z.string().openapi({ example: 'Account created. Please verify your email.' }),
+    message: responseMessageSchema(REGISTER_SUCCESS_MESSAGE),
   })
   .openapi('RegisterResponse');
 
 export const loginResponseSchema = z
   .object({
-    message: z.string().openapi({ example: 'Login successful' }),
+    message: responseMessageSchema(LOGIN_SUCCESS_MESSAGE),
     user: authUserResponseSchema,
     sessionKey: z.string().openapi({
       description: 'Bearer session key. Returned once at login and stored hashed server-side.',
@@ -165,13 +175,13 @@ export const loginResponseSchema = z
 
 export const verifyEmailResponseSchema = loginResponseSchema
   .extend({
-    message: z.string().openapi({ example: 'Email successfully verified' }),
+    message: responseMessageSchema(VERIFY_EMAIL_SUCCESS_MESSAGE),
   })
   .openapi('VerifyEmailResponse');
 
 export const resendVerificationResponseSchema = z
   .object({
-    message: z.string().openapi({ example: RESEND_VERIFICATION_EMAIL_MESSAGE }),
+    message: responseMessageSchema(RESEND_VERIFICATION_EMAIL_MESSAGE),
   })
   .openapi('ResendVerificationResponse');
 
@@ -213,7 +223,7 @@ export const requestPasswordResetBodySchema = z
 
 export const requestPasswordResetResponseSchema = z
   .object({
-    message: z.string().openapi({ example: RESET_PASSWORD_EMAIL_MESSAGE }),
+    message: responseMessageSchema(RESET_PASSWORD_EMAIL_MESSAGE),
   })
   .openapi('RequestPasswordResetResponse');
 
@@ -240,9 +250,7 @@ export const resetPasswordBodySchema = z
 
 export const resetPasswordResponseSchema = z
   .object({
-    message: z.string().openapi({
-      example: 'Your password has been reset successfully. Please log in with your new password.',
-    }),
+    message: responseMessageSchema(RESET_PASSWORD_SUCCESS_MESSAGE),
     sessionsLoggedOut: z.number().int().nonnegative().openapi({ example: 3 }),
   })
   .openapi('ResetPasswordResponse');
@@ -286,7 +294,7 @@ export const updateProfileSchema = z.object({
 
 export const updateProfileResponseSchema = z
   .object({
-    message: z.string().openapi({ example: 'Profile updated successfully' }),
+    message: responseMessageSchema(UPDATE_PROFILE_SUCCESS_MESSAGE),
     user: authUserResponseSchema,
   })
   .openapi('UpdateProfileResponse');
@@ -318,21 +326,21 @@ export const userSessionsResponseSchema = z
 
 export const logoutAllSessionsResponseSchema = z
   .object({
-    message: z.string().openapi({ example: 'All sessions logged out successfully' }),
+    message: responseMessageSchema(LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE),
     sessionsLoggedOut: z.number().int().nonnegative().openapi({ example: 3 }),
   })
   .openapi('LogoutAllSessionsResponse');
 
 export const logoutOtherSessionsResponseSchema = z
   .object({
-    message: z.string().openapi({ example: 'Other sessions logged out successfully' }),
+    message: responseMessageSchema(LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE),
     sessionsLoggedOut: z.number().int().nonnegative().openapi({ example: 2 }),
   })
   .openapi('LogoutOtherSessionsResponse');
 
 export const logoutSessionResponseSchema = z
   .object({
-    message: z.string().openapi({ example: 'Session logged out successfully' }),
+    message: responseMessageSchema(LOGOUT_SESSION_SUCCESS_MESSAGE),
     sessionsLoggedOut: z.number().int().nonnegative().openapi({ example: 1 }),
   })
   .openapi('LogoutSessionResponse');

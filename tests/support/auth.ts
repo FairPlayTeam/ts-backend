@@ -1,7 +1,21 @@
 import type { AuthService } from '../../src/services/auth.types.js';
+import {
+  CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
+  CLEANUP_SESSION_SUCCESS_MESSAGE,
+  LOGIN_SUCCESS_MESSAGE,
+  LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
+  LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
+  LOGOUT_SESSION_SUCCESS_MESSAGE,
+  REGISTER_SUCCESS_MESSAGE,
+  RESEND_VERIFICATION_EMAIL_MESSAGE,
+  RESET_PASSWORD_EMAIL_MESSAGE,
+  RESET_PASSWORD_SUCCESS_MESSAGE,
+  UPDATE_PROFILE_SUCCESS_MESSAGE,
+  VERIFY_EMAIL_SUCCESS_MESSAGE,
+} from '../../src/services/auth/auth.messages.js';
 
 const sessionResult = {
-  message: 'Login successful',
+  message: LOGIN_SUCCESS_MESSAGE,
   user: {
     id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
     email: 'user@example.com',
@@ -40,43 +54,42 @@ const userSessionsResult = {
 
 export const createStubAuthService = (): AuthService => ({
   register: async () => ({
-    message: 'Account created. Please verify your email.',
+    message: REGISTER_SUCCESS_MESSAGE,
   }),
   login: async () => sessionResult,
   verifyEmail: async () => ({
     ...sessionResult,
-    message: 'Email successfully verified',
+    message: VERIFY_EMAIL_SUCCESS_MESSAGE,
   }),
   validateSession: async () => ({
     user: sessionResult.user,
     session: sessionResult.session,
   }),
   resendVerification: async () => ({
-    message:
-      'If this email exists and is eligible for email verification, a verification link has been sent.',
+    message: RESEND_VERIFICATION_EMAIL_MESSAGE,
   }),
   requestPasswordReset: async () => ({
-    message: 'If this email exists and is eligible for password reset, a reset link has been sent.',
+    message: RESET_PASSWORD_EMAIL_MESSAGE,
   }),
   resetPassword: async () => ({
-    message: 'Your password has been reset successfully. Please log in with your new password.',
+    message: RESET_PASSWORD_SUCCESS_MESSAGE,
     sessionsLoggedOut: 1,
   }),
   getUserSessions: async () => userSessionsResult,
   logoutAllSessions: async () => ({
-    message: 'All sessions logged out successfully',
+    message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
     sessionsLoggedOut: 1,
   }),
   logoutOtherSessions: async () => ({
-    message: 'Other sessions logged out successfully',
+    message: LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
     sessionsLoggedOut: 1,
   }),
   logoutSession: async () => ({
-    message: 'Session logged out successfully',
+    message: LOGOUT_SESSION_SUCCESS_MESSAGE,
     sessionsLoggedOut: 1,
   }),
   updateProfile: async (input) => ({
-    message: 'Profile updated successfully',
+    message: UPDATE_PROFILE_SUCCESS_MESSAGE,
     user: {
       ...sessionResult.user,
       displayName:
@@ -85,11 +98,11 @@ export const createStubAuthService = (): AuthService => ({
     },
   }),
   cleanupSessions: async () => ({
-    message: 'Sessions cleaned up successfully',
+    message: CLEANUP_SESSION_SUCCESS_MESSAGE,
     sessionsDeleted: 0,
   }),
   cleanupExpiredAuthTokens: async () => ({
-    message: 'Expired authentication tokens cleaned up successfully',
+    message: CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
     emailVerificationTokensDeleted: 0,
     passwordResetTokensDeleted: 0,
   }),

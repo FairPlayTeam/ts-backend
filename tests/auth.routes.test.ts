@@ -2,6 +2,16 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../src/app.js';
+import {
+  ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
+  ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
+  LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
+  LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
+  LOGOUT_SESSION_SUCCESS_MESSAGE,
+  RESEND_VERIFICATION_EMAIL_MESSAGE,
+  RESET_PASSWORD_EMAIL_MESSAGE,
+  UPDATE_PROFILE_SUCCESS_MESSAGE,
+} from '../src/services/auth/auth.messages.js';
 import { createStubAuthService } from './support/auth.js';
 
 let server: Server;
@@ -134,7 +144,7 @@ describe('auth routes', () => {
       bio: null,
     });
     expect(await response.json()).toEqual({
-      message: 'Profile updated successfully',
+      message: UPDATE_PROFILE_SUCCESS_MESSAGE,
       user: {
         id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
         email: 'user@example.com',
@@ -205,8 +215,7 @@ describe('auth routes', () => {
       email: 'user@example.com',
     });
     expect(await response.json()).toEqual({
-      message:
-        'If this email exists and is eligible for email verification, a verification link has been sent.',
+      message: RESEND_VERIFICATION_EMAIL_MESSAGE,
     });
   });
 
@@ -225,7 +234,7 @@ describe('auth routes', () => {
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
       error: 'Conflict',
-      message: 'Already authenticated users cannot request email verification',
+      message: ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
     });
   });
 
@@ -247,8 +256,7 @@ describe('auth routes', () => {
       email: 'user@example.com',
     });
     expect(await response.json()).toEqual({
-      message:
-        'If this email exists and is eligible for password reset, a reset link has been sent.',
+      message: RESET_PASSWORD_EMAIL_MESSAGE,
     });
   });
 
@@ -267,7 +275,7 @@ describe('auth routes', () => {
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
       error: 'Conflict',
-      message: 'Already authenticated users cannot request a password reset',
+      message: ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
     });
   });
 
@@ -360,7 +368,7 @@ describe('auth routes', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      message: 'All sessions logged out successfully',
+      message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
       sessionsLoggedOut: 1,
     });
   });
@@ -387,7 +395,7 @@ describe('auth routes', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      message: 'Other sessions logged out successfully',
+      message: LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
       sessionsLoggedOut: 1,
     });
   });
@@ -414,7 +422,7 @@ describe('auth routes', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      message: 'Session logged out successfully',
+      message: LOGOUT_SESSION_SUCCESS_MESSAGE,
       sessionsLoggedOut: 1,
     });
   });
