@@ -1,4 +1,3 @@
-import { type MailerConfig } from './mailer.types.js';
 import nodemailer from 'nodemailer';
 import {
   APP_PRODUCT_NAME,
@@ -9,6 +8,7 @@ import {
 } from '../../config/constants.js';
 import { buildTransactionalEmailHtml, buildTransactionalEmailText } from './mailer.templates.js';
 import { MailerConfigurationError, MailerDeliveryError } from './mailer.errors.js';
+import type { MailerConfig } from './mailer.types.js';
 
 type MailTransporter = Pick<nodemailer.Transporter, 'sendMail'>;
 

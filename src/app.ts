@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Request } from 'express';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 
@@ -56,6 +57,33 @@ const getRequestId = (rawRequestId: string | string[] | undefined): string => {
 const getHeader = (rawHeader: string | string[] | undefined): string | undefined =>
   Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
 
+const getBodyEmail = (req: Request): string | null => {
+  const body: unknown = req.body;
+
+  if (typeof body !== 'object' || body === null) {
+    return null;
+  }
+
+  const email = (body as Record<string, unknown>).email;
+
+  return typeof email === 'string' ? email : null;
+};
+
+type SerializedRequestInput = {
+  headers?: Record<string, string | string[] | undefined>;
+  id?: unknown;
+  method?: unknown;
+  remoteAddress?: unknown;
+  url?: unknown;
+};
+
+type SerializedResponseInput = {
+  statusCode?: unknown;
+};
+
+const serializeStringProperty = (value: unknown): string | undefined =>
+  typeof value === 'string' ? value : undefined;
+
 export async function createApp(config: CreateAppConfig, deps: CreateAppDependencies) {
   const app = express();
   const {
@@ -75,7 +103,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     keySecret: config.rateLimitKeySecret,
     ttlMs: PASSWORD_RESET_EMAIL_COOLDOWN_MS,
     acceptedResponse: { message: RESET_PASSWORD_EMAIL_MESSAGE },
-    getIdentifier: (req) => (typeof req.body?.email === 'string' ? req.body.email : null),
+    getIdentifier: getBodyEmail,
     logger,
   });
   const resendVerificationEmailCooldown = createEmailCooldown({
@@ -84,7 +112,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     keySecret: config.rateLimitKeySecret,
     ttlMs: RESEND_VERIFICATION_EMAIL_COOLDOWN_MS,
     acceptedResponse: { message: RESEND_VERIFICATION_EMAIL_MESSAGE },
-    getIdentifier: (req) => (typeof req.body?.email === 'string' ? req.body.email : null),
+    getIdentifier: getBodyEmail,
     logger,
   });
 
@@ -110,16 +138,16 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
         ignore: (req) => req.url === '/favicon.ico',
       },
       serializers: {
-        req(req) {
+        req(req: SerializedRequestInput) {
           return {
             id: req.id,
-            method: req.method,
-            url: req.url,
-            remoteAddress: req.remoteAddress,
-            userAgent: getHeader(req.headers['user-agent']),
+            method: serializeStringProperty(req.method),
+            url: serializeStringProperty(req.url),
+            remoteAddress: serializeStringProperty(req.remoteAddress),
+            userAgent: getHeader(req.headers?.['user-agent']),
           };
         },
-        res(res) {
+        res(res: SerializedResponseInput) {
           return {
             statusCode: res.statusCode,
           };

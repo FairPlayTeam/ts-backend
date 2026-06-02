@@ -149,7 +149,7 @@ const authUserResponseSchema = z.object({
   username: z.string().openapi({ example: 'fairplay_creator' }),
   displayName: z.string().nullable().openapi({ example: 'Neal Mohan' }),
   bio: z.string().nullable().openapi({
-    example: "A new fairplayer who is looking for a fairer way to share videos.",
+    example: 'A new fairplayer who is looking for a fairer way to share videos.',
   }),
   role: z.string().openapi({ example: 'user' }),
 });

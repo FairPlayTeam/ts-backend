@@ -11,7 +11,7 @@ type EmailCooldownOptions = {
   keySecret: string;
   ttlMs: number;
   acceptedResponse: JsonObject;
-  getIdentifier(req: Request): string | null;
+  getIdentifier(this: void, req: Request): string | null;
   logger: Pick<Logger, 'warn'>;
 };
 

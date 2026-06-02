@@ -20,7 +20,7 @@ export const createVerificationService = (
 ): VerificationService => ({
   async verifyEmail({ token, ipAddress, userAgent }: VerifyEmailInput) {
     const tokenHash = deps.token.hash(token);
-    const { now, sessionKey, sessionData } = await sessionService.prepareSession({
+    const { now, sessionKey, sessionData } = sessionService.prepareSession({
       ipAddress,
       userAgent,
     });

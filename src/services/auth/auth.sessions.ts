@@ -55,7 +55,7 @@ export type SessionService = Pick<
   | 'logoutSession'
   | 'cleanupSessions'
 > & {
-  prepareSession(input: PrepareSessionInput): Promise<PrepareSessionResult>;
+  prepareSession(input: PrepareSessionInput): PrepareSessionResult;
   createSession(input: CreateSessionInput): Promise<CreateSessionResult>;
 };
 
@@ -72,10 +72,7 @@ const normalizeUserSessionsLimit = (limit: number | undefined): number => {
 };
 
 export const createSessionService = (deps: AuthDependencies): SessionService => {
-  const prepareSession = async ({
-    ipAddress,
-    userAgent,
-  }: PrepareSessionInput): Promise<PrepareSessionResult> => {
+  const prepareSession = ({ ipAddress, userAgent }: PrepareSessionInput): PrepareSessionResult => {
     const now = deps.clock.now();
     const expiresAt = getSessionExpiresAt(now, deps.config.sessionTtlMs);
     const sessionKey = deps.token.generate();
@@ -100,7 +97,7 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
     ipAddress,
     userAgent,
   }: CreateSessionInput): Promise<CreateSessionResult> => {
-    const { now, sessionKey, sessionData } = await prepareSession({ ipAddress, userAgent });
+    const { now, sessionKey, sessionData } = prepareSession({ ipAddress, userAgent });
 
     const session = await deps.prisma.$transaction(async (tx) => {
       const createdSession = await tx.session.create({

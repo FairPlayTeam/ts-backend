@@ -1,5 +1,5 @@
-import { type TransactionalEmailContent } from './mailer.types.js';
 import { APP_PRODUCT_NAME } from '../../config/constants.js';
+import type { TransactionalEmailContent } from './mailer.types.js';
 
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>"']/g, (char) => {

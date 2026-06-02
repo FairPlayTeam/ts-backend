@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { z, ZodError } from 'zod';
+import type { ZodError, ZodType } from 'zod';
 import { ValidationError } from '../errors/http.js';
 
 type ParsedRequestParts = {
@@ -28,19 +28,24 @@ const assignRequestPart = <Key extends keyof ParsedRequestParts>(
 };
 
 export const validate =
-  (schema: z.ZodTypeAny) =>
+  (schema: ZodType<ParsedRequestParts>) =>
   (req: Request, _res: Response, next: NextFunction): void => {
+    const body: unknown = req.body;
+    const query: unknown = req.query;
+    const params: unknown = req.params;
+
     const result = schema.safeParse({
-      body: req.body,
-      query: req.query,
-      params: req.params,
+      body,
+      query,
+      params,
     });
 
     if (!result.success) {
       return next(new ValidationError(formatZodErrors(result.error)));
     }
 
-    const data = result.data as ParsedRequestParts;
+    const parsedData: unknown = result.data;
+    const data = parsedData as ParsedRequestParts;
 
     if ('body' in data) assignRequestPart(req, 'body', data.body);
     if ('query' in data) assignRequestPart(req, 'query', data.query);

@@ -52,7 +52,8 @@ const makeStore = (prefix: string, redis: RedisClient | null) => {
 };
 
 const getBodyString = (req: Request, key: string): string | null => {
-  const body = typeof req.body === 'object' && req.body !== null ? req.body : {};
+  const rawBody: unknown = req.body;
+  const body = typeof rawBody === 'object' && rawBody !== null ? rawBody : {};
   const value = (body as Record<string, unknown>)[key];
 
   return typeof value === 'string' ? value : null;

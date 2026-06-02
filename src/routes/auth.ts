@@ -3,7 +3,7 @@ import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from '../do
 import { createAuthenticateSession } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
 import { createAuthController } from '../controllers/auth.controller.js';
-import { type AuthService } from '../services/auth.types.js';
+import type { AuthService } from '../services/auth.types.js';
 import {
   currentUserResponseSchema,
   logoutAllSessionsResponseSchema,
