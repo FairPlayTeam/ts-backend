@@ -3,6 +3,13 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../src/app.js';
 import {
+  LOGOUT_SESSION_ID_INVALID_MESSAGE,
+  UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE,
+  USER_SESSIONS_CURSOR_PAIR_MESSAGE,
+} from '../src/controllers/auth.schemas.js';
+import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
+import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
+import {
   ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
   ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
@@ -118,7 +125,7 @@ describe('auth routes', () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
       error: 'Unauthorized',
-      message: 'Bearer session token is required',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
     });
   });
 
@@ -169,11 +176,11 @@ describe('auth routes', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       error: 'ValidationError',
-      message: 'Request validation failed',
+      message: REQUEST_VALIDATION_FAILED_MESSAGE,
       details: [
         {
           field: 'body',
-          message: 'At least one profile field must be provided',
+          message: UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE,
         },
       ],
     });
@@ -193,7 +200,7 @@ describe('auth routes', () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
       error: 'Unauthorized',
-      message: 'Bearer session token is required',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
     });
   });
 
@@ -334,7 +341,7 @@ describe('auth routes', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       error: 'ValidationError',
-      message: 'Request validation failed',
+      message: REQUEST_VALIDATION_FAILED_MESSAGE,
       details: [
         {
           field: 'query.cursorLastUsedAt',
@@ -342,7 +349,7 @@ describe('auth routes', () => {
         },
         {
           field: 'query',
-          message: 'cursorLastUsedAt and cursorId must be provided together',
+          message: USER_SESSIONS_CURSOR_PAIR_MESSAGE,
         },
       ],
     });
@@ -354,7 +361,7 @@ describe('auth routes', () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
       error: 'Unauthorized',
-      message: 'Bearer session token is required',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
     });
   });
 
@@ -381,7 +388,7 @@ describe('auth routes', () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
       error: 'Unauthorized',
-      message: 'Bearer session token is required',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
     });
   });
 
@@ -408,7 +415,7 @@ describe('auth routes', () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
       error: 'Unauthorized',
-      message: 'Bearer session token is required',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
     });
   });
 
@@ -438,11 +445,11 @@ describe('auth routes', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       error: 'ValidationError',
-      message: 'Request validation failed',
+      message: REQUEST_VALIDATION_FAILED_MESSAGE,
       details: [
         {
           field: 'params.sessionId',
-          message: 'Session id must be a valid UUID',
+          message: LOGOUT_SESSION_ID_INVALID_MESSAGE,
         },
       ],
     });
@@ -456,7 +463,7 @@ describe('auth routes', () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
       error: 'Unauthorized',
-      message: 'Bearer session token is required',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
     });
   });
 });

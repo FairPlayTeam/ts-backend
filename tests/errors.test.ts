@@ -3,7 +3,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { NextFunction, Request, Response as ExpressResponse } from 'express';
 import { createApp } from '../src/app.js';
-import { HttpError } from '../src/errors/http.js';
+import { HttpError, REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { errorHandler } from '../src/middleware/errors.js';
 import { authRateLimitExceededHandler } from '../src/middleware/limiters.js';
 import { createStubAuthService } from './support/auth.js';
@@ -122,7 +122,7 @@ describe('error handling', () => {
     expect(response.status).toBe(400);
     expect(await readError(response)).toEqual({
       error: 'ValidationError',
-      message: 'Request validation failed',
+      message: REQUEST_VALIDATION_FAILED_MESSAGE,
       details: [
         {
           field: 'body.email',

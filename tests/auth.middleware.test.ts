@@ -1,11 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import type { NextFunction, Request, Response } from 'express';
 import {
+  AUTH_SESSION_REQUIRED_MESSAGE,
+  INVALID_AUTH_SESSION_MESSAGE,
   createAuthenticateSession,
   createRejectAuthenticatedSession,
   type AuthenticatedRequest,
 } from '../src/middleware/auth.js';
-import { createRouteProtector } from '../src/middleware/routeProtection.js';
+import {
+  INSUFFICIENT_PERMISSIONS_MESSAGE,
+  createRouteProtector,
+} from '../src/middleware/routeProtection.js';
 import { HttpError } from '../src/errors/http.js';
 import { ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE } from '../src/services/auth/auth.messages.js';
 
@@ -78,7 +83,7 @@ describe('auth session middleware', () => {
     expect(receivedError).toBeInstanceOf(HttpError);
     expect((receivedError as HttpError).statusCode).toBe(401);
     expect((receivedError as HttpError).code).toBe('Unauthorized');
-    expect((receivedError as HttpError).message).toBe('Bearer session token is required');
+    expect((receivedError as HttpError).message).toBe(AUTH_SESSION_REQUIRED_MESSAGE);
   });
 
   test('rejects malformed bearer headers before validating sessions', async () => {
@@ -102,7 +107,7 @@ describe('auth session middleware', () => {
     expect(receivedError).toBeInstanceOf(HttpError);
     expect((receivedError as HttpError).statusCode).toBe(401);
     expect((receivedError as HttpError).code).toBe('Unauthorized');
-    expect((receivedError as HttpError).message).toBe('Bearer session token is required');
+    expect((receivedError as HttpError).message).toBe(AUTH_SESSION_REQUIRED_MESSAGE);
   });
 
   test('rejects invalid sessions through the error pipeline', async () => {
@@ -124,7 +129,7 @@ describe('auth session middleware', () => {
     expect(receivedError).toBeInstanceOf(HttpError);
     expect((receivedError as HttpError).statusCode).toBe(401);
     expect((receivedError as HttpError).code).toBe('Unauthorized');
-    expect((receivedError as HttpError).message).toBe('Invalid or expired session');
+    expect((receivedError as HttpError).message).toBe(INVALID_AUTH_SESSION_MESSAGE);
   });
 
   test('passes unexpected validation failures to the global error handler', async () => {
@@ -247,7 +252,7 @@ describe('auth session middleware', () => {
     expect(userErrors[0]).toBeInstanceOf(HttpError);
     expect((userErrors[0] as HttpError).statusCode).toBe(403);
     expect((userErrors[0] as HttpError).code).toBe('Forbidden');
-    expect((userErrors[0] as HttpError).message).toBe('Insufficient permissions');
+    expect((userErrors[0] as HttpError).message).toBe(INSUFFICIENT_PERMISSIONS_MESSAGE);
 
     await expect(runProtectedRoute(adminSessionResult)).resolves.toEqual([]);
   });

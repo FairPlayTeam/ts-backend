@@ -13,6 +13,7 @@ import { createApp } from '../../src/app.js';
 import { createAuthService } from '../../src/services/auth.service.js';
 import { generateToken, hashToken } from '../../src/lib/crypto.js';
 import { closeRedisClient, connectRedisClient, createRedisClient } from '../../src/lib/redis.js';
+import { INVALID_AUTH_SESSION_MESSAGE } from '../../src/middleware/auth.js';
 import {
   LOGIN_SUCCESS_MESSAGE,
   REGISTER_SUCCESS_MESSAGE,
@@ -377,7 +378,7 @@ describe('auth integration', () => {
       .expect(401)
       .expect({
         error: 'Unauthorized',
-        message: 'Invalid or expired session',
+        message: INVALID_AUTH_SESSION_MESSAGE,
       });
 
     await request(app)

@@ -7,6 +7,9 @@ import {
 } from './auth.js';
 import type { AuthRole } from '../services/auth.types.js';
 
+const ROUTE_PROTECTION_MISCONFIGURED_MESSAGE = 'Route protection misconfigured';
+export const INSUFFICIENT_PERMISSIONS_MESSAGE = 'Insufficient permissions';
+
 type AuthServiceForProtection = {
   validateSession: Parameters<
     typeof createAuthenticateSession
@@ -39,12 +42,12 @@ const requireRoles = (roles: readonly AuthRole[]): RequestHandler => {
 
   return (req, _res, next) => {
     if (!hasAuthContext(req)) {
-      next(new HttpError(500, 'InternalServerError', 'Route protection misconfigured'));
+      next(new HttpError(500, 'InternalServerError', ROUTE_PROTECTION_MISCONFIGURED_MESSAGE));
       return;
     }
 
     if (!allowedRoles.has(req.user.role)) {
-      next(new HttpError(403, 'Forbidden', 'Insufficient permissions'));
+      next(new HttpError(403, 'Forbidden', INSUFFICIENT_PERMISSIONS_MESSAGE));
       return;
     }
 

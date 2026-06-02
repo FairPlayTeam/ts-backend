@@ -26,6 +26,8 @@ export type ApiErrorResponse = {
   details?: ApiErrorDetails;
 };
 
+export const REQUEST_VALIDATION_FAILED_MESSAGE = 'Request validation failed';
+
 type HttpErrorOptions<TDetails extends ApiErrorDetails | undefined = undefined> = {
   cause?: unknown;
   details?: TDetails;
@@ -59,7 +61,7 @@ export const isHttpError = (err: unknown): err is HttpError => err instanceof Ht
 
 export class ValidationError extends HttpError<ValidationIssue[]> {
   constructor(details: ValidationIssue[]) {
-    super(400, 'ValidationError', 'Request validation failed', {
+    super(400, 'ValidationError', REQUEST_VALIDATION_FAILED_MESSAGE, {
       details,
       exposeDetails: true,
     });

@@ -21,6 +21,11 @@ import {
   VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../services/auth/auth.messages.js';
 
+export const LOGOUT_SESSION_ID_INVALID_MESSAGE = 'Session id must be a valid UUID';
+export const USER_SESSIONS_CURSOR_PAIR_MESSAGE =
+  'cursorLastUsedAt and cursorId must be provided together';
+export const UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE = 'At least one profile field must be provided';
+
 const responseMessageSchema = (example: string) => z.string().openapi({ example });
 
 const emailSchema = z
@@ -128,7 +133,7 @@ export const logoutSessionParamsSchema = z
   .object({
     sessionId: z
       .string()
-      .uuid('Session id must be a valid UUID')
+      .uuid(LOGOUT_SESSION_ID_INVALID_MESSAGE)
       .openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
   })
   .strict()
@@ -206,7 +211,7 @@ export const userSessionsQuerySchema = z
   })
   .strict()
   .refine((query) => (query.cursorLastUsedAt === undefined) === (query.cursorId === undefined), {
-    message: 'cursorLastUsedAt and cursorId must be provided together',
+    message: USER_SESSIONS_CURSOR_PAIR_MESSAGE,
   })
   .openapi('UserSessionsQuery');
 
@@ -284,7 +289,7 @@ export const updateProfileBodySchema = z
   })
   .strict()
   .refine((body) => body.displayName !== undefined || body.bio !== undefined, {
-    message: 'At least one profile field must be provided',
+    message: UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE,
   })
   .openapi('UpdateProfileRequest');
 

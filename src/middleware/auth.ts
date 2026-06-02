@@ -2,6 +2,11 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { HttpError } from '../errors/http.js';
 import type { AuthUser } from '../services/auth.types.js';
 
+export const AUTH_SESSION_REQUIRED_MESSAGE = 'Bearer session token is required';
+export const INVALID_AUTH_SESSION_MESSAGE = 'Invalid or expired session';
+const DEFAULT_AUTHENTICATED_SESSION_CONFLICT_MESSAGE =
+  'Already authenticated users cannot access this route';
+
 type AuthenticatedUser = AuthUser;
 
 type AuthenticatedSession = {
@@ -47,7 +52,7 @@ export const createAuthenticateSession = ({
     const sessionKey = parseBearerToken(req.headers.authorization);
 
     if (!sessionKey) {
-      next(new HttpError(401, 'Unauthorized', 'Bearer session token is required'));
+      next(new HttpError(401, 'Unauthorized', AUTH_SESSION_REQUIRED_MESSAGE));
       return;
     }
 
@@ -55,7 +60,7 @@ export const createAuthenticateSession = ({
       const result = await authService.validateSession(sessionKey);
 
       if (!result) {
-        next(new HttpError(401, 'Unauthorized', 'Invalid or expired session'));
+        next(new HttpError(401, 'Unauthorized', INVALID_AUTH_SESSION_MESSAGE));
         return;
       }
 
@@ -72,7 +77,7 @@ export const createAuthenticateSession = ({
 
 export const createRejectAuthenticatedSession = ({
   authService,
-  conflictMessage = 'Already authenticated users cannot access this route',
+  conflictMessage = DEFAULT_AUTHENTICATED_SESSION_CONFLICT_MESSAGE,
 }: RejectAuthenticatedSessionDependencies): RequestHandler => {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     const sessionKey = parseBearerToken(req.headers.authorization);

@@ -1,5 +1,5 @@
 import { OpenAPIRegistry, type RouteConfig } from '@asteasolutions/zod-to-openapi';
-import { API_ERROR_CODES } from '../errors/http.js';
+import { API_ERROR_CODES, REQUEST_VALIDATION_FAILED_MESSAGE } from '../errors/http.js';
 import { z } from './zod.js';
 
 export type RouteDoc = RouteConfig;
@@ -21,7 +21,7 @@ const ValidationErrorDetailSchema = z
 export const ValidationErrorSchema = z
   .object({
     error: z.string().openapi({ example: 'ValidationError' }),
-    message: z.string().openapi({ example: 'Request validation failed' }),
+    message: z.string().openapi({ example: REQUEST_VALIDATION_FAILED_MESSAGE }),
     details: z.array(ValidationErrorDetailSchema),
   })
   .openapi('ValidationError');
