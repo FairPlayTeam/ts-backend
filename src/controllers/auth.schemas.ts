@@ -20,6 +20,7 @@ import {
   UPDATE_PROFILE_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../services/auth/auth.messages.js';
+import { AUTH_ROLES } from '../services/auth.roles.js';
 
 export const LOGOUT_SESSION_ID_INVALID_MESSAGE = 'Session id must be a valid UUID';
 export const USER_SESSIONS_CURSOR_PAIR_MESSAGE =
@@ -151,7 +152,9 @@ const authUserResponseSchema = z.object({
   bio: z.string().nullable().openapi({
     example: 'A new fairplayer who is looking for a fairer way to share videos.',
   }),
-  role: z.string().openapi({ example: 'user' }),
+  role: z.enum(AUTH_ROLES).openapi({
+    example: 'user',
+  }),
 });
 
 const authSessionResponseSchema = z.object({

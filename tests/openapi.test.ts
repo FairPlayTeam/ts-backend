@@ -5,6 +5,7 @@ import { jsonResponse } from '../src/docs/openapi.helpers.js';
 import { generateOpenApi } from '../src/docs/openapi.js';
 import type { RouteDoc } from '../src/docs/registry.js';
 import { z } from '../src/docs/zod.js';
+import { AUTH_ROLES } from '../src/services/auth.roles.js';
 import { createStubAuthService } from './support/auth.js';
 
 describe('OpenAPI generation', () => {
@@ -126,6 +127,13 @@ describe('OpenAPI generation', () => {
     });
     expect(document.components?.schemas?.LoginRequest).toBeDefined();
     expect(document.components?.schemas?.LoginResponse).toBeDefined();
+    expect(document.components?.schemas?.LoginResponse?.properties?.user?.properties?.role).toEqual(
+      {
+        type: 'string',
+        enum: [...AUTH_ROLES],
+        example: 'user',
+      },
+    );
     expect(document.components?.schemas?.CurrentUserResponse).toBeDefined();
     expect(document.components?.schemas?.ApiOrValidationError).toBeDefined();
     expect(document.components?.schemas?.UpdateProfileRequest).toBeDefined();

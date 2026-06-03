@@ -1,5 +1,6 @@
-type AUTH_ROLES = ['user', 'moderator', 'admin'];
-export type AuthRole = AUTH_ROLES[number];
+import type { AuthRole } from './auth.roles.js';
+
+export type { AuthRole } from './auth.roles.js';
 
 export type Session = {
   id: string;
