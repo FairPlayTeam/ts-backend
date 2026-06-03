@@ -7,6 +7,7 @@ import {
   InvalidCredentialsError,
   InvalidPasswordResetTokenError,
   PasswordResetPasswordReuseError,
+  PasswordResetStateChangedError,
   UserAlreadyExistsError,
 } from '../src/services/auth.errors.js';
 
@@ -57,6 +58,14 @@ describe('auth error mapping', () => {
     expect(error).toBeInstanceOf(HttpError);
     expect((error as HttpError).statusCode).toBe(400);
     expect((error as HttpError).code).toBe('BadRequest');
+  });
+
+  test('maps password reset state changes to an HTTP conflict', () => {
+    const error = toAuthHttpError(new PasswordResetStateChangedError());
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).statusCode).toBe(409);
+    expect((error as HttpError).code).toBe('Conflict');
   });
 
   test('passes through unknown application errors for the global handler', () => {

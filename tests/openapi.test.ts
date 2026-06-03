@@ -111,6 +111,7 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/reset-password']?.post?.requestBody).toBeDefined();
     expect(document.paths['/auth/reset-password']?.post?.security).toBeUndefined();
     expect(document.paths['/auth/reset-password']?.post?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/reset-password']?.post?.responses?.[409]).toBeDefined();
     expect(document.paths['/auth/resend-verification']?.post?.requestBody).toBeDefined();
     expect(document.paths['/auth/resend-verification']?.post?.security).toBeUndefined();
     expect(document.paths['/auth/resend-verification']?.post?.responses?.[200]).toBeDefined();

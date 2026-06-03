@@ -6,6 +6,7 @@ import {
   InvalidCredentialsError,
   InvalidPasswordResetTokenError,
   PasswordResetPasswordReuseError,
+  PasswordResetStateChangedError,
   UserAlreadyExistsError,
 } from '../services/auth.errors.js';
 
@@ -27,6 +28,10 @@ export function toAuthHttpError(err: unknown): Error {
     err instanceof PasswordResetPasswordReuseError
   ) {
     return new HttpError(400, 'BadRequest', err.message, { cause: err });
+  }
+
+  if (err instanceof PasswordResetStateChangedError) {
+    return new HttpError(409, 'Conflict', err.message, { cause: err });
   }
 
   if (err instanceof AccountBannedError || err instanceof EmailNotVerifiedError) {

@@ -8,6 +8,7 @@ import {
   InvalidCredentialsError,
   InvalidPasswordResetTokenError,
   PasswordResetPasswordReuseError,
+  PasswordResetStateChangedError,
   UserAlreadyExistsError,
 } from '../src/services/auth.errors.js';
 import {
@@ -36,6 +37,7 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     userFindFirst: undefined as unknown,
     userCreate: undefined as unknown,
     userUpdate: undefined as unknown,
+    userUpdateMany: undefined as unknown,
     tokenCreate: undefined as unknown,
     tokenDeleteMany: undefined as unknown,
     tokenFindUnique: undefined as unknown,
@@ -349,6 +351,8 @@ type PasswordResetTokenRecord = {
 
 type PasswordResetConfirmationOptions = {
   consumeCount?: number;
+  currentPasswordHash?: string;
+  updateUserCount?: number;
 };
 
 function createPasswordResetConfirmationTestDeps(
@@ -358,6 +362,8 @@ function createPasswordResetConfirmationTestDeps(
 ) {
   const { deps, calls } = createTestDeps(overrides);
   const consumeCount = options.consumeCount ?? 1;
+  const currentPasswordHash = options.currentPasswordHash ?? record?.user.passwordHash;
+  const updateUserCount = options.updateUserCount ?? 1;
   const passwordResetTx = {
     passwordResetToken: {
       deleteMany: async (args: unknown) => {
@@ -367,8 +373,22 @@ function createPasswordResetConfirmationTestDeps(
       },
     },
     user: {
-      update: async (args: unknown) => {
-        calls.userUpdate = args;
+      findUnique: async (args: unknown) => {
+        calls.userFindUnique = args;
+
+        if (!record) {
+          return null;
+        }
+
+        return {
+          passwordHash: currentPasswordHash,
+          isBanned: record.user.isBanned,
+        };
+      },
+      updateMany: async (args: unknown) => {
+        calls.userUpdateMany = args;
+
+        return { count: updateUserCount };
       },
     },
     session: {
@@ -1665,8 +1685,18 @@ describe('auth service', () => {
         },
       },
     });
-    expect(calls.userUpdate).toEqual({
+    expect(calls.userFindUnique).toEqual({
       where: { id: 'user-id' },
+      select: {
+        passwordHash: true,
+        isBanned: true,
+      },
+    });
+    expect(calls.userUpdateMany).toEqual({
+      where: {
+        id: 'user-id',
+        passwordHash: 'hashed-old-password',
+      },
       data: {
         passwordHash: 'hashed-new-password',
       },
@@ -1694,7 +1724,7 @@ describe('auth service', () => {
     ).rejects.toBeInstanceOf(InvalidPasswordResetTokenError);
 
     expect(calls.passwordResetTokenDeleteMany).toBeUndefined();
-    expect(calls.userUpdate).toBeUndefined();
+    expect(calls.userUpdateMany).toBeUndefined();
   });
 
   test('deletes and rejects expired password reset tokens', async () => {
@@ -1720,7 +1750,57 @@ describe('auth service', () => {
     expect(calls.passwordResetTokenDeleteMany).toEqual({
       where: { token: 'hashed-plain-token' },
     });
-    expect(calls.userUpdate).toBeUndefined();
+    expect(calls.userUpdateMany).toBeUndefined();
+  });
+
+  test('rejects password reset when the token expires before transaction consumption', async () => {
+    const consumedAt = new Date('2026-01-01T00:00:02.000Z');
+    let nowCalls = 0;
+    const { deps, calls } = createPasswordResetConfirmationTestDeps(
+      {
+        userId: 'user-id',
+        token: 'hashed-plain-token',
+        expiresAt: new Date('2026-01-01T00:00:01.000Z'),
+        user: {
+          id: 'user-id',
+          passwordHash: 'hashed-old-password',
+          isBanned: false,
+        },
+      },
+      {
+        clock: {
+          now: () => (nowCalls++ === 0 ? fixedNow : consumedAt),
+        },
+        hasher: {
+          compare: async (password: string, hash: string) => {
+            calls.comparedPassword = { password, hash };
+
+            return false;
+          },
+          hash: async () => 'hashed-new-password',
+        },
+      },
+      { consumeCount: 0 },
+    );
+    const service = createAuthService(deps);
+
+    await expect(
+      service.resetPassword({
+        token: 'plain-token',
+        password: 'NewPassword1!',
+      }),
+    ).rejects.toBeInstanceOf(InvalidPasswordResetTokenError);
+
+    expect(calls.passwordResetTokenDeleteMany).toEqual({
+      where: {
+        token: 'hashed-plain-token',
+        expiresAt: {
+          gt: consumedAt,
+        },
+      },
+    });
+    expect(calls.userUpdateMany).toBeUndefined();
+    expect(calls.sessionUpdateMany).toBeUndefined();
   });
 
   test('rejects password reset for banned users', async () => {
@@ -1744,7 +1824,7 @@ describe('auth service', () => {
     ).rejects.toBeInstanceOf(AccountBannedError);
 
     expect(calls.passwordResetTokenDeleteMany).toBeUndefined();
-    expect(calls.userUpdate).toBeUndefined();
+    expect(calls.userUpdateMany).toBeUndefined();
   });
 
   test('rejects password reset when the new password matches the current password', async () => {
@@ -1772,7 +1852,101 @@ describe('auth service', () => {
       hash: 'hashed-old-password',
     });
     expect(calls.passwordResetTokenDeleteMany).toBeUndefined();
-    expect(calls.userUpdate).toBeUndefined();
+    expect(calls.userUpdateMany).toBeUndefined();
+  });
+
+  test('rejects password reset when the password changed between lookup and transaction', async () => {
+    const { deps, calls } = createPasswordResetConfirmationTestDeps(
+      {
+        userId: 'user-id',
+        token: 'hashed-plain-token',
+        expiresAt: new Date('2026-01-01T00:00:01.000Z'),
+        user: {
+          id: 'user-id',
+          passwordHash: 'hashed-old-password',
+          isBanned: false,
+        },
+      },
+      {
+        hasher: {
+          compare: async (password: string, hash: string) => {
+            calls.comparedPassword = { password, hash };
+
+            return hash === 'hashed-current-password';
+          },
+          hash: async () => 'hashed-new-password',
+        },
+      },
+      { currentPasswordHash: 'hashed-current-password' },
+    );
+    const service = createAuthService(deps);
+
+    await expect(
+      service.resetPassword({
+        token: 'plain-token',
+        password: 'NewPassword1!',
+      }),
+    ).rejects.toBeInstanceOf(PasswordResetStateChangedError);
+
+    expect(calls.passwordResetTokenDeleteMany).toEqual({
+      where: {
+        token: 'hashed-plain-token',
+        expiresAt: {
+          gt: fixedNow,
+        },
+      },
+    });
+    expect(calls.comparedPassword).toEqual({
+      password: 'NewPassword1!',
+      hash: 'hashed-old-password',
+    });
+    expect(calls.userUpdateMany).toBeUndefined();
+    expect(calls.sessionUpdateMany).toBeUndefined();
+  });
+
+  test('rejects password reset when the user password changes before the guarded update', async () => {
+    const { deps, calls } = createPasswordResetConfirmationTestDeps(
+      {
+        userId: 'user-id',
+        token: 'hashed-plain-token',
+        expiresAt: new Date('2026-01-01T00:00:01.000Z'),
+        user: {
+          id: 'user-id',
+          passwordHash: 'hashed-old-password',
+          isBanned: false,
+        },
+      },
+      {
+        hasher: {
+          compare: async (password: string, hash: string) => {
+            calls.comparedPassword = { password, hash };
+
+            return false;
+          },
+          hash: async () => 'hashed-new-password',
+        },
+      },
+      { updateUserCount: 0 },
+    );
+    const service = createAuthService(deps);
+
+    await expect(
+      service.resetPassword({
+        token: 'plain-token',
+        password: 'NewPassword1!',
+      }),
+    ).rejects.toBeInstanceOf(PasswordResetStateChangedError);
+
+    expect(calls.userUpdateMany).toEqual({
+      where: {
+        id: 'user-id',
+        passwordHash: 'hashed-old-password',
+      },
+      data: {
+        passwordHash: 'hashed-new-password',
+      },
+    });
+    expect(calls.sessionUpdateMany).toBeUndefined();
   });
 
   test('rejects already consumed password reset tokens inside the transaction', async () => {
@@ -1812,7 +1986,7 @@ describe('auth service', () => {
         },
       },
     });
-    expect(calls.userUpdate).toBeUndefined();
+    expect(calls.userUpdateMany).toBeUndefined();
     expect(calls.sessionUpdateMany).toBeUndefined();
   });
 });

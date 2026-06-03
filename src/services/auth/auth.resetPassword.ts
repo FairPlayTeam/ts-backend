@@ -2,6 +2,7 @@ import {
   AccountBannedError,
   InvalidPasswordResetTokenError,
   PasswordResetPasswordReuseError,
+  PasswordResetStateChangedError,
 } from '../auth.errors.js';
 import type { AuthService, RequestPasswordResetInput, ResetPasswordInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
@@ -116,11 +117,12 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
     const hashedPassword = await deps.hasher.hash(password, deps.config.bcryptRounds);
 
     const sessionsLoggedOut = await deps.prisma.$transaction(async (tx) => {
+      const consumedAt = deps.clock.now();
       const consumed = await tx.passwordResetToken.deleteMany({
         where: {
           token: tokenHash,
           expiresAt: {
-            gt: deps.clock.now(),
+            gt: consumedAt,
           },
         },
       });
@@ -129,12 +131,39 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
         throw new InvalidPasswordResetTokenError();
       }
 
-      await tx.user.update({
+      const currentUser = await tx.user.findUnique({
         where: { id: record.userId },
+        select: {
+          passwordHash: true,
+          isBanned: true,
+        },
+      });
+
+      if (!currentUser) {
+        throw new InvalidPasswordResetTokenError();
+      }
+
+      if (currentUser.isBanned) {
+        throw new AccountBannedError();
+      }
+
+      if (currentUser.passwordHash !== record.user.passwordHash) {
+        throw new PasswordResetStateChangedError();
+      }
+
+      const updatedUser = await tx.user.updateMany({
+        where: {
+          id: record.userId,
+          passwordHash: currentUser.passwordHash,
+        },
         data: {
           passwordHash: hashedPassword,
         },
       });
+
+      if (updatedUser.count !== 1) {
+        throw new PasswordResetStateChangedError();
+      }
 
       const revokedSessions = await tx.session.updateMany({
         where: {

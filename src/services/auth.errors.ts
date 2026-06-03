@@ -6,6 +6,8 @@ const INVALID_EMAIL_VERIFICATION_TOKEN_MESSAGE = 'Invalid or expired verificatio
 const INVALID_PASSWORD_RESET_TOKEN_MESSAGE = 'Invalid or expired password reset link.';
 const PASSWORD_RESET_PASSWORD_REUSE_MESSAGE =
   'New password must be different from the current password';
+const PASSWORD_RESET_STATE_CHANGED_MESSAGE =
+  'Password state changed during reset. Please try again.';
 
 export class UserAlreadyExistsError extends Error {
   constructor(cause?: unknown) {
@@ -53,5 +55,12 @@ export class PasswordResetPasswordReuseError extends Error {
   constructor() {
     super(PASSWORD_RESET_PASSWORD_REUSE_MESSAGE);
     this.name = 'PasswordResetPasswordReuseError';
+  }
+}
+
+export class PasswordResetStateChangedError extends Error {
+  constructor() {
+    super(PASSWORD_RESET_STATE_CHANGED_MESSAGE);
+    this.name = 'PasswordResetStateChangedError';
   }
 }

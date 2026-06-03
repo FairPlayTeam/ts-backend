@@ -406,6 +406,8 @@ export const routeDocs = [
 
       403: jsonResponse('Account is not allowed to reset password', ApiErrorSchema),
 
+      409: jsonResponse('Password reset state changed', ApiErrorSchema),
+
       ...commonErrorResponses,
     },
   },
