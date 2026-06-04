@@ -12,6 +12,7 @@ import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
 import {
   ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
   ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
+  DELETE_ACCOUNT_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_SESSION_SUCCESS_MESSAGE,
@@ -29,6 +30,7 @@ let receivedResendVerificationRequest: unknown;
 let receivedPasswordResetRequest: unknown;
 let receivedGetSessionsRequest: unknown;
 let receivedExportUserDataRequest: unknown;
+let receivedDeleteAccountRequest: unknown;
 
 describe('auth routes', () => {
   beforeAll(async () => {
@@ -68,6 +70,10 @@ describe('auth routes', () => {
           exportUserData: async (input) => {
             receivedExportUserDataRequest = input;
             return authService.exportUserData(input);
+          },
+          deleteAccount: async (input) => {
+            receivedDeleteAccountRequest = input;
+            return authService.deleteAccount(input);
           },
         },
       },
@@ -193,6 +199,37 @@ describe('auth routes', () => {
 
   test('requires a bearer session to export current user data', async () => {
     const response = await fetch(`${baseUrl}/auth/me/export`);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: 'Unauthorized',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+  });
+
+  test('deletes the current user account for a valid bearer session', async () => {
+    receivedDeleteAccountRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/auth/me`, {
+      method: 'DELETE',
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(receivedDeleteAccountRequest).toEqual({
+      userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+    });
+    expect(await response.json()).toEqual({
+      message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+    });
+  });
+
+  test('requires a bearer session to delete the current user account', async () => {
+    const response = await fetch(`${baseUrl}/auth/me`, {
+      method: 'DELETE',
+    });
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({

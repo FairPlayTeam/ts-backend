@@ -6,6 +6,7 @@ import { createAuthController } from '../controllers/auth.controller.js';
 import type { AuthService } from '../services/auth.types.js';
 import {
   currentUserResponseSchema,
+  deleteAccountResponseSchema,
   logoutAllSessionsResponseSchema,
   logoutOtherSessionsResponseSchema,
   logoutSessionParamsSchema,
@@ -42,6 +43,7 @@ import { createRouteProtector } from '../middleware/routeProtection.js';
 import {
   ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
   ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
+  DELETE_ACCOUNT_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
@@ -86,6 +88,7 @@ const createAuthRouter = ({
     requestPasswordReset,
     resetPassword,
     exportMe,
+    deleteMe,
   } = createAuthController({
     authService,
   });
@@ -115,6 +118,7 @@ const createAuthRouter = ({
   );
   router.get('/me', ...protect(), me);
   router.get('/me/export', ...protect(), exportMe);
+  router.delete('/me', ...protect(), deleteMe);
   router.patch('/me', ...protect(), validate(updateProfileSchema), updateMe);
   router.get('/sessions', authenticateSession, validate(userSessionsSchema), sessions);
   router.delete('/sessions/all', authenticateSession, logoutAll);
@@ -280,6 +284,20 @@ export const routeDocs = [
     security: [{ bearerAuth: [] }],
     responses: {
       200: jsonResponse('Current user data export', userDataExportResponseSchema),
+
+      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      ...commonErrorResponses,
+    },
+  },
+  {
+    method: 'delete',
+    path: '/auth/me',
+    summary: 'Delete current user account',
+    tags: ['Auth'],
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: jsonResponse(DELETE_ACCOUNT_SUCCESS_MESSAGE, deleteAccountResponseSchema),
 
       401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
 

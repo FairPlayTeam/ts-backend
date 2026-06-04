@@ -197,6 +197,21 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     }
   };
 
+  const deleteMe = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const result = await deps.authService.deleteAccount({
+        userId: authenticatedReq.user.id,
+      });
+
+      return res.status(200).json({
+        message: result.message,
+      });
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
+  };
+
   const sessions = async (
     req: Request<unknown, unknown, unknown, UserSessionsQuery>,
     res: Response,
@@ -349,6 +364,7 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     resetPassword,
     me,
     exportMe,
+    deleteMe,
     updateMe,
     sessions,
     logoutAll,

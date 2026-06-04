@@ -60,6 +60,10 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/me']?.patch?.responses?.[200]).toBeDefined();
     expect(document.paths['/auth/me']?.patch?.responses?.[400]).toBeDefined();
     expect(document.paths['/auth/me']?.patch?.responses?.[401]).toBeDefined();
+    expect(document.paths['/auth/me']?.delete?.requestBody).toBeUndefined();
+    expect(document.paths['/auth/me']?.delete?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths['/auth/me']?.delete?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/me']?.delete?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/me/export']?.get?.requestBody).toBeUndefined();
     expect(document.paths['/auth/me/export']?.get?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/auth/me/export']?.get?.responses?.[200]).toBeDefined();
@@ -143,6 +147,7 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.ApiOrValidationError).toBeDefined();
     expect(document.components?.schemas?.UpdateProfileRequest).toBeDefined();
     expect(document.components?.schemas?.UpdateProfileResponse).toBeDefined();
+    expect(document.components?.schemas?.DeleteAccountResponse).toBeDefined();
     expect(document.components?.schemas?.RegisterRequest).toBeDefined();
     expect(document.components?.schemas?.RegisterResponse).toBeDefined();
     expect(document.components?.schemas?.RequestPasswordResetRequest).toBeDefined();

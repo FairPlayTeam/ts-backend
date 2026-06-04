@@ -9,6 +9,7 @@ import {
   USERNAME_MIN_LENGTH,
 } from '../config/constants.js';
 import {
+  DELETE_ACCOUNT_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_SESSION_SUCCESS_MESSAGE,
@@ -198,6 +199,12 @@ export const currentUserResponseSchema = z
     session: authSessionResponseSchema,
   })
   .openapi('CurrentUserResponse');
+
+export const deleteAccountResponseSchema = z
+  .object({
+    message: responseMessageSchema(DELETE_ACCOUNT_SUCCESS_MESSAGE),
+  })
+  .openapi('DeleteAccountResponse');
 
 const userDataExportDateTimeSchema = z.string().datetime();
 const nullableUserDataExportDateTimeSchema = userDataExportDateTimeSchema.nullable();

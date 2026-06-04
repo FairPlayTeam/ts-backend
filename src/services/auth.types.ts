@@ -91,6 +91,14 @@ export type ExportUserDataResult = {
   } | null;
 };
 
+export type DeleteAccountInput = {
+  userId: string;
+};
+
+export type DeleteAccountResult = {
+  message: string;
+};
+
 export type AuthSessionResult = {
   message: string;
   user: AuthUser;
@@ -196,4 +204,5 @@ export type AuthService = {
   requestPasswordReset(input: RequestPasswordResetInput): Promise<{ message: string }>;
   resetPassword(input: ResetPasswordInput): Promise<{ message: string; sessionsLoggedOut: number }>;
   exportUserData(input: ExportUserDataInput): Promise<ExportUserDataResult>;
+  deleteAccount(input: DeleteAccountInput): Promise<DeleteAccountResult>;
 };

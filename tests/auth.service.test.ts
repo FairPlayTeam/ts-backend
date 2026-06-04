@@ -14,6 +14,7 @@ import {
 import {
   CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
   CLEANUP_SESSION_SUCCESS_MESSAGE,
+  DELETE_ACCOUNT_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
@@ -36,6 +37,7 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     userFindUnique: undefined as unknown,
     userFindFirst: undefined as unknown,
     userCreate: undefined as unknown,
+    userDeleteMany: undefined as unknown,
     userUpdate: undefined as unknown,
     userUpdateMany: undefined as unknown,
     tokenCreate: undefined as unknown,
@@ -81,6 +83,11 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
       update: async (args: unknown) => {
         calls.userUpdate = args;
       },
+      deleteMany: async (args: unknown) => {
+        calls.userDeleteMany = args;
+
+        return { count: 1 };
+      },
     },
     emailVerificationToken: {
       create: async (args: unknown) => {
@@ -99,6 +106,11 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
       upsert: async (args: unknown) => {
         calls.passwordResetTokenUpsert = args;
       },
+      deleteMany: async (args: unknown) => {
+        calls.passwordResetTokenDeleteMany = args;
+
+        return { count: 1 };
+      },
     },
     session: {
       create: async (args: unknown) => {
@@ -108,6 +120,11 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
           id: 'session-id',
           expiresAt: new Date('2026-01-31T00:00:00.000Z'),
         };
+      },
+      deleteMany: async (args: unknown) => {
+        calls.sessionDeleteMany = args;
+
+        return { count: 3 };
       },
     },
   };
@@ -1447,6 +1464,32 @@ describe('auth service', () => {
     expect(selectedFields).not.toContain('"passwordHash":');
     expect(selectedFields).not.toContain('"sessionKey":');
     expect(selectedFields).not.toContain('"token":');
+  });
+
+  test('deletes user personal data for account deletion', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await expect(
+      service.deleteAccount({
+        userId: 'user-id',
+      }),
+    ).resolves.toEqual({
+      message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+    });
+
+    expect(calls.sessionDeleteMany).toEqual({
+      where: { userId: 'user-id' },
+    });
+    expect(calls.tokenDeleteMany).toEqual({
+      where: { userId: 'user-id' },
+    });
+    expect(calls.passwordResetTokenDeleteMany).toEqual({
+      where: { userId: 'user-id' },
+    });
+    expect(calls.userDeleteMany).toEqual({
+      where: { id: 'user-id' },
+    });
   });
 
   test('cleans up expired and old inactive sessions', async () => {

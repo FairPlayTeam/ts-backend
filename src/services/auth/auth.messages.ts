@@ -18,3 +18,4 @@ export const ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE =
   'Already authenticated users cannot request a password reset';
 export const RESET_PASSWORD_SUCCESS_MESSAGE =
   'Your password has been reset successfully. Please log in with your new password.';
+export const DELETE_ACCOUNT_SUCCESS_MESSAGE = 'Account deleted successfully';

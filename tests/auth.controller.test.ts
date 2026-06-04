@@ -14,6 +14,7 @@ import type {
 import { HttpError } from '../src/errors/http.js';
 import { UserAlreadyExistsError } from '../src/services/auth.errors.js';
 import {
+  DELETE_ACCOUNT_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
@@ -161,6 +162,7 @@ const createControllerAuthService = (
     sessionsLoggedOut: 1,
   }),
   exportUserData: async () => userDataExportResult,
+  deleteAccount: async () => ({ message: DELETE_ACCOUNT_SUCCESS_MESSAGE }),
   ...overrides,
 });
 
@@ -504,6 +506,39 @@ describe('auth controller', () => {
         createdAt: '2026-01-01T00:00:00.000Z',
         expiresAt: '2026-01-02T00:00:00.000Z',
       },
+    });
+  });
+
+  test('deletes the authenticated user account through the injected auth service', async () => {
+    let receivedInput: { userId: string } | undefined;
+    let receivedError: unknown;
+    const { response, state } = createMockResponse();
+    const controller = createTestAuthController({
+      deleteAccount: async (input) => {
+        receivedInput = input;
+
+        return { message: DELETE_ACCOUNT_SUCCESS_MESSAGE };
+      },
+    });
+
+    await controller.deleteMe(
+      {
+        user: validatedSession.user,
+        session: validatedSession.session,
+      } as AuthenticatedRequest,
+      response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedInput).toEqual({
+      userId: validatedSession.user.id,
+    });
+    expect(receivedError).toBeUndefined();
+    expect(state.statusCode).toBe(200);
+    expect(state.body).toEqual({
+      message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
     });
   });
 

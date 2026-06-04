@@ -2,6 +2,7 @@ import type { AuthService } from '../../src/services/auth.types.js';
 import {
   CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
   CLEANUP_SESSION_SUCCESS_MESSAGE,
+  DELETE_ACCOUNT_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
@@ -106,6 +107,9 @@ export const createStubAuthService = (): AuthService => ({
     sessionsLoggedOut: 1,
   }),
   exportUserData: async () => userDataExportResult,
+  deleteAccount: async () => ({
+    message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+  }),
   getUserSessions: async () => userSessionsResult,
   logoutAllSessions: async () => ({
     message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
