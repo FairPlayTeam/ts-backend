@@ -45,6 +45,52 @@ export type UpdateProfileInput = {
   bio?: string | null | undefined;
 };
 
+export type ExportUserDataInput = {
+  userId: string;
+  currentSessionId: string;
+};
+
+export type ExportUserDataResult = {
+  exportedAt: Date;
+  user: {
+    id: string;
+    email: string;
+    username: string;
+    displayName: string | null;
+    bio: string | null;
+    role: AuthRole;
+    isVerified: boolean;
+    isBanned: boolean;
+    bannedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+    lastLogin: Date | null;
+  };
+  sessions: {
+    id: string;
+    sessionKeySuffix: string | null;
+    ipAddress: string | null;
+    userAgent: string | null;
+    deviceInfo: string | null;
+    isActive: boolean;
+    isCurrent: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+    lastUsedAt: Date;
+    expiresAt: Date;
+  }[];
+  emailVerificationToken: {
+    id: string;
+    createdAt: Date;
+    expiresAt: Date;
+  } | null;
+  passwordResetToken: {
+    id: string;
+    createdAt: Date;
+    expiresAt: Date;
+  } | null;
+};
+
 export type AuthSessionResult = {
   message: string;
   user: AuthUser;
@@ -149,4 +195,5 @@ export type AuthService = {
   ): Promise<CleanupExpiredAuthTokensResult>;
   requestPasswordReset(input: RequestPasswordResetInput): Promise<{ message: string }>;
   resetPassword(input: ResetPasswordInput): Promise<{ message: string; sessionsLoggedOut: number }>;
+  exportUserData(input: ExportUserDataInput): Promise<ExportUserDataResult>;
 };

@@ -15,6 +15,7 @@ import type {
 import type {
   AuthService,
   AuthSessionResult,
+  ExportUserDataResult,
   ListUserSessionsResult,
 } from '../services/auth.types.js';
 
@@ -22,22 +23,30 @@ type AuthControllerDependencies = {
   authService: Omit<AuthService, 'cleanupExpiredAuthTokens' | 'cleanupSessions'>;
 };
 
+type SessionResponseInput = {
+  id: string;
+  expiresAt: Date;
+};
+
+const toIsoString = (date: Date): string => date.toISOString();
+
+const toNullableIsoString = (date: Date | null): string | null => (date ? toIsoString(date) : null);
+
+const toSessionResponse = (session: SessionResponseInput) => ({
+  id: session.id,
+  expiresAt: toIsoString(session.expiresAt),
+});
+
 const toAuthSessionResponse = (result: AuthSessionResult) => ({
   message: result.message,
   user: result.user,
   sessionKey: result.sessionKey,
-  session: {
-    id: result.session.id,
-    expiresAt: result.session.expiresAt.toISOString(),
-  },
+  session: toSessionResponse(result.session),
 });
 
 const toAuthenticatedSessionResponse = (req: AuthenticatedRequest) => ({
   user: req.user,
-  session: {
-    id: req.session.id,
-    expiresAt: req.session.expiresAt.toISOString(),
-  },
+  session: toSessionResponse(req.session),
 });
 
 const toUserSessionsResponse = ({ sessions, total, nextCursor }: ListUserSessionsResult) => ({
@@ -48,18 +57,51 @@ const toUserSessionsResponse = ({ sessions, total, nextCursor }: ListUserSession
     userAgent: session.userAgent,
     deviceInfo: session.deviceInfo,
     isCurrent: session.isCurrent,
-    createdAt: session.createdAt.toISOString(),
-    lastUsedAt: session.lastUsedAt.toISOString(),
-    expiresAt: session.expiresAt.toISOString(),
+    createdAt: toIsoString(session.createdAt),
+    lastUsedAt: toIsoString(session.lastUsedAt),
+    expiresAt: toIsoString(session.expiresAt),
   })),
   total,
   nextCursor: nextCursor
     ? {
-        lastUsedAt: nextCursor.lastUsedAt.toISOString(),
+        lastUsedAt: toIsoString(nextCursor.lastUsedAt),
         id: nextCursor.id,
       }
     : null,
 });
+
+type UserDataExportToken = NonNullable<ExportUserDataResult['emailVerificationToken']>;
+
+const toUserDataExportTokenResponse = (token: UserDataExportToken | null) =>
+  token
+    ? {
+        ...token,
+        createdAt: toIsoString(token.createdAt),
+        expiresAt: toIsoString(token.expiresAt),
+      }
+    : null;
+
+const toUserDataExportResponse = (result: ExportUserDataResult) => ({
+  exportedAt: toIsoString(result.exportedAt),
+  user: {
+    ...result.user,
+    bannedAt: toNullableIsoString(result.user.bannedAt),
+    createdAt: toIsoString(result.user.createdAt),
+    updatedAt: toIsoString(result.user.updatedAt),
+    lastLogin: toNullableIsoString(result.user.lastLogin),
+  },
+  sessions: result.sessions.map((session) => ({
+    ...session,
+    createdAt: toIsoString(session.createdAt),
+    updatedAt: toIsoString(session.updatedAt),
+    lastUsedAt: toIsoString(session.lastUsedAt),
+    expiresAt: toIsoString(session.expiresAt),
+  })),
+  emailVerificationToken: toUserDataExportTokenResponse(result.emailVerificationToken),
+  passwordResetToken: toUserDataExportTokenResponse(result.passwordResetToken),
+});
+
+const toPrettyJson = (body: unknown): string => JSON.stringify(body, null, 2) + '\n';
 
 export const createAuthController = (deps: AuthControllerDependencies) => {
   const register = async (
@@ -134,6 +176,25 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
 
   const me = (req: Request, res: Response) => {
     return res.status(200).json(toAuthenticatedSessionResponse(req as AuthenticatedRequest));
+  };
+
+  const exportMe = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const result = await deps.authService.exportUserData({
+        userId: authenticatedReq.user.id,
+        currentSessionId: authenticatedReq.session.id,
+      });
+
+      res.set('Content-Disposition', 'attachment; filename="fairplay-user-data-export.json"');
+
+      return res
+        .status(200)
+        .type('application/json')
+        .send(toPrettyJson(toUserDataExportResponse(result)));
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
   };
 
   const sessions = async (
@@ -287,6 +348,7 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     requestPasswordReset,
     resetPassword,
     me,
+    exportMe,
     updateMe,
     sessions,
     logoutAll,

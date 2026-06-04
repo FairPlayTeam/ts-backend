@@ -28,6 +28,7 @@ let receivedProfileUpdate: unknown;
 let receivedResendVerificationRequest: unknown;
 let receivedPasswordResetRequest: unknown;
 let receivedGetSessionsRequest: unknown;
+let receivedExportUserDataRequest: unknown;
 
 describe('auth routes', () => {
   beforeAll(async () => {
@@ -63,6 +64,10 @@ describe('auth routes', () => {
           getUserSessions: async (input) => {
             receivedGetSessionsRequest = input;
             return authService.getUserSessions(input);
+          },
+          exportUserData: async (input) => {
+            receivedExportUserDataRequest = input;
+            return authService.exportUserData(input);
           },
         },
       },
@@ -121,6 +126,73 @@ describe('auth routes', () => {
 
   test('requires a bearer session for the current user route', async () => {
     const response = await fetch(`${baseUrl}/auth/me`);
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: 'Unauthorized',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+  });
+
+  test('exports current user data as downloadable JSON for a valid bearer session', async () => {
+    receivedExportUserDataRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/auth/me/export`, {
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(receivedExportUserDataRequest).toEqual({
+      userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      currentSessionId: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+    });
+    expect(response.headers.get('content-disposition')).toBe(
+      'attachment; filename="fairplay-user-data-export.json"',
+    );
+    expect(response.headers.get('content-type')).toContain('application/json');
+    const bodyText = await response.text();
+    expect(bodyText).toContain('\n  "exportedAt": "2026-01-01T00:00:00.000Z"');
+    expect(bodyText.endsWith('\n')).toBe(true);
+    expect(JSON.parse(bodyText)).toEqual({
+      exportedAt: '2026-01-01T00:00:00.000Z',
+      user: {
+        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+        email: 'user@example.com',
+        username: 'fairplay_user',
+        displayName: 'Fairplay User',
+        bio: 'Definitely not an undercover Y**tube employee.',
+        role: 'user',
+        isVerified: true,
+        isBanned: false,
+        bannedAt: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        lastLogin: '2026-01-01T00:00:00.000Z',
+      },
+      sessions: [
+        {
+          id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+          sessionKeySuffix: 'sion-key',
+          ipAddress: '127.0.0.1',
+          userAgent: 'bun-test',
+          deviceInfo: 'bun-test',
+          isActive: true,
+          isCurrent: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          lastUsedAt: '2026-01-01T00:00:00.000Z',
+          expiresAt: '2026-01-31T00:00:00.000Z',
+        },
+      ],
+      emailVerificationToken: null,
+      passwordResetToken: null,
+    });
+  });
+
+  test('requires a bearer session to export current user data', async () => {
+    const response = await fetch(`${baseUrl}/auth/me/export`);
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({

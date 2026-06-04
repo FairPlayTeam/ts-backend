@@ -30,6 +30,7 @@ describe('OpenAPI generation', () => {
       '/auth/forgot-password',
       '/auth/login',
       '/auth/me',
+      '/auth/me/export',
       '/auth/register',
       '/auth/resend-verification',
       '/auth/reset-password',
@@ -59,6 +60,10 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/me']?.patch?.responses?.[200]).toBeDefined();
     expect(document.paths['/auth/me']?.patch?.responses?.[400]).toBeDefined();
     expect(document.paths['/auth/me']?.patch?.responses?.[401]).toBeDefined();
+    expect(document.paths['/auth/me/export']?.get?.requestBody).toBeUndefined();
+    expect(document.paths['/auth/me/export']?.get?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths['/auth/me/export']?.get?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/me/export']?.get?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/sessions']?.get?.requestBody).toBeUndefined();
     expect(document.paths['/auth/sessions']?.get?.parameters).toEqual(
       expect.arrayContaining([
@@ -149,6 +154,7 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.VerifyEmailRequest).toBeDefined();
     expect(document.components?.schemas?.VerifyEmailResponse).toBeDefined();
     expect(document.components?.schemas?.UserSessionsResponse).toBeDefined();
+    expect(document.components?.schemas?.UserDataExportResponse).toBeDefined();
     expect(document.components?.schemas?.LogoutAllSessionsResponse).toBeDefined();
     expect(document.components?.schemas?.LogoutOtherSessionsResponse).toBeDefined();
     expect(document.components?.schemas?.LogoutSessionResponse).toBeDefined();

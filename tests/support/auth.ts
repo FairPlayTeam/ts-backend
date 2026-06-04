@@ -52,6 +52,36 @@ const userSessionsResult = {
   total: 1,
 };
 
+const userDataExportResult = {
+  exportedAt: new Date('2026-01-01T00:00:00.000Z'),
+  user: {
+    ...sessionResult.user,
+    isVerified: true,
+    isBanned: false,
+    bannedAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    lastLogin: new Date('2026-01-01T00:00:00.000Z'),
+  },
+  sessions: [
+    {
+      id: sessionResult.session.id,
+      sessionKeySuffix: 'sion-key',
+      ipAddress: '127.0.0.1',
+      userAgent: 'bun-test',
+      deviceInfo: 'bun-test',
+      isActive: true,
+      isCurrent: true,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
+      expiresAt: sessionResult.session.expiresAt,
+    },
+  ],
+  emailVerificationToken: null,
+  passwordResetToken: null,
+};
+
 export const createStubAuthService = (): AuthService => ({
   register: async () => ({
     message: REGISTER_SUCCESS_MESSAGE,
@@ -75,6 +105,7 @@ export const createStubAuthService = (): AuthService => ({
     message: RESET_PASSWORD_SUCCESS_MESSAGE,
     sessionsLoggedOut: 1,
   }),
+  exportUserData: async () => userDataExportResult,
   getUserSessions: async () => userSessionsResult,
   logoutAllSessions: async () => ({
     message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,

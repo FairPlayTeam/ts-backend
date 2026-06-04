@@ -118,6 +118,62 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
         input: ((transaction: typeof tx) => Promise<unknown>) | Promise<unknown>[],
       ) => (Array.isArray(input) ? Promise.all(input) : input(tx)),
       user: {
+        findUnique: async (args: unknown) => {
+          calls.userFindUnique = args;
+
+          return {
+            id: 'user-id',
+            email: 'user@example.com',
+            username: 'fairplay_user',
+            displayName: 'Fairplay User',
+            bio: null,
+            role: 'user',
+            isVerified: true,
+            isBanned: false,
+            bannedAt: null,
+            createdAt: fixedNow,
+            updatedAt: fixedNow,
+            lastLogin: fixedNow,
+            sessions: [
+              {
+                id: 'session-id',
+                sessionKeySuffix: 'in-token',
+                ipAddress: '127.0.0.1',
+                userAgent: 'bun-test',
+                deviceInfo: 'bun-test',
+                isActive: true,
+                createdAt: fixedNow,
+                updatedAt: fixedNow,
+                lastUsedAt: fixedNow,
+                expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+              },
+              {
+                id: 'other-session-id',
+                sessionKeySuffix: null,
+                ipAddress: null,
+                userAgent: null,
+                deviceInfo: null,
+                isActive: false,
+                createdAt: fixedNow,
+                updatedAt: fixedNow,
+                lastUsedAt: new Date('2026-01-01T00:00:01.000Z'),
+                expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+              },
+            ],
+            emailVerificationTokens: [
+              {
+                id: 'verification-token-id',
+                createdAt: fixedNow,
+                expiresAt: new Date('2026-01-08T00:00:00.000Z'),
+              },
+            ],
+            passwordResetToken: {
+              id: 'password-reset-token-id',
+              createdAt: fixedNow,
+              expiresAt: new Date('2026-01-02T00:00:00.000Z'),
+            },
+          };
+        },
         findFirst: async (args: unknown) => {
           calls.userFindFirst = args;
 
@@ -1272,6 +1328,125 @@ describe('auth service', () => {
         role: true,
       },
     });
+  });
+
+  test('exports user data without selecting secret fields', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await expect(
+      service.exportUserData({
+        userId: 'user-id',
+        currentSessionId: 'session-id',
+      }),
+    ).resolves.toEqual({
+      exportedAt: fixedNow,
+      user: {
+        id: 'user-id',
+        email: 'user@example.com',
+        username: 'fairplay_user',
+        displayName: 'Fairplay User',
+        bio: null,
+        role: 'user',
+        isVerified: true,
+        isBanned: false,
+        bannedAt: null,
+        createdAt: fixedNow,
+        updatedAt: fixedNow,
+        lastLogin: fixedNow,
+      },
+      sessions: [
+        {
+          id: 'session-id',
+          sessionKeySuffix: 'in-token',
+          ipAddress: '127.0.0.1',
+          userAgent: 'bun-test',
+          deviceInfo: 'bun-test',
+          isActive: true,
+          isCurrent: true,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+          lastUsedAt: fixedNow,
+          expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+        },
+        {
+          id: 'other-session-id',
+          sessionKeySuffix: null,
+          ipAddress: null,
+          userAgent: null,
+          deviceInfo: null,
+          isActive: false,
+          isCurrent: false,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+          lastUsedAt: new Date('2026-01-01T00:00:01.000Z'),
+          expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+        },
+      ],
+      emailVerificationToken: {
+        id: 'verification-token-id',
+        createdAt: fixedNow,
+        expiresAt: new Date('2026-01-08T00:00:00.000Z'),
+      },
+      passwordResetToken: {
+        id: 'password-reset-token-id',
+        createdAt: fixedNow,
+        expiresAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+    });
+
+    expect(calls.userFindUnique).toEqual({
+      where: { id: 'user-id' },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        displayName: true,
+        bio: true,
+        role: true,
+        isVerified: true,
+        isBanned: true,
+        bannedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        lastLogin: true,
+        sessions: {
+          select: {
+            id: true,
+            sessionKeySuffix: true,
+            ipAddress: true,
+            userAgent: true,
+            deviceInfo: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+            lastUsedAt: true,
+            expiresAt: true,
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        },
+        emailVerificationTokens: {
+          select: {
+            id: true,
+            createdAt: true,
+            expiresAt: true,
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 1,
+        },
+        passwordResetToken: {
+          select: {
+            id: true,
+            createdAt: true,
+            expiresAt: true,
+          },
+        },
+      },
+    });
+    const selectedFields = JSON.stringify(calls.userFindUnique);
+    expect(selectedFields).not.toContain('"passwordHash":');
+    expect(selectedFields).not.toContain('"sessionKey":');
+    expect(selectedFields).not.toContain('"token":');
   });
 
   test('cleans up expired and old inactive sessions', async () => {

@@ -98,6 +98,36 @@ const userSessionsResult = {
   total: 1,
 };
 
+const userDataExportResult = {
+  exportedAt: new Date('2026-01-01T00:00:00.000Z'),
+  user: {
+    ...loginResult.user,
+    isVerified: true,
+    isBanned: false,
+    bannedAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    lastLogin: new Date('2026-01-01T00:00:00.000Z'),
+  },
+  sessions: [
+    {
+      id: loginResult.session.id,
+      sessionKeySuffix: 'sion-key',
+      ipAddress: '127.0.0.1',
+      userAgent: 'bun-test',
+      deviceInfo: 'bun-test',
+      isActive: true,
+      isCurrent: true,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
+      expiresAt: loginResult.session.expiresAt,
+    },
+  ],
+  emailVerificationToken: null,
+  passwordResetToken: null,
+};
+
 type ControllerAuthService = Omit<AuthService, 'cleanupExpiredAuthTokens' | 'cleanupSessions'>;
 
 const createControllerAuthService = (
@@ -130,6 +160,7 @@ const createControllerAuthService = (
     message: RESET_PASSWORD_SUCCESS_MESSAGE,
     sessionsLoggedOut: 1,
   }),
+  exportUserData: async () => userDataExportResult,
   ...overrides,
 });
 
@@ -142,14 +173,30 @@ const createMockResponse = () => {
   const state: {
     statusCode?: number;
     body?: unknown;
-  } = {};
+    headers: Record<string, string>;
+    contentType?: string;
+  } = {
+    headers: {},
+  };
 
   const response = {
+    set(name: string, value: string) {
+      state.headers[name] = value;
+      return response;
+    },
+    type(contentType: string) {
+      state.contentType = contentType;
+      return response;
+    },
     status(statusCode: number) {
       state.statusCode = statusCode;
       return response;
     },
     json(body: unknown) {
+      state.body = body;
+      return response;
+    },
+    send(body: unknown) {
       state.body = body;
       return response;
     },
@@ -369,6 +416,93 @@ describe('auth controller', () => {
       session: {
         id: validatedSession.session.id,
         expiresAt: '2026-01-31T00:00:00.000Z',
+      },
+    });
+  });
+
+  test('exports authenticated user data as downloadable JSON', async () => {
+    let receivedInput: { userId: string; currentSessionId: string } | undefined;
+    let receivedError: unknown;
+    const { response, state } = createMockResponse();
+    const controller = createTestAuthController({
+      exportUserData: async (input) => {
+        receivedInput = input;
+
+        return {
+          ...userDataExportResult,
+          emailVerificationToken: {
+            id: 'verification-token-id',
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            expiresAt: new Date('2026-01-08T00:00:00.000Z'),
+          },
+          passwordResetToken: {
+            id: 'password-reset-token-id',
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            expiresAt: new Date('2026-01-02T00:00:00.000Z'),
+          },
+        };
+      },
+    });
+
+    await controller.exportMe(
+      {
+        user: validatedSession.user,
+        session: validatedSession.session,
+      } as AuthenticatedRequest,
+      response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedInput).toEqual({
+      userId: validatedSession.user.id,
+      currentSessionId: validatedSession.session.id,
+    });
+    expect(receivedError).toBeUndefined();
+    expect(state.headers['Content-Disposition']).toBe(
+      'attachment; filename="fairplay-user-data-export.json"',
+    );
+    expect(state.contentType).toBe('application/json');
+    expect(state.statusCode).toBe(200);
+    expect(typeof state.body).toBe('string');
+    expect(state.body).toContain('\n  "exportedAt": "2026-01-01T00:00:00.000Z"');
+    expect((state.body as string).endsWith('\n')).toBe(true);
+    expect(JSON.parse(state.body as string)).toEqual({
+      exportedAt: '2026-01-01T00:00:00.000Z',
+      user: {
+        ...loginResult.user,
+        isVerified: true,
+        isBanned: false,
+        bannedAt: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        lastLogin: '2026-01-01T00:00:00.000Z',
+      },
+      sessions: [
+        {
+          id: loginResult.session.id,
+          sessionKeySuffix: 'sion-key',
+          ipAddress: '127.0.0.1',
+          userAgent: 'bun-test',
+          deviceInfo: 'bun-test',
+          isActive: true,
+          isCurrent: true,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          lastUsedAt: '2026-01-01T00:00:00.000Z',
+          expiresAt: '2026-01-31T00:00:00.000Z',
+        },
+      ],
+      emailVerificationToken: {
+        id: 'verification-token-id',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: '2026-01-08T00:00:00.000Z',
+      },
+      passwordResetToken: {
+        id: 'password-reset-token-id',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: '2026-01-02T00:00:00.000Z',
       },
     });
   });

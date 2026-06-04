@@ -26,6 +26,7 @@ import {
   resendVerificationBodySchema,
   resendVerificationResponseSchema,
   resendVerificationSchema,
+  userDataExportResponseSchema,
   updateProfileBodySchema,
   updateProfileResponseSchema,
   updateProfileSchema,
@@ -84,6 +85,7 @@ const createAuthRouter = ({
     logoutSession,
     requestPasswordReset,
     resetPassword,
+    exportMe,
   } = createAuthController({
     authService,
   });
@@ -112,6 +114,7 @@ const createAuthRouter = ({
     resendVerification,
   );
   router.get('/me', ...protect(), me);
+  router.get('/me/export', ...protect(), exportMe);
   router.patch('/me', ...protect(), validate(updateProfileSchema), updateMe);
   router.get('/sessions', authenticateSession, validate(userSessionsSchema), sessions);
   router.delete('/sessions/all', authenticateSession, logoutAll);
@@ -263,6 +266,20 @@ export const routeDocs = [
     security: [{ bearerAuth: [] }],
     responses: {
       200: jsonResponse('Current user profile', currentUserResponseSchema),
+
+      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      ...commonErrorResponses,
+    },
+  },
+  {
+    method: 'get',
+    path: '/auth/me/export',
+    summary: 'Export current user data',
+    tags: ['Auth'],
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: jsonResponse('Current user data export', userDataExportResponseSchema),
 
       401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
 

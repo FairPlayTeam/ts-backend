@@ -199,6 +199,66 @@ export const currentUserResponseSchema = z
   })
   .openapi('CurrentUserResponse');
 
+const userDataExportDateTimeSchema = z.string().datetime();
+const nullableUserDataExportDateTimeSchema = userDataExportDateTimeSchema.nullable();
+
+const userDataExportTokenSchema = z.object({
+  id: z.string().openapi({ example: 'cmbl7u2ag0000i6c2p5o9h9ta' }),
+  createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+  expiresAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-08T00:00:00.000Z' }),
+});
+
+export const userDataExportResponseSchema = z
+  .object({
+    exportedAt: userDataExportDateTimeSchema.openapi({
+      example: '2026-01-01T00:00:00.000Z',
+    }),
+    user: z.object({
+      id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
+      email: z.string().email().openapi({ example: 'creator@example.com' }),
+      username: z.string().openapi({ example: 'fairplay_creator' }),
+      displayName: z.string().nullable().openapi({ example: 'FairPlay Creator' }),
+      bio: z.string().nullable().openapi({
+        example: 'Sharing project updates with my subscribers.',
+      }),
+      role: z.enum(AUTH_ROLES).openapi({ example: 'user' }),
+      isVerified: z.boolean().openapi({ example: true }),
+      isBanned: z.boolean().openapi({ example: false }),
+      bannedAt: nullableUserDataExportDateTimeSchema.openapi({ example: null }),
+      createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+      updatedAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+      lastLogin: nullableUserDataExportDateTimeSchema.openapi({
+        example: '2026-01-01T00:00:00.000Z',
+      }),
+    }),
+    sessions: z.array(
+      z.object({
+        id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+        sessionKeySuffix: z.string().nullable().openapi({ example: '9a8b7c6d' }),
+        ipAddress: z.string().nullable().openapi({ example: '127.0.0.1' }),
+        userAgent: z.string().nullable().openapi({ example: 'Mozilla/5.0' }),
+        deviceInfo: z.string().nullable().openapi({ example: 'Mozilla/5.0' }),
+        isActive: z.boolean().openapi({ example: true }),
+        isCurrent: z.boolean().openapi({ example: true }),
+        createdAt: userDataExportDateTimeSchema.openapi({
+          example: '2026-01-01T00:00:00.000Z',
+        }),
+        updatedAt: userDataExportDateTimeSchema.openapi({
+          example: '2026-01-01T00:00:00.000Z',
+        }),
+        lastUsedAt: userDataExportDateTimeSchema.openapi({
+          example: '2026-01-01T00:00:00.000Z',
+        }),
+        expiresAt: userDataExportDateTimeSchema.openapi({
+          example: '2026-01-31T00:00:00.000Z',
+        }),
+      }),
+    ),
+    emailVerificationToken: userDataExportTokenSchema.nullable(),
+    passwordResetToken: userDataExportTokenSchema.nullable(),
+  })
+  .openapi('UserDataExportResponse');
+
 export const userSessionsQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(100).optional().openapi({ example: 20 }),
