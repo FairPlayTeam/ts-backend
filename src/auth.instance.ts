@@ -10,6 +10,9 @@ import {
 import { sendVerificationEmail, sendPasswordResetEmail } from './mailer.instance.js';
 import { logger } from './lib/logger.js';
 import { createAuthService } from './services/auth.service.js';
+import { objectStorage } from './objectStorage.instance.js';
+import { createUnavailableObjectStorage } from './lib/objectStorage.js';
+import { createUserMediaProcessor } from './services/userMedia/userMedia.processor.js';
 
 const bcryptHasher = {
   hash: (password: string, rounds: number) => bcrypt.hash(password, rounds),
@@ -31,6 +34,10 @@ export const authService = createAuthService({
   hasher: bcryptHasher,
   token: tokenService,
   mailer: { sendVerificationEmail, sendPasswordResetEmail },
+  objectStorage: objectStorage ?? createUnavailableObjectStorage(),
+  userMediaProcessor: createUserMediaProcessor({
+    avatarMaxUploadBytes: config.avatarMaxUploadBytes,
+  }),
   clock: systemClock,
   config: {
     bcryptRounds: config.bcryptRounds,

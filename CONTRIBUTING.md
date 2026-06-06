@@ -17,8 +17,8 @@ git checkout -b feat/my-feature
 
 Node.js, Bun (1.3.10), and Docker are required.
 
-The recommended development setup runs the API with Bun on the host and runs PostgreSQL and Redis
-with Docker Compose:
+The recommended development setup runs the API with Bun on the host and runs the local dependency
+services with Docker Compose: PostgreSQL, Redis, and MinIO for S3-compatible object storage.
 
 ```
 # install dependencies
@@ -28,7 +28,7 @@ bun install
 cp .env.example .env
 
 # start only the local dependencies
-docker compose up -d postgres redis
+docker compose up -d postgres redis minio
 
 # migrate the Prisma schema to PostgreSQL
 bunx prisma migrate dev
@@ -39,7 +39,8 @@ bun run dev
 
 The backend will listen on http://localhost:3000. In this mode, `.env` should use host-reachable
 URLs such as `postgresql://user:password@localhost:5432/fairplay?schema=public` and
-`redis://localhost:6379`.
+`redis://localhost:6379`. MinIO is reachable at `http://localhost:9000`, with the console at
+`http://localhost:9001`.
 
 ### Full Docker Compose stack
 
@@ -49,16 +50,18 @@ The complete stack can also run with Docker Compose:
 docker compose up --build
 ```
 
-This starts four services on the `fairplay-backend-network` Docker network:
+This starts five services on the `fairplay-backend-network` Docker network:
 
 - `postgres`, backed by the `postgres_data` volume
 - `redis`, backed by the `redis_data` volume and append-only persistence
+- `minio`, backed by the `minio_data` volume
 - `migrate`, a one-shot Prisma migration service
 - `backend`, the API runtime image
 
-Inside the Compose network, the backend connects to PostgreSQL through `postgres:5432` and Redis
-through `redis:6379`. The database and Redis ports are bound to `127.0.0.1` by default so local
-tools can still access them without exposing them on the machine network.
+Inside the Compose network, the backend connects to PostgreSQL through `postgres:5432`, Redis
+through `redis:6379`, and, by default, MinIO through `minio:9000`. The database, Redis, and MinIO
+ports are bound to `127.0.0.1` by default so local tools can still access them without exposing
+them on the machine network.
 
 Useful commands:
 
@@ -66,12 +69,21 @@ Useful commands:
 docker compose ps
 docker compose logs -f backend
 docker compose stop backend
-docker compose stop postgres redis
+docker compose stop postgres redis minio
 docker compose down
 ```
 
-`docker compose down -v` also deletes the PostgreSQL and Redis volumes. Use it only when local data
-should be removed.
+`docker compose down -v` also deletes the PostgreSQL, Redis, and MinIO volumes. Use it only when
+local data should be removed.
+
+Docker Compose is only a local development and verification setup. Production does not use this
+Compose file; production containers receive `DATABASE_URL`, `REDIS_URL`, and `OBJECT_STORAGE_*`
+directly from the deployment environment or secret manager.
+
+The `COMPOSE_OBJECT_STORAGE_*` variables are only interpolation inputs for the local Compose file.
+They keep host values such as `OBJECT_STORAGE_ENDPOINT=http://localhost:9000` separate from
+container-network values such as `http://minio:9000`. The backend process itself always reads the
+standard runtime variables named `OBJECT_STORAGE_*`.
 
 ### Production deployment
 
@@ -82,8 +94,8 @@ docker build --target runtime -t fairplay-backend:<tag> .
 docker build --target migrator -t fairplay-backend-migrator:<tag> .
 ```
 
-Deploy PostgreSQL and Redis as shared infrastructure first, then run the migrator image once for
-the release:
+Deploy PostgreSQL, Redis, and S3-compatible object storage as shared infrastructure first, then run
+the migrator image once for the release:
 
 ```
 docker run --rm --env-file .env.production fairplay-backend-migrator:<tag>
@@ -100,6 +112,8 @@ In production:
 - set `NODE_ENV=production`
 - set `DATABASE_URL` to the shared PostgreSQL instance
 - set `REDIS_URL` to the shared Redis instance
+- set `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_ACCESS_KEY`, and `OBJECT_STORAGE_SECRET_KEY` to
+  the shared S3-compatible object storage instance
 - configure SMTP with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, and
   `FRONTEND_URL`
 - configure `BASE_URL`, `CORS_ORIGINS`, and `TRUST_PROXY` for the public reverse proxy or load
@@ -110,15 +124,17 @@ In production:
 Docker env files should not wrap values in quotes. Use `BASE_URL=https://api.example.com`, not
 `BASE_URL="https://api.example.com"`.
 
-### Managed PostgreSQL and Redis
+### Managed PostgreSQL, Redis, and Object Storage
 
-Managed providers can be used for the shared production database and Redis store. For example, Neon
-can be used as PostgreSQL and Upstash can be used as Redis.
+Managed providers can be used for the shared production database, Redis store, and object storage.
+For example, Neon can be used as PostgreSQL, Upstash can be used as Redis, and any S3-compatible
+provider can be used for profile media.
 
 Operational requirements:
 
 - every backend instance must use the same `DATABASE_URL`
 - every backend instance must use the same `REDIS_URL`
+- every backend instance must use the same object storage bucket and credentials
 - every backend instance must use the same `RATE_LIMIT_KEY_SECRET`
 - credentials must stay in `.env.production`, deployment secrets, or a secret manager
 - credentials must not be committed to Git
@@ -137,6 +153,14 @@ For Upstash Redis:
 - use `rediss://...` when TLS is required by the provider
 - keep Redis shared across all backend instances so rate limits, email cooldowns, and maintenance
   locks remain distributed
+
+For Infomaniak Object Storage:
+
+- use the S3 endpoint for the selected region, for example `https://s3.pub1.infomaniak.cloud`
+- use `us-east-1` as the compatibility region unless the provider documentation says otherwise
+- set `OBJECT_STORAGE_PUBLIC_URL` to the same origin when signed URLs should be consumed directly
+  by clients
+- keep buckets private; the backend uses signed URLs and does not require S3 bucket policies
 
 ### Cloudflare Tunnel deployment
 
@@ -169,8 +193,8 @@ In that layout, the backend port must not be reachable directly from the public 
 public access would allow clients to spoof forwarded headers.
 
 For multiple backend servers behind Cloudflare Load Balancer, run one backend runtime per server,
-point every instance at the same shared PostgreSQL and Redis services, run the migrator once per
-release, and use `/health/ready` as the origin health check.
+point every instance at the same shared PostgreSQL, Redis, and object storage services, run the
+migrator once per release, and use `/health/ready` as the origin health check.
 
 ### Documentation
 
@@ -197,14 +221,25 @@ The full Swagger UI documentation will be available at /docs.
   Managed Redis providers may require `rediss://` for TLS.
 - `RATE_LIMIT_KEY_SECRET` secret used to anonymize identifier-based rate limit keys. It must be at
   least 32 characters and must not be a placeholder in production.
+- `OBJECT_STORAGE_ENDPOINT` internal HTTP(S) origin for S3-compatible object storage, for example
+  `http://localhost:9000` locally, `http://minio:9000` in the local Compose network, or a managed
+  S3-compatible origin such as `https://s3.pub1.infomaniak.cloud`.
+- `OBJECT_STORAGE_PUBLIC_URL` optional public HTTP(S) origin used when generating signed media URLs.
+  If omitted, `OBJECT_STORAGE_ENDPOINT` is used.
+- `OBJECT_STORAGE_REGION` S3 region. Defaults to `us-east-1`.
+- `OBJECT_STORAGE_BUCKET` bucket for profile media. Defaults to `fairplay-user-media`.
+- `OBJECT_STORAGE_ACCESS_KEY` and `OBJECT_STORAGE_SECRET_KEY` object storage credentials.
+- `OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS` lifetime of signed media URLs. Defaults to `900`.
+- `AVATAR_MAX_UPLOAD_BYTES` maximum accepted raw avatar upload size in bytes. Defaults to `3145728`.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` configure email delivery.
 - `FRONTEND_URL` frontend URL used to generate verification and password reset links.
 
 ### Notes
 
-Redis, SMTP, and `RATE_LIMIT_KEY_SECRET` are mandatory in production. Redis is optional in
-development; if unavailable, the backend falls back to in-memory rate limiting. `TRUST_PROXY`
-should be configured explicitly when the backend runs behind a reverse proxy or load balancer.
+Redis, object storage, SMTP, and `RATE_LIMIT_KEY_SECRET` are mandatory in production. Redis is
+optional in development; if unavailable, the backend falls back to in-memory rate limiting.
+`TRUST_PROXY` should be configured explicitly when the backend runs behind a reverse proxy or load
+balancer.
 
 ### Commit template
 

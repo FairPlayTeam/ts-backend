@@ -61,6 +61,7 @@ describe('error handling', () => {
     const app = await createApp(
       {
         allowedOrigins: [],
+        avatarMaxUploadBytes: 3 * 1024 * 1024,
         baseUrl: 'http://localhost:3000/',
         isProduction: false,
         jsonBodyLimitBytes: 64,

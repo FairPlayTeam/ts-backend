@@ -7,6 +7,7 @@ import type { AuthService } from '../services/auth.types.js';
 import {
   currentUserResponseSchema,
   deleteAccountResponseSchema,
+  deleteAvatarResponseSchema,
   logoutAllSessionsResponseSchema,
   logoutOtherSessionsResponseSchema,
   logoutSessionParamsSchema,
@@ -28,6 +29,8 @@ import {
   resendVerificationResponseSchema,
   resendVerificationSchema,
   userDataExportResponseSchema,
+  uploadAvatarBodySchema,
+  uploadAvatarResponseSchema,
   updateProfileBodySchema,
   updateProfileResponseSchema,
   updateProfileSchema,
@@ -43,17 +46,21 @@ import { createRouteProtector } from '../middleware/routeProtection.js';
 import {
   ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
   ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
+  DELETE_AVATAR_SUCCESS_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_SESSION_SUCCESS_MESSAGE,
   UPDATE_PROFILE_SUCCESS_MESSAGE,
+  UPLOAD_AVATAR_SUCCESS_MESSAGE,
 } from '../services/auth/auth.messages.js';
 import { INVALID_CREDENTIALS_MESSAGE } from '../services/auth.errors.js';
+import { createSingleFileUpload } from '../middleware/upload.js';
 
 type AuthRouterDependencies = {
   authService: AuthService;
+  avatarMaxUploadBytes: number;
   authLimiter: RequestHandler;
   registrationIdentifierLimiter: RequestHandler;
   loginIdentifierLimiter: RequestHandler;
@@ -65,6 +72,7 @@ type AuthRouterDependencies = {
 
 const createAuthRouter = ({
   authService,
+  avatarMaxUploadBytes,
   authLimiter,
   registrationIdentifierLimiter,
   loginIdentifierLimiter,
@@ -81,6 +89,8 @@ const createAuthRouter = ({
     resendVerification,
     me,
     updateMe,
+    uploadAvatar,
+    deleteAvatar,
     sessions,
     logoutAll,
     logoutOthers,
@@ -94,6 +104,10 @@ const createAuthRouter = ({
   });
   const authenticateSession = createAuthenticateSession({ authService });
   const protect = createRouteProtector({ authService });
+  const uploadAvatarFile = createSingleFileUpload({
+    fieldName: 'avatar',
+    maxFileSizeBytes: avatarMaxUploadBytes,
+  });
 
   router.post(
     '/register',
@@ -120,6 +134,8 @@ const createAuthRouter = ({
   router.get('/me/export', ...protect(), exportMe);
   router.delete('/me', ...protect(), deleteMe);
   router.patch('/me', ...protect(), validate(updateProfileSchema), updateMe);
+  router.put('/me/avatar', ...protect(), uploadAvatarFile, uploadAvatar);
+  router.delete('/me/avatar', ...protect(), deleteAvatar);
   router.get('/sessions', authenticateSession, validate(userSessionsSchema), sessions);
   router.delete('/sessions/all', authenticateSession, logoutAll);
   router.delete('/sessions/others/all', authenticateSession, logoutOthers);
@@ -158,6 +174,10 @@ const commonErrorResponses = {
 
 const badRequestErrorResponse = {
   400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+};
+
+const serviceUnavailableErrorResponse = {
+  503: jsonResponse('Object storage unavailable', ApiErrorSchema),
 };
 
 export const routeDocs = [
@@ -272,6 +292,8 @@ export const routeDocs = [
       200: jsonResponse('Current user profile', currentUserResponseSchema),
 
       401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      ...serviceUnavailableErrorResponse,
 
       ...commonErrorResponses,
     },
@@ -392,6 +414,56 @@ export const routeDocs = [
       401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
 
       ...commonErrorResponses,
+    },
+  },
+  {
+    method: 'put',
+    path: '/auth/me/avatar',
+    summary: 'Upload or replace current user avatar',
+    tags: ['Auth'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          'multipart/form-data': {
+            schema: uploadAvatarBodySchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: jsonResponse(UPLOAD_AVATAR_SUCCESS_MESSAGE, uploadAvatarResponseSchema),
+
+      ...badRequestErrorResponse,
+
+      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      413: jsonResponse('Uploaded file too large', ApiErrorSchema),
+
+      ...serviceUnavailableErrorResponse,
+
+      429: jsonResponse('Too many requests', ApiErrorSchema),
+
+      500: jsonResponse('Internal server error', ApiErrorSchema),
+    },
+  },
+  {
+    method: 'delete',
+    path: '/auth/me/avatar',
+    summary: 'Delete current user avatar',
+    tags: ['Auth'],
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: jsonResponse(DELETE_AVATAR_SUCCESS_MESSAGE, deleteAvatarResponseSchema),
+
+      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      ...serviceUnavailableErrorResponse,
+
+      429: jsonResponse('Too many requests', ApiErrorSchema),
+
+      500: jsonResponse('Internal server error', ApiErrorSchema),
     },
   },
   {

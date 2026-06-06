@@ -1,8 +1,15 @@
 import type { PrismaClient } from '@prisma/client';
+import type { ObjectStorage } from '../../lib/objectStorage.js';
+import type { UserMediaProcessor } from '../userMedia/userMedia.processor.js';
 
 type Prisma = Pick<
   PrismaClient,
-  '$transaction' | 'emailVerificationToken' | 'passwordResetToken' | 'session' | 'user'
+  | '$transaction'
+  | 'emailVerificationToken'
+  | 'passwordResetToken'
+  | 'session'
+  | 'user'
+  | 'userMediaAsset'
 >;
 
 export type AuthDependencies = {
@@ -20,6 +27,11 @@ export type AuthDependencies = {
     sendVerificationEmail(email: string, token: string): Promise<void>;
     sendPasswordResetEmail(email: string, token: string): Promise<void>;
   };
+  objectStorage: Pick<
+    ObjectStorage,
+    'putObject' | 'deleteObject' | 'deleteObjects' | 'getSignedUrl'
+  >;
+  userMediaProcessor: UserMediaProcessor;
   clock: {
     now(): Date;
   };

@@ -15,6 +15,7 @@ import {
   CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
   CLEANUP_SESSION_SUCCESS_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
+  DELETE_AVATAR_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
@@ -24,6 +25,7 @@ import {
   RESET_PASSWORD_EMAIL_MESSAGE,
   RESET_PASSWORD_SUCCESS_MESSAGE,
   UPDATE_PROFILE_SUCCESS_MESSAGE,
+  UPLOAD_AVATAR_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
@@ -31,6 +33,8 @@ import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
 type AuthDeps = Parameters<typeof createAuthService>[0];
 
 const fixedNow = new Date('2026-01-01T00:00:00.000Z');
+const avatarObjectKeyPattern =
+  /^users\/user-id\/avatar\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webp$/;
 
 function createTestDeps(overrides: Partial<AuthDeps> = {}) {
   const calls = {
@@ -40,6 +44,10 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     userDeleteMany: undefined as unknown,
     userUpdate: undefined as unknown,
     userUpdateMany: undefined as unknown,
+    userMediaAssetDeleteMany: undefined as unknown,
+    userMediaAssetFindMany: undefined as unknown,
+    userMediaAssetFindUnique: undefined as unknown,
+    userMediaAssetUpsert: undefined as unknown,
     tokenCreate: undefined as unknown,
     tokenDeleteMany: undefined as unknown,
     tokenFindUnique: undefined as unknown,
@@ -54,6 +62,11 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     sessionUpdate: undefined as unknown,
     sessionUpdateMany: undefined as unknown,
     sessionDeleteMany: undefined as unknown,
+    putObject: undefined as unknown,
+    deleteObject: undefined as unknown,
+    deleteObjects: undefined as unknown,
+    signedUrlObjectKey: undefined as unknown,
+    processedMedia: undefined as unknown,
     comparedPassword: undefined as unknown,
     sentEmail: undefined as unknown,
     warning: undefined as unknown,
@@ -87,6 +100,42 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
         calls.userDeleteMany = args;
 
         return { count: 1 };
+      },
+    },
+    userMediaAsset: {
+      findUnique: async (args: unknown) => {
+        calls.userMediaAssetFindUnique = args;
+
+        return null;
+      },
+      upsert: async (args: unknown) => {
+        calls.userMediaAssetUpsert = args;
+        const upsertArgs = args as {
+          update?: {
+            objectKey?: string;
+            mimeType?: string;
+            sizeBytes?: number;
+            width?: number;
+            height?: number;
+          };
+          create?: {
+            objectKey?: string;
+            mimeType?: string;
+            sizeBytes?: number;
+            width?: number;
+            height?: number;
+          };
+        };
+        const data = upsertArgs.update ?? upsertArgs.create;
+
+        return {
+          objectKey: data?.objectKey ?? 'users/user-id/avatar/test-avatar.webp',
+          mimeType: data?.mimeType ?? 'image/webp',
+          sizeBytes: data?.sizeBytes ?? 6,
+          width: data?.width ?? 512,
+          height: data?.height ?? 512,
+          updatedAt: fixedNow,
+        };
       },
     },
     emailVerificationToken: {
@@ -228,6 +277,52 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
           };
         },
       },
+      userMediaAsset: {
+        deleteMany: async (args: unknown) => {
+          calls.userMediaAssetDeleteMany = args;
+
+          return { count: 1 };
+        },
+        findMany: async (args: unknown) => {
+          calls.userMediaAssetFindMany = args;
+
+          return [];
+        },
+        findUnique: async (args: unknown) => {
+          calls.userMediaAssetFindUnique = args;
+
+          return null;
+        },
+        upsert: async (args: unknown) => {
+          calls.userMediaAssetUpsert = args;
+          const upsertArgs = args as {
+            update?: {
+              objectKey?: string;
+              mimeType?: string;
+              sizeBytes?: number;
+              width?: number;
+              height?: number;
+            };
+            create?: {
+              objectKey?: string;
+              mimeType?: string;
+              sizeBytes?: number;
+              width?: number;
+              height?: number;
+            };
+          };
+          const data = upsertArgs.update ?? upsertArgs.create;
+
+          return {
+            objectKey: data?.objectKey ?? 'users/user-id/avatar/test-avatar.webp',
+            mimeType: data?.mimeType ?? 'image/webp',
+            sizeBytes: data?.sizeBytes ?? 6,
+            width: data?.width ?? 512,
+            height: data?.height ?? 512,
+            updatedAt: fixedNow,
+          };
+        },
+      },
       emailVerificationToken: {
         findUnique: async (args: unknown) => {
           calls.tokenFindUnique = args;
@@ -349,6 +444,35 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
       },
       sendPasswordResetEmail: async (email: string, token: string) => {
         calls.sentEmail = { email, token };
+      },
+    },
+    objectStorage: {
+      putObject: async (input: unknown) => {
+        calls.putObject = input;
+      },
+      deleteObject: async (objectKey: string) => {
+        calls.deleteObject = objectKey;
+      },
+      deleteObjects: async (objectKeys: readonly string[]) => {
+        calls.deleteObjects = objectKeys;
+      },
+      getSignedUrl: async (objectKey: string) => {
+        calls.signedUrlObjectKey = objectKey;
+
+        return `http://localhost:9000/fairplay-user-media/${objectKey}`;
+      },
+    },
+    userMediaProcessor: {
+      process: async (input: unknown) => {
+        calls.processedMedia = input;
+
+        return {
+          buffer: Buffer.from('avatar'),
+          mimeType: 'image/webp',
+          sizeBytes: 6,
+          width: 512,
+          height: 512,
+        };
       },
     },
     clock: {
@@ -1308,6 +1432,119 @@ describe('auth service', () => {
     });
   });
 
+  test('returns profile data with a signed avatar url', async () => {
+    const { deps, calls } = createTestDeps();
+    const avatarObjectKey = 'users/user-id/avatar/current-avatar.webp';
+    const service = createAuthService({
+      ...deps,
+      prisma: {
+        ...deps.prisma,
+        user: {
+          ...deps.prisma.user,
+          findUnique: async (args: unknown) => {
+            calls.userFindUnique = args;
+
+            return {
+              id: 'user-id',
+              email: 'user@example.com',
+              username: 'fairplay_user',
+              displayName: 'Fairplay User',
+              bio: 'Definitely not an undercover Y**tube employee.',
+              role: 'user',
+              mediaAssets: [
+                {
+                  objectKey: avatarObjectKey,
+                },
+              ],
+            };
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+
+    await expect(
+      service.getProfile({
+        userId: 'user-id',
+      }),
+    ).resolves.toEqual({
+      user: {
+        id: 'user-id',
+        email: 'user@example.com',
+        username: 'fairplay_user',
+        displayName: 'Fairplay User',
+        bio: 'Definitely not an undercover Y**tube employee.',
+        role: 'user',
+        avatarUrl: `http://localhost:9000/fairplay-user-media/${avatarObjectKey}`,
+      },
+    });
+
+    expect(calls.userFindUnique).toEqual({
+      where: { id: 'user-id' },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        displayName: true,
+        bio: true,
+        role: true,
+        mediaAssets: {
+          where: {
+            kind: 'avatar',
+          },
+          select: {
+            objectKey: true,
+          },
+          take: 1,
+        },
+      },
+    });
+    expect(calls.signedUrlObjectKey).toBe(avatarObjectKey);
+  });
+
+  test('returns profile data with a null avatar url when no avatar exists', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService({
+      ...deps,
+      prisma: {
+        ...deps.prisma,
+        user: {
+          ...deps.prisma.user,
+          findUnique: async (args: unknown) => {
+            calls.userFindUnique = args;
+
+            return {
+              id: 'user-id',
+              email: 'user@example.com',
+              username: 'fairplay_user',
+              displayName: 'Fairplay User',
+              bio: null,
+              role: 'user',
+              mediaAssets: [],
+            };
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+
+    await expect(
+      service.getProfile({
+        userId: 'user-id',
+      }),
+    ).resolves.toEqual({
+      user: {
+        id: 'user-id',
+        email: 'user@example.com',
+        username: 'fairplay_user',
+        displayName: 'Fairplay User',
+        bio: null,
+        role: 'user',
+        avatarUrl: null,
+      },
+    });
+
+    expect(calls.signedUrlObjectKey).toBeUndefined();
+  });
+
   test('updates profile fields for a user', async () => {
     const { deps, calls } = createTestDeps();
     const service = createAuthService(deps);
@@ -1345,6 +1582,318 @@ describe('auth service', () => {
         role: true,
       },
     });
+  });
+
+  test('uploads and stores a normalized avatar for a user', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    const result = await service.uploadAvatar({
+      userId: 'user-id',
+      file: {
+        buffer: Buffer.from('raw-avatar'),
+        size: 10,
+      },
+    });
+    const objectKey = calls.signedUrlObjectKey as string;
+
+    expect(objectKey).toMatch(avatarObjectKeyPattern);
+    expect(result).toEqual({
+      message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
+      avatar: {
+        url: `http://localhost:9000/fairplay-user-media/${objectKey}`,
+        mimeType: 'image/webp',
+        sizeBytes: 6,
+        width: 512,
+        height: 512,
+        updatedAt: fixedNow,
+      },
+    });
+
+    expect(calls.processedMedia).toEqual({
+      kind: 'avatar',
+      file: {
+        buffer: Buffer.from('raw-avatar'),
+        size: 10,
+      },
+    });
+    expect(calls.putObject).toEqual({
+      objectKey,
+      body: Buffer.from('avatar'),
+      contentType: 'image/webp',
+      cacheControl: 'private, max-age=900',
+    });
+    expect(calls.userMediaAssetFindUnique).toEqual({
+      where: {
+        userId_kind: {
+          userId: 'user-id',
+          kind: 'avatar',
+        },
+      },
+      select: {
+        objectKey: true,
+      },
+    });
+    expect(calls.userMediaAssetUpsert).toEqual({
+      where: {
+        userId_kind: {
+          userId: 'user-id',
+          kind: 'avatar',
+        },
+      },
+      update: {
+        objectKey,
+        mimeType: 'image/webp',
+        sizeBytes: 6,
+        width: 512,
+        height: 512,
+      },
+      create: {
+        userId: 'user-id',
+        kind: 'avatar',
+        objectKey,
+        mimeType: 'image/webp',
+        sizeBytes: 6,
+        width: 512,
+        height: 512,
+      },
+      select: {
+        objectKey: true,
+        mimeType: true,
+        sizeBytes: true,
+        width: true,
+        height: true,
+        updatedAt: true,
+      },
+    });
+  });
+
+  test('deletes the previous avatar object after replacing it', async () => {
+    const previousObjectKey = 'users/user-id/avatar/previous-avatar.webp';
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        $transaction: async (callback: (transaction: unknown) => Promise<unknown>) =>
+          callback({
+            userMediaAsset: {
+              findUnique: async (args: unknown) => {
+                calls.userMediaAssetFindUnique = args;
+
+                return {
+                  objectKey: previousObjectKey,
+                };
+              },
+              upsert: async (args: unknown) => {
+                calls.userMediaAssetUpsert = args;
+                const upsertArgs = args as {
+                  update: {
+                    objectKey: string;
+                    mimeType: string;
+                    sizeBytes: number;
+                    width: number;
+                    height: number;
+                  };
+                };
+
+                return {
+                  ...upsertArgs.update,
+                  updatedAt: fixedNow,
+                };
+              },
+            },
+          }),
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+
+    const result = await service.uploadAvatar({
+      userId: 'user-id',
+      file: {
+        buffer: Buffer.from('raw-avatar'),
+        size: 10,
+      },
+    });
+
+    expect(result.message).toBe(UPLOAD_AVATAR_SUCCESS_MESSAGE);
+    expect(calls.signedUrlObjectKey).toMatch(avatarObjectKeyPattern);
+    expect(calls.deleteObject).toBe(previousObjectKey);
+  });
+
+  test('retries avatar persistence on serializable transaction conflicts', async () => {
+    const conflictError = new Prisma.PrismaClientKnownRequestError('Transaction conflict', {
+      code: 'P2034',
+      clientVersion: 'test',
+    });
+    const previousObjectKey = 'users/user-id/avatar/previous-after-conflict.webp';
+    const transactionOptions: unknown[] = [];
+    let transactionAttempts = 0;
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        $transaction: async (
+          callback: (transaction: unknown) => Promise<unknown>,
+          options?: unknown,
+        ) => {
+          transactionAttempts += 1;
+          transactionOptions.push(options);
+
+          if (transactionAttempts === 1) {
+            throw conflictError;
+          }
+
+          return callback({
+            userMediaAsset: {
+              findUnique: async (args: unknown) => {
+                calls.userMediaAssetFindUnique = args;
+
+                return {
+                  objectKey: previousObjectKey,
+                };
+              },
+              upsert: async (args: unknown) => {
+                calls.userMediaAssetUpsert = args;
+                const upsertArgs = args as {
+                  update: {
+                    objectKey: string;
+                    mimeType: string;
+                    sizeBytes: number;
+                    width: number;
+                    height: number;
+                  };
+                };
+
+                return {
+                  ...upsertArgs.update,
+                  updatedAt: fixedNow,
+                };
+              },
+            },
+          });
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+
+    const result = await service.uploadAvatar({
+      userId: 'user-id',
+      file: {
+        buffer: Buffer.from('raw-avatar'),
+        size: 10,
+      },
+    });
+
+    expect(result.message).toBe(UPLOAD_AVATAR_SUCCESS_MESSAGE);
+    expect(transactionAttempts).toBe(2);
+    expect(transactionOptions).toEqual([
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    ]);
+    expect(calls.deleteObject).toBe(previousObjectKey);
+    expect(calls.signedUrlObjectKey).toMatch(avatarObjectKeyPattern);
+  });
+
+  test('cleans up the uploaded avatar object when persistence fails', async () => {
+    const persistenceError = new Error('database unavailable');
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        $transaction: async () => {
+          throw persistenceError;
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.uploadAvatar({
+        userId: 'user-id',
+        file: {
+          buffer: Buffer.from('raw-avatar'),
+          size: 10,
+        },
+      }),
+    ).rejects.toBe(persistenceError);
+
+    const uploadedObjectKey = (calls.putObject as { objectKey: string }).objectKey;
+    expect(uploadedObjectKey).toMatch(avatarObjectKeyPattern);
+    expect(calls.deleteObject).toBe(uploadedObjectKey);
+  });
+
+  test('deletes an existing avatar for a user', async () => {
+    const objectKey = 'users/user-id/avatar/current-avatar.webp';
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        userMediaAsset: {
+          findUnique: async (args: unknown) => {
+            calls.userMediaAssetFindUnique = args;
+
+            return {
+              objectKey,
+            };
+          },
+          deleteMany: async (args: unknown) => {
+            calls.userMediaAssetDeleteMany = args;
+
+            return { count: 1 };
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.deleteAvatar({
+        userId: 'user-id',
+      }),
+    ).resolves.toEqual({
+      message: DELETE_AVATAR_SUCCESS_MESSAGE,
+      avatar: null,
+    });
+
+    expect(calls.userMediaAssetFindUnique).toEqual({
+      where: {
+        userId_kind: {
+          userId: 'user-id',
+          kind: 'avatar',
+        },
+      },
+      select: {
+        objectKey: true,
+      },
+    });
+    expect(calls.deleteObject).toBe(objectKey);
+    expect(calls.userMediaAssetDeleteMany).toEqual({
+      where: {
+        userId: 'user-id',
+        kind: 'avatar',
+        objectKey,
+      },
+    });
+  });
+
+  test('keeps avatar deletion idempotent when no avatar exists', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await expect(
+      service.deleteAvatar({
+        userId: 'user-id',
+      }),
+    ).resolves.toEqual({
+      message: DELETE_AVATAR_SUCCESS_MESSAGE,
+      avatar: null,
+    });
+
+    expect(calls.userMediaAssetFindUnique).toEqual({
+      where: {
+        userId_kind: {
+          userId: 'user-id',
+          kind: 'avatar',
+        },
+      },
+      select: {
+        objectKey: true,
+      },
+    });
+    expect(calls.deleteObject).toBeUndefined();
+    expect(calls.userMediaAssetDeleteMany).toBeUndefined();
   });
 
   test('exports user data without selecting secret fields', async () => {
@@ -1487,6 +2036,84 @@ describe('auth service', () => {
     expect(calls.passwordResetTokenDeleteMany).toEqual({
       where: { userId: 'user-id' },
     });
+    expect(calls.userDeleteMany).toEqual({
+      where: { id: 'user-id' },
+    });
+  });
+
+  test('deletes stored media objects before deleting an account', async () => {
+    const events: string[] = [];
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        userMediaAsset: {
+          findMany: async (args: unknown) => {
+            calls.userMediaAssetFindMany = args;
+
+            return [
+              { objectKey: 'users/user-id/avatar/current-avatar.webp' },
+              { objectKey: 'users/user-id/banner/current-banner.webp' },
+            ];
+          },
+        },
+        $transaction: async (callback: (transaction: unknown) => Promise<unknown>) => {
+          events.push('transaction');
+
+          return callback({
+            session: {
+              deleteMany: async (args: unknown) => {
+                calls.sessionDeleteMany = args;
+              },
+            },
+            emailVerificationToken: {
+              deleteMany: async (args: unknown) => {
+                calls.tokenDeleteMany = args;
+              },
+            },
+            passwordResetToken: {
+              deleteMany: async (args: unknown) => {
+                calls.passwordResetTokenDeleteMany = args;
+              },
+            },
+            user: {
+              deleteMany: async (args: unknown) => {
+                calls.userDeleteMany = args;
+              },
+            },
+          });
+        },
+      } as unknown as AuthDeps['prisma'],
+      objectStorage: {
+        putObject: async () => undefined,
+        deleteObject: async () => undefined,
+        deleteObjects: async (objectKeys: readonly string[]) => {
+          events.push('deleteObjects');
+          calls.deleteObjects = objectKeys;
+        },
+        getSignedUrl: async (objectKey: string) =>
+          `http://localhost:9000/fairplay-user-media/${objectKey}`,
+      },
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.deleteAccount({
+        userId: 'user-id',
+      }),
+    ).resolves.toEqual({
+      message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+    });
+
+    expect(calls.userMediaAssetFindMany).toEqual({
+      where: { userId: 'user-id' },
+      select: {
+        objectKey: true,
+      },
+    });
+    expect(calls.deleteObjects).toEqual([
+      'users/user-id/avatar/current-avatar.webp',
+      'users/user-id/banner/current-banner.webp',
+    ]);
+    expect(events).toEqual(['deleteObjects', 'transaction']);
     expect(calls.userDeleteMany).toEqual({
       where: { id: 'user-id' },
     });

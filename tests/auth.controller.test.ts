@@ -15,6 +15,7 @@ import { HttpError } from '../src/errors/http.js';
 import { UserAlreadyExistsError } from '../src/services/auth.errors.js';
 import {
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
+  DELETE_AVATAR_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
@@ -24,6 +25,7 @@ import {
   RESET_PASSWORD_EMAIL_MESSAGE,
   RESET_PASSWORD_SUCCESS_MESSAGE,
   UPDATE_PROFILE_SUCCESS_MESSAGE,
+  UPLOAD_AVATAR_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
 import type { AuthService } from '../src/services/auth.types.js';
@@ -139,6 +141,13 @@ const createControllerAuthService = (
   verifyEmail: async () => verifyEmailResult,
   validateSession: async () => validatedSession,
   resendVerification: async () => ({ message: RESEND_VERIFICATION_EMAIL_MESSAGE }),
+  getProfile: async () => ({
+    user: {
+      ...loginResult.user,
+      avatarUrl:
+        'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+    },
+  }),
   getUserSessions: async () => userSessionsResult,
   logoutAllSessions: async () => ({
     message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
@@ -155,6 +164,21 @@ const createControllerAuthService = (
   updateProfile: async () => ({
     message: UPDATE_PROFILE_SUCCESS_MESSAGE,
     user: loginResult.user,
+  }),
+  uploadAvatar: async () => ({
+    message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
+    avatar: {
+      url: 'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+      mimeType: 'image/webp',
+      sizeBytes: 1234,
+      width: 512,
+      height: 512,
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    },
+  }),
+  deleteAvatar: async () => ({
+    message: DELETE_AVATAR_SUCCESS_MESSAGE,
+    avatar: null,
   }),
   requestPasswordReset: async () => ({ message: RESET_PASSWORD_EMAIL_MESSAGE }),
   resetPassword: async () => ({
@@ -400,21 +424,43 @@ describe('auth controller', () => {
     });
   });
 
-  test('returns the authenticated user profile from request context', () => {
+  test('returns the authenticated user profile from the auth service', async () => {
+    let receivedInput: { userId: string } | undefined;
+    let receivedError: unknown;
     const { response, state } = createMockResponse();
-    const controller = createTestAuthController();
+    const profileUser = {
+      ...validatedSession.user,
+      avatarUrl:
+        'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+    };
+    const controller = createTestAuthController({
+      getProfile: async (input) => {
+        receivedInput = input;
 
-    controller.me(
+        return {
+          user: profileUser,
+        };
+      },
+    });
+
+    await controller.me(
       {
         user: validatedSession.user,
         session: validatedSession.session,
       } as AuthenticatedRequest,
       response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
     );
 
+    expect(receivedInput).toEqual({
+      userId: validatedSession.user.id,
+    });
+    expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
-      user: validatedSession.user,
+      user: profileUser,
       session: {
         id: validatedSession.session.id,
         expiresAt: '2026-01-31T00:00:00.000Z',
@@ -590,6 +636,111 @@ describe('auth controller', () => {
     expect(state.body).toEqual({
       message: UPDATE_PROFILE_SUCCESS_MESSAGE,
       user: updatedUser,
+    });
+  });
+
+  test('uploads an authenticated user avatar through the injected auth service', async () => {
+    let receivedInput:
+      | {
+          userId: string;
+          file: {
+            buffer: Buffer;
+            size: number;
+          };
+        }
+      | undefined;
+    let receivedError: unknown;
+    const { response, state } = createMockResponse();
+    const fileBuffer = Buffer.from('raw-avatar');
+    const controller = createTestAuthController({
+      uploadAvatar: async (input) => {
+        receivedInput = input;
+
+        return {
+          message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
+          avatar: {
+            url: 'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+            mimeType: 'image/webp',
+            sizeBytes: 1234,
+            width: 512,
+            height: 512,
+            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
+        };
+      },
+    });
+
+    await controller.uploadAvatar(
+      {
+        file: {
+          buffer: fileBuffer,
+          size: fileBuffer.length,
+        },
+        user: validatedSession.user,
+        session: validatedSession.session,
+      } as AuthenticatedRequest,
+      response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedInput).toEqual({
+      userId: validatedSession.user.id,
+      file: {
+        buffer: fileBuffer,
+        size: fileBuffer.length,
+      },
+    });
+    expect(receivedError).toBeUndefined();
+    expect(state.statusCode).toBe(200);
+    expect(state.body).toEqual({
+      message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
+      avatar: {
+        url: 'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+        mimeType: 'image/webp',
+        sizeBytes: 1234,
+        width: 512,
+        height: 512,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+  });
+
+  test('deletes an authenticated user avatar through the injected auth service', async () => {
+    let receivedInput: { userId: string } | undefined;
+    let receivedError: unknown;
+    const { response, state } = createMockResponse();
+    const controller = createTestAuthController({
+      deleteAvatar: async (input) => {
+        receivedInput = input;
+
+        return {
+          message: DELETE_AVATAR_SUCCESS_MESSAGE,
+          avatar: null,
+        };
+      },
+    });
+
+    await controller.deleteAvatar(
+      {
+        user: validatedSession.user,
+        session: validatedSession.session,
+      } as AuthenticatedRequest,
+      response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedInput).toEqual({
+      userId: validatedSession.user.id,
+    });
+    expect(receivedError).toBeUndefined();
+    expect(state.statusCode).toBe(200);
+    expect(state.body).toEqual({
+      message: DELETE_AVATAR_SUCCESS_MESSAGE,
+      avatar: null,
     });
   });
 

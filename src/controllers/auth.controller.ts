@@ -17,6 +17,7 @@ import type {
   AuthSessionResult,
   ExportUserDataResult,
   ListUserSessionsResult,
+  UserMediaAssetResult,
 } from '../services/auth.types.js';
 
 type AuthControllerDependencies = {
@@ -42,11 +43,6 @@ const toAuthSessionResponse = (result: AuthSessionResult) => ({
   user: result.user,
   sessionKey: result.sessionKey,
   session: toSessionResponse(result.session),
-});
-
-const toAuthenticatedSessionResponse = (req: AuthenticatedRequest) => ({
-  user: req.user,
-  session: toSessionResponse(req.session),
 });
 
 const toUserSessionsResponse = ({ sessions, total, nextCursor }: ListUserSessionsResult) => ({
@@ -102,6 +98,11 @@ const toUserDataExportResponse = (result: ExportUserDataResult) => ({
 });
 
 const toPrettyJson = (body: unknown): string => JSON.stringify(body, null, 2) + '\n';
+
+const toUserMediaAssetResponse = (asset: UserMediaAssetResult) => ({
+  ...asset,
+  updatedAt: toIsoString(asset.updatedAt),
+});
 
 export const createAuthController = (deps: AuthControllerDependencies) => {
   const register = async (
@@ -174,8 +175,20 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     }
   };
 
-  const me = (req: Request, res: Response) => {
-    return res.status(200).json(toAuthenticatedSessionResponse(req as AuthenticatedRequest));
+  const me = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const result = await deps.authService.getProfile({
+        userId: authenticatedReq.user.id,
+      });
+
+      return res.status(200).json({
+        user: result.user,
+        session: toSessionResponse(authenticatedReq.session),
+      });
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
   };
 
   const exportMe = async (req: Request, res: Response, next: NextFunction) => {
@@ -313,6 +326,48 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     }
   };
 
+  const uploadAvatar = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const file = req.file;
+      const result = await deps.authService.uploadAvatar({
+        userId: authenticatedReq.user.id,
+        file: file
+          ? {
+              buffer: file.buffer,
+              size: file.size,
+            }
+          : {
+              buffer: Buffer.alloc(0),
+              size: 0,
+            },
+      });
+
+      return res.status(200).json({
+        message: result.message,
+        avatar: toUserMediaAssetResponse(result.avatar),
+      });
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
+  };
+
+  const deleteAvatar = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const result = await deps.authService.deleteAvatar({
+        userId: authenticatedReq.user.id,
+      });
+
+      return res.status(200).json({
+        message: result.message,
+        avatar: result.avatar,
+      });
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
+  };
+
   const requestPasswordReset = async (
     req: Request<unknown, unknown, RequestPasswordResetRequestBody>,
     res: Response,
@@ -366,6 +421,8 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     exportMe,
     deleteMe,
     updateMe,
+    uploadAvatar,
+    deleteAvatar,
     sessions,
     logoutAll,
     logoutOthers,

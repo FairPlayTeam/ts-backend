@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import config from './config/env.js';
 import { createApp } from './app.js';
 import { authService } from './auth.instance.js';
+import { objectStorage } from './objectStorage.instance.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 import { closeRedisClient, createRedisClient, connectRedisClient } from './lib/redis.js';
@@ -28,6 +29,14 @@ if (redisClient && config.redisUrl) {
   }
 }
 
+type ConfiguredObjectStorage = NonNullable<typeof objectStorage>;
+
+const createObjectStorageReadinessCheck = (storage: ConfiguredObjectStorage) => ({
+  objectStorage: async (): Promise<void> => {
+    await storage.checkReady();
+  },
+});
+
 const readinessChecks = {
   database: async (): Promise<void> => {
     await prisma.$queryRaw`SELECT 1`;
@@ -37,6 +46,7 @@ const readinessChecks = {
       await redisClient.ping();
     },
   }),
+  ...(objectStorage ? createObjectStorageReadinessCheck(objectStorage) : {}),
 };
 
 const app = await createApp(config, { authService, redisClient, readinessChecks });

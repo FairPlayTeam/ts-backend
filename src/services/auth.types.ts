@@ -16,6 +16,10 @@ export type AuthUser = {
   role: AuthRole;
 };
 
+export type AuthUserProfile = AuthUser & {
+  avatarUrl: string | null;
+};
+
 export type RegisterInput = {
   email: string;
   username: string;
@@ -43,6 +47,31 @@ export type UpdateProfileInput = {
   userId: string;
   displayName?: string | null | undefined;
   bio?: string | null | undefined;
+};
+
+export type GetProfileInput = {
+  userId: string;
+};
+
+export type UploadAvatarInput = {
+  userId: string;
+  file: {
+    buffer: Buffer;
+    size: number;
+  };
+};
+
+export type DeleteAvatarInput = {
+  userId: string;
+};
+
+export type UserMediaAssetResult = {
+  url: string;
+  mimeType: string;
+  sizeBytes: number;
+  width: number;
+  height: number;
+  updatedAt: Date;
 };
 
 export type ExportUserDataInput = {
@@ -188,6 +217,7 @@ export type AuthService = {
   verifyEmail(input: VerifyEmailInput): Promise<AuthSessionResult>;
   validateSession(sessionKey: string): Promise<ValidatedAuthSession | null>;
   resendVerification(input: ResendVerificationInput): Promise<{ message: string }>;
+  getProfile(input: GetProfileInput): Promise<{ user: AuthUserProfile }>;
   getUserSessions(input: ListUserSessionsInput): Promise<ListUserSessionsResult>;
   logoutAllSessions(
     input: LogoutAllSessionsInput,
@@ -197,6 +227,14 @@ export type AuthService = {
   ): Promise<{ message: string; sessionsLoggedOut: number }>;
   logoutSession(input: LogoutSessionInput): Promise<{ message: string; sessionsLoggedOut: number }>;
   updateProfile(input: UpdateProfileInput): Promise<{ message: string; user: AuthUser }>;
+  uploadAvatar(input: UploadAvatarInput): Promise<{
+    message: string;
+    avatar: UserMediaAssetResult;
+  }>;
+  deleteAvatar(input: DeleteAvatarInput): Promise<{
+    message: string;
+    avatar: null;
+  }>;
   cleanupSessions(input: CleanupSessionsInput): Promise<CleanupSessionsResult>;
   cleanupExpiredAuthTokens(
     input: CleanupExpiredAuthTokensInput,

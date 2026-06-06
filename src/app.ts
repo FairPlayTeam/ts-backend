@@ -28,6 +28,7 @@ import {
 type CreateAppConfig = Pick<
   Config,
   | 'allowedOrigins'
+  | 'avatarMaxUploadBytes'
   | 'baseUrl'
   | 'isProduction'
   | 'jsonBodyLimitBytes'
@@ -44,6 +45,7 @@ type CreateAppDependencies = {
 type ReadinessChecks = {
   database(): Promise<void>;
   redis?(): Promise<void>;
+  objectStorage?(): Promise<void>;
 };
 
 const getRequestId = (rawRequestId: string | string[] | undefined): string => {
@@ -190,6 +192,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     new URL('./routes/', import.meta.url),
     {
       authService: deps.authService,
+      avatarMaxUploadBytes: config.avatarMaxUploadBytes,
       authLimiter,
       registrationIdentifierLimiter,
       loginIdentifierLimiter,

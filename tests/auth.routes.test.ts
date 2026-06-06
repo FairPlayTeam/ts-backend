@@ -13,24 +13,30 @@ import {
   ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
   ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
+  DELETE_AVATAR_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_SESSION_SUCCESS_MESSAGE,
   RESEND_VERIFICATION_EMAIL_MESSAGE,
   RESET_PASSWORD_EMAIL_MESSAGE,
   UPDATE_PROFILE_SUCCESS_MESSAGE,
+  UPLOAD_AVATAR_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
+import { UPLOAD_FILE_TOO_LARGE_MESSAGE } from '../src/middleware/upload.js';
 import { createStubAuthService } from './support/auth.js';
 
 let server: Server;
 let baseUrl: string;
 let receivedSessionKey: string | undefined;
+let receivedProfileRequest: unknown;
 let receivedProfileUpdate: unknown;
 let receivedResendVerificationRequest: unknown;
 let receivedPasswordResetRequest: unknown;
 let receivedGetSessionsRequest: unknown;
 let receivedExportUserDataRequest: unknown;
 let receivedDeleteAccountRequest: unknown;
+let receivedAvatarUpload: unknown;
+let receivedAvatarDeletion: unknown;
 
 describe('auth routes', () => {
   beforeAll(async () => {
@@ -38,6 +44,7 @@ describe('auth routes', () => {
     const app = await createApp(
       {
         allowedOrigins: [],
+        avatarMaxUploadBytes: 3 * 1024 * 1024,
         baseUrl: 'http://localhost:3000/',
         isProduction: false,
         jsonBodyLimitBytes: 1024 * 1024,
@@ -51,9 +58,21 @@ describe('auth routes', () => {
             receivedSessionKey = sessionKey;
             return authService.validateSession(sessionKey);
           },
+          getProfile: async (input) => {
+            receivedProfileRequest = input;
+            return authService.getProfile(input);
+          },
           updateProfile: async (input) => {
             receivedProfileUpdate = input;
             return authService.updateProfile(input);
+          },
+          uploadAvatar: async (input) => {
+            receivedAvatarUpload = input;
+            return authService.uploadAvatar(input);
+          },
+          deleteAvatar: async (input) => {
+            receivedAvatarDeletion = input;
+            return authService.deleteAvatar(input);
           },
           resendVerification: async (input) => {
             receivedResendVerificationRequest = input;
@@ -104,6 +123,7 @@ describe('auth routes', () => {
 
   test('returns the current user for a valid bearer session', async () => {
     receivedSessionKey = undefined;
+    receivedProfileRequest = undefined;
 
     const response = await fetch(`${baseUrl}/auth/me`, {
       headers: {
@@ -114,6 +134,9 @@ describe('auth routes', () => {
     expect(response.status).toBe(200);
     const observedSessionKey = receivedSessionKey as string | undefined;
     expect(observedSessionKey).toBe('test-session-key');
+    expect(receivedProfileRequest).toEqual({
+      userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+    });
     expect(await response.json()).toEqual({
       user: {
         id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
@@ -122,6 +145,8 @@ describe('auth routes', () => {
         displayName: 'Fairplay User',
         bio: 'Definitely not an undercover Y**tube employee.',
         role: 'user',
+        avatarUrl:
+          'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
       },
       session: {
         id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
@@ -304,6 +329,114 @@ describe('auth routes', () => {
       body: JSON.stringify({
         displayName: 'Updated Name',
       }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: 'Unauthorized',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+  });
+
+  test('uploads the current user avatar for a valid bearer session', async () => {
+    receivedAvatarUpload = undefined;
+    const avatarBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const form = new FormData();
+    form.append('avatar', new Blob([avatarBytes], { type: 'image/png' }), 'avatar.png');
+
+    const response = await fetch(`${baseUrl}/auth/me/avatar`, {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+      body: form,
+    });
+
+    expect(response.status).toBe(200);
+    expect(receivedAvatarUpload).toEqual({
+      userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      file: {
+        buffer: avatarBytes,
+        size: avatarBytes.length,
+      },
+    });
+    expect(await response.json()).toEqual({
+      message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
+      avatar: {
+        url: 'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+        mimeType: 'image/webp',
+        sizeBytes: 1234,
+        width: 512,
+        height: 512,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+  });
+
+  test('rejects avatar uploads larger than the HTTP upload limit', async () => {
+    receivedAvatarUpload = undefined;
+    const form = new FormData();
+    form.append(
+      'avatar',
+      new Blob([new Uint8Array(3 * 1024 * 1024 + 1)], { type: 'image/png' }),
+      'avatar.png',
+    );
+
+    const response = await fetch(`${baseUrl}/auth/me/avatar`, {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+      body: form,
+    });
+
+    expect(response.status).toBe(413);
+    expect(receivedAvatarUpload).toBeUndefined();
+    expect(await response.json()).toEqual({
+      error: 'PayloadTooLarge',
+      message: UPLOAD_FILE_TOO_LARGE_MESSAGE,
+    });
+  });
+
+  test('requires a bearer session to upload an avatar', async () => {
+    const form = new FormData();
+    form.append('avatar', new Blob([Buffer.from('avatar')], { type: 'image/png' }), 'avatar.png');
+
+    const response = await fetch(`${baseUrl}/auth/me/avatar`, {
+      method: 'PUT',
+      body: form,
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: 'Unauthorized',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+  });
+
+  test('deletes the current user avatar for a valid bearer session', async () => {
+    receivedAvatarDeletion = undefined;
+
+    const response = await fetch(`${baseUrl}/auth/me/avatar`, {
+      method: 'DELETE',
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(receivedAvatarDeletion).toEqual({
+      userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+    });
+    expect(await response.json()).toEqual({
+      message: DELETE_AVATAR_SUCCESS_MESSAGE,
+      avatar: null,
+    });
+  });
+
+  test('requires a bearer session to delete an avatar', async () => {
+    const response = await fetch(`${baseUrl}/auth/me/avatar`, {
+      method: 'DELETE',
     });
 
     expect(response.status).toBe(401);

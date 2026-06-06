@@ -12,6 +12,11 @@ enum UserRole {
   admin
 }
 
+enum UserMediaKind {
+  avatar
+  banner
+}
+
 model User {
   id           String    @id @default(uuid()) @db.Uuid
   email        String    @unique @db.VarChar(254)
@@ -31,8 +36,27 @@ model User {
 
   emailVerificationTokens EmailVerificationToken[]
   passwordResetToken      PasswordResetToken?
+  mediaAssets             UserMediaAsset[]
 
   @@map("users")
+}
+
+model UserMediaAsset {
+  id        String        @id @default(uuid()) @db.Uuid
+  userId    String        @map("user_id") @db.Uuid
+  kind      UserMediaKind
+  objectKey String        @unique @map("object_key") @db.VarChar(512)
+  mimeType  String        @map("mime_type") @db.VarChar(100)
+  sizeBytes Int           @map("size_bytes")
+  width     Int
+  height    Int
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind])
+  @@map("user_media_assets")
 }
 
 model EmailVerificationToken {

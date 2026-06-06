@@ -129,6 +129,22 @@ const createIntegrationAuthService = (
         delivered.passwordReset.push({ email, token });
       },
     },
+    objectStorage: {
+      putObject: async () => undefined,
+      deleteObject: async () => undefined,
+      deleteObjects: async () => undefined,
+      getSignedUrl: async () =>
+        'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+    },
+    userMediaProcessor: {
+      process: async () => ({
+        buffer: Buffer.from('avatar'),
+        mimeType: 'image/webp',
+        sizeBytes: 6,
+        width: 512,
+        height: 512,
+      }),
+    },
     clock: {
       now: () => new Date(),
     },
@@ -147,6 +163,7 @@ const createIntegrationApp = async (runtime: TestRuntime) =>
   createApp(
     {
       allowedOrigins: [],
+      avatarMaxUploadBytes: 3 * 1024 * 1024,
       baseUrl: 'http://localhost:3000',
       isProduction: false,
       jsonBodyLimitBytes: 1024 * 1024,

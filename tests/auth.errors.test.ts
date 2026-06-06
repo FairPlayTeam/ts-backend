@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { toAuthHttpError } from '../src/controllers/auth.errors.js';
 import { HttpError } from '../src/errors/http.js';
+import { ObjectStorageUnavailableError } from '../src/lib/objectStorage.js';
 import {
   AccountBannedError,
   InvalidEmailVerificationTokenError,
@@ -10,6 +11,10 @@ import {
   PasswordResetStateChangedError,
   UserAlreadyExistsError,
 } from '../src/services/auth.errors.js';
+import {
+  UserMediaFileTooLargeError,
+  UserMediaUnsupportedTypeError,
+} from '../src/services/userMedia/userMedia.errors.js';
 
 describe('auth error mapping', () => {
   test('maps duplicate users to an HTTP conflict', () => {
@@ -66,6 +71,30 @@ describe('auth error mapping', () => {
     expect(error).toBeInstanceOf(HttpError);
     expect((error as HttpError).statusCode).toBe(409);
     expect((error as HttpError).code).toBe('Conflict');
+  });
+
+  test('maps oversized user media files to payload too large', () => {
+    const error = toAuthHttpError(new UserMediaFileTooLargeError());
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).statusCode).toBe(413);
+    expect((error as HttpError).code).toBe('PayloadTooLarge');
+  });
+
+  test('maps invalid user media files to bad request', () => {
+    const error = toAuthHttpError(new UserMediaUnsupportedTypeError());
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).statusCode).toBe(400);
+    expect((error as HttpError).code).toBe('BadRequest');
+  });
+
+  test('maps unavailable object storage to service unavailable', () => {
+    const error = toAuthHttpError(new ObjectStorageUnavailableError());
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).statusCode).toBe(503);
+    expect((error as HttpError).code).toBe('ServiceUnavailable');
   });
 
   test('passes through unknown application errors for the global handler', () => {

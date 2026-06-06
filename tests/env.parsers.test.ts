@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import {
   ServerConfigurationError,
+  parseAvatarMaxUploadBytes,
   parseAllowedOrigins,
   parseIsProduction,
   parseJsonBodyLimitBytes,
   parseMailerConfig,
+  parseOptionalObjectStorageConfig,
   parseOptionalRedisUrl,
   parseRateLimitKeySecret,
+  parseRequiredHttpOriginUrl,
   parseRequiredHttpUrl,
   parseSessionCleanupInactiveRetentionMs,
   parseSessionCleanupIntervalMs,
@@ -35,6 +38,21 @@ describe('env parsers', () => {
     );
   });
 
+  test('normalizes required HTTP origin URLs', () => {
+    expect(parseRequiredHttpOriginUrl('http://localhost:9000', 'OBJECT_STORAGE_ENDPOINT')).toBe(
+      'http://localhost:9000',
+    );
+    expect(parseRequiredHttpOriginUrl('https://s3.example.com/', 'OBJECT_STORAGE_ENDPOINT')).toBe(
+      'https://s3.example.com',
+    );
+    expect(() =>
+      parseRequiredHttpOriginUrl('https://s3.example.com/path', 'OBJECT_STORAGE_ENDPOINT'),
+    ).toThrow(ServerConfigurationError);
+    expect(() =>
+      parseRequiredHttpOriginUrl('ftp://s3.example.com', 'OBJECT_STORAGE_ENDPOINT'),
+    ).toThrow(ServerConfigurationError);
+  });
+
   test('parses optional Redis URLs', () => {
     expect(parseOptionalRedisUrl(undefined, 'REDIS_URL')).toBeNull();
     expect(parseOptionalRedisUrl('redis://localhost:6379', 'REDIS_URL')).toBe(
@@ -61,6 +79,12 @@ describe('env parsers', () => {
   test('parses JSON body limit bytes', () => {
     expect(parseJsonBodyLimitBytes('2048')).toBe(2048);
     expect(() => parseJsonBodyLimitBytes('1mb')).toThrow(ServerConfigurationError);
+  });
+
+  test('parses avatar upload size limits', () => {
+    expect(parseAvatarMaxUploadBytes(undefined)).toBe(3 * 1024 * 1024);
+    expect(parseAvatarMaxUploadBytes('2048')).toBe(2048);
+    expect(() => parseAvatarMaxUploadBytes('0')).toThrow(ServerConfigurationError);
   });
 
   test('parses session cleanup intervals', () => {
@@ -152,5 +176,107 @@ describe('env parsers', () => {
       smtpFrom: 'no-reply@example.com',
       frontendUrl: 'http://localhost:5173/',
     });
+  });
+
+  test('parses optional object storage configuration', () => {
+    expect(
+      parseOptionalObjectStorageConfig({
+        endpoint: undefined,
+        publicUrl: undefined,
+        region: undefined,
+        bucket: undefined,
+        accessKey: undefined,
+        secretKey: undefined,
+        signedUrlTtlSeconds: undefined,
+      }),
+    ).toBeNull();
+
+    expect(() =>
+      parseOptionalObjectStorageConfig({
+        endpoint: 'http://localhost:9000',
+        publicUrl: undefined,
+        region: undefined,
+        bucket: undefined,
+        accessKey: 'fairplay',
+        secretKey: undefined,
+        signedUrlTtlSeconds: undefined,
+      }),
+    ).toThrow(ServerConfigurationError);
+
+    expect(
+      parseOptionalObjectStorageConfig({
+        endpoint: 'http://localhost:9000',
+        publicUrl: 'http://localhost:9000',
+        region: undefined,
+        bucket: undefined,
+        accessKey: 'fairplay',
+        secretKey: 'fairplay-minio-secret',
+        signedUrlTtlSeconds: undefined,
+      }),
+    ).toEqual({
+      endpoint: 'http://localhost:9000',
+      publicUrl: 'http://localhost:9000',
+      region: 'us-east-1',
+      bucket: 'fairplay-user-media',
+      accessKey: 'fairplay',
+      secretKey: 'fairplay-minio-secret',
+      signedUrlTtlSeconds: 900,
+    });
+
+    expect(
+      parseOptionalObjectStorageConfig({
+        endpoint: 'http://minio:9000',
+        publicUrl: undefined,
+        region: 'eu-west-3',
+        bucket: 'fairplay-media',
+        accessKey: 'fairplay',
+        secretKey: 'fairplay-minio-secret',
+        signedUrlTtlSeconds: '60',
+      }),
+    ).toEqual({
+      endpoint: 'http://minio:9000',
+      publicUrl: 'http://minio:9000',
+      region: 'eu-west-3',
+      bucket: 'fairplay-media',
+      accessKey: 'fairplay',
+      secretKey: 'fairplay-minio-secret',
+      signedUrlTtlSeconds: 60,
+    });
+
+    expect(() =>
+      parseOptionalObjectStorageConfig({
+        endpoint: 'http://localhost:9000/path',
+        publicUrl: undefined,
+        region: undefined,
+        bucket: undefined,
+        accessKey: 'fairplay',
+        secretKey: 'fairplay-minio-secret',
+        signedUrlTtlSeconds: undefined,
+      }),
+    ).toThrow(ServerConfigurationError);
+
+    expect(() =>
+      parseOptionalObjectStorageConfig({
+        endpoint: 'http://localhost:9000',
+        publicUrl: undefined,
+        region: undefined,
+        bucket: 'Invalid_Bucket',
+        accessKey: 'fairplay',
+        secretKey: 'fairplay-minio-secret',
+        signedUrlTtlSeconds: undefined,
+      }),
+    ).toThrow(ServerConfigurationError);
+
+    expect(() =>
+      parseOptionalObjectStorageConfig({
+        endpoint: 'http://localhost:9000',
+        publicUrl: undefined,
+        region: undefined,
+        bucket: undefined,
+        accessKey: 'fairplay',
+        secretKey: 'fairplay-minio-secret',
+        signedUrlTtlSeconds: String(7 * 24 * 60 * 60 + 1),
+      }),
+    ).toThrow(ServerConfigurationError);
   });
 });

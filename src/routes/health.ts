@@ -6,6 +6,7 @@ import { z } from '../docs/zod.js';
 type ReadinessChecks = {
   database(): Promise<void>;
   redis?(): Promise<void>;
+  objectStorage?(): Promise<void>;
 };
 
 type HealthRouterDependencies = {
@@ -27,6 +28,7 @@ const readinessSchema = z
     services: z.object({
       database: z.literal('ok').openapi({ example: 'ok' }),
       redis: z.literal('ok').optional().openapi({ example: 'ok' }),
+      objectStorage: z.literal('ok').optional().openapi({ example: 'ok' }),
     }),
   })
   .openapi('ReadinessResponse');
@@ -37,6 +39,7 @@ const readinessUnavailableSchema = z
     services: z.object({
       database: serviceStatusSchema.openapi({ example: 'ok' }),
       redis: serviceStatusSchema.optional().openapi({ example: 'error' }),
+      objectStorage: serviceStatusSchema.optional().openapi({ example: 'error' }),
     }),
   })
   .openapi('ReadinessUnavailableResponse');
@@ -56,17 +59,30 @@ const createReadinessResponse = async (checks: ReadinessChecks | null) => {
     } as const;
   }
 
-  const [database, redis] = await Promise.allSettled([checks.database(), checks.redis?.()]);
+  const [database, redis, objectStorage] = await Promise.allSettled([
+    checks.database(),
+    checks.redis?.(),
+    checks.objectStorage?.(),
+  ]);
 
   const redisStatus = checks.redis ? (redis.status === 'fulfilled' ? 'ok' : 'error') : undefined;
+  const objectStorageStatus = checks.objectStorage
+    ? objectStorage.status === 'fulfilled'
+      ? 'ok'
+      : 'error'
+    : undefined;
 
-  const allOk = database.status === 'fulfilled' && (!checks.redis || redis.status === 'fulfilled');
+  const allOk =
+    database.status === 'fulfilled' &&
+    (!checks.redis || redis.status === 'fulfilled') &&
+    (!checks.objectStorage || objectStorage.status === 'fulfilled');
 
   const body = {
     status: allOk ? 'ok' : 'error',
     services: {
       database: database.status === 'fulfilled' ? 'ok' : 'error',
       ...(redisStatus !== undefined && { redis: redisStatus }),
+      ...(objectStorageStatus !== undefined && { objectStorage: objectStorageStatus }),
     },
   } as const;
 

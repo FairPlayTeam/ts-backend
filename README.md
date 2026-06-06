@@ -19,6 +19,7 @@ This repository contains the FairPlay backend API built with:
 - Express.js
 - PostgreSQL
 - Prisma
+- S3-compatible object storage, with MinIO as the local default
 - Bun
 - Pino
 
@@ -33,21 +34,23 @@ This repository contains the FairPlay backend API built with:
 
 There are two common ways to run the backend locally:
 
-- run Bun on the host while PostgreSQL and Redis run in Docker, which is the recommended
+- run Bun on the host while PostgreSQL, Redis, and MinIO run in Docker, which is the recommended
   development flow
-- run the whole stack with Docker Compose, which is closer to the production container layout
+- run the whole local stack with Docker Compose
 
 ### Local development
 
 ```bash
 bun install
 cp .env.example .env
-docker compose up -d postgres redis
+docker compose up -d postgres redis minio
 bunx prisma migrate dev
 bun run dev
 ```
 
 The API runs on http://localhost:3000 and logs are pretty-printed by the development entrypoint.
+MinIO runs locally on http://localhost:9000 for object storage and http://localhost:9001 for its
+console.
 
 ### Docker Compose stack
 
@@ -55,9 +58,9 @@ The API runs on http://localhost:3000 and logs are pretty-printed by the develop
 docker compose up --build
 ```
 
-The Compose stack builds the production runtime image, starts PostgreSQL and Redis on the same
-Docker network, runs the Prisma migrations once through the `migrate` service, then starts the API
-on http://localhost:3000.
+The Compose stack builds the runtime image, starts local PostgreSQL, Redis, and MinIO services on
+the same Docker network, runs the Prisma migrations once through the `migrate` service, then starts
+the API on http://localhost:3000.
 
 Make sure to read [CONTRIBUTING.md](CONTRIBUTING.md) for more complete setup instructions.
 
@@ -71,12 +74,13 @@ docker build --target migrator -t fairplay-backend-migrator:<tag> .
 ```
 
 Run the migrator image once per release, then run one or more replicas of the runtime image behind
-a reverse proxy or load balancer. Production requires shared PostgreSQL and Redis instances,
-SMTP configuration, and a strong `RATE_LIMIT_KEY_SECRET`.
+a reverse proxy or load balancer. Production requires shared PostgreSQL, Redis, and object storage
+instances, SMTP configuration, and a strong `RATE_LIMIT_KEY_SECRET`.
 
-Managed PostgreSQL and Redis providers are supported. For example, Neon can provide the shared
-PostgreSQL service and Upstash can provide the shared Redis service. Keep provider credentials in
-deployment environment files or secret managers, never in Git.
+Managed PostgreSQL, Redis, and S3-compatible object storage providers are supported. For example,
+Neon can provide PostgreSQL, Upstash can provide Redis, and Infomaniak Object Storage or another
+S3-compatible provider can provide object storage. Keep provider credentials in deployment
+environment files or secret managers, never in Git.
 
 Cloudflare Tunnel deployments should prefer `TRUST_PROXY=loopback` when `cloudflared` forwards to
 the backend over `127.0.0.1:3000`. Use `/health/ready` for origin health checks.

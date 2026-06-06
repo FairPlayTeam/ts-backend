@@ -16,6 +16,7 @@ index --> readiness["Readiness checks"]
 authInstance --> authService["createAuthService()"]
 authService --> prisma["Prisma"]
 authService --> mailer["mailer"]
+authService --> objectStorage["Object storage"]
 authService --> crypto["Token / Hash"]
 authService --> clock["clock"]
 
@@ -32,11 +33,12 @@ cleanup --> redisLock["Redis distributed lock<br/>when Redis is configured"]
 
 The backend supports three common runtime modes:
 
-- local development: Bun runs on the host, PostgreSQL and Redis run through Docker Compose
+- local development: Bun runs on the host, while PostgreSQL, Redis, and MinIO provide local
+  versions of the external infrastructure through Docker Compose
 - local full stack: Docker Compose builds and runs the backend, the one-shot migrator, PostgreSQL,
-  and Redis on the same Docker network
+  Redis, and MinIO on the same local Docker network
 - production: the runtime image runs behind a reverse proxy or load balancer, with shared
-  PostgreSQL and Redis infrastructure
+  PostgreSQL, Redis, and object storage infrastructure
 
 The same application code is used in every mode. The differences are the process manager, network
 addresses, and environment variables.
@@ -54,15 +56,18 @@ apiB --> db
 
 apiA --> redis["Shared Redis"]
 apiB --> redis
+apiA --> objectStore["Shared object storage"]
+apiB --> objectStore
 
 migrator["Migrator image<br/>run once per release"] --> db
 ```
 
 The backend instances are designed to be horizontally scalable as long as every instance uses the
-same PostgreSQL and Redis services:
+same PostgreSQL, Redis, and object storage services:
 
 - user data, sessions, verification tokens, and password reset tokens are stored in PostgreSQL
 - Redis stores distributed rate limit state, cooldown state, and the auth cleanup lock
+- user-uploaded profile media is stored in shared S3-compatible object storage
 - the auth cleanup job can run in every process, but only the instance holding the Redis lock
   removes expired sessions and tokens
 - migrations are not run by every backend instance; they are run once through the migrator image
@@ -74,14 +79,18 @@ long as it can reach the shared database.
 
 ### Managed data services
 
-PostgreSQL and Redis may be self-hosted or provided by managed services. Neon and Upstash are valid
-examples of managed providers for this architecture:
+PostgreSQL, Redis, and S3-compatible object storage are external data services. Each one may be
+self-hosted or provided by a managed service; MinIO is simply the local S3-compatible implementation
+used by Compose, the same way the Compose `postgres` and `redis` services are local implementations
+of PostgreSQL and Redis:
 
 - managed PostgreSQL is still the source of truth for users, sessions, verification tokens, and
   password reset tokens
 - managed Redis is still the shared distributed store for rate limits, email cooldowns, and the
   auth cleanup lock
-- every backend instance must point to the same managed PostgreSQL and Redis services
+- managed S3-compatible storage is still the shared store for user-uploaded profile media
+- every backend instance must point to the same PostgreSQL and Redis services
+- every backend instance must point to the same object storage bucket
 - migrations should use the provider's direct database connection when both pooled and direct
   PostgreSQL URLs are available
 - Redis provider URLs should use the provider's Redis-compatible endpoint, with TLS enabled when
@@ -116,12 +125,13 @@ Cloudflare health checks should target `/health/ready`.
 
 ### Docker Compose network
 
-The local Compose stack contains these services:
+The local Compose stack contains these services by default:
 
 ```mermaid
 flowchart LR
 backend["backend<br/>runtime target"] --> postgres["postgres:5432"]
 backend --> redis["redis:6379"]
+backend --> minio["minio:9000"]
 migrate["migrate<br/>migrator target"] --> postgres
 
 subgraph network["fairplay-backend-network"]
@@ -129,6 +139,7 @@ backend
 migrate
 postgres
 redis
+minio
 end
 ```
 
@@ -136,12 +147,24 @@ Within this Docker network, services use Docker DNS names:
 
 - `DATABASE_URL=postgresql://user:password@postgres:5432/fairplay?schema=public`
 - `REDIS_URL=redis://redis:6379`
+- `OBJECT_STORAGE_ENDPOINT=http://minio:9000`
+
+Docker Compose is a local development and verification tool for this repository. It is not the
+production deployment model. The production runtime receives the same standard runtime variables
+(`DATABASE_URL`, `REDIS_URL`, `OBJECT_STORAGE_*`) from the orchestrator or secret manager and points
+to shared infrastructure directly.
+
+The `COMPOSE_OBJECT_STORAGE_*` variables in `docker-compose.yml` are only Compose interpolation
+inputs. They keep host development values such as `OBJECT_STORAGE_ENDPOINT=http://localhost:9000`
+separate from container-network values such as `http://minio:9000`. They should be treated like
+local Compose plumbing, not as a production configuration layer.
 
 When Bun runs on the host for local development, those internal names are not available. The `.env`
 file should use host-reachable addresses instead:
 
 - `DATABASE_URL=postgresql://user:password@localhost:5432/fairplay?schema=public`
 - `REDIS_URL=redis://localhost:6379`
+- `OBJECT_STORAGE_ENDPOINT=http://localhost:9000`
 
 ### Production image layout
 
@@ -163,7 +186,8 @@ The production release order is:
 The health routes are:
 
 - `/health/live`: process liveness only
-- `/health/ready`: checks database connectivity and Redis connectivity when Redis is configured
+- `/health/ready`: checks database connectivity, Redis connectivity when Redis is configured, and
+  object storage connectivity when object storage is configured
 - `/health`: lightweight process status
 
 Production orchestrators should use `/health/ready` before routing traffic to an instance.
@@ -173,15 +197,17 @@ Production orchestrators should use `/health/ready` before routing traffic to an
 The entry point is [`src/index.ts`](src/index.ts), it:
 
 - reads the config
-- creates external clients like Redis when configured
+- creates external clients like Redis and object storage when configured
 - prepares readiness checks
 - assembles the Express app
 - starts the server
 - starts the periodic auth cleanup after the server is listening
 - and gracefully shuts down Prisma, Redis, and the HTTP server
 
-In production, Redis is required. In development, Redis can be unavailable; the backend then falls
-back to in-memory rate limiting and skips distributed maintenance locks.
+In production, Redis and object storage are required. In development, Redis can be unavailable; the
+backend then falls back to in-memory rate limiting and skips distributed maintenance locks. Object
+storage-dependent routes return a service-level error when object storage is not configured or not
+ready.
 
 ## Factories
 

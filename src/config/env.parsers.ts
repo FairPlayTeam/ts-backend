@@ -1,6 +1,10 @@
 import {
   DAYS_MS,
+  DEFAULT_AVATAR_MAX_UPLOAD_BYTES,
   DEFAULT_JSON_BODY_LIMIT_BYTES,
+  DEFAULT_OBJECT_STORAGE_BUCKET,
+  DEFAULT_OBJECT_STORAGE_REGION,
+  DEFAULT_OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS,
   MINUTE_MS,
   SESSION_CLEANUP_INACTIVE_RETENTION_DAYS,
   SESSION_CLEANUP_INTERVAL_MINUTES,
@@ -9,8 +13,19 @@ import type { MailerConfig } from '../services/mailer/mailer.types.js';
 
 const HTTP_URL_PROTOCOLS = ['http:', 'https:'] as const;
 const REDIS_URL_PROTOCOLS = ['redis:', 'rediss:'] as const;
+const MAX_OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export type TrustProxySetting = boolean | number | string | string[];
+
+export type ObjectStorageConfig = {
+  endpoint: string;
+  publicUrl: string;
+  region: string;
+  bucket: string;
+  accessKey: string;
+  secretKey: string;
+  signedUrlTtlSeconds: number;
+};
 
 export class ServerConfigurationError extends Error {
   constructor(message: string) {
@@ -88,6 +103,16 @@ const parseUrlWithProtocols = (
 
 export const parseRequiredHttpUrl = (rawData: string | undefined, name: string): string =>
   parseUrlWithProtocols(rawData, name, HTTP_URL_PROTOCOLS);
+
+export const parseRequiredHttpOriginUrl = (rawData: string | undefined, name: string): string => {
+  const parsedUrl = new URL(parseRequiredHttpUrl(rawData, name));
+
+  if (parsedUrl.pathname !== '/' || parsedUrl.search || parsedUrl.hash) {
+    throw new ServerConfigurationError(`${name} must be an HTTP(S) origin without path or query`);
+  }
+
+  return parsedUrl.origin;
+};
 
 export const parseRedisUrl = (rawData: string | undefined, name: string): string =>
   parseUrlWithProtocols(rawData, name, REDIS_URL_PROTOCOLS);
@@ -169,11 +194,15 @@ const parseBodySizeLimitBytes = (
 export const parseJsonBodyLimitBytes = (rawValue: string | undefined): number =>
   parseBodySizeLimitBytes(rawValue, DEFAULT_JSON_BODY_LIMIT_BYTES, 'JSON_BODY_LIMIT_BYTES');
 
+export const parseAvatarMaxUploadBytes = (rawValue: string | undefined): number =>
+  parseBodySizeLimitBytes(rawValue, DEFAULT_AVATAR_MAX_UPLOAD_BYTES, 'AVATAR_MAX_UPLOAD_BYTES');
+
 const parsePositiveInteger = (
   rawValue: string | undefined,
   fallback: number,
   envName: string,
   unitName: string,
+  max?: number,
 ): number => {
   const value = rawValue?.trim();
 
@@ -183,9 +212,11 @@ const parsePositiveInteger = (
 
   const parsed = Number(value);
 
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+  if (!Number.isInteger(parsed) || parsed <= 0 || (max !== undefined && parsed > max)) {
+    const range = max === undefined ? 'positive' : `between 1 and ${max}`;
+
     throw new ServerConfigurationError(
-      `${envName} must be a positive integer number of ${unitName}, got: ${value}`,
+      `${envName} must be a ${range} integer number of ${unitName}, got: ${value}`,
     );
   }
 
@@ -264,6 +295,91 @@ export const parseRateLimitKeySecret = (
   }
 
   return value;
+};
+
+const parseObjectStorageRegion = (rawValue: string | undefined): string => {
+  const value = rawValue?.trim() || DEFAULT_OBJECT_STORAGE_REGION;
+
+  if (!/^[a-z0-9-]+$/i.test(value)) {
+    throw new ServerConfigurationError(
+      `OBJECT_STORAGE_REGION may only contain letters, numbers, and hyphens, got: ${value}`,
+    );
+  }
+
+  return value;
+};
+
+const parseObjectStorageBucket = (rawValue: string | undefined): string => {
+  const value = rawValue?.trim() || DEFAULT_OBJECT_STORAGE_BUCKET;
+
+  if (
+    value.length < 3 ||
+    value.length > 63 ||
+    !/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(value) ||
+    value.includes('..') ||
+    /^\d+\.\d+\.\d+\.\d+$/.test(value)
+  ) {
+    throw new ServerConfigurationError(
+      'OBJECT_STORAGE_BUCKET must be a valid S3 bucket name between 3 and 63 characters',
+    );
+  }
+
+  return value;
+};
+
+type RawObjectStorageConfig = {
+  endpoint: string | undefined;
+  publicUrl: string | undefined;
+  region: string | undefined;
+  bucket: string | undefined;
+  accessKey: string | undefined;
+  secretKey: string | undefined;
+  signedUrlTtlSeconds: string | undefined;
+};
+
+const objectStorageRequiredEnvNames = {
+  endpoint: 'OBJECT_STORAGE_ENDPOINT',
+  accessKey: 'OBJECT_STORAGE_ACCESS_KEY',
+  secretKey: 'OBJECT_STORAGE_SECRET_KEY',
+} as const satisfies Record<'endpoint' | 'accessKey' | 'secretKey', string>;
+
+export const parseOptionalObjectStorageConfig = (
+  rawConfig: RawObjectStorageConfig,
+): ObjectStorageConfig | null => {
+  const missingRequiredKeys = Object.entries(objectStorageRequiredEnvNames)
+    .filter(([key]) => !rawConfig[key as keyof typeof objectStorageRequiredEnvNames]?.trim())
+    .map(([, envName]) => envName);
+
+  if (missingRequiredKeys.length === Object.keys(objectStorageRequiredEnvNames).length) {
+    return null;
+  }
+
+  if (missingRequiredKeys.length > 0) {
+    throw new ServerConfigurationError(
+      `Object storage configuration is incomplete. Missing environment variables: ${missingRequiredKeys.join(', ')}`,
+    );
+  }
+
+  const endpoint = parseRequiredHttpOriginUrl(rawConfig.endpoint, 'OBJECT_STORAGE_ENDPOINT');
+
+  return {
+    endpoint,
+    publicUrl: parseRequiredHttpOriginUrl(
+      rawConfig.publicUrl?.trim() ? rawConfig.publicUrl : endpoint,
+      'OBJECT_STORAGE_PUBLIC_URL',
+    ),
+    region: parseObjectStorageRegion(rawConfig.region),
+    bucket: parseObjectStorageBucket(rawConfig.bucket),
+    accessKey: readRequiredEnv(rawConfig.accessKey, 'OBJECT_STORAGE_ACCESS_KEY'),
+    secretKey: readRequiredEnv(rawConfig.secretKey, 'OBJECT_STORAGE_SECRET_KEY'),
+    signedUrlTtlSeconds: parsePositiveInteger(
+      rawConfig.signedUrlTtlSeconds,
+      DEFAULT_OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS,
+      'OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS',
+      'seconds',
+      MAX_OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS,
+    ),
+  };
 };
 
 const parseSmtpPort = (rawPort: string | undefined): number => {

@@ -13,11 +13,13 @@ const createTestServer = async (
   readinessChecks?: {
     database(): Promise<void>;
     redis?(): Promise<void>;
+    objectStorage?(): Promise<void>;
   } | null,
 ): Promise<TestServer> => {
   const app = await createApp(
     {
       allowedOrigins: [],
+      avatarMaxUploadBytes: 3 * 1024 * 1024,
       baseUrl: 'http://localhost:3000/',
       isProduction: false,
       jsonBodyLimitBytes: 1024 * 1024,
@@ -76,6 +78,9 @@ describe('health routes', () => {
       redis: async () => {
         throw new Error('Redis should not be checked by liveness');
       },
+      objectStorage: async () => {
+        throw new Error('Object storage should not be checked by liveness');
+      },
     });
     currentServer = server;
 
@@ -91,6 +96,7 @@ describe('health routes', () => {
     const { baseUrl, server } = await createTestServer({
       database: async () => undefined,
       redis: async () => undefined,
+      objectStorage: async () => undefined,
     });
     currentServer = server;
 
@@ -102,6 +108,7 @@ describe('health routes', () => {
       services: {
         database: 'ok',
         redis: 'ok',
+        objectStorage: 'ok',
       },
     });
   });
@@ -140,6 +147,27 @@ describe('health routes', () => {
       services: {
         database: 'ok',
         redis: 'error',
+      },
+    });
+  });
+
+  test('returns unavailable when object storage is unhealthy', async () => {
+    const { baseUrl, server } = await createTestServer({
+      database: async () => undefined,
+      objectStorage: async () => {
+        throw new Error('Object storage unavailable');
+      },
+    });
+    currentServer = server;
+
+    const response = await fetch(`${baseUrl}/health/ready`);
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      status: 'error',
+      services: {
+        database: 'ok',
+        objectStorage: 'error',
       },
     });
   });
