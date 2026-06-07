@@ -104,6 +104,17 @@ const toUserMediaAssetResponse = (asset: UserMediaAssetResult) => ({
   updatedAt: toIsoString(asset.updatedAt),
 });
 
+const toUserMediaFileInput = (file: Request['file']) =>
+  file
+    ? {
+        buffer: file.buffer,
+        size: file.size,
+      }
+    : {
+        buffer: Buffer.alloc(0),
+        size: 0,
+      };
+
 export const createAuthController = (deps: AuthControllerDependencies) => {
   const register = async (
     req: Request<unknown, unknown, RegisterRequestBody>,
@@ -329,18 +340,9 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
   const uploadAvatar = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const authenticatedReq = req as AuthenticatedRequest;
-      const file = req.file;
       const result = await deps.authService.uploadAvatar({
         userId: authenticatedReq.user.id,
-        file: file
-          ? {
-              buffer: file.buffer,
-              size: file.size,
-            }
-          : {
-              buffer: Buffer.alloc(0),
-              size: 0,
-            },
+        file: toUserMediaFileInput(req.file),
       });
 
       return res.status(200).json({
@@ -362,6 +364,39 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
       return res.status(200).json({
         message: result.message,
         avatar: result.avatar,
+      });
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
+  };
+
+  const uploadBanner = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const result = await deps.authService.uploadBanner({
+        userId: authenticatedReq.user.id,
+        file: toUserMediaFileInput(req.file),
+      });
+
+      return res.status(200).json({
+        message: result.message,
+        banner: toUserMediaAssetResponse(result.banner),
+      });
+    } catch (err) {
+      next(toAuthHttpError(err));
+    }
+  };
+
+  const deleteBanner = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const result = await deps.authService.deleteBanner({
+        userId: authenticatedReq.user.id,
+      });
+
+      return res.status(200).json({
+        message: result.message,
+        banner: result.banner,
       });
     } catch (err) {
       next(toAuthHttpError(err));
@@ -423,6 +458,8 @@ export const createAuthController = (deps: AuthControllerDependencies) => {
     updateMe,
     uploadAvatar,
     deleteAvatar,
+    uploadBanner,
+    deleteBanner,
     sessions,
     logoutAll,
     logoutOthers,

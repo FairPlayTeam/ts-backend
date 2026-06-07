@@ -13,7 +13,7 @@ describe('OpenAPI generation', () => {
     const app = await createApp(
       {
         allowedOrigins: [],
-        avatarMaxUploadBytes: 3 * 1024 * 1024,
+        profileMediaMaxUploadBytes: 3 * 1024 * 1024,
         baseUrl: 'http://localhost:3000/',
         isProduction: false,
         jsonBodyLimitBytes: 1024 * 1024,
@@ -32,6 +32,7 @@ describe('OpenAPI generation', () => {
       '/auth/login',
       '/auth/me',
       '/auth/me/avatar',
+      '/auth/me/banner',
       '/auth/me/export',
       '/auth/register',
       '/auth/resend-verification',
@@ -81,6 +82,20 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/me/avatar']?.delete?.responses?.[200]).toBeDefined();
     expect(document.paths['/auth/me/avatar']?.delete?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/me/avatar']?.delete?.responses?.[503]).toBeDefined();
+    expect(document.paths['/auth/me/banner']?.put?.requestBody).toBeDefined();
+    expect(document.paths['/auth/me/banner']?.put?.requestBody?.content).toHaveProperty(
+      'multipart/form-data',
+    );
+    expect(document.paths['/auth/me/banner']?.put?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths['/auth/me/banner']?.put?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/me/banner']?.put?.responses?.[400]).toBeDefined();
+    expect(document.paths['/auth/me/banner']?.put?.responses?.[413]).toBeDefined();
+    expect(document.paths['/auth/me/banner']?.put?.responses?.[503]).toBeDefined();
+    expect(document.paths['/auth/me/banner']?.delete?.requestBody).toBeUndefined();
+    expect(document.paths['/auth/me/banner']?.delete?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths['/auth/me/banner']?.delete?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/me/banner']?.delete?.responses?.[401]).toBeDefined();
+    expect(document.paths['/auth/me/banner']?.delete?.responses?.[503]).toBeDefined();
     expect(document.paths['/auth/me/export']?.get?.requestBody).toBeUndefined();
     expect(document.paths['/auth/me/export']?.get?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/auth/me/export']?.get?.responses?.[200]).toBeDefined();
@@ -164,12 +179,18 @@ describe('OpenAPI generation', () => {
     expect(
       document.components?.schemas?.CurrentUserResponse?.properties?.user?.properties?.avatarUrl,
     ).toBeDefined();
+    expect(
+      document.components?.schemas?.CurrentUserResponse?.properties?.user?.properties?.bannerUrl,
+    ).toBeDefined();
     expect(document.components?.schemas?.ApiOrValidationError).toBeDefined();
     expect(document.components?.schemas?.UpdateProfileRequest).toBeDefined();
     expect(document.components?.schemas?.UpdateProfileResponse).toBeDefined();
     expect(document.components?.schemas?.UploadAvatarRequest).toBeDefined();
     expect(document.components?.schemas?.UploadAvatarResponse).toBeDefined();
     expect(document.components?.schemas?.DeleteAvatarResponse).toBeDefined();
+    expect(document.components?.schemas?.UploadBannerRequest).toBeDefined();
+    expect(document.components?.schemas?.UploadBannerResponse).toBeDefined();
+    expect(document.components?.schemas?.DeleteBannerResponse).toBeDefined();
     expect(document.components?.schemas?.DeleteAccountResponse).toBeDefined();
     expect(document.components?.schemas?.RegisterRequest).toBeDefined();
     expect(document.components?.schemas?.RegisterResponse).toBeDefined();

@@ -8,6 +8,7 @@ import {
   currentUserResponseSchema,
   deleteAccountResponseSchema,
   deleteAvatarResponseSchema,
+  deleteBannerResponseSchema,
   logoutAllSessionsResponseSchema,
   logoutOtherSessionsResponseSchema,
   logoutSessionParamsSchema,
@@ -31,6 +32,8 @@ import {
   userDataExportResponseSchema,
   uploadAvatarBodySchema,
   uploadAvatarResponseSchema,
+  uploadBannerBodySchema,
+  uploadBannerResponseSchema,
   updateProfileBodySchema,
   updateProfileResponseSchema,
   updateProfileSchema,
@@ -48,19 +51,21 @@ import {
   ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
   DELETE_AVATAR_SUCCESS_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
+  DELETE_BANNER_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_SESSION_SUCCESS_MESSAGE,
   UPDATE_PROFILE_SUCCESS_MESSAGE,
   UPLOAD_AVATAR_SUCCESS_MESSAGE,
+  UPLOAD_BANNER_SUCCESS_MESSAGE,
 } from '../services/auth/auth.messages.js';
 import { INVALID_CREDENTIALS_MESSAGE } from '../services/auth.errors.js';
 import { createSingleFileUpload } from '../middleware/upload.js';
 
 type AuthRouterDependencies = {
   authService: AuthService;
-  avatarMaxUploadBytes: number;
+  profileMediaMaxUploadBytes: number;
   authLimiter: RequestHandler;
   registrationIdentifierLimiter: RequestHandler;
   loginIdentifierLimiter: RequestHandler;
@@ -72,7 +77,7 @@ type AuthRouterDependencies = {
 
 const createAuthRouter = ({
   authService,
-  avatarMaxUploadBytes,
+  profileMediaMaxUploadBytes,
   authLimiter,
   registrationIdentifierLimiter,
   loginIdentifierLimiter,
@@ -91,6 +96,8 @@ const createAuthRouter = ({
     updateMe,
     uploadAvatar,
     deleteAvatar,
+    uploadBanner,
+    deleteBanner,
     sessions,
     logoutAll,
     logoutOthers,
@@ -106,7 +113,11 @@ const createAuthRouter = ({
   const protect = createRouteProtector({ authService });
   const uploadAvatarFile = createSingleFileUpload({
     fieldName: 'avatar',
-    maxFileSizeBytes: avatarMaxUploadBytes,
+    maxFileSizeBytes: profileMediaMaxUploadBytes,
+  });
+  const uploadBannerFile = createSingleFileUpload({
+    fieldName: 'banner',
+    maxFileSizeBytes: profileMediaMaxUploadBytes,
   });
 
   router.post(
@@ -136,6 +147,8 @@ const createAuthRouter = ({
   router.patch('/me', ...protect(), validate(updateProfileSchema), updateMe);
   router.put('/me/avatar', ...protect(), uploadAvatarFile, uploadAvatar);
   router.delete('/me/avatar', ...protect(), deleteAvatar);
+  router.put('/me/banner', ...protect(), uploadBannerFile, uploadBanner);
+  router.delete('/me/banner', ...protect(), deleteBanner);
   router.get('/sessions', authenticateSession, validate(userSessionsSchema), sessions);
   router.delete('/sessions/all', authenticateSession, logoutAll);
   router.delete('/sessions/others/all', authenticateSession, logoutOthers);
@@ -179,6 +192,40 @@ const badRequestErrorResponse = {
 const serviceUnavailableErrorResponse = {
   503: jsonResponse('Object storage unavailable', ApiErrorSchema),
 };
+
+const userMediaUploadResponses = (
+  successMessage: string,
+  responseSchema: Parameters<typeof jsonResponse>[1],
+) => ({
+  200: jsonResponse(successMessage, responseSchema),
+
+  ...badRequestErrorResponse,
+
+  401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+  413: jsonResponse('Uploaded file too large', ApiErrorSchema),
+
+  ...serviceUnavailableErrorResponse,
+
+  429: jsonResponse('Too many requests', ApiErrorSchema),
+
+  500: jsonResponse('Internal server error', ApiErrorSchema),
+});
+
+const userMediaDeleteResponses = (
+  successMessage: string,
+  responseSchema: Parameters<typeof jsonResponse>[1],
+) => ({
+  200: jsonResponse(successMessage, responseSchema),
+
+  401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+  ...serviceUnavailableErrorResponse,
+
+  429: jsonResponse('Too many requests', ApiErrorSchema),
+
+  500: jsonResponse('Internal server error', ApiErrorSchema),
+});
 
 export const routeDocs = [
   {
@@ -432,21 +479,7 @@ export const routeDocs = [
         },
       },
     },
-    responses: {
-      200: jsonResponse(UPLOAD_AVATAR_SUCCESS_MESSAGE, uploadAvatarResponseSchema),
-
-      ...badRequestErrorResponse,
-
-      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
-
-      413: jsonResponse('Uploaded file too large', ApiErrorSchema),
-
-      ...serviceUnavailableErrorResponse,
-
-      429: jsonResponse('Too many requests', ApiErrorSchema),
-
-      500: jsonResponse('Internal server error', ApiErrorSchema),
-    },
+    responses: userMediaUploadResponses(UPLOAD_AVATAR_SUCCESS_MESSAGE, uploadAvatarResponseSchema),
   },
   {
     method: 'delete',
@@ -454,17 +487,33 @@ export const routeDocs = [
     summary: 'Delete current user avatar',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
-    responses: {
-      200: jsonResponse(DELETE_AVATAR_SUCCESS_MESSAGE, deleteAvatarResponseSchema),
-
-      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
-
-      ...serviceUnavailableErrorResponse,
-
-      429: jsonResponse('Too many requests', ApiErrorSchema),
-
-      500: jsonResponse('Internal server error', ApiErrorSchema),
+    responses: userMediaDeleteResponses(DELETE_AVATAR_SUCCESS_MESSAGE, deleteAvatarResponseSchema),
+  },
+  {
+    method: 'put',
+    path: '/auth/me/banner',
+    summary: 'Upload or replace current user banner',
+    tags: ['Auth'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          'multipart/form-data': {
+            schema: uploadBannerBodySchema,
+          },
+        },
+      },
     },
+    responses: userMediaUploadResponses(UPLOAD_BANNER_SUCCESS_MESSAGE, uploadBannerResponseSchema),
+  },
+  {
+    method: 'delete',
+    path: '/auth/me/banner',
+    summary: 'Delete current user banner',
+    tags: ['Auth'],
+    security: [{ bearerAuth: [] }],
+    responses: userMediaDeleteResponses(DELETE_BANNER_SUCCESS_MESSAGE, deleteBannerResponseSchema),
   },
   {
     method: 'post',

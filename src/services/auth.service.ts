@@ -5,6 +5,7 @@ import { createRegistrationService } from './auth/auth.registration.js';
 import { createSessionService } from './auth/auth.sessions.js';
 import { createProfileService } from './auth/auth.profile.js';
 import { createAvatarService } from './auth/auth.avatar.js';
+import { createBannerService } from './auth/auth.banner.js';
 import { createLoginService } from './auth/auth.login.js';
 import { createResetPasswordService } from './auth/auth.resetPassword.js';
 import { createTokenCleanupService } from './auth/auth.tokenCleanup.js';
@@ -20,6 +21,7 @@ export const createAuthService = (deps: AuthDependencies): AuthService => {
     ...createVerificationService(deps, sessionService),
     ...createProfileService(deps),
     ...createAvatarService(deps),
+    ...createBannerService(deps),
     ...createResetPasswordService(deps),
     ...createTokenCleanupService(deps),
     ...createDataExportService(deps),

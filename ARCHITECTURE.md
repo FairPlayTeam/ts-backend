@@ -67,7 +67,8 @@ same PostgreSQL, Redis, and object storage services:
 
 - user data, sessions, verification tokens, and password reset tokens are stored in PostgreSQL
 - Redis stores distributed rate limit state, cooldown state, and the auth cleanup lock
-- user-uploaded profile media is stored in shared S3-compatible object storage
+- user-uploaded profile media, currently avatars and banners, is stored in shared S3-compatible
+  object storage
 - the auth cleanup job can run in every process, but only the instance holding the Redis lock
   removes expired sessions and tokens
 - migrations are not run by every backend instance; they are run once through the migrator image
@@ -88,7 +89,8 @@ of PostgreSQL and Redis:
   password reset tokens
 - managed Redis is still the shared distributed store for rate limits, email cooldowns, and the
   auth cleanup lock
-- managed S3-compatible storage is still the shared store for user-uploaded profile media
+- managed S3-compatible storage is still the shared store for user-uploaded profile media, currently
+  avatars and banners
 - every backend instance must point to the same PostgreSQL and Redis services
 - every backend instance must point to the same object storage bucket
 - migrations should use the provider's direct database connection when both pooled and direct

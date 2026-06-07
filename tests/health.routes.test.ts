@@ -19,7 +19,7 @@ const createTestServer = async (
   const app = await createApp(
     {
       allowedOrigins: [],
-      avatarMaxUploadBytes: 3 * 1024 * 1024,
+      profileMediaMaxUploadBytes: 3 * 1024 * 1024,
       baseUrl: 'http://localhost:3000/',
       isProduction: false,
       jsonBodyLimitBytes: 1024 * 1024,

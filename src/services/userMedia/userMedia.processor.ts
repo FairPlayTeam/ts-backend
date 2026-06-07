@@ -1,6 +1,10 @@
 import { fileTypeFromBuffer } from 'file-type';
 import sharp from 'sharp';
-import { AVATAR_IMAGE_SIZE_PX } from '../../config/constants.js';
+import {
+  AVATAR_IMAGE_SIZE_PX,
+  BANNER_IMAGE_HEIGHT_PX,
+  BANNER_IMAGE_WIDTH_PX,
+} from '../../config/constants.js';
 import {
   UserMediaFileRequiredError,
   UserMediaFileTooLargeError,
@@ -31,27 +35,27 @@ export type UserMediaProcessor = {
 };
 
 export type UserMediaProcessorConfig = {
-  avatarMaxUploadBytes: number;
+  profileMediaMaxUploadBytes: number;
 };
 
 const createUserMediaPolicies = ({
-  avatarMaxUploadBytes,
+  profileMediaMaxUploadBytes,
 }: UserMediaProcessorConfig): Record<UserMediaKind, UserMediaPolicy> => ({
   avatar: {
     kind: 'avatar',
     width: AVATAR_IMAGE_SIZE_PX,
     height: AVATAR_IMAGE_SIZE_PX,
     fit: 'cover',
-    maxUploadBytes: avatarMaxUploadBytes,
+    maxUploadBytes: profileMediaMaxUploadBytes,
     maxInputPixels: AVATAR_MAX_INPUT_PIXELS,
     webpQuality: 82,
   },
   banner: {
     kind: 'banner',
-    width: 1500,
-    height: 500,
+    width: BANNER_IMAGE_WIDTH_PX,
+    height: BANNER_IMAGE_HEIGHT_PX,
     fit: 'cover',
-    maxUploadBytes: 5 * 1024 * 1024,
+    maxUploadBytes: profileMediaMaxUploadBytes,
     maxInputPixels: 24_000_000,
     webpQuality: 82,
   },

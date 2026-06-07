@@ -14,6 +14,7 @@ import {
   ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
   DELETE_AVATAR_SUCCESS_MESSAGE,
+  DELETE_BANNER_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_SESSION_SUCCESS_MESSAGE,
@@ -21,6 +22,7 @@ import {
   RESET_PASSWORD_EMAIL_MESSAGE,
   UPDATE_PROFILE_SUCCESS_MESSAGE,
   UPLOAD_AVATAR_SUCCESS_MESSAGE,
+  UPLOAD_BANNER_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
 import { UPLOAD_FILE_TOO_LARGE_MESSAGE } from '../src/middleware/upload.js';
 import { createStubAuthService } from './support/auth.js';
@@ -37,6 +39,8 @@ let receivedExportUserDataRequest: unknown;
 let receivedDeleteAccountRequest: unknown;
 let receivedAvatarUpload: unknown;
 let receivedAvatarDeletion: unknown;
+let receivedBannerUpload: unknown;
+let receivedBannerDeletion: unknown;
 
 describe('auth routes', () => {
   beforeAll(async () => {
@@ -44,7 +48,7 @@ describe('auth routes', () => {
     const app = await createApp(
       {
         allowedOrigins: [],
-        avatarMaxUploadBytes: 3 * 1024 * 1024,
+        profileMediaMaxUploadBytes: 3 * 1024 * 1024,
         baseUrl: 'http://localhost:3000/',
         isProduction: false,
         jsonBodyLimitBytes: 1024 * 1024,
@@ -73,6 +77,14 @@ describe('auth routes', () => {
           deleteAvatar: async (input) => {
             receivedAvatarDeletion = input;
             return authService.deleteAvatar(input);
+          },
+          uploadBanner: async (input) => {
+            receivedBannerUpload = input;
+            return authService.uploadBanner(input);
+          },
+          deleteBanner: async (input) => {
+            receivedBannerDeletion = input;
+            return authService.deleteBanner(input);
           },
           resendVerification: async (input) => {
             receivedResendVerificationRequest = input;
@@ -147,6 +159,8 @@ describe('auth routes', () => {
         role: 'user',
         avatarUrl:
           'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+        bannerUrl:
+          'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
       },
       session: {
         id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
@@ -436,6 +450,114 @@ describe('auth routes', () => {
 
   test('requires a bearer session to delete an avatar', async () => {
     const response = await fetch(`${baseUrl}/auth/me/avatar`, {
+      method: 'DELETE',
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: 'Unauthorized',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+  });
+
+  test('uploads the current user banner for a valid bearer session', async () => {
+    receivedBannerUpload = undefined;
+    const bannerBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const form = new FormData();
+    form.append('banner', new Blob([bannerBytes], { type: 'image/png' }), 'banner.png');
+
+    const response = await fetch(`${baseUrl}/auth/me/banner`, {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+      body: form,
+    });
+
+    expect(response.status).toBe(200);
+    expect(receivedBannerUpload).toEqual({
+      userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      file: {
+        buffer: bannerBytes,
+        size: bannerBytes.length,
+      },
+    });
+    expect(await response.json()).toEqual({
+      message: UPLOAD_BANNER_SUCCESS_MESSAGE,
+      banner: {
+        url: 'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+        mimeType: 'image/webp',
+        sizeBytes: 2345,
+        width: 1500,
+        height: 500,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+  });
+
+  test('rejects banner uploads larger than the HTTP upload limit', async () => {
+    receivedBannerUpload = undefined;
+    const form = new FormData();
+    form.append(
+      'banner',
+      new Blob([new Uint8Array(3 * 1024 * 1024 + 1)], { type: 'image/png' }),
+      'banner.png',
+    );
+
+    const response = await fetch(`${baseUrl}/auth/me/banner`, {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+      body: form,
+    });
+
+    expect(response.status).toBe(413);
+    expect(receivedBannerUpload).toBeUndefined();
+    expect(await response.json()).toEqual({
+      error: 'PayloadTooLarge',
+      message: UPLOAD_FILE_TOO_LARGE_MESSAGE,
+    });
+  });
+
+  test('requires a bearer session to upload a banner', async () => {
+    const form = new FormData();
+    form.append('banner', new Blob([Buffer.from('banner')], { type: 'image/png' }), 'banner.png');
+
+    const response = await fetch(`${baseUrl}/auth/me/banner`, {
+      method: 'PUT',
+      body: form,
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: 'Unauthorized',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+  });
+
+  test('deletes the current user banner for a valid bearer session', async () => {
+    receivedBannerDeletion = undefined;
+
+    const response = await fetch(`${baseUrl}/auth/me/banner`, {
+      method: 'DELETE',
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(receivedBannerDeletion).toEqual({
+      userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+    });
+    expect(await response.json()).toEqual({
+      message: DELETE_BANNER_SUCCESS_MESSAGE,
+      banner: null,
+    });
+  });
+
+  test('requires a bearer session to delete a banner', async () => {
+    const response = await fetch(`${baseUrl}/auth/me/banner`, {
       method: 'DELETE',
     });
 

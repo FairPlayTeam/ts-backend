@@ -1,10 +1,10 @@
 import {
   DAYS_MS,
-  DEFAULT_AVATAR_MAX_UPLOAD_BYTES,
   DEFAULT_JSON_BODY_LIMIT_BYTES,
   DEFAULT_OBJECT_STORAGE_BUCKET,
   DEFAULT_OBJECT_STORAGE_REGION,
   DEFAULT_OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS,
+  DEFAULT_PROFILE_MEDIA_MAX_UPLOAD_BYTES,
   MINUTE_MS,
   SESSION_CLEANUP_INACTIVE_RETENTION_DAYS,
   SESSION_CLEANUP_INTERVAL_MINUTES,
@@ -194,8 +194,12 @@ const parseBodySizeLimitBytes = (
 export const parseJsonBodyLimitBytes = (rawValue: string | undefined): number =>
   parseBodySizeLimitBytes(rawValue, DEFAULT_JSON_BODY_LIMIT_BYTES, 'JSON_BODY_LIMIT_BYTES');
 
-export const parseAvatarMaxUploadBytes = (rawValue: string | undefined): number =>
-  parseBodySizeLimitBytes(rawValue, DEFAULT_AVATAR_MAX_UPLOAD_BYTES, 'AVATAR_MAX_UPLOAD_BYTES');
+export const parseProfileMediaMaxUploadBytes = (rawValue: string | undefined): number =>
+  parseBodySizeLimitBytes(
+    rawValue,
+    DEFAULT_PROFILE_MEDIA_MAX_UPLOAD_BYTES,
+    'PROFILE_MEDIA_MAX_UPLOAD_BYTES',
+  );
 
 const parsePositiveInteger = (
   rawValue: string | undefined,

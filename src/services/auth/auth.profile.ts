@@ -2,8 +2,19 @@ import type { AuthService, GetProfileInput, UpdateProfileInput } from '../auth.t
 import type { AuthDependencies } from './auth.dependencies.js';
 import { UPDATE_PROFILE_SUCCESS_MESSAGE } from './auth.messages.js';
 import { toUserMediaAssetUrl } from './auth.userMedia.js';
+import type { UserMediaKind } from '../userMedia/userMedia.types.js';
 
 type ProfileService = Pick<AuthService, 'getProfile' | 'updateProfile'>;
+
+type ProfileMediaAsset = {
+  kind: UserMediaKind;
+  objectKey: string;
+};
+
+const getProfileMediaAsset = (
+  mediaAssets: ProfileMediaAsset[],
+  kind: UserMediaKind,
+): ProfileMediaAsset | undefined => mediaAssets.find((asset) => asset.kind === kind);
 
 export const createProfileService = (deps: AuthDependencies): ProfileService => ({
   async getProfile({ userId }: GetProfileInput) {
@@ -18,12 +29,14 @@ export const createProfileService = (deps: AuthDependencies): ProfileService => 
         role: true,
         mediaAssets: {
           where: {
-            kind: 'avatar',
+            kind: {
+              in: ['avatar', 'banner'],
+            },
           },
           select: {
+            kind: true,
             objectKey: true,
           },
-          take: 1,
         },
       },
     });
@@ -33,11 +46,16 @@ export const createProfileService = (deps: AuthDependencies): ProfileService => 
     }
 
     const { mediaAssets, ...profileUser } = user;
+    const [avatarUrl, bannerUrl] = await Promise.all([
+      toUserMediaAssetUrl(deps, getProfileMediaAsset(mediaAssets, 'avatar')),
+      toUserMediaAssetUrl(deps, getProfileMediaAsset(mediaAssets, 'banner')),
+    ]);
 
     return {
       user: {
         ...profileUser,
-        avatarUrl: await toUserMediaAssetUrl(deps, mediaAssets[0]),
+        avatarUrl,
+        bannerUrl,
       },
     };
   },

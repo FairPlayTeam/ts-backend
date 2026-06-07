@@ -11,6 +11,8 @@ export const LOGOUT_SESSION_SUCCESS_MESSAGE = 'Session logged out successfully';
 export const UPDATE_PROFILE_SUCCESS_MESSAGE = 'Profile updated successfully';
 export const UPLOAD_AVATAR_SUCCESS_MESSAGE = 'Avatar updated successfully';
 export const DELETE_AVATAR_SUCCESS_MESSAGE = 'Avatar deleted successfully';
+export const UPLOAD_BANNER_SUCCESS_MESSAGE = 'Banner updated successfully';
+export const DELETE_BANNER_SUCCESS_MESSAGE = 'Banner deleted successfully';
 export const CLEANUP_SESSION_SUCCESS_MESSAGE = 'Sessions cleaned up successfully';
 export const CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE =
   'Expired authentication tokens cleaned up successfully';

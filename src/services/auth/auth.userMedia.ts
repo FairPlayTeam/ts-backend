@@ -16,6 +16,11 @@ type StoredUserMediaAsset = {
   updatedAt: Date;
 };
 
+type UserMediaFileInput = {
+  buffer: Buffer;
+  size: number;
+};
+
 export const createUserMediaObjectKey = (userId: string, kind: UserMediaKind): string =>
   `users/${userId}/${kind}/${randomUUID()}.webp`;
 
@@ -116,6 +121,90 @@ export const deleteUserMediaAssetRecordIfCurrent = async (
       objectKey,
     },
   });
+};
+
+type UploadUserMediaAssetInput = {
+  userId: string;
+  kind: UserMediaKind;
+  file: UserMediaFileInput;
+};
+
+const cleanupUploadedUserMediaAfterFailure = async (
+  deps: AuthDependencies,
+  kind: UserMediaKind,
+  objectKey: string,
+): Promise<void> => {
+  await deps.objectStorage.deleteObject(objectKey).catch((err: unknown) => {
+    deps.logger.warn(
+      { err, kind, objectKey },
+      'Uploaded user media cleanup failed after persistence error',
+    );
+  });
+};
+
+export const uploadUserMediaAsset = async (
+  deps: AuthDependencies,
+  { userId, kind, file }: UploadUserMediaAssetInput,
+): Promise<StoredUserMediaAsset> => {
+  const processedMedia = await deps.userMediaProcessor.process({
+    kind,
+    file,
+  });
+  const objectKey = createUserMediaObjectKey(userId, kind);
+
+  await deps.objectStorage.putObject({
+    objectKey,
+    body: processedMedia.buffer,
+    contentType: processedMedia.mimeType,
+    cacheControl: getUserMediaCacheControl(),
+  });
+
+  const { asset, previousObjectKey } = await upsertStoredUserMediaAsset(deps, {
+    userId,
+    kind,
+    objectKey,
+    media: {
+      mimeType: processedMedia.mimeType,
+      sizeBytes: processedMedia.sizeBytes,
+      width: processedMedia.width,
+      height: processedMedia.height,
+    },
+  }).catch(async (err: unknown) => {
+    await cleanupUploadedUserMediaAfterFailure(deps, kind, objectKey);
+    throw err;
+  });
+
+  if (previousObjectKey && previousObjectKey !== objectKey) {
+    await deps.objectStorage.deleteObject(previousObjectKey);
+  }
+
+  return asset;
+};
+
+export const deleteUserMediaAsset = async (
+  deps: AuthDependencies,
+  userId: string,
+  kind: UserMediaKind,
+): Promise<void> => {
+  const asset = await deps.prisma.userMediaAsset.findUnique({
+    where: {
+      userId_kind: {
+        userId,
+        kind,
+      },
+    },
+    select: {
+      objectKey: true,
+    },
+  });
+
+  if (!asset) {
+    return;
+  }
+
+  await deps.objectStorage.deleteObject(asset.objectKey);
+
+  await deleteUserMediaAssetRecordIfCurrent(deps, userId, kind, asset.objectKey);
 };
 
 export function toUserMediaAssetUrl(

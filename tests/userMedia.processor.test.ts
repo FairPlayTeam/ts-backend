@@ -21,7 +21,7 @@ const createPng = async (width = 800, height = 600): Promise<Buffer> =>
 describe('user media processor', () => {
   test('normalizes avatar uploads to a square WebP without metadata', async () => {
     const processor = createUserMediaProcessor({
-      avatarMaxUploadBytes: 3 * 1024 * 1024,
+      profileMediaMaxUploadBytes: 3 * 1024 * 1024,
     });
     const input = await createPng();
 
@@ -45,9 +45,35 @@ describe('user media processor', () => {
     expect(metadata.exif).toBeUndefined();
   });
 
+  test('normalizes banner uploads to a wide WebP without metadata', async () => {
+    const processor = createUserMediaProcessor({
+      profileMediaMaxUploadBytes: 3 * 1024 * 1024,
+    });
+    const input = await createPng(2400, 1200);
+
+    const result = await processor.process({
+      kind: 'banner',
+      file: {
+        buffer: input,
+        size: input.length,
+      },
+    });
+
+    expect(result.mimeType).toBe('image/webp');
+    expect(result.sizeBytes).toBe(result.buffer.length);
+    expect(result.width).toBe(1500);
+    expect(result.height).toBe(500);
+
+    const metadata = await sharp(result.buffer).metadata();
+    expect(metadata.format).toBe('webp');
+    expect(metadata.width).toBe(1500);
+    expect(metadata.height).toBe(500);
+    expect(metadata.exif).toBeUndefined();
+  });
+
   test('rejects unsupported file signatures', async () => {
     const processor = createUserMediaProcessor({
-      avatarMaxUploadBytes: 3 * 1024 * 1024,
+      profileMediaMaxUploadBytes: 3 * 1024 * 1024,
     });
 
     await expect(
@@ -63,13 +89,23 @@ describe('user media processor', () => {
 
   test('rejects files larger than the media policy allows', async () => {
     const processor = createUserMediaProcessor({
-      avatarMaxUploadBytes: 4,
+      profileMediaMaxUploadBytes: 4,
     });
     const input = await createPng(16, 16);
 
     await expect(
       processor.process({
         kind: 'avatar',
+        file: {
+          buffer: input,
+          size: input.length,
+        },
+      }),
+    ).rejects.toBeInstanceOf(UserMediaFileTooLargeError);
+
+    await expect(
+      processor.process({
+        kind: 'banner',
         file: {
           buffer: input,
           size: input.length,

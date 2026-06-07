@@ -14,6 +14,7 @@ import {
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_SESSION_SUCCESS_MESSAGE,
   DELETE_AVATAR_SUCCESS_MESSAGE,
+  DELETE_BANNER_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
   REGISTER_SUCCESS_MESSAGE,
   RESEND_VERIFICATION_EMAIL_MESSAGE,
@@ -21,6 +22,7 @@ import {
   RESET_PASSWORD_SUCCESS_MESSAGE,
   UPDATE_PROFILE_SUCCESS_MESSAGE,
   UPLOAD_AVATAR_SUCCESS_MESSAGE,
+  UPLOAD_BANNER_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../services/auth/auth.messages.js';
 import { AUTH_ROLES } from '../services/auth.roles.js';
@@ -164,6 +166,10 @@ const authUserProfileResponseSchema = authUserResponseSchema.extend({
   avatarUrl: z.string().url().nullable().openapi({
     example:
       'http://localhost:9000/fairplay-user-media/users/9fdf5/avatar/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
+  }),
+  bannerUrl: z.string().url().nullable().openapi({
+    example:
+      'http://localhost:9000/fairplay-user-media/users/9fdf5/banner/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
   }),
 });
 
@@ -382,26 +388,61 @@ export const updateProfileResponseSchema = z
   })
   .openapi('UpdateProfileResponse');
 
-export const uploadAvatarBodySchema = z
-  .object({
-    avatar: z.string().openapi({
-      type: 'string',
-      format: 'binary',
-      description: 'JPEG, PNG, or WebP image file.',
-    }),
-  })
-  .openapi('UploadAvatarRequest');
+const createUserMediaUploadBodySchema = (fieldName: 'avatar' | 'banner', componentName: string) =>
+  z
+    .object({
+      [fieldName]: z.string().openapi({
+        type: 'string',
+        format: 'binary',
+        description: 'JPEG, PNG, or WebP image file.',
+      }),
+    })
+    .openapi(componentName);
 
-const avatarAssetResponseSchema = z.object({
-  url: z.string().url().openapi({
-    example:
-      'http://localhost:9000/fairplay-user-media/users/9fdf5/avatar/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
-  }),
-  mimeType: z.literal('image/webp').openapi({ example: 'image/webp' }),
-  sizeBytes: z.number().int().positive().openapi({ example: 18342 }),
-  width: z.number().int().positive().openapi({ example: 512 }),
-  height: z.number().int().positive().openapi({ example: 512 }),
-  updatedAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
+export const uploadAvatarBodySchema = createUserMediaUploadBodySchema(
+  'avatar',
+  'UploadAvatarRequest',
+);
+
+export const uploadBannerBodySchema = createUserMediaUploadBodySchema(
+  'banner',
+  'UploadBannerRequest',
+);
+
+type CreateUserMediaAssetResponseSchemaInput = {
+  urlExample: string;
+  widthExample: number;
+  heightExample: number;
+};
+
+const createUserMediaAssetResponseSchema = ({
+  urlExample,
+  widthExample,
+  heightExample,
+}: CreateUserMediaAssetResponseSchemaInput) =>
+  z.object({
+    url: z.string().url().openapi({
+      example: urlExample,
+    }),
+    mimeType: z.literal('image/webp').openapi({ example: 'image/webp' }),
+    sizeBytes: z.number().int().positive().openapi({ example: 18342 }),
+    width: z.number().int().positive().openapi({ example: widthExample }),
+    height: z.number().int().positive().openapi({ example: heightExample }),
+    updatedAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
+  });
+
+const avatarAssetResponseSchema = createUserMediaAssetResponseSchema({
+  urlExample:
+    'http://localhost:9000/fairplay-user-media/users/9fdf5/avatar/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
+  widthExample: 512,
+  heightExample: 512,
+});
+
+const bannerAssetResponseSchema = createUserMediaAssetResponseSchema({
+  urlExample:
+    'http://localhost:9000/fairplay-user-media/users/9fdf5/banner/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
+  widthExample: 1500,
+  heightExample: 500,
 });
 
 export const uploadAvatarResponseSchema = z
@@ -417,6 +458,20 @@ export const deleteAvatarResponseSchema = z
     avatar: z.null().openapi({ example: null }),
   })
   .openapi('DeleteAvatarResponse');
+
+export const uploadBannerResponseSchema = z
+  .object({
+    message: responseMessageSchema(UPLOAD_BANNER_SUCCESS_MESSAGE),
+    banner: bannerAssetResponseSchema,
+  })
+  .openapi('UploadBannerResponse');
+
+export const deleteBannerResponseSchema = z
+  .object({
+    message: responseMessageSchema(DELETE_BANNER_SUCCESS_MESSAGE),
+    banner: z.null().openapi({ example: null }),
+  })
+  .openapi('DeleteBannerResponse');
 
 export const userSessionsResponseSchema = z
   .object({

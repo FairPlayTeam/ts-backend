@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
   ServerConfigurationError,
-  parseAvatarMaxUploadBytes,
   parseAllowedOrigins,
   parseIsProduction,
   parseJsonBodyLimitBytes,
   parseMailerConfig,
   parseOptionalObjectStorageConfig,
   parseOptionalRedisUrl,
+  parseProfileMediaMaxUploadBytes,
   parseRateLimitKeySecret,
   parseRequiredHttpOriginUrl,
   parseRequiredHttpUrl,
@@ -81,10 +81,10 @@ describe('env parsers', () => {
     expect(() => parseJsonBodyLimitBytes('1mb')).toThrow(ServerConfigurationError);
   });
 
-  test('parses avatar upload size limits', () => {
-    expect(parseAvatarMaxUploadBytes(undefined)).toBe(3 * 1024 * 1024);
-    expect(parseAvatarMaxUploadBytes('2048')).toBe(2048);
-    expect(() => parseAvatarMaxUploadBytes('0')).toThrow(ServerConfigurationError);
+  test('parses profile media upload size limits', () => {
+    expect(parseProfileMediaMaxUploadBytes(undefined)).toBe(3 * 1024 * 1024);
+    expect(parseProfileMediaMaxUploadBytes('2048')).toBe(2048);
+    expect(() => parseProfileMediaMaxUploadBytes('0')).toThrow(ServerConfigurationError);
   });
 
   test('parses session cleanup intervals', () => {

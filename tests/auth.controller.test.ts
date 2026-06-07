@@ -16,6 +16,7 @@ import { UserAlreadyExistsError } from '../src/services/auth.errors.js';
 import {
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
   DELETE_AVATAR_SUCCESS_MESSAGE,
+  DELETE_BANNER_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
@@ -26,6 +27,7 @@ import {
   RESET_PASSWORD_SUCCESS_MESSAGE,
   UPDATE_PROFILE_SUCCESS_MESSAGE,
   UPLOAD_AVATAR_SUCCESS_MESSAGE,
+  UPLOAD_BANNER_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
 import type { AuthService } from '../src/services/auth.types.js';
@@ -146,6 +148,8 @@ const createControllerAuthService = (
       ...loginResult.user,
       avatarUrl:
         'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+      bannerUrl:
+        'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
     },
   }),
   getUserSessions: async () => userSessionsResult,
@@ -179,6 +183,21 @@ const createControllerAuthService = (
   deleteAvatar: async () => ({
     message: DELETE_AVATAR_SUCCESS_MESSAGE,
     avatar: null,
+  }),
+  uploadBanner: async () => ({
+    message: UPLOAD_BANNER_SUCCESS_MESSAGE,
+    banner: {
+      url: 'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+      mimeType: 'image/webp',
+      sizeBytes: 2345,
+      width: 1500,
+      height: 500,
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    },
+  }),
+  deleteBanner: async () => ({
+    message: DELETE_BANNER_SUCCESS_MESSAGE,
+    banner: null,
   }),
   requestPasswordReset: async () => ({ message: RESET_PASSWORD_EMAIL_MESSAGE }),
   resetPassword: async () => ({
@@ -432,6 +451,8 @@ describe('auth controller', () => {
       ...validatedSession.user,
       avatarUrl:
         'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+      bannerUrl:
+        'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
     };
     const controller = createTestAuthController({
       getProfile: async (input) => {
@@ -741,6 +762,111 @@ describe('auth controller', () => {
     expect(state.body).toEqual({
       message: DELETE_AVATAR_SUCCESS_MESSAGE,
       avatar: null,
+    });
+  });
+
+  test('uploads an authenticated user banner through the injected auth service', async () => {
+    let receivedInput:
+      | {
+          userId: string;
+          file: {
+            buffer: Buffer;
+            size: number;
+          };
+        }
+      | undefined;
+    let receivedError: unknown;
+    const { response, state } = createMockResponse();
+    const fileBuffer = Buffer.from('raw-banner');
+    const controller = createTestAuthController({
+      uploadBanner: async (input) => {
+        receivedInput = input;
+
+        return {
+          message: UPLOAD_BANNER_SUCCESS_MESSAGE,
+          banner: {
+            url: 'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+            mimeType: 'image/webp',
+            sizeBytes: 2345,
+            width: 1500,
+            height: 500,
+            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
+        };
+      },
+    });
+
+    await controller.uploadBanner(
+      {
+        file: {
+          buffer: fileBuffer,
+          size: fileBuffer.length,
+        },
+        user: validatedSession.user,
+        session: validatedSession.session,
+      } as AuthenticatedRequest,
+      response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedInput).toEqual({
+      userId: validatedSession.user.id,
+      file: {
+        buffer: fileBuffer,
+        size: fileBuffer.length,
+      },
+    });
+    expect(receivedError).toBeUndefined();
+    expect(state.statusCode).toBe(200);
+    expect(state.body).toEqual({
+      message: UPLOAD_BANNER_SUCCESS_MESSAGE,
+      banner: {
+        url: 'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+        mimeType: 'image/webp',
+        sizeBytes: 2345,
+        width: 1500,
+        height: 500,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+  });
+
+  test('deletes an authenticated user banner through the injected auth service', async () => {
+    let receivedInput: { userId: string } | undefined;
+    let receivedError: unknown;
+    const { response, state } = createMockResponse();
+    const controller = createTestAuthController({
+      deleteBanner: async (input) => {
+        receivedInput = input;
+
+        return {
+          message: DELETE_BANNER_SUCCESS_MESSAGE,
+          banner: null,
+        };
+      },
+    });
+
+    await controller.deleteBanner(
+      {
+        user: validatedSession.user,
+        session: validatedSession.session,
+      } as AuthenticatedRequest,
+      response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedInput).toEqual({
+      userId: validatedSession.user.id,
+    });
+    expect(receivedError).toBeUndefined();
+    expect(state.statusCode).toBe(200);
+    expect(state.body).toEqual({
+      message: DELETE_BANNER_SUCCESS_MESSAGE,
+      banner: null,
     });
   });
 

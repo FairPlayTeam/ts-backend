@@ -36,7 +36,7 @@ export const authService = createAuthService({
   mailer: { sendVerificationEmail, sendPasswordResetEmail },
   objectStorage: objectStorage ?? createUnavailableObjectStorage(),
   userMediaProcessor: createUserMediaProcessor({
-    avatarMaxUploadBytes: config.avatarMaxUploadBytes,
+    profileMediaMaxUploadBytes: config.profileMediaMaxUploadBytes,
   }),
   clock: systemClock,
   config: {

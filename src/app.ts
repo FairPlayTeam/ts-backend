@@ -28,10 +28,10 @@ import {
 type CreateAppConfig = Pick<
   Config,
   | 'allowedOrigins'
-  | 'avatarMaxUploadBytes'
   | 'baseUrl'
   | 'isProduction'
   | 'jsonBodyLimitBytes'
+  | 'profileMediaMaxUploadBytes'
   | 'rateLimitKeySecret'
   | 'trustProxy'
 >;
@@ -192,7 +192,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     new URL('./routes/', import.meta.url),
     {
       authService: deps.authService,
-      avatarMaxUploadBytes: config.avatarMaxUploadBytes,
+      profileMediaMaxUploadBytes: config.profileMediaMaxUploadBytes,
       authLimiter,
       registrationIdentifierLimiter,
       loginIdentifierLimiter,

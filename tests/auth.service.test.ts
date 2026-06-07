@@ -16,6 +16,7 @@ import {
   CLEANUP_SESSION_SUCCESS_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
   DELETE_AVATAR_SUCCESS_MESSAGE,
+  DELETE_BANNER_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
@@ -26,6 +27,7 @@ import {
   RESET_PASSWORD_SUCCESS_MESSAGE,
   UPDATE_PROFILE_SUCCESS_MESSAGE,
   UPLOAD_AVATAR_SUCCESS_MESSAGE,
+  UPLOAD_BANNER_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
@@ -35,6 +37,8 @@ type AuthDeps = Parameters<typeof createAuthService>[0];
 const fixedNow = new Date('2026-01-01T00:00:00.000Z');
 const avatarObjectKeyPattern =
   /^users\/user-id\/avatar\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webp$/;
+const bannerObjectKeyPattern =
+  /^users\/user-id\/banner\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webp$/;
 
 function createTestDeps(overrides: Partial<AuthDeps> = {}) {
   const calls = {
@@ -66,6 +70,7 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     deleteObject: undefined as unknown,
     deleteObjects: undefined as unknown,
     signedUrlObjectKey: undefined as unknown,
+    signedUrlObjectKeys: [] as string[],
     processedMedia: undefined as unknown,
     comparedPassword: undefined as unknown,
     sentEmail: undefined as unknown,
@@ -458,6 +463,7 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
       },
       getSignedUrl: async (objectKey: string) => {
         calls.signedUrlObjectKey = objectKey;
+        calls.signedUrlObjectKeys.push(objectKey);
 
         return `http://localhost:9000/fairplay-user-media/${objectKey}`;
       },
@@ -465,14 +471,23 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     userMediaProcessor: {
       process: async (input: unknown) => {
         calls.processedMedia = input;
+        const kind = (input as { kind?: string }).kind;
 
-        return {
-          buffer: Buffer.from('avatar'),
-          mimeType: 'image/webp',
-          sizeBytes: 6,
-          width: 512,
-          height: 512,
-        };
+        return kind === 'banner'
+          ? {
+              buffer: Buffer.from('banner'),
+              mimeType: 'image/webp',
+              sizeBytes: 7,
+              width: 1500,
+              height: 500,
+            }
+          : {
+              buffer: Buffer.from('avatar'),
+              mimeType: 'image/webp',
+              sizeBytes: 6,
+              width: 512,
+              height: 512,
+            };
       },
     },
     clock: {
@@ -1432,9 +1447,10 @@ describe('auth service', () => {
     });
   });
 
-  test('returns profile data with a signed avatar url', async () => {
+  test('returns profile data with signed profile media urls', async () => {
     const { deps, calls } = createTestDeps();
     const avatarObjectKey = 'users/user-id/avatar/current-avatar.webp';
+    const bannerObjectKey = 'users/user-id/banner/current-banner.webp';
     const service = createAuthService({
       ...deps,
       prisma: {
@@ -1453,7 +1469,12 @@ describe('auth service', () => {
               role: 'user',
               mediaAssets: [
                 {
+                  kind: 'avatar',
                   objectKey: avatarObjectKey,
+                },
+                {
+                  kind: 'banner',
+                  objectKey: bannerObjectKey,
                 },
               ],
             };
@@ -1475,6 +1496,7 @@ describe('auth service', () => {
         bio: 'Definitely not an undercover Y**tube employee.',
         role: 'user',
         avatarUrl: `http://localhost:9000/fairplay-user-media/${avatarObjectKey}`,
+        bannerUrl: `http://localhost:9000/fairplay-user-media/${bannerObjectKey}`,
       },
     });
 
@@ -1489,19 +1511,21 @@ describe('auth service', () => {
         role: true,
         mediaAssets: {
           where: {
-            kind: 'avatar',
+            kind: {
+              in: ['avatar', 'banner'],
+            },
           },
           select: {
+            kind: true,
             objectKey: true,
           },
-          take: 1,
         },
       },
     });
-    expect(calls.signedUrlObjectKey).toBe(avatarObjectKey);
+    expect(calls.signedUrlObjectKeys).toEqual([avatarObjectKey, bannerObjectKey]);
   });
 
-  test('returns profile data with a null avatar url when no avatar exists', async () => {
+  test('returns profile data with null media urls when no profile media exists', async () => {
     const { deps, calls } = createTestDeps();
     const service = createAuthService({
       ...deps,
@@ -1539,10 +1563,11 @@ describe('auth service', () => {
         bio: null,
         role: 'user',
         avatarUrl: null,
+        bannerUrl: null,
       },
     });
 
-    expect(calls.signedUrlObjectKey).toBeUndefined();
+    expect(calls.signedUrlObjectKeys).toEqual([]);
   });
 
   test('updates profile fields for a user', async () => {
@@ -1816,6 +1841,71 @@ describe('auth service', () => {
     expect(calls.deleteObject).toBe(uploadedObjectKey);
   });
 
+  test('uploads and stores a normalized banner for a user', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    const result = await service.uploadBanner({
+      userId: 'user-id',
+      file: {
+        buffer: Buffer.from('raw-banner'),
+        size: 10,
+      },
+    });
+    const objectKey = calls.signedUrlObjectKey as string;
+
+    expect(objectKey).toMatch(bannerObjectKeyPattern);
+    expect(result).toEqual({
+      message: UPLOAD_BANNER_SUCCESS_MESSAGE,
+      banner: {
+        url: `http://localhost:9000/fairplay-user-media/${objectKey}`,
+        mimeType: 'image/webp',
+        sizeBytes: 7,
+        width: 1500,
+        height: 500,
+        updatedAt: fixedNow,
+      },
+    });
+
+    expect(calls.processedMedia).toEqual({
+      kind: 'banner',
+      file: {
+        buffer: Buffer.from('raw-banner'),
+        size: 10,
+      },
+    });
+    expect(calls.putObject).toEqual({
+      objectKey,
+      body: Buffer.from('banner'),
+      contentType: 'image/webp',
+      cacheControl: 'private, max-age=900',
+    });
+    expect(calls.userMediaAssetUpsert).toMatchObject({
+      where: {
+        userId_kind: {
+          userId: 'user-id',
+          kind: 'banner',
+        },
+      },
+      update: {
+        objectKey,
+        mimeType: 'image/webp',
+        sizeBytes: 7,
+        width: 1500,
+        height: 500,
+      },
+      create: {
+        userId: 'user-id',
+        kind: 'banner',
+        objectKey,
+        mimeType: 'image/webp',
+        sizeBytes: 7,
+        width: 1500,
+        height: 500,
+      },
+    });
+  });
+
   test('deletes an existing avatar for a user', async () => {
     const objectKey = 'users/user-id/avatar/current-avatar.webp';
     const { deps, calls } = createTestDeps({
@@ -1894,6 +1984,58 @@ describe('auth service', () => {
     });
     expect(calls.deleteObject).toBeUndefined();
     expect(calls.userMediaAssetDeleteMany).toBeUndefined();
+  });
+
+  test('deletes an existing banner for a user', async () => {
+    const objectKey = 'users/user-id/banner/current-banner.webp';
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        userMediaAsset: {
+          findUnique: async (args: unknown) => {
+            calls.userMediaAssetFindUnique = args;
+
+            return {
+              objectKey,
+            };
+          },
+          deleteMany: async (args: unknown) => {
+            calls.userMediaAssetDeleteMany = args;
+
+            return { count: 1 };
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.deleteBanner({
+        userId: 'user-id',
+      }),
+    ).resolves.toEqual({
+      message: DELETE_BANNER_SUCCESS_MESSAGE,
+      banner: null,
+    });
+
+    expect(calls.userMediaAssetFindUnique).toEqual({
+      where: {
+        userId_kind: {
+          userId: 'user-id',
+          kind: 'banner',
+        },
+      },
+      select: {
+        objectKey: true,
+      },
+    });
+    expect(calls.deleteObject).toBe(objectKey);
+    expect(calls.userMediaAssetDeleteMany).toEqual({
+      where: {
+        userId: 'user-id',
+        kind: 'banner',
+        objectKey,
+      },
+    });
   });
 
   test('exports user data without selecting secret fields', async () => {

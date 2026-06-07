@@ -4,6 +4,7 @@ import {
   CLEANUP_SESSION_SUCCESS_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
+  DELETE_BANNER_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_SESSION_SUCCESS_MESSAGE,
@@ -13,6 +14,7 @@ import {
   RESET_PASSWORD_SUCCESS_MESSAGE,
   UPDATE_PROFILE_SUCCESS_MESSAGE,
   UPLOAD_AVATAR_SUCCESS_MESSAGE,
+  UPLOAD_BANNER_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
   DELETE_AVATAR_SUCCESS_MESSAGE,
 } from '../../src/services/auth/auth.messages.js';
@@ -106,6 +108,8 @@ export const createStubAuthService = (): AuthService => ({
       ...sessionResult.user,
       avatarUrl:
         'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+      bannerUrl:
+        'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
     },
   }),
   requestPasswordReset: async () => ({
@@ -155,6 +159,21 @@ export const createStubAuthService = (): AuthService => ({
   deleteAvatar: async () => ({
     message: DELETE_AVATAR_SUCCESS_MESSAGE,
     avatar: null,
+  }),
+  uploadBanner: async () => ({
+    message: UPLOAD_BANNER_SUCCESS_MESSAGE,
+    banner: {
+      url: 'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+      mimeType: 'image/webp',
+      sizeBytes: 2345,
+      width: 1500,
+      height: 500,
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    },
+  }),
+  deleteBanner: async () => ({
+    message: DELETE_BANNER_SUCCESS_MESSAGE,
+    banner: null,
   }),
   cleanupSessions: async () => ({
     message: CLEANUP_SESSION_SUCCESS_MESSAGE,

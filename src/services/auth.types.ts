@@ -18,6 +18,7 @@ export type AuthUser = {
 
 export type AuthUserProfile = AuthUser & {
   avatarUrl: string | null;
+  bannerUrl: string | null;
 };
 
 export type RegisterInput = {
@@ -53,7 +54,7 @@ export type GetProfileInput = {
   userId: string;
 };
 
-export type UploadAvatarInput = {
+export type UploadUserMediaInput = {
   userId: string;
   file: {
     buffer: Buffer;
@@ -61,9 +62,17 @@ export type UploadAvatarInput = {
   };
 };
 
-export type DeleteAvatarInput = {
+export type DeleteUserMediaInput = {
   userId: string;
 };
+
+export type UploadAvatarInput = UploadUserMediaInput;
+
+export type DeleteAvatarInput = DeleteUserMediaInput;
+
+export type UploadBannerInput = UploadUserMediaInput;
+
+export type DeleteBannerInput = DeleteUserMediaInput;
 
 export type UserMediaAssetResult = {
   url: string;
@@ -234,6 +243,14 @@ export type AuthService = {
   deleteAvatar(input: DeleteAvatarInput): Promise<{
     message: string;
     avatar: null;
+  }>;
+  uploadBanner(input: UploadBannerInput): Promise<{
+    message: string;
+    banner: UserMediaAssetResult;
+  }>;
+  deleteBanner(input: DeleteBannerInput): Promise<{
+    message: string;
+    banner: null;
   }>;
   cleanupSessions(input: CleanupSessionsInput): Promise<CleanupSessionsResult>;
   cleanupExpiredAuthTokens(

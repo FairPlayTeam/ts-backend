@@ -230,7 +230,8 @@ The full Swagger UI documentation will be available at /docs.
 - `OBJECT_STORAGE_BUCKET` bucket for profile media. Defaults to `fairplay-user-media`.
 - `OBJECT_STORAGE_ACCESS_KEY` and `OBJECT_STORAGE_SECRET_KEY` object storage credentials.
 - `OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS` lifetime of signed media URLs. Defaults to `900`.
-- `AVATAR_MAX_UPLOAD_BYTES` maximum accepted raw avatar upload size in bytes. Defaults to `3145728`.
+- `PROFILE_MEDIA_MAX_UPLOAD_BYTES` maximum accepted raw profile media upload size in bytes,
+  currently for avatar and banner uploads. Defaults to `3145728`.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` configure email delivery.
 - `FRONTEND_URL` frontend URL used to generate verification and password reset links.
 
