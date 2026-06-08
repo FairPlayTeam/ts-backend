@@ -4,8 +4,7 @@ import { createVerificationService } from './auth/auth.emailVerification.js';
 import { createRegistrationService } from './auth/auth.registration.js';
 import { createSessionService } from './auth/auth.sessions.js';
 import { createProfileService } from './auth/auth.profile.js';
-import { createAvatarService } from './auth/auth.avatar.js';
-import { createBannerService } from './auth/auth.banner.js';
+import { createProfileMediaService } from './auth/auth.profileMedia.js';
 import { createLoginService } from './auth/auth.login.js';
 import { createResetPasswordService } from './auth/auth.resetPassword.js';
 import { createTokenCleanupService } from './auth/auth.tokenCleanup.js';
@@ -14,18 +13,32 @@ import { createAccountDeletionService } from './auth/auth.accountDeletion.js';
 
 export const createAuthService = (deps: AuthDependencies): AuthService => {
   const sessionService = createSessionService(deps);
+  const registrationService = createRegistrationService(deps);
+  const loginService = createLoginService(deps, sessionService);
+  const verificationService = createVerificationService(deps, sessionService);
+  const profileService = createProfileService(deps);
+  const profileMediaService = createProfileMediaService(deps);
+  const resetPasswordService = createResetPasswordService(deps);
+  const tokenCleanupService = createTokenCleanupService(deps);
+  const dataExportService = createDataExportService(deps);
+  const accountDeletionService = createAccountDeletionService(deps);
 
   return {
-    ...createRegistrationService(deps),
-    ...createLoginService(deps, sessionService),
-    ...createVerificationService(deps, sessionService),
-    ...createProfileService(deps),
-    ...createAvatarService(deps),
-    ...createBannerService(deps),
-    ...createResetPasswordService(deps),
-    ...createTokenCleanupService(deps),
-    ...createDataExportService(deps),
-    ...createAccountDeletionService(deps),
+    register: registrationService.register,
+    login: loginService.login,
+    verifyEmail: verificationService.verifyEmail,
+    resendVerification: verificationService.resendVerification,
+    requestPasswordReset: resetPasswordService.requestPasswordReset,
+    resetPassword: resetPasswordService.resetPassword,
+    getProfile: profileService.getProfile,
+    updateProfile: profileService.updateProfile,
+    uploadAvatar: profileMediaService.uploadAvatar,
+    deleteAvatar: profileMediaService.deleteAvatar,
+    uploadBanner: profileMediaService.uploadBanner,
+    deleteBanner: profileMediaService.deleteBanner,
+    exportUserData: dataExportService.exportUserData,
+    deleteAccount: accountDeletionService.deleteAccount,
+    cleanupExpiredAuthTokens: tokenCleanupService.cleanupExpiredAuthTokens,
     validateSession: sessionService.validateSession,
     getUserSessions: sessionService.getUserSessions,
     logoutAllSessions: sessionService.logoutAllSessions,
