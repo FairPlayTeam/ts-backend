@@ -9,6 +9,7 @@ import {
   InvalidPasswordResetTokenError,
   PasswordResetPasswordReuseError,
   PasswordResetStateChangedError,
+  ProfileUpdateEmptyError,
   UserAlreadyExistsError,
 } from '../src/services/auth.errors.js';
 import {
@@ -71,6 +72,14 @@ describe('auth error mapping', () => {
     expect(error).toBeInstanceOf(HttpError);
     expect((error as HttpError).statusCode).toBe(409);
     expect((error as HttpError).code).toBe('Conflict');
+  });
+
+  test('maps empty profile updates to bad request', () => {
+    const error = toAuthHttpError(new ProfileUpdateEmptyError());
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).statusCode).toBe(400);
+    expect((error as HttpError).code).toBe('BadRequest');
   });
 
   test('maps oversized user media files to payload too large', () => {

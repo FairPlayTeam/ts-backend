@@ -9,6 +9,7 @@ import {
   InvalidPasswordResetTokenError,
   PasswordResetPasswordReuseError,
   PasswordResetStateChangedError,
+  ProfileUpdateEmptyError,
   UserAlreadyExistsError,
 } from '../src/services/auth.errors.js';
 import {
@@ -108,10 +109,20 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
       },
     },
     userMediaAsset: {
+      findMany: async (args: unknown) => {
+        calls.userMediaAssetFindMany = args;
+
+        return [];
+      },
       findUnique: async (args: unknown) => {
         calls.userMediaAssetFindUnique = args;
 
         return null;
+      },
+      deleteMany: async (args: unknown) => {
+        calls.userMediaAssetDeleteMany = args;
+
+        return { count: 1 };
       },
       upsert: async (args: unknown) => {
         calls.userMediaAssetUpsert = args;
@@ -1003,7 +1014,12 @@ describe('auth service', () => {
     });
 
     expect(calls.tokenDeleteMany).toEqual({
-      where: { token: 'hashed-plain-token' },
+      where: {
+        token: 'hashed-plain-token',
+        expiresAt: {
+          gt: fixedNow,
+        },
+      },
     });
 
     expect(calls.sessionCreate).toEqual({
@@ -1122,6 +1138,64 @@ describe('auth service', () => {
         token: 'plain-token',
       }),
     ).rejects.toBeInstanceOf(InvalidEmailVerificationTokenError);
+  });
+
+  test('rejects email verification when the token expires before transaction consumption', async () => {
+    const consumedAt = new Date('2026-01-01T00:00:02.000Z');
+    let nowCalls = 0;
+    const { deps, calls } = createTestDeps({
+      clock: {
+        now: () => (nowCalls++ === 0 ? fixedNow : consumedAt),
+      },
+      prisma: {
+        ...createTestDeps().deps.prisma,
+        $transaction: async (
+          callback: (transaction: {
+            emailVerificationToken: { deleteMany(args: unknown): Promise<{ count: number }> };
+            user: { update(): Promise<never> };
+            session: { create(): Promise<never> };
+          }) => Promise<unknown>,
+        ) =>
+          callback({
+            emailVerificationToken: {
+              deleteMany: async (args: unknown) => {
+                calls.tokenDeleteMany = args;
+
+                return { count: 0 };
+              },
+            },
+            user: {
+              update: async () => {
+                throw new Error('Should not update a user after an expired token consumption');
+              },
+            },
+            session: {
+              create: async () => {
+                throw new Error('Should not create a session after an expired token consumption');
+              },
+            },
+          }),
+      } as unknown as AuthDeps['prisma'],
+    });
+
+    const service = createAuthService(deps);
+
+    await expect(
+      service.verifyEmail({
+        token: 'plain-token',
+      }),
+    ).rejects.toBeInstanceOf(InvalidEmailVerificationTokenError);
+
+    expect(calls.tokenDeleteMany).toEqual({
+      where: {
+        token: 'hashed-plain-token',
+        expiresAt: {
+          gt: consumedAt,
+        },
+      },
+    });
+    expect(calls.userUpdate).toBeUndefined();
+    expect(calls.sessionCreate).toBeUndefined();
   });
 
   test('rejects email verification for banned users', async () => {
@@ -1609,6 +1683,19 @@ describe('auth service', () => {
     });
   });
 
+  test('rejects empty profile updates at the service boundary', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await expect(
+      service.updateProfile({
+        userId: 'user-id',
+      }),
+    ).rejects.toBeInstanceOf(ProfileUpdateEmptyError);
+
+    expect(calls.userUpdate).toBeUndefined();
+  });
+
   test('uploads and stores a normalized avatar for a user', async () => {
     const { deps, calls } = createTestDeps();
     const service = createAuthService(deps);
@@ -1741,6 +1828,75 @@ describe('auth service', () => {
     expect(result.message).toBe(UPLOAD_AVATAR_SUCCESS_MESSAGE);
     expect(calls.signedUrlObjectKey).toMatch(avatarObjectKeyPattern);
     expect(calls.deleteObject).toBe(previousObjectKey);
+  });
+
+  test('keeps avatar upload successful when previous object cleanup fails', async () => {
+    const previousObjectKey = 'users/user-id/avatar/previous-avatar.webp';
+    const cleanupError = new Error('object storage unavailable');
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        $transaction: async (callback: (transaction: unknown) => Promise<unknown>) =>
+          callback({
+            userMediaAsset: {
+              findUnique: async () => ({
+                objectKey: previousObjectKey,
+              }),
+              upsert: async (args: unknown) => {
+                const upsertArgs = args as {
+                  update: {
+                    objectKey: string;
+                    mimeType: string;
+                    sizeBytes: number;
+                    width: number;
+                    height: number;
+                  };
+                };
+
+                return {
+                  ...upsertArgs.update,
+                  updatedAt: fixedNow,
+                };
+              },
+            },
+          }),
+      } as unknown as AuthDeps['prisma'],
+      objectStorage: {
+        putObject: async (input: unknown) => {
+          calls.putObject = input;
+        },
+        deleteObject: async (objectKey: string) => {
+          calls.deleteObject = objectKey;
+          throw cleanupError;
+        },
+        deleteObjects: async (objectKeys: readonly string[]) => {
+          calls.deleteObjects = objectKeys;
+        },
+        getSignedUrl: async (objectKey: string) => {
+          calls.signedUrlObjectKey = objectKey;
+
+          return `http://localhost:9000/fairplay-user-media/${objectKey}`;
+        },
+      },
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.uploadAvatar({
+        userId: 'user-id',
+        file: {
+          buffer: Buffer.from('raw-avatar'),
+          size: 10,
+        },
+      }),
+    ).resolves.toMatchObject({
+      message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
+    });
+
+    expect(calls.deleteObject).toBe(previousObjectKey);
+    expect(calls.warning).toEqual({
+      data: { err: cleanupError, objectKey: previousObjectKey },
+      message: 'Previous user media object cleanup failed after replacement',
+    });
   });
 
   test('retries avatar persistence on serializable transaction conflicts', async () => {
@@ -1956,6 +2112,96 @@ describe('auth service', () => {
         objectKey,
       },
     });
+  });
+
+  test('keeps avatar deletion successful when object cleanup fails', async () => {
+    const objectKey = 'users/user-id/avatar/current-avatar.webp';
+    const cleanupError = new Error('object storage unavailable');
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        userMediaAsset: {
+          findUnique: async () => ({
+            objectKey,
+          }),
+          deleteMany: async (args: unknown) => {
+            calls.userMediaAssetDeleteMany = args;
+
+            return { count: 1 };
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+      objectStorage: {
+        putObject: async (input: unknown) => {
+          calls.putObject = input;
+        },
+        deleteObject: async (deletedObjectKey: string) => {
+          calls.deleteObject = deletedObjectKey;
+          throw cleanupError;
+        },
+        deleteObjects: async (objectKeys: readonly string[]) => {
+          calls.deleteObjects = objectKeys;
+        },
+        getSignedUrl: async (signedObjectKey: string) =>
+          `http://localhost:9000/fairplay-user-media/${signedObjectKey}`,
+      },
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.deleteAvatar({
+        userId: 'user-id',
+      }),
+    ).resolves.toEqual({
+      message: DELETE_AVATAR_SUCCESS_MESSAGE,
+      avatar: null,
+    });
+
+    expect(calls.userMediaAssetDeleteMany).toEqual({
+      where: {
+        userId: 'user-id',
+        kind: 'avatar',
+        objectKey,
+      },
+    });
+    expect(calls.deleteObject).toBe(objectKey);
+    expect(calls.warning).toEqual({
+      data: { err: cleanupError, objectKey },
+      message: 'User media object cleanup failed after record deletion',
+    });
+  });
+
+  test('does not delete avatar objects when record deletion fails', async () => {
+    const objectKey = 'users/user-id/avatar/current-avatar.webp';
+    const deletionError = new Error('database unavailable');
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        userMediaAsset: {
+          findUnique: async () => ({
+            objectKey,
+          }),
+          deleteMany: async (args: unknown) => {
+            calls.userMediaAssetDeleteMany = args;
+            throw deletionError;
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.deleteAvatar({
+        userId: 'user-id',
+      }),
+    ).rejects.toBe(deletionError);
+
+    expect(calls.userMediaAssetDeleteMany).toEqual({
+      where: {
+        userId: 'user-id',
+        kind: 'avatar',
+        objectKey,
+      },
+    });
+    expect(calls.deleteObject).toBeUndefined();
   });
 
   test('keeps avatar deletion idempotent when no avatar exists', async () => {
@@ -2183,24 +2429,24 @@ describe('auth service', () => {
     });
   });
 
-  test('deletes stored media objects before deleting an account', async () => {
+  test('deletes stored media objects after deleting an account', async () => {
     const events: string[] = [];
     const { deps, calls } = createTestDeps({
       prisma: {
-        userMediaAsset: {
-          findMany: async (args: unknown) => {
-            calls.userMediaAssetFindMany = args;
-
-            return [
-              { objectKey: 'users/user-id/avatar/current-avatar.webp' },
-              { objectKey: 'users/user-id/banner/current-banner.webp' },
-            ];
-          },
-        },
         $transaction: async (callback: (transaction: unknown) => Promise<unknown>) => {
           events.push('transaction');
 
           return callback({
+            userMediaAsset: {
+              findMany: async (args: unknown) => {
+                calls.userMediaAssetFindMany = args;
+
+                return [
+                  { objectKey: 'users/user-id/avatar/current-avatar.webp' },
+                  { objectKey: 'users/user-id/banner/current-banner.webp' },
+                ];
+              },
+            },
             session: {
               deleteMany: async (args: unknown) => {
                 calls.sessionDeleteMany = args;
@@ -2255,9 +2501,79 @@ describe('auth service', () => {
       'users/user-id/avatar/current-avatar.webp',
       'users/user-id/banner/current-banner.webp',
     ]);
-    expect(events).toEqual(['deleteObjects', 'transaction']);
+    expect(events).toEqual(['transaction', 'deleteObjects']);
     expect(calls.userDeleteMany).toEqual({
       where: { id: 'user-id' },
+    });
+  });
+
+  test('keeps account deletion successful when media object cleanup fails', async () => {
+    const cleanupError = new Error('object storage unavailable');
+    const objectKeys = [
+      'users/user-id/avatar/current-avatar.webp',
+      'users/user-id/banner/current-banner.webp',
+    ];
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        $transaction: async (callback: (transaction: unknown) => Promise<unknown>) =>
+          callback({
+            userMediaAsset: {
+              findMany: async () => objectKeys.map((objectKey) => ({ objectKey })),
+            },
+            session: {
+              deleteMany: async (args: unknown) => {
+                calls.sessionDeleteMany = args;
+              },
+            },
+            emailVerificationToken: {
+              deleteMany: async (args: unknown) => {
+                calls.tokenDeleteMany = args;
+              },
+            },
+            passwordResetToken: {
+              deleteMany: async (args: unknown) => {
+                calls.passwordResetTokenDeleteMany = args;
+              },
+            },
+            user: {
+              deleteMany: async (args: unknown) => {
+                calls.userDeleteMany = args;
+              },
+            },
+          }),
+      } as unknown as AuthDeps['prisma'],
+      objectStorage: {
+        putObject: async (input: unknown) => {
+          calls.putObject = input;
+        },
+        deleteObject: async (objectKey: string) => {
+          calls.deleteObject = objectKey;
+        },
+        deleteObjects: async (deletedObjectKeys: readonly string[]) => {
+          calls.deleteObjects = deletedObjectKeys;
+          throw cleanupError;
+        },
+        getSignedUrl: async (objectKey: string) =>
+          `http://localhost:9000/fairplay-user-media/${objectKey}`,
+      },
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.deleteAccount({
+        userId: 'user-id',
+      }),
+    ).resolves.toEqual({
+      message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+    });
+
+    expect(calls.deleteObjects).toEqual(objectKeys);
+    expect(calls.userDeleteMany).toEqual({
+      where: { id: 'user-id' },
+    });
+    expect(calls.warning).toEqual({
+      data: { err: cleanupError, userId: 'user-id', objectKeys },
+      message: 'Stored user media object cleanup failed after account deletion',
     });
   });
 

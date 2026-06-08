@@ -3,6 +3,7 @@ import type { AuthDependencies } from './auth.dependencies.js';
 import { UPDATE_PROFILE_SUCCESS_MESSAGE } from './auth.messages.js';
 import { toUserMediaAssetUrl } from './auth.userMedia.js';
 import type { UserMediaKind } from '../userMedia/userMedia.types.js';
+import { ProfileUpdateEmptyError } from '../auth.errors.js';
 
 type ProfileService = Pick<AuthService, 'getProfile' | 'updateProfile'>;
 
@@ -65,6 +66,10 @@ export const createProfileService = (deps: AuthDependencies): ProfileService => 
       ...(displayName !== undefined ? { displayName } : {}),
       ...(bio !== undefined ? { bio } : {}),
     };
+
+    if (Object.keys(data).length === 0) {
+      throw new ProfileUpdateEmptyError();
+    }
 
     const user = await deps.prisma.user.update({
       where: { id: userId },

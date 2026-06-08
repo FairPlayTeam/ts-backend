@@ -113,14 +113,16 @@ export const deleteUserMediaAssetRecordIfCurrent = async (
   userId: string,
   kind: UserMediaKind,
   objectKey: string,
-): Promise<void> => {
-  await deps.prisma.userMediaAsset.deleteMany({
+): Promise<boolean> => {
+  const result = await deps.prisma.userMediaAsset.deleteMany({
     where: {
       userId,
       kind,
       objectKey,
     },
   });
+
+  return result.count > 0;
 };
 
 type UploadUserMediaAssetInput = {
@@ -139,6 +141,16 @@ const cleanupUploadedUserMediaAfterFailure = async (
       { err, kind, objectKey },
       'Uploaded user media cleanup failed after persistence error',
     );
+  });
+};
+
+const cleanupUserMediaObjectAfterStateChange = async (
+  deps: AuthDependencies,
+  objectKey: string,
+  warningMessage: string,
+): Promise<void> => {
+  await deps.objectStorage.deleteObject(objectKey).catch((err: unknown) => {
+    deps.logger.warn({ err, objectKey }, warningMessage);
   });
 };
 
@@ -175,7 +187,11 @@ export const uploadUserMediaAsset = async (
   });
 
   if (previousObjectKey && previousObjectKey !== objectKey) {
-    await deps.objectStorage.deleteObject(previousObjectKey);
+    await cleanupUserMediaObjectAfterStateChange(
+      deps,
+      previousObjectKey,
+      'Previous user media object cleanup failed after replacement',
+    );
   }
 
   return asset;
@@ -202,9 +218,20 @@ export const deleteUserMediaAsset = async (
     return;
   }
 
-  await deps.objectStorage.deleteObject(asset.objectKey);
+  const deletedRecord = await deleteUserMediaAssetRecordIfCurrent(
+    deps,
+    userId,
+    kind,
+    asset.objectKey,
+  );
 
-  await deleteUserMediaAssetRecordIfCurrent(deps, userId, kind, asset.objectKey);
+  if (deletedRecord) {
+    await cleanupUserMediaObjectAfterStateChange(
+      deps,
+      asset.objectKey,
+      'User media object cleanup failed after record deletion',
+    );
+  }
 };
 
 export function toUserMediaAssetUrl(
@@ -234,22 +261,19 @@ export const toUserMediaAssetResult = async (
   updatedAt: asset.updatedAt,
 });
 
-export const deleteStoredUserMediaObjects = async (
+export const deleteStoredUserMediaObjectsAfterStateChange = async (
   deps: AuthDependencies,
   userId: string,
+  objectKeys: readonly string[],
 ): Promise<void> => {
-  const assets = await deps.prisma.userMediaAsset.findMany({
-    where: { userId },
-    select: {
-      objectKey: true,
-    },
-  });
-
-  const objectKeys = assets.map((asset) => asset.objectKey);
-
   if (objectKeys.length === 0) {
     return;
   }
 
-  await deps.objectStorage.deleteObjects(objectKeys);
+  await deps.objectStorage.deleteObjects(objectKeys).catch((err: unknown) => {
+    deps.logger.warn(
+      { err, userId, objectKeys },
+      'Stored user media object cleanup failed after account deletion',
+    );
+  });
 };

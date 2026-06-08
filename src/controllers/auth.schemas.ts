@@ -26,11 +26,12 @@ import {
   VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../services/auth/auth.messages.js';
 import { AUTH_ROLES } from '../services/auth.roles.js';
+import { PROFILE_UPDATE_EMPTY_MESSAGE } from '../services/auth.errors.js';
 
 export const LOGOUT_SESSION_ID_INVALID_MESSAGE = 'Session id must be a valid UUID';
 export const USER_SESSIONS_CURSOR_PAIR_MESSAGE =
   'cursorLastUsedAt and cursorId must be provided together';
-export const UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE = 'At least one profile field must be provided';
+export const UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE = PROFILE_UPDATE_EMPTY_MESSAGE;
 
 const responseMessageSchema = (example: string) => z.string().openapi({ example });
 

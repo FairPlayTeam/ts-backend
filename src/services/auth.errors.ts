@@ -8,6 +8,7 @@ const PASSWORD_RESET_PASSWORD_REUSE_MESSAGE =
   'New password must be different from the current password';
 const PASSWORD_RESET_STATE_CHANGED_MESSAGE =
   'Password state changed during reset. Please try again.';
+export const PROFILE_UPDATE_EMPTY_MESSAGE = 'At least one profile field must be provided';
 
 export class UserAlreadyExistsError extends Error {
   constructor(cause?: unknown) {
@@ -62,5 +63,12 @@ export class PasswordResetStateChangedError extends Error {
   constructor() {
     super(PASSWORD_RESET_STATE_CHANGED_MESSAGE);
     this.name = 'PasswordResetStateChangedError';
+  }
+}
+
+export class ProfileUpdateEmptyError extends Error {
+  constructor() {
+    super(PROFILE_UPDATE_EMPTY_MESSAGE);
+    this.name = 'ProfileUpdateEmptyError';
   }
 }

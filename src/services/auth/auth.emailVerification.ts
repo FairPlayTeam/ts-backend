@@ -56,8 +56,14 @@ export const createVerificationService = (
     }
 
     const session = await deps.prisma.$transaction(async (tx) => {
+      const consumedAt = deps.clock.now();
       const consumedToken = await tx.emailVerificationToken.deleteMany({
-        where: { token: tokenHash },
+        where: {
+          token: tokenHash,
+          expiresAt: {
+            gt: consumedAt,
+          },
+        },
       });
 
       if (consumedToken.count !== 1) {
