@@ -133,7 +133,10 @@ const userDataExportResult = {
   passwordResetToken: null,
 };
 
-type ControllerAuthService = Omit<AuthService, 'cleanupExpiredAuthTokens' | 'cleanupSessions'>;
+type ControllerAuthService = Omit<
+  AuthService,
+  'cleanupExpiredAuthTokens' | 'cleanupPendingUserMediaDeletions' | 'cleanupSessions'
+>;
 
 const createControllerAuthService = (
   overrides: Partial<ControllerAuthService> = {},
@@ -205,7 +208,7 @@ const createControllerAuthService = (
     sessionsLoggedOut: 1,
   }),
   exportUserData: async () => userDataExportResult,
-  deleteAccount: async () => ({ message: DELETE_ACCOUNT_SUCCESS_MESSAGE }),
+  deleteAccount: async () => ({ message: DELETE_ACCOUNT_SUCCESS_MESSAGE, mediaCleanupQueued: 0 }),
   ...overrides,
 });
 
@@ -584,7 +587,7 @@ describe('auth controller', () => {
       deleteAccount: async (input) => {
         receivedInput = input;
 
-        return { message: DELETE_ACCOUNT_SUCCESS_MESSAGE };
+        return { message: DELETE_ACCOUNT_SUCCESS_MESSAGE, mediaCleanupQueued: 0 };
       },
     });
 
@@ -606,6 +609,7 @@ describe('auth controller', () => {
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
       message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+      mediaCleanupQueued: 0,
     });
   });
 

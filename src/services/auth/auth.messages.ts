@@ -16,6 +16,8 @@ export const DELETE_BANNER_SUCCESS_MESSAGE = 'Banner deleted successfully';
 export const CLEANUP_SESSION_SUCCESS_MESSAGE = 'Sessions cleaned up successfully';
 export const CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE =
   'Expired authentication tokens cleaned up successfully';
+export const CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE =
+  'Pending user media deletions cleaned up successfully';
 export const RESET_PASSWORD_EMAIL_MESSAGE =
   'If this email exists and is eligible for password reset, a reset link has been sent.';
 export const ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE =
@@ -23,3 +25,5 @@ export const ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE =
 export const RESET_PASSWORD_SUCCESS_MESSAGE =
   'Your password has been reset successfully. Please log in with your new password.';
 export const DELETE_ACCOUNT_SUCCESS_MESSAGE = 'Account deleted successfully';
+export const DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE =
+  'Account deleted. Stored media cleanup is queued.';

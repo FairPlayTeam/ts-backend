@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  deleteAccountResponseSchema,
   loginSchema,
   logoutSessionSchema,
   registerSchema,
@@ -9,6 +10,10 @@ import {
   userSessionsSchema,
   verifyEmailSchema,
 } from '../src/controllers/auth.schemas.js';
+import {
+  DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
+  DELETE_ACCOUNT_SUCCESS_MESSAGE,
+} from '../src/services/auth/auth.messages.js';
 
 const validRegisterBody = {
   email: 'user@example.com',
@@ -319,5 +324,39 @@ describe('updateProfileSchema', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('deleteAccountResponseSchema', () => {
+  test('accepts account deletion responses with media cleanup counts', () => {
+    expect(
+      deleteAccountResponseSchema.safeParse({
+        message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+        mediaCleanupQueued: 0,
+      }).success,
+    ).toBe(true);
+
+    expect(
+      deleteAccountResponseSchema.safeParse({
+        message: DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
+        mediaCleanupQueued: 2,
+      }).success,
+    ).toBe(true);
+  });
+
+  test('rejects invalid account deletion response shapes', () => {
+    expect(
+      deleteAccountResponseSchema.safeParse({
+        message: 'Account deleted',
+        mediaCleanupQueued: 0,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      deleteAccountResponseSchema.safeParse({
+        message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+        mediaCleanupQueued: -1,
+      }).success,
+    ).toBe(false);
   });
 });

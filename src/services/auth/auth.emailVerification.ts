@@ -70,10 +70,23 @@ export const createVerificationService = (
         throw new InvalidEmailVerificationTokenError();
       }
 
-      await tx.user.update({
-        where: { id: record.userId },
+      const updatedUser = await tx.user.updateMany({
+        where: { id: record.userId, isBanned: false },
         data: { isVerified: true, lastLogin: now },
       });
+
+      if (updatedUser.count !== 1) {
+        const currentUser = await tx.user.findUnique({
+          where: { id: record.userId },
+          select: { isBanned: true },
+        });
+
+        if (currentUser?.isBanned) {
+          throw new AccountBannedError();
+        }
+
+        throw new InvalidEmailVerificationTokenError();
+      }
 
       return tx.session.create({
         data: {

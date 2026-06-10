@@ -135,6 +135,7 @@ export type DeleteAccountInput = {
 
 export type DeleteAccountResult = {
   message: string;
+  mediaCleanupQueued: number;
 };
 
 export type AuthSessionResult = {
@@ -169,6 +170,17 @@ export type CleanupExpiredAuthTokensResult = {
   message: string;
   emailVerificationTokensDeleted: number;
   passwordResetTokensDeleted: number;
+};
+
+export type CleanupPendingUserMediaDeletionsInput = {
+  pendingBefore: Date;
+  limit?: number;
+};
+
+export type CleanupPendingUserMediaDeletionsResult = {
+  message: string;
+  mediaObjectsDeleted: number;
+  mediaObjectDeletionJobsFailed: number;
 };
 
 export type ValidatedAuthSession = {
@@ -256,6 +268,9 @@ export type AuthService = {
   cleanupExpiredAuthTokens(
     input: CleanupExpiredAuthTokensInput,
   ): Promise<CleanupExpiredAuthTokensResult>;
+  cleanupPendingUserMediaDeletions(
+    input: CleanupPendingUserMediaDeletionsInput,
+  ): Promise<CleanupPendingUserMediaDeletionsResult>;
   requestPasswordReset(input: RequestPasswordResetInput): Promise<{ message: string }>;
   resetPassword(input: ResetPasswordInput): Promise<{ message: string; sessionsLoggedOut: number }>;
   exportUserData(input: ExportUserDataInput): Promise<ExportUserDataResult>;

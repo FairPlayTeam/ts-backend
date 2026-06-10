@@ -5,6 +5,7 @@ import {
 } from '../src/maintenance/authCleanup.js';
 import {
   CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
+  CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
   CLEANUP_SESSION_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
 
@@ -44,6 +45,15 @@ describe('auth cleanup job', () => {
             passwordResetTokensDeleted: 4,
           };
         },
+        cleanupPendingUserMediaDeletions: async (input) => {
+          calls.push(input);
+
+          return {
+            message: CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
+            mediaObjectsDeleted: 5,
+            mediaObjectDeletionJobsFailed: 0,
+          };
+        },
       },
       clock: {
         now: () => new Date('2026-01-31T00:00:00.000Z'),
@@ -65,6 +75,9 @@ describe('auth cleanup job', () => {
       {
         expiredBefore: new Date('2026-01-31T00:00:00.000Z'),
       },
+      {
+        pendingBefore: new Date('2026-01-31T00:00:00.000Z'),
+      },
     ]);
     expect(logs).toContainEqual({
       level: 'info',
@@ -72,6 +85,8 @@ describe('auth cleanup job', () => {
         sessionsDeleted: 2,
         emailVerificationTokensDeleted: 3,
         passwordResetTokensDeleted: 4,
+        mediaObjectsDeleted: 5,
+        mediaObjectDeletionJobsFailed: 0,
       },
       message: 'Auth cleanup completed',
     });
@@ -102,6 +117,15 @@ describe('auth cleanup job', () => {
             passwordResetTokensDeleted: 1,
           };
         },
+        cleanupPendingUserMediaDeletions: async () => {
+          calls += 1;
+
+          return {
+            message: CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
+            mediaObjectsDeleted: 1,
+            mediaObjectDeletionJobsFailed: 0,
+          };
+        },
       },
       clock: {
         now: () => new Date('2026-01-31T00:00:00.000Z'),
@@ -119,7 +143,7 @@ describe('auth cleanup job', () => {
     expect(calls).toBe(1);
     resolveCleanup?.();
     await Promise.all([firstRun, secondRun]);
-    expect(calls).toBe(2);
+    expect(calls).toBe(3);
   });
 
   test('runs cleanup only after acquiring the distributed lock', async () => {
@@ -154,6 +178,15 @@ describe('auth cleanup job', () => {
             passwordResetTokensDeleted: 1,
           };
         },
+        cleanupPendingUserMediaDeletions: async (input) => {
+          cleanupCalls.push(input);
+
+          return {
+            message: CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
+            mediaObjectsDeleted: 1,
+            mediaObjectDeletionJobsFailed: 0,
+          };
+        },
       },
       clock: {
         now: () => new Date('2026-01-31T00:00:00.000Z'),
@@ -168,7 +201,7 @@ describe('auth cleanup job', () => {
 
     await job.runOnce();
 
-    expect(cleanupCalls).toHaveLength(2);
+    expect(cleanupCalls).toHaveLength(3);
     expect(redisCalls).toEqual([
       ['set', 'maintenance:auth-cleanup:lock', 'instance-token', 'PX', '300000', 'NX'],
       [
@@ -208,6 +241,15 @@ describe('auth cleanup job', () => {
             message: CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
             emailVerificationTokensDeleted: 1,
             passwordResetTokensDeleted: 1,
+          };
+        },
+        cleanupPendingUserMediaDeletions: async () => {
+          cleanupCalls += 1;
+
+          return {
+            message: CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
+            mediaObjectsDeleted: 1,
+            mediaObjectDeletionJobsFailed: 0,
           };
         },
       },

@@ -14,7 +14,9 @@ import {
 } from '../src/services/auth.errors.js';
 import {
   CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
+  CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
   CLEANUP_SESSION_SUCCESS_MESSAGE,
+  DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
   DELETE_AVATAR_SUCCESS_MESSAGE,
   DELETE_BANNER_SUCCESS_MESSAGE,
@@ -41,6 +43,65 @@ const avatarObjectKeyPattern =
 const bannerObjectKeyPattern =
   /^users\/user-id\/banner\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webp$/;
 
+type UserMediaDeletionJobCalls = {
+  userMediaDeletionJobCreateMany: unknown;
+  userMediaDeletionJobDeleteMany: unknown;
+  userMediaDeletionJobFindMany: unknown;
+  userMediaDeletionJobUpdateMany: unknown;
+};
+
+const createUserMediaDeletionJobMock = (calls: UserMediaDeletionJobCalls) => ({
+  createMany: async (args: unknown) => {
+    calls.userMediaDeletionJobCreateMany = args;
+
+    const data = (args as { data?: unknown[] }).data;
+
+    return { count: data?.length ?? 1 };
+  },
+  deleteMany: async (args: unknown) => {
+    calls.userMediaDeletionJobDeleteMany = args;
+
+    return { count: 1 };
+  },
+  findMany: async (args: unknown) => {
+    calls.userMediaDeletionJobFindMany = args;
+
+    return [];
+  },
+  updateMany: async (args: unknown) => {
+    calls.userMediaDeletionJobUpdateMany = args;
+  },
+});
+
+type UserMediaAssetDeletionCalls = UserMediaDeletionJobCalls & {
+  userMediaAssetDeleteMany: unknown;
+  userMediaAssetFindUnique: unknown;
+};
+
+const createUserMediaAssetDeletionTransaction = ({
+  calls,
+  deleteMany,
+  objectKey,
+}: {
+  calls: UserMediaAssetDeletionCalls;
+  deleteMany?: (args: unknown) => Promise<{ count: number }>;
+  objectKey: string;
+}) => ({
+  userMediaAsset: {
+    findUnique: async (args: unknown) => {
+      calls.userMediaAssetFindUnique = args;
+
+      return { objectKey };
+    },
+    deleteMany: async (args: unknown) => {
+      calls.userMediaAssetDeleteMany = args;
+
+      return deleteMany ? deleteMany(args) : { count: 1 };
+    },
+  },
+  userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
+});
+
 function createTestDeps(overrides: Partial<AuthDeps> = {}) {
   const calls = {
     userFindUnique: undefined as unknown,
@@ -53,6 +114,10 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     userMediaAssetFindMany: undefined as unknown,
     userMediaAssetFindUnique: undefined as unknown,
     userMediaAssetUpsert: undefined as unknown,
+    userMediaDeletionJobCreateMany: undefined as unknown,
+    userMediaDeletionJobDeleteMany: undefined as unknown,
+    userMediaDeletionJobFindMany: undefined as unknown,
+    userMediaDeletionJobUpdateMany: undefined as unknown,
     tokenCreate: undefined as unknown,
     tokenDeleteMany: undefined as unknown,
     tokenFindUnique: undefined as unknown,
@@ -87,6 +152,7 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
           id: 'user-id',
           email: 'user@example.com',
           isVerified: false,
+          isBanned: false,
         };
       },
       create: async (args: unknown) => {
@@ -101,6 +167,11 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
       },
       update: async (args: unknown) => {
         calls.userUpdate = args;
+      },
+      updateMany: async (args: unknown) => {
+        calls.userUpdateMany = args;
+
+        return { count: 1 };
       },
       deleteMany: async (args: unknown) => {
         calls.userDeleteMany = args;
@@ -154,6 +225,7 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
         };
       },
     },
+    userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
     emailVerificationToken: {
       create: async (args: unknown) => {
         calls.tokenCreate = args;
@@ -194,197 +266,37 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     },
   };
 
-  const deps = {
-    prisma: {
-      $transaction: async (
-        input: ((transaction: typeof tx) => Promise<unknown>) | Promise<unknown>[],
-      ) => (Array.isArray(input) ? Promise.all(input) : input(tx)),
-      user: {
-        findUnique: async (args: unknown) => {
-          calls.userFindUnique = args;
+  const basePrisma = {
+    $transaction: async (
+      input: ((transaction: typeof tx) => Promise<unknown>) | Promise<unknown>[],
+    ) => (Array.isArray(input) ? Promise.all(input) : input(tx)),
+    user: {
+      findUnique: async (args: unknown) => {
+        calls.userFindUnique = args;
 
-          return {
-            id: 'user-id',
-            email: 'user@example.com',
-            username: 'fairplay_user',
-            displayName: 'Fairplay User',
-            bio: null,
-            role: 'user',
-            isVerified: true,
-            isBanned: false,
-            bannedAt: null,
-            createdAt: fixedNow,
-            updatedAt: fixedNow,
-            lastLogin: fixedNow,
-            sessions: [
-              {
-                id: 'session-id',
-                sessionKeySuffix: 'in-token',
-                ipAddress: '127.0.0.1',
-                userAgent: 'bun-test',
-                deviceInfo: 'bun-test',
-                isActive: true,
-                createdAt: fixedNow,
-                updatedAt: fixedNow,
-                lastUsedAt: fixedNow,
-                expiresAt: new Date('2026-01-31T00:00:00.000Z'),
-              },
-              {
-                id: 'other-session-id',
-                sessionKeySuffix: null,
-                ipAddress: null,
-                userAgent: null,
-                deviceInfo: null,
-                isActive: false,
-                createdAt: fixedNow,
-                updatedAt: fixedNow,
-                lastUsedAt: new Date('2026-01-01T00:00:01.000Z'),
-                expiresAt: new Date('2026-01-31T00:00:00.000Z'),
-              },
-            ],
-            emailVerificationTokens: [
-              {
-                id: 'verification-token-id',
-                createdAt: fixedNow,
-                expiresAt: new Date('2026-01-08T00:00:00.000Z'),
-              },
-            ],
-            passwordResetToken: {
-              id: 'password-reset-token-id',
-              createdAt: fixedNow,
-              expiresAt: new Date('2026-01-02T00:00:00.000Z'),
-            },
-          };
-        },
-        findFirst: async (args: unknown) => {
-          calls.userFindFirst = args;
-
-          return {
-            id: 'user-id',
-            email: 'user@example.com',
-            username: 'fairplay_user',
-            displayName: 'Fairplay User',
-            bio: null,
-            role: 'user',
-            passwordHash: 'hashed-password',
-            isVerified: true,
-            isBanned: false,
-          };
-        },
-        update: async (args: unknown) => {
-          calls.userUpdate = args;
-          const updateArgs = args as {
-            data?: {
-              displayName?: string | null;
-              bio?: string | null;
-            };
-          };
-
-          return {
-            id: 'user-id',
-            email: 'user@example.com',
-            username: 'fairplay_user',
-            displayName: updateArgs.data?.displayName ?? 'Fairplay User',
-            bio:
-              updateArgs.data?.bio === undefined
-                ? 'Definitely not an undercover Y**tube employee.'
-                : updateArgs.data.bio,
-            role: 'user',
-          };
-        },
-      },
-      userMediaAsset: {
-        deleteMany: async (args: unknown) => {
-          calls.userMediaAssetDeleteMany = args;
-
-          return { count: 1 };
-        },
-        findMany: async (args: unknown) => {
-          calls.userMediaAssetFindMany = args;
-
-          return [];
-        },
-        findUnique: async (args: unknown) => {
-          calls.userMediaAssetFindUnique = args;
-
-          return null;
-        },
-        upsert: async (args: unknown) => {
-          calls.userMediaAssetUpsert = args;
-          const upsertArgs = args as {
-            update?: {
-              objectKey?: string;
-              mimeType?: string;
-              sizeBytes?: number;
-              width?: number;
-              height?: number;
-            };
-            create?: {
-              objectKey?: string;
-              mimeType?: string;
-              sizeBytes?: number;
-              width?: number;
-              height?: number;
-            };
-          };
-          const data = upsertArgs.update ?? upsertArgs.create;
-
-          return {
-            objectKey: data?.objectKey ?? 'users/user-id/avatar/test-avatar.webp',
-            mimeType: data?.mimeType ?? 'image/webp',
-            sizeBytes: data?.sizeBytes ?? 6,
-            width: data?.width ?? 512,
-            height: data?.height ?? 512,
-            updatedAt: fixedNow,
-          };
-        },
-      },
-      emailVerificationToken: {
-        findUnique: async (args: unknown) => {
-          calls.tokenFindUnique = args;
-
-          return {
-            id: 'verification-token-id',
-            userId: 'user-id',
-            token: 'hashed-plain-token',
-            expiresAt: new Date('2026-01-01T00:00:01.000Z'),
-            createdAt: fixedNow,
-            user: {
-              id: 'user-id',
-              email: 'user@example.com',
-              username: 'fairplay_user',
-              displayName: 'Fairplay User',
-              bio: null,
-              role: 'user',
-              isBanned: false,
-            },
-          };
-        },
-        deleteMany: async (args: unknown) => {
-          calls.tokenDeleteMany = args;
-
-          return { count: 1 };
-        },
-      },
-      passwordResetToken: {
-        deleteMany: async (args: unknown) => {
-          calls.passwordResetTokenDeleteMany = args;
-
-          return { count: 1 };
-        },
-      },
-      session: {
-        findMany: async (args: unknown) => {
-          calls.sessionFindMany = args;
-
-          return [
+        return {
+          id: 'user-id',
+          email: 'user@example.com',
+          username: 'fairplay_user',
+          displayName: 'Fairplay User',
+          bio: null,
+          role: 'user',
+          isVerified: true,
+          isBanned: false,
+          bannedAt: null,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+          lastLogin: fixedNow,
+          sessions: [
             {
               id: 'session-id',
               sessionKeySuffix: 'in-token',
               ipAddress: '127.0.0.1',
               userAgent: 'bun-test',
               deviceInfo: 'bun-test',
+              isActive: true,
               createdAt: fixedNow,
+              updatedAt: fixedNow,
               lastUsedAt: fixedNow,
               expiresAt: new Date('2026-01-31T00:00:00.000Z'),
             },
@@ -394,53 +306,221 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
               ipAddress: null,
               userAgent: null,
               deviceInfo: null,
+              isActive: false,
               createdAt: fixedNow,
+              updatedAt: fixedNow,
               lastUsedAt: new Date('2026-01-01T00:00:01.000Z'),
               expiresAt: new Date('2026-01-31T00:00:00.000Z'),
             },
-          ];
-        },
-        count: async (args: unknown) => {
-          calls.sessionCount = args;
-
-          return 2;
-        },
-        findUnique: async (args: unknown) => {
-          calls.sessionFindUnique = args;
-
-          return {
-            id: 'session-id',
-            expiresAt: new Date('2026-01-31T00:00:00.000Z'),
-            isActive: true,
-            user: {
-              id: 'user-id',
-              email: 'user@example.com',
-              username: 'fairplay_user',
-              displayName: 'Fairplay User',
-              bio: null,
-              role: 'user',
-              isBanned: false,
+          ],
+          emailVerificationTokens: [
+            {
+              id: 'verification-token-id',
+              createdAt: fixedNow,
+              expiresAt: new Date('2026-01-08T00:00:00.000Z'),
             },
-          };
-        },
-        update: async (args: unknown) => {
-          calls.sessionUpdate = args;
-
-          return { id: 'session-id' };
-        },
-        updateMany: async (args: unknown) => {
-          calls.sessionUpdateMany = args;
-
-          const updateArgs = args as { where?: { id?: unknown } };
-
-          return { count: typeof updateArgs.where?.id === 'string' ? 1 : 2 };
-        },
-        deleteMany: async (args: unknown) => {
-          calls.sessionDeleteMany = args;
-
-          return { count: 3 };
-        },
+          ],
+          passwordResetToken: {
+            id: 'password-reset-token-id',
+            createdAt: fixedNow,
+            expiresAt: new Date('2026-01-02T00:00:00.000Z'),
+          },
+        };
       },
+      findFirst: async (args: unknown) => {
+        calls.userFindFirst = args;
+
+        return {
+          id: 'user-id',
+          email: 'user@example.com',
+          username: 'fairplay_user',
+          displayName: 'Fairplay User',
+          bio: null,
+          role: 'user',
+          passwordHash: 'hashed-password',
+          isVerified: true,
+          isBanned: false,
+        };
+      },
+      update: async (args: unknown) => {
+        calls.userUpdate = args;
+        const updateArgs = args as {
+          data?: {
+            displayName?: string | null;
+            bio?: string | null;
+          };
+        };
+
+        return {
+          id: 'user-id',
+          email: 'user@example.com',
+          username: 'fairplay_user',
+          displayName: updateArgs.data?.displayName ?? 'Fairplay User',
+          bio:
+            updateArgs.data?.bio === undefined
+              ? 'Definitely not an undercover Y**tube employee.'
+              : updateArgs.data.bio,
+          role: 'user',
+        };
+      },
+    },
+    userMediaAsset: {
+      deleteMany: async (args: unknown) => {
+        calls.userMediaAssetDeleteMany = args;
+
+        return { count: 1 };
+      },
+      findMany: async (args: unknown) => {
+        calls.userMediaAssetFindMany = args;
+
+        return [];
+      },
+      findUnique: async (args: unknown) => {
+        calls.userMediaAssetFindUnique = args;
+
+        return null;
+      },
+      upsert: async (args: unknown) => {
+        calls.userMediaAssetUpsert = args;
+        const upsertArgs = args as {
+          update?: {
+            objectKey?: string;
+            mimeType?: string;
+            sizeBytes?: number;
+            width?: number;
+            height?: number;
+          };
+          create?: {
+            objectKey?: string;
+            mimeType?: string;
+            sizeBytes?: number;
+            width?: number;
+            height?: number;
+          };
+        };
+        const data = upsertArgs.update ?? upsertArgs.create;
+
+        return {
+          objectKey: data?.objectKey ?? 'users/user-id/avatar/test-avatar.webp',
+          mimeType: data?.mimeType ?? 'image/webp',
+          sizeBytes: data?.sizeBytes ?? 6,
+          width: data?.width ?? 512,
+          height: data?.height ?? 512,
+          updatedAt: fixedNow,
+        };
+      },
+    },
+    userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
+    emailVerificationToken: {
+      findUnique: async (args: unknown) => {
+        calls.tokenFindUnique = args;
+
+        return {
+          id: 'verification-token-id',
+          userId: 'user-id',
+          token: 'hashed-plain-token',
+          expiresAt: new Date('2026-01-01T00:00:01.000Z'),
+          createdAt: fixedNow,
+          user: {
+            id: 'user-id',
+            email: 'user@example.com',
+            username: 'fairplay_user',
+            displayName: 'Fairplay User',
+            bio: null,
+            role: 'user',
+            isBanned: false,
+          },
+        };
+      },
+      deleteMany: async (args: unknown) => {
+        calls.tokenDeleteMany = args;
+
+        return { count: 1 };
+      },
+    },
+    passwordResetToken: {
+      deleteMany: async (args: unknown) => {
+        calls.passwordResetTokenDeleteMany = args;
+
+        return { count: 1 };
+      },
+    },
+    session: {
+      findMany: async (args: unknown) => {
+        calls.sessionFindMany = args;
+
+        return [
+          {
+            id: 'session-id',
+            sessionKeySuffix: 'in-token',
+            ipAddress: '127.0.0.1',
+            userAgent: 'bun-test',
+            deviceInfo: 'bun-test',
+            createdAt: fixedNow,
+            lastUsedAt: fixedNow,
+            expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+          },
+          {
+            id: 'other-session-id',
+            sessionKeySuffix: null,
+            ipAddress: null,
+            userAgent: null,
+            deviceInfo: null,
+            createdAt: fixedNow,
+            lastUsedAt: new Date('2026-01-01T00:00:01.000Z'),
+            expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+          },
+        ];
+      },
+      count: async (args: unknown) => {
+        calls.sessionCount = args;
+
+        return 2;
+      },
+      findUnique: async (args: unknown) => {
+        calls.sessionFindUnique = args;
+
+        return {
+          id: 'session-id',
+          expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+          isActive: true,
+          user: {
+            id: 'user-id',
+            email: 'user@example.com',
+            username: 'fairplay_user',
+            displayName: 'Fairplay User',
+            bio: null,
+            role: 'user',
+            isBanned: false,
+          },
+        };
+      },
+      update: async (args: unknown) => {
+        calls.sessionUpdate = args;
+
+        return { id: 'session-id' };
+      },
+      updateMany: async (args: unknown) => {
+        calls.sessionUpdateMany = args;
+
+        const updateArgs = args as { where?: { id?: unknown } };
+
+        return { count: typeof updateArgs.where?.id === 'string' ? 1 : 2 };
+      },
+      deleteMany: async (args: unknown) => {
+        calls.sessionDeleteMany = args;
+
+        return { count: 3 };
+      },
+    },
+  };
+
+  const { prisma: prismaOverride, ...dependencyOverrides } = overrides;
+
+  const deps = {
+    prisma: {
+      ...basePrisma,
+      ...(prismaOverride ?? {}),
     },
     isUniqueError: () => false,
     hasher: {
@@ -468,9 +548,6 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
       },
       deleteObject: async (objectKey: string) => {
         calls.deleteObject = objectKey;
-      },
-      deleteObjects: async (objectKeys: readonly string[]) => {
-        calls.deleteObjects = objectKeys;
       },
       getSignedUrl: async (objectKey: string) => {
         calls.signedUrlObjectKey = objectKey;
@@ -515,7 +592,7 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
         calls.warning = { data, message };
       },
     },
-    ...overrides,
+    ...dependencyOverrides,
   } as unknown as AuthDeps;
 
   return { deps, calls };
@@ -1008,8 +1085,8 @@ describe('auth service', () => {
       },
     });
 
-    expect(calls.userUpdate).toEqual({
-      where: { id: 'user-id' },
+    expect(calls.userUpdateMany).toEqual({
+      where: { id: 'user-id', isBanned: false },
       data: { isVerified: true, lastLogin: fixedNow },
     });
 
@@ -1194,7 +1271,7 @@ describe('auth service', () => {
         },
       },
     });
-    expect(calls.userUpdate).toBeUndefined();
+    expect(calls.userUpdateMany).toBeUndefined();
     expect(calls.sessionCreate).toBeUndefined();
   });
 
@@ -1231,6 +1308,68 @@ describe('auth service', () => {
         token: 'plain-token',
       }),
     ).rejects.toBeInstanceOf(AccountBannedError);
+  });
+
+  test('rejects email verification when the user is banned during token consumption', async () => {
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        ...createTestDeps().deps.prisma,
+        $transaction: async (
+          callback: (transaction: {
+            emailVerificationToken: { deleteMany(args: unknown): Promise<{ count: number }> };
+            user: {
+              findUnique(args: unknown): Promise<{ isBanned: true }>;
+              updateMany(args: unknown): Promise<{ count: number }>;
+            };
+            session: { create(): Promise<never> };
+          }) => Promise<unknown>,
+        ) =>
+          callback({
+            emailVerificationToken: {
+              deleteMany: async (args: unknown) => {
+                calls.tokenDeleteMany = args;
+
+                return { count: 1 };
+              },
+            },
+            user: {
+              updateMany: async (args: unknown) => {
+                calls.userUpdateMany = args;
+
+                return { count: 0 };
+              },
+              findUnique: async (args: unknown) => {
+                calls.userFindUnique = args;
+
+                return { isBanned: true };
+              },
+            },
+            session: {
+              create: async () => {
+                throw new Error('Should not create a session for a banned user');
+              },
+            },
+          }),
+      } as unknown as AuthDeps['prisma'],
+    });
+
+    const service = createAuthService(deps);
+
+    await expect(
+      service.verifyEmail({
+        token: 'plain-token',
+      }),
+    ).rejects.toBeInstanceOf(AccountBannedError);
+
+    expect(calls.userUpdateMany).toEqual({
+      where: { id: 'user-id', isBanned: false },
+      data: { isVerified: true, lastLogin: fixedNow },
+    });
+    expect(calls.userFindUnique).toEqual({
+      where: { id: 'user-id' },
+      select: { isBanned: true },
+    });
+    expect(calls.sessionCreate).toBeUndefined();
   });
 
   test('validates an active session and touches its last used timestamp', async () => {
@@ -1812,6 +1951,7 @@ describe('auth service', () => {
                 };
               },
             },
+            userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
           }),
       } as unknown as AuthDeps['prisma'],
     });
@@ -1828,6 +1968,13 @@ describe('auth service', () => {
     expect(result.message).toBe(UPLOAD_AVATAR_SUCCESS_MESSAGE);
     expect(calls.signedUrlObjectKey).toMatch(avatarObjectKeyPattern);
     expect(calls.deleteObject).toBe(previousObjectKey);
+    expect(calls.userMediaDeletionJobCreateMany).toEqual({
+      data: [{ objectKey: previousObjectKey }],
+      skipDuplicates: true,
+    });
+    expect(calls.userMediaDeletionJobDeleteMany).toEqual({
+      where: { objectKey: previousObjectKey },
+    });
   });
 
   test('keeps avatar upload successful when previous object cleanup fails', async () => {
@@ -1858,6 +2005,7 @@ describe('auth service', () => {
                 };
               },
             },
+            userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
           }),
       } as unknown as AuthDeps['prisma'],
       objectStorage: {
@@ -1867,9 +2015,6 @@ describe('auth service', () => {
         deleteObject: async (objectKey: string) => {
           calls.deleteObject = objectKey;
           throw cleanupError;
-        },
-        deleteObjects: async (objectKeys: readonly string[]) => {
-          calls.deleteObjects = objectKeys;
         },
         getSignedUrl: async (objectKey: string) => {
           calls.signedUrlObjectKey = objectKey;
@@ -1893,9 +2038,15 @@ describe('auth service', () => {
     });
 
     expect(calls.deleteObject).toBe(previousObjectKey);
+    expect(calls.userMediaDeletionJobCreateMany).toEqual({
+      data: [{ objectKey: previousObjectKey }],
+      skipDuplicates: true,
+    });
+    expect(calls.userMediaDeletionJobDeleteMany).toBeUndefined();
     expect(calls.warning).toEqual({
-      data: { err: cleanupError, objectKey: previousObjectKey },
-      message: 'Previous user media object cleanup failed after replacement',
+      data: { err: cleanupError, userId: 'user-id', objectKey: previousObjectKey },
+      message:
+        'Previous user media object cleanup failed after replacement; cleanup remains queued',
     });
   });
 
@@ -1947,6 +2098,7 @@ describe('auth service', () => {
                 };
               },
             },
+            userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
           });
         },
       } as unknown as AuthDeps['prisma'],
@@ -1968,6 +2120,10 @@ describe('auth service', () => {
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ]);
     expect(calls.deleteObject).toBe(previousObjectKey);
+    expect(calls.userMediaDeletionJobCreateMany).toEqual({
+      data: [{ objectKey: previousObjectKey }],
+      skipDuplicates: true,
+    });
     expect(calls.signedUrlObjectKey).toMatch(avatarObjectKeyPattern);
   });
 
@@ -2066,20 +2222,8 @@ describe('auth service', () => {
     const objectKey = 'users/user-id/avatar/current-avatar.webp';
     const { deps, calls } = createTestDeps({
       prisma: {
-        userMediaAsset: {
-          findUnique: async (args: unknown) => {
-            calls.userMediaAssetFindUnique = args;
-
-            return {
-              objectKey,
-            };
-          },
-          deleteMany: async (args: unknown) => {
-            calls.userMediaAssetDeleteMany = args;
-
-            return { count: 1 };
-          },
-        },
+        $transaction: async (callback: (transaction: unknown) => Promise<unknown>) =>
+          callback(createUserMediaAssetDeletionTransaction({ calls, objectKey })),
       } as unknown as AuthDeps['prisma'],
     });
     const service = createAuthService(deps);
@@ -2112,6 +2256,13 @@ describe('auth service', () => {
         objectKey,
       },
     });
+    expect(calls.userMediaDeletionJobCreateMany).toEqual({
+      data: [{ objectKey }],
+      skipDuplicates: true,
+    });
+    expect(calls.userMediaDeletionJobDeleteMany).toEqual({
+      where: { objectKey },
+    });
   });
 
   test('keeps avatar deletion successful when object cleanup fails', async () => {
@@ -2119,16 +2270,8 @@ describe('auth service', () => {
     const cleanupError = new Error('object storage unavailable');
     const { deps, calls } = createTestDeps({
       prisma: {
-        userMediaAsset: {
-          findUnique: async () => ({
-            objectKey,
-          }),
-          deleteMany: async (args: unknown) => {
-            calls.userMediaAssetDeleteMany = args;
-
-            return { count: 1 };
-          },
-        },
+        $transaction: async (callback: (transaction: unknown) => Promise<unknown>) =>
+          callback(createUserMediaAssetDeletionTransaction({ calls, objectKey })),
       } as unknown as AuthDeps['prisma'],
       objectStorage: {
         putObject: async (input: unknown) => {
@@ -2137,9 +2280,6 @@ describe('auth service', () => {
         deleteObject: async (deletedObjectKey: string) => {
           calls.deleteObject = deletedObjectKey;
           throw cleanupError;
-        },
-        deleteObjects: async (objectKeys: readonly string[]) => {
-          calls.deleteObjects = objectKeys;
         },
         getSignedUrl: async (signedObjectKey: string) =>
           `http://localhost:9000/fairplay-user-media/${signedObjectKey}`,
@@ -2164,9 +2304,14 @@ describe('auth service', () => {
       },
     });
     expect(calls.deleteObject).toBe(objectKey);
+    expect(calls.userMediaDeletionJobCreateMany).toEqual({
+      data: [{ objectKey }],
+      skipDuplicates: true,
+    });
+    expect(calls.userMediaDeletionJobDeleteMany).toBeUndefined();
     expect(calls.warning).toEqual({
-      data: { err: cleanupError, objectKey },
-      message: 'User media object cleanup failed after record deletion',
+      data: { err: cleanupError, userId: 'user-id', objectKey },
+      message: 'User media object cleanup failed after record deletion; cleanup remains queued',
     });
   });
 
@@ -2175,15 +2320,16 @@ describe('auth service', () => {
     const deletionError = new Error('database unavailable');
     const { deps, calls } = createTestDeps({
       prisma: {
-        userMediaAsset: {
-          findUnique: async () => ({
-            objectKey,
-          }),
-          deleteMany: async (args: unknown) => {
-            calls.userMediaAssetDeleteMany = args;
-            throw deletionError;
-          },
-        },
+        $transaction: async (callback: (transaction: unknown) => Promise<unknown>) =>
+          callback(
+            createUserMediaAssetDeletionTransaction({
+              calls,
+              objectKey,
+              deleteMany: async () => {
+                throw deletionError;
+              },
+            }),
+          ),
       } as unknown as AuthDeps['prisma'],
     });
     const service = createAuthService(deps);
@@ -2202,6 +2348,7 @@ describe('auth service', () => {
       },
     });
     expect(calls.deleteObject).toBeUndefined();
+    expect(calls.userMediaDeletionJobCreateMany).toBeUndefined();
   });
 
   test('keeps avatar deletion idempotent when no avatar exists', async () => {
@@ -2236,20 +2383,8 @@ describe('auth service', () => {
     const objectKey = 'users/user-id/banner/current-banner.webp';
     const { deps, calls } = createTestDeps({
       prisma: {
-        userMediaAsset: {
-          findUnique: async (args: unknown) => {
-            calls.userMediaAssetFindUnique = args;
-
-            return {
-              objectKey,
-            };
-          },
-          deleteMany: async (args: unknown) => {
-            calls.userMediaAssetDeleteMany = args;
-
-            return { count: 1 };
-          },
-        },
+        $transaction: async (callback: (transaction: unknown) => Promise<unknown>) =>
+          callback(createUserMediaAssetDeletionTransaction({ calls, objectKey })),
       } as unknown as AuthDeps['prisma'],
     });
     const service = createAuthService(deps);
@@ -2281,6 +2416,13 @@ describe('auth service', () => {
         kind: 'banner',
         objectKey,
       },
+    });
+    expect(calls.userMediaDeletionJobCreateMany).toEqual({
+      data: [{ objectKey }],
+      skipDuplicates: true,
+    });
+    expect(calls.userMediaDeletionJobDeleteMany).toEqual({
+      where: { objectKey },
     });
   });
 
@@ -2413,6 +2555,7 @@ describe('auth service', () => {
       }),
     ).resolves.toEqual({
       message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+      mediaCleanupQueued: 0,
     });
 
     expect(calls.sessionDeleteMany).toEqual({
@@ -2467,15 +2610,18 @@ describe('auth service', () => {
                 calls.userDeleteMany = args;
               },
             },
+            userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
           });
         },
       } as unknown as AuthDeps['prisma'],
       objectStorage: {
         putObject: async () => undefined,
-        deleteObject: async () => undefined,
-        deleteObjects: async (objectKeys: readonly string[]) => {
-          events.push('deleteObjects');
-          calls.deleteObjects = objectKeys;
+        deleteObject: async (objectKey: string) => {
+          events.push('deleteObject');
+          calls.deleteObjects = [
+            ...((calls.deleteObjects as string[] | undefined) ?? []),
+            objectKey,
+          ];
         },
         getSignedUrl: async (objectKey: string) =>
           `http://localhost:9000/fairplay-user-media/${objectKey}`,
@@ -2489,6 +2635,7 @@ describe('auth service', () => {
       }),
     ).resolves.toEqual({
       message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+      mediaCleanupQueued: 0,
     });
 
     expect(calls.userMediaAssetFindMany).toEqual({
@@ -2497,11 +2644,18 @@ describe('auth service', () => {
         objectKey: true,
       },
     });
+    expect(calls.userMediaDeletionJobCreateMany).toEqual({
+      data: [
+        { objectKey: 'users/user-id/avatar/current-avatar.webp' },
+        { objectKey: 'users/user-id/banner/current-banner.webp' },
+      ],
+      skipDuplicates: true,
+    });
     expect(calls.deleteObjects).toEqual([
       'users/user-id/avatar/current-avatar.webp',
       'users/user-id/banner/current-banner.webp',
     ]);
-    expect(events).toEqual(['transaction', 'deleteObjects']);
+    expect(events).toEqual(['transaction', 'deleteObject', 'deleteObject']);
     expect(calls.userDeleteMany).toEqual({
       where: { id: 'user-id' },
     });
@@ -2540,6 +2694,7 @@ describe('auth service', () => {
                 calls.userDeleteMany = args;
               },
             },
+            userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
           }),
       } as unknown as AuthDeps['prisma'],
       objectStorage: {
@@ -2547,10 +2702,10 @@ describe('auth service', () => {
           calls.putObject = input;
         },
         deleteObject: async (objectKey: string) => {
-          calls.deleteObject = objectKey;
-        },
-        deleteObjects: async (deletedObjectKeys: readonly string[]) => {
-          calls.deleteObjects = deletedObjectKeys;
+          calls.deleteObjects = [
+            ...((calls.deleteObjects as string[] | undefined) ?? []),
+            objectKey,
+          ];
           throw cleanupError;
         },
         getSignedUrl: async (objectKey: string) =>
@@ -2564,16 +2719,23 @@ describe('auth service', () => {
         userId: 'user-id',
       }),
     ).resolves.toEqual({
-      message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+      message: DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
+      mediaCleanupQueued: objectKeys.length,
     });
 
     expect(calls.deleteObjects).toEqual(objectKeys);
+    expect(calls.userMediaDeletionJobCreateMany).toEqual({
+      data: objectKeys.map((objectKey) => ({ objectKey })),
+      skipDuplicates: true,
+    });
+    expect(calls.userMediaDeletionJobDeleteMany).toBeUndefined();
     expect(calls.userDeleteMany).toEqual({
       where: { id: 'user-id' },
     });
     expect(calls.warning).toEqual({
-      data: { err: cleanupError, userId: 'user-id', objectKeys },
-      message: 'Stored user media object cleanup failed after account deletion',
+      data: { err: cleanupError, userId: 'user-id', objectKey: objectKeys[1] },
+      message:
+        'Stored user media object cleanup failed after account deletion; cleanup remains queued',
     });
   });
 
@@ -2634,6 +2796,123 @@ describe('auth service', () => {
           lt: expiredBefore,
         },
       },
+    });
+  });
+
+  test('cleans up queued user media object deletions', async () => {
+    const deletedObjectKeys: string[] = [];
+    const pendingBefore = new Date('2026-01-01T00:00:00.000Z');
+    const jobs = [
+      {
+        id: 'media-deletion-job-1',
+        objectKey: 'users/user-id/avatar/old-avatar.webp',
+        attempts: 0,
+      },
+      {
+        id: 'media-deletion-job-2',
+        objectKey: 'users/user-id/banner/old-banner.webp',
+        attempts: 1,
+      },
+    ];
+    const deletedJobIds: string[] = [];
+    const { deps, calls } = createTestDeps();
+    const mutablePrisma = deps.prisma as unknown as {
+      userMediaDeletionJob: AuthDeps['prisma']['userMediaDeletionJob'];
+    };
+    mutablePrisma.userMediaDeletionJob = {
+      ...createUserMediaDeletionJobMock(calls),
+      findMany: async (args: unknown) => {
+        calls.userMediaDeletionJobFindMany = args;
+
+        return jobs;
+      },
+      deleteMany: async (args: unknown) => {
+        const id = (args as { where?: { id?: string } }).where?.id;
+
+        if (id) {
+          deletedJobIds.push(id);
+        }
+
+        return { count: 1 };
+      },
+    } as unknown as AuthDeps['prisma']['userMediaDeletionJob'];
+    deps.objectStorage.deleteObject = async (objectKey: string) => {
+      deletedObjectKeys.push(objectKey);
+    };
+    const service = createAuthService(deps);
+
+    await expect(
+      service.cleanupPendingUserMediaDeletions({
+        pendingBefore,
+      }),
+    ).resolves.toEqual({
+      message: CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
+      mediaObjectsDeleted: 2,
+      mediaObjectDeletionJobsFailed: 0,
+    });
+
+    expect(calls.userMediaDeletionJobFindMany).toEqual({
+      where: {
+        nextAttemptAt: {
+          lte: pendingBefore,
+        },
+      },
+      select: {
+        id: true,
+        objectKey: true,
+        attempts: true,
+      },
+      orderBy: [{ nextAttemptAt: 'asc' }, { id: 'asc' }],
+      take: 50,
+    });
+    expect(deletedObjectKeys).toEqual(jobs.map((job) => job.objectKey));
+    expect(deletedJobIds).toEqual(jobs.map((job) => job.id));
+  });
+
+  test('reschedules queued user media object deletions when object storage fails', async () => {
+    const cleanupError = new Error('object storage unavailable');
+    const pendingBefore = new Date('2025-12-31T23:00:00.000Z');
+    const job = {
+      id: 'media-deletion-job-id',
+      objectKey: 'users/user-id/avatar/old-avatar.webp',
+      attempts: 2,
+    };
+    const { deps, calls } = createTestDeps();
+    const mutablePrisma = deps.prisma as unknown as {
+      userMediaDeletionJob: AuthDeps['prisma']['userMediaDeletionJob'];
+    };
+    mutablePrisma.userMediaDeletionJob = {
+      ...createUserMediaDeletionJobMock(calls),
+      findMany: async () => [job],
+    } as unknown as AuthDeps['prisma']['userMediaDeletionJob'];
+    deps.objectStorage.deleteObject = async () => {
+      throw cleanupError;
+    };
+    const service = createAuthService(deps);
+
+    await expect(
+      service.cleanupPendingUserMediaDeletions({
+        pendingBefore,
+      }),
+    ).resolves.toEqual({
+      message: CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
+      mediaObjectsDeleted: 0,
+      mediaObjectDeletionJobsFailed: 1,
+    });
+
+    expect(calls.userMediaDeletionJobUpdateMany).toEqual({
+      where: {
+        id: job.id,
+      },
+      data: {
+        attempts: 3,
+        lastError: cleanupError.message,
+        nextAttemptAt: new Date('2026-01-01T00:04:00.000Z'),
+      },
+    });
+    expect(calls.warning).toEqual({
+      data: { err: cleanupError, objectKey: job.objectKey, attempts: 3 },
+      message: 'Queued user media object deletion failed',
     });
   });
 

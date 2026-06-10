@@ -132,7 +132,6 @@ const createIntegrationAuthService = (
     objectStorage: {
       putObject: async () => undefined,
       deleteObject: async () => undefined,
-      deleteObjects: async () => undefined,
       getSignedUrl: async () =>
         'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
     },
@@ -250,6 +249,7 @@ const stopRuntime = async (runtime: TestRuntime | null): Promise<void> => {
 };
 
 const resetState = async (runtime: TestRuntime): Promise<void> => {
+  await runtime.prisma.userMediaDeletionJob.deleteMany();
   await runtime.prisma.passwordResetToken.deleteMany();
   await runtime.prisma.emailVerificationToken.deleteMany();
   await runtime.prisma.session.deleteMany();

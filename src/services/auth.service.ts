@@ -10,6 +10,7 @@ import { createResetPasswordService } from './auth/auth.resetPassword.js';
 import { createTokenCleanupService } from './auth/auth.tokenCleanup.js';
 import { createDataExportService } from './auth/auth.dataExport.js';
 import { createAccountDeletionService } from './auth/auth.accountDeletion.js';
+import { createMediaDeletionCleanupService } from './auth/auth.mediaDeletionCleanup.js';
 
 export const createAuthService = (deps: AuthDependencies): AuthService => {
   const sessionService = createSessionService(deps);
@@ -20,6 +21,7 @@ export const createAuthService = (deps: AuthDependencies): AuthService => {
   const profileMediaService = createProfileMediaService(deps);
   const resetPasswordService = createResetPasswordService(deps);
   const tokenCleanupService = createTokenCleanupService(deps);
+  const mediaDeletionCleanupService = createMediaDeletionCleanupService(deps);
   const dataExportService = createDataExportService(deps);
   const accountDeletionService = createAccountDeletionService(deps);
 
@@ -45,5 +47,6 @@ export const createAuthService = (deps: AuthDependencies): AuthService => {
     logoutOtherSessions: sessionService.logoutOtherSessions,
     logoutSession: sessionService.logoutSession,
     cleanupSessions: sessionService.cleanupSessions,
+    cleanupPendingUserMediaDeletions: mediaDeletionCleanupService.cleanupPendingUserMediaDeletions,
   };
 };

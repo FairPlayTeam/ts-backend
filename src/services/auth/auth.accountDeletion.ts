@@ -1,7 +1,13 @@
 import type { AuthService, DeleteAccountInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
-import { DELETE_ACCOUNT_SUCCESS_MESSAGE } from './auth.messages.js';
-import { deleteStoredUserMediaObjectsAfterStateChange } from './auth.userMedia.js';
+import {
+  DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
+  DELETE_ACCOUNT_SUCCESS_MESSAGE,
+} from './auth.messages.js';
+import {
+  deleteStoredUserMediaObjectsAfterStateChange,
+  queueUserMediaObjectDeletions,
+} from './auth.userMedia.js';
 
 type AccountDeletionService = Pick<AuthService, 'deleteAccount'>;
 
@@ -27,15 +33,29 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
         where: { userId },
       });
 
+      const objectKeys = mediaAssets.map((asset) => asset.objectKey);
+
+      await queueUserMediaObjectDeletions(tx, objectKeys);
+
       await tx.user.deleteMany({
         where: { id: userId },
       });
 
-      return mediaAssets.map((asset) => asset.objectKey);
+      return objectKeys;
     });
 
-    await deleteStoredUserMediaObjectsAfterStateChange(deps, userId, objectKeys);
+    const cleanupResult = await deleteStoredUserMediaObjectsAfterStateChange(
+      deps,
+      userId,
+      objectKeys,
+    );
 
-    return { message: DELETE_ACCOUNT_SUCCESS_MESSAGE };
+    return {
+      message:
+        cleanupResult.queuedCount > 0
+          ? DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE
+          : DELETE_ACCOUNT_SUCCESS_MESSAGE,
+      mediaCleanupQueued: cleanupResult.queuedCount,
+    };
   },
 });

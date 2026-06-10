@@ -1,6 +1,7 @@
 import type { AuthService } from '../../src/services/auth.types.js';
 import {
   CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
+  CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
   CLEANUP_SESSION_SUCCESS_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
@@ -122,6 +123,7 @@ export const createStubAuthService = (): AuthService => ({
   exportUserData: async () => userDataExportResult,
   deleteAccount: async () => ({
     message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+    mediaCleanupQueued: 0,
   }),
   getUserSessions: async () => userSessionsResult,
   logoutAllSessions: async () => ({
@@ -183,5 +185,10 @@ export const createStubAuthService = (): AuthService => ({
     message: CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
     emailVerificationTokensDeleted: 0,
     passwordResetTokensDeleted: 0,
+  }),
+  cleanupPendingUserMediaDeletions: async () => ({
+    message: CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
+    mediaObjectsDeleted: 0,
+    mediaObjectDeletionJobsFailed: 0,
   }),
 });

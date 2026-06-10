@@ -59,6 +59,19 @@ model UserMediaAsset {
   @@map("user_media_assets")
 }
 
+model UserMediaDeletionJob {
+  id            String   @id @default(cuid())
+  objectKey     String   @unique @map("object_key") @db.VarChar(512)
+  attempts      Int      @default(0)
+  lastError     String?  @map("last_error") @db.VarChar(1000)
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([nextAttemptAt, id])
+  @@map("user_media_deletion_jobs")
+}
+
 model EmailVerificationToken {
   id        String   @id @default(cuid())
   userId    String   @unique @map("user_id") @db.Uuid

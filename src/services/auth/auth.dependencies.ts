@@ -10,6 +10,7 @@ type Prisma = Pick<
   | 'session'
   | 'user'
   | 'userMediaAsset'
+  | 'userMediaDeletionJob'
 >;
 
 export type AuthDependencies = {
@@ -27,10 +28,7 @@ export type AuthDependencies = {
     sendVerificationEmail(email: string, token: string): Promise<void>;
     sendPasswordResetEmail(email: string, token: string): Promise<void>;
   };
-  objectStorage: Pick<
-    ObjectStorage,
-    'putObject' | 'deleteObject' | 'deleteObjects' | 'getSignedUrl'
-  >;
+  objectStorage: Pick<ObjectStorage, 'putObject' | 'deleteObject' | 'getSignedUrl'>;
   userMediaProcessor: UserMediaProcessor;
   clock: {
     now(): Date;

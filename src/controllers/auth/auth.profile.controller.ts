@@ -50,6 +50,7 @@ export const createAuthProfileController = (deps: AuthControllerDependencies) =>
 
       return res.status(200).json({
         message: result.message,
+        mediaCleanupQueued: result.mediaCleanupQueued,
       });
     } catch (err) {
       next(toAuthHttpError(err));

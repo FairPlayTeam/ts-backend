@@ -262,6 +262,7 @@ describe('auth routes', () => {
     });
     expect(await response.json()).toEqual({
       message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+      mediaCleanupQueued: 0,
     });
   });
 

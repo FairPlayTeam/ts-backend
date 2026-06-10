@@ -21,10 +21,32 @@ type UserMediaFileInput = {
   size: number;
 };
 
+type UserMediaDeletionJobStore = Pick<AuthDependencies['prisma'], 'userMediaDeletionJob'>;
+
 export const createUserMediaObjectKey = (userId: string, kind: UserMediaKind): string =>
   `users/${userId}/${kind}/${randomUUID()}.webp`;
 
 export const getUserMediaCacheControl = (): string => USER_MEDIA_CACHE_CONTROL;
+
+const uniqueObjectKeys = (objectKeys: readonly string[]): string[] => [...new Set(objectKeys)];
+
+export const queueUserMediaObjectDeletions = async (
+  store: UserMediaDeletionJobStore,
+  objectKeys: readonly string[],
+): Promise<number> => {
+  const uniqueKeys = uniqueObjectKeys(objectKeys);
+
+  if (uniqueKeys.length === 0) {
+    return 0;
+  }
+
+  const result = await store.userMediaDeletionJob.createMany({
+    data: uniqueKeys.map((objectKey) => ({ objectKey })),
+    skipDuplicates: true,
+  });
+
+  return result.count;
+};
 
 type UpsertStoredUserMediaAssetInput = {
   userId: string;
@@ -89,9 +111,15 @@ export const upsertStoredUserMediaAsset = async (
             },
           });
 
+          const previousObjectKey = previousAsset?.objectKey ?? null;
+
+          if (previousObjectKey && previousObjectKey !== objectKey) {
+            await queueUserMediaObjectDeletions(tx, [previousObjectKey]);
+          }
+
           return {
             asset,
-            previousObjectKey: previousAsset?.objectKey ?? null,
+            previousObjectKey,
           };
         },
         {
@@ -106,23 +134,6 @@ export const upsertStoredUserMediaAsset = async (
   }
 
   throw new Error('User media transaction retry loop exhausted unexpectedly');
-};
-
-export const deleteUserMediaAssetRecordIfCurrent = async (
-  deps: AuthDependencies,
-  userId: string,
-  kind: UserMediaKind,
-  objectKey: string,
-): Promise<boolean> => {
-  const result = await deps.prisma.userMediaAsset.deleteMany({
-    where: {
-      userId,
-      kind,
-      objectKey,
-    },
-  });
-
-  return result.count > 0;
 };
 
 type UploadUserMediaAssetInput = {
@@ -146,12 +157,24 @@ const cleanupUploadedUserMediaAfterFailure = async (
 
 const cleanupUserMediaObjectAfterStateChange = async (
   deps: AuthDependencies,
+  userId: string,
   objectKey: string,
   warningMessage: string,
-): Promise<void> => {
-  await deps.objectStorage.deleteObject(objectKey).catch((err: unknown) => {
-    deps.logger.warn({ err, objectKey }, warningMessage);
-  });
+): Promise<boolean> => {
+  try {
+    await deps.objectStorage.deleteObject(objectKey);
+    await deps.prisma.userMediaDeletionJob.deleteMany({
+      where: {
+        objectKey,
+      },
+    });
+
+    return true;
+  } catch (err) {
+    deps.logger.warn({ err, userId, objectKey }, warningMessage);
+
+    return false;
+  }
 };
 
 export const uploadUserMediaAsset = async (
@@ -189,8 +212,9 @@ export const uploadUserMediaAsset = async (
   if (previousObjectKey && previousObjectKey !== objectKey) {
     await cleanupUserMediaObjectAfterStateChange(
       deps,
+      userId,
       previousObjectKey,
-      'Previous user media object cleanup failed after replacement',
+      'Previous user media object cleanup failed after replacement; cleanup remains queued',
     );
   }
 
@@ -202,36 +226,50 @@ export const deleteUserMediaAsset = async (
   userId: string,
   kind: UserMediaKind,
 ): Promise<void> => {
-  const asset = await deps.prisma.userMediaAsset.findUnique({
-    where: {
-      userId_kind: {
+  const deletedObjectKey = await deps.prisma.$transaction(async (tx) => {
+    const asset = await tx.userMediaAsset.findUnique({
+      where: {
+        userId_kind: {
+          userId,
+          kind,
+        },
+      },
+      select: {
+        objectKey: true,
+      },
+    });
+
+    if (!asset) {
+      return null;
+    }
+
+    const deletedRecord = await tx.userMediaAsset.deleteMany({
+      where: {
         userId,
         kind,
+        objectKey: asset.objectKey,
       },
-    },
-    select: {
-      objectKey: true,
-    },
+    });
+
+    if (deletedRecord.count === 0) {
+      return null;
+    }
+
+    await queueUserMediaObjectDeletions(tx, [asset.objectKey]);
+
+    return asset.objectKey;
   });
 
-  if (!asset) {
+  if (!deletedObjectKey) {
     return;
   }
 
-  const deletedRecord = await deleteUserMediaAssetRecordIfCurrent(
+  await cleanupUserMediaObjectAfterStateChange(
     deps,
     userId,
-    kind,
-    asset.objectKey,
+    deletedObjectKey,
+    'User media object cleanup failed after record deletion; cleanup remains queued',
   );
-
-  if (deletedRecord) {
-    await cleanupUserMediaObjectAfterStateChange(
-      deps,
-      asset.objectKey,
-      'User media object cleanup failed after record deletion',
-    );
-  }
 };
 
 export function toUserMediaAssetUrl(
@@ -265,15 +303,27 @@ export const deleteStoredUserMediaObjectsAfterStateChange = async (
   deps: AuthDependencies,
   userId: string,
   objectKeys: readonly string[],
-): Promise<void> => {
-  if (objectKeys.length === 0) {
-    return;
+): Promise<{ deletedCount: number; queuedCount: number }> => {
+  const uniqueKeys = uniqueObjectKeys(objectKeys);
+
+  if (uniqueKeys.length === 0) {
+    return { deletedCount: 0, queuedCount: 0 };
   }
 
-  await deps.objectStorage.deleteObjects(objectKeys).catch((err: unknown) => {
-    deps.logger.warn(
-      { err, userId, objectKeys },
-      'Stored user media object cleanup failed after account deletion',
-    );
-  });
+  const results = await Promise.all(
+    uniqueKeys.map((objectKey) =>
+      cleanupUserMediaObjectAfterStateChange(
+        deps,
+        userId,
+        objectKey,
+        'Stored user media object cleanup failed after account deletion; cleanup remains queued',
+      ),
+    ),
+  );
+  const deletedCount = results.filter(Boolean).length;
+
+  return {
+    deletedCount,
+    queuedCount: uniqueKeys.length - deletedCount,
+  };
 };

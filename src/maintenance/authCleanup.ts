@@ -11,7 +11,10 @@ end
 return 0
 `;
 
-type AuthCleanupService = Pick<AuthService, 'cleanupExpiredAuthTokens' | 'cleanupSessions'>;
+type AuthCleanupService = Pick<
+  AuthService,
+  'cleanupExpiredAuthTokens' | 'cleanupPendingUserMediaDeletions' | 'cleanupSessions'
+>;
 
 type AuthCleanupLock = {
   release(): Promise<void>;
@@ -116,11 +119,17 @@ export const createAuthCleanupJob = ({
           expiredBefore: now,
         });
 
+        const mediaDeletionResult = await authService.cleanupPendingUserMediaDeletions({
+          pendingBefore: now,
+        });
+
         logger.info(
           {
             sessionsDeleted: result.sessionsDeleted,
             emailVerificationTokensDeleted: tokenResult.emailVerificationTokensDeleted,
             passwordResetTokensDeleted: tokenResult.passwordResetTokensDeleted,
+            mediaObjectsDeleted: mediaDeletionResult.mediaObjectsDeleted,
+            mediaObjectDeletionJobsFailed: mediaDeletionResult.mediaObjectDeletionJobsFailed,
           },
           'Auth cleanup completed',
         );

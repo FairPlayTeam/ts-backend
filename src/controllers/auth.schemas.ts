@@ -9,6 +9,7 @@ import {
   USERNAME_MIN_LENGTH,
 } from '../config/constants.js';
 import {
+  DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
@@ -218,7 +219,13 @@ export const currentUserResponseSchema = z
 
 export const deleteAccountResponseSchema = z
   .object({
-    message: responseMessageSchema(DELETE_ACCOUNT_SUCCESS_MESSAGE),
+    message: z
+      .enum([DELETE_ACCOUNT_SUCCESS_MESSAGE, DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE])
+      .openapi({ example: DELETE_ACCOUNT_SUCCESS_MESSAGE }),
+    mediaCleanupQueued: z.number().int().nonnegative().openapi({
+      description: 'Number of stored media objects queued for asynchronous deletion.',
+      example: 0,
+    }),
   })
   .openapi('DeleteAccountResponse');
 
