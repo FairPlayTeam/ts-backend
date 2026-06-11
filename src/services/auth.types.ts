@@ -104,6 +104,17 @@ export type ExportUserDataResult = {
     updatedAt: Date;
     lastLogin: Date | null;
   };
+  mediaAssets: {
+    id: string;
+    kind: 'avatar' | 'banner';
+    objectKey: string;
+    mimeType: string;
+    sizeBytes: number;
+    width: number;
+    height: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }[];
   sessions: {
     id: string;
     sessionKeySuffix: string | null;

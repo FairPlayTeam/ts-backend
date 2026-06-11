@@ -72,6 +72,11 @@ export const toUserDataExportResponse = (result: ExportUserDataResult) => ({
     updatedAt: toIsoString(result.user.updatedAt),
     lastLogin: toNullableIsoString(result.user.lastLogin),
   },
+  mediaAssets: result.mediaAssets.map((asset) => ({
+    ...asset,
+    createdAt: toIsoString(asset.createdAt),
+    updatedAt: toIsoString(asset.updatedAt),
+  })),
   sessions: result.sessions.map((session) => ({
     ...session,
     createdAt: toIsoString(session.createdAt),

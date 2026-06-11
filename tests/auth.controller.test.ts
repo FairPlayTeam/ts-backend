@@ -114,6 +114,30 @@ const userDataExportResult = {
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     lastLogin: new Date('2026-01-01T00:00:00.000Z'),
   },
+  mediaAssets: [
+    {
+      id: '11111111-1111-4111-8111-111111111111',
+      kind: 'avatar' as const,
+      objectKey: 'users/user-id/avatar/current-avatar.webp',
+      mimeType: 'image/webp',
+      sizeBytes: 1234,
+      width: 512,
+      height: 512,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    },
+    {
+      id: '22222222-2222-4222-8222-222222222222',
+      kind: 'banner' as const,
+      objectKey: 'users/user-id/banner/current-banner.webp',
+      mimeType: 'image/webp',
+      sizeBytes: 2345,
+      width: 1500,
+      height: 500,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    },
+  ],
   sessions: [
     {
       id: loginResult.session.id,
@@ -551,6 +575,30 @@ describe('auth controller', () => {
         updatedAt: '2026-01-01T00:00:00.000Z',
         lastLogin: '2026-01-01T00:00:00.000Z',
       },
+      mediaAssets: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          kind: 'avatar',
+          objectKey: 'users/user-id/avatar/current-avatar.webp',
+          mimeType: 'image/webp',
+          sizeBytes: 1234,
+          width: 512,
+          height: 512,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          kind: 'banner',
+          objectKey: 'users/user-id/banner/current-banner.webp',
+          mimeType: 'image/webp',
+          sizeBytes: 2345,
+          width: 1500,
+          height: 500,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
       sessions: [
         {
           id: loginResult.session.id,

@@ -238,6 +238,20 @@ const userDataExportTokenSchema = z.object({
   expiresAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-08T00:00:00.000Z' }),
 });
 
+const userDataExportMediaAssetSchema = z.object({
+  id: z.string().uuid().openapi({ example: '9c1a78ff-8c35-4b2f-9ae0-289b4cfdbf38' }),
+  kind: z.enum(['avatar', 'banner']).openapi({ example: 'avatar' }),
+  objectKey: z.string().openapi({
+    example: 'users/9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f/avatar/avatar-id.webp',
+  }),
+  mimeType: z.literal('image/webp').openapi({ example: 'image/webp' }),
+  sizeBytes: z.number().int().positive().openapi({ example: 18342 }),
+  width: z.number().int().positive().openapi({ example: 512 }),
+  height: z.number().int().positive().openapi({ example: 512 }),
+  createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+  updatedAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+});
+
 export const userDataExportResponseSchema = z
   .object({
     exportedAt: userDataExportDateTimeSchema.openapi({
@@ -261,6 +275,7 @@ export const userDataExportResponseSchema = z
         example: '2026-01-01T00:00:00.000Z',
       }),
     }),
+    mediaAssets: z.array(userDataExportMediaAssetSchema),
     sessions: z.array(
       z.object({
         id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),

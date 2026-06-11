@@ -287,6 +287,30 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
           createdAt: fixedNow,
           updatedAt: fixedNow,
           lastLogin: fixedNow,
+          mediaAssets: [
+            {
+              id: '11111111-1111-4111-8111-111111111111',
+              kind: 'avatar',
+              objectKey: 'users/user-id/avatar/current-avatar.webp',
+              mimeType: 'image/webp',
+              sizeBytes: 1234,
+              width: 512,
+              height: 512,
+              createdAt: fixedNow,
+              updatedAt: fixedNow,
+            },
+            {
+              id: '22222222-2222-4222-8222-222222222222',
+              kind: 'banner',
+              objectKey: 'users/user-id/banner/current-banner.webp',
+              mimeType: 'image/webp',
+              sizeBytes: 2345,
+              width: 1500,
+              height: 500,
+              createdAt: fixedNow,
+              updatedAt: fixedNow,
+            },
+          ],
           sessions: [
             {
               id: 'session-id',
@@ -2451,6 +2475,30 @@ describe('auth service', () => {
         updatedAt: fixedNow,
         lastLogin: fixedNow,
       },
+      mediaAssets: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          kind: 'avatar',
+          objectKey: 'users/user-id/avatar/current-avatar.webp',
+          mimeType: 'image/webp',
+          sizeBytes: 1234,
+          width: 512,
+          height: 512,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+        },
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          kind: 'banner',
+          objectKey: 'users/user-id/banner/current-banner.webp',
+          mimeType: 'image/webp',
+          sizeBytes: 2345,
+          width: 1500,
+          height: 500,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+        },
+      ],
       sessions: [
         {
           id: 'session-id',
@@ -2506,6 +2554,20 @@ describe('auth service', () => {
         createdAt: true,
         updatedAt: true,
         lastLogin: true,
+        mediaAssets: {
+          select: {
+            id: true,
+            kind: true,
+            objectKey: true,
+            mimeType: true,
+            sizeBytes: true,
+            width: true,
+            height: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: [{ kind: 'asc' }, { id: 'asc' }],
+        },
         sessions: {
           select: {
             id: true,

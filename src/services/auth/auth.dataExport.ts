@@ -22,6 +22,20 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
         createdAt: true,
         updatedAt: true,
         lastLogin: true,
+        mediaAssets: {
+          select: {
+            id: true,
+            kind: true,
+            objectKey: true,
+            mimeType: true,
+            sizeBytes: true,
+            width: true,
+            height: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: [{ kind: 'asc' }, { id: 'asc' }],
+        },
         sessions: {
           select: {
             id: true,
@@ -60,11 +74,13 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
       throw new Error('Authenticated user could not be found for data export');
     }
 
-    const { emailVerificationTokens, passwordResetToken, sessions, ...exportedUser } = user;
+    const { emailVerificationTokens, mediaAssets, passwordResetToken, sessions, ...exportedUser } =
+      user;
 
     return {
       exportedAt,
       user: exportedUser,
+      mediaAssets,
       sessions: sessions.map((session) => ({
         ...session,
         isCurrent: session.id === currentSessionId,
