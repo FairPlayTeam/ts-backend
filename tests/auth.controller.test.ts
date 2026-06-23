@@ -55,6 +55,10 @@ const verifyEmailBody: VerifyEmailRequestBody = {
   token: 'a'.repeat(64),
 };
 
+const sensitiveActionBody = {
+  currentPassword: 'Password1!',
+};
+
 const loginResult = {
   message: LOGIN_SUCCESS_MESSAGE,
   user: {
@@ -517,7 +521,9 @@ describe('auth controller', () => {
   });
 
   test('exports authenticated user data as downloadable JSON', async () => {
-    let receivedInput: { userId: string; currentSessionId: string } | undefined;
+    let receivedInput:
+      | { userId: string; currentSessionId: string; currentPassword: string }
+      | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
     const controller = createTestAuthController({
@@ -544,6 +550,7 @@ describe('auth controller', () => {
       {
         user: validatedSession.user,
         session: validatedSession.session,
+        body: sensitiveActionBody,
       } as AuthenticatedRequest,
       response,
       ((err?: unknown) => {
@@ -554,6 +561,7 @@ describe('auth controller', () => {
     expect(receivedInput).toEqual({
       userId: validatedSession.user.id,
       currentSessionId: validatedSession.session.id,
+      currentPassword: 'Password1!',
     });
     expect(receivedError).toBeUndefined();
     expect(state.headers['Content-Disposition']).toBe(
@@ -628,7 +636,7 @@ describe('auth controller', () => {
   });
 
   test('deletes the authenticated user account through the injected auth service', async () => {
-    let receivedInput: { userId: string } | undefined;
+    let receivedInput: { userId: string; currentPassword: string } | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
     const controller = createTestAuthController({
@@ -643,6 +651,7 @@ describe('auth controller', () => {
       {
         user: validatedSession.user,
         session: validatedSession.session,
+        body: sensitiveActionBody,
       } as AuthenticatedRequest,
       response,
       ((err?: unknown) => {
@@ -652,6 +661,7 @@ describe('auth controller', () => {
 
     expect(receivedInput).toEqual({
       userId: validatedSession.user.id,
+      currentPassword: 'Password1!',
     });
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
@@ -990,7 +1000,7 @@ describe('auth controller', () => {
   });
 
   test('logs out all sessions for the authenticated user', async () => {
-    let receivedInput: { userId: string } | undefined;
+    let receivedInput: { userId: string; currentPassword: string } | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
     const controller = createTestAuthController({
@@ -1007,6 +1017,7 @@ describe('auth controller', () => {
       {
         user: validatedSession.user,
         session: validatedSession.session,
+        body: sensitiveActionBody,
       } as AuthenticatedRequest,
       response,
       ((err?: unknown) => {
@@ -1016,6 +1027,7 @@ describe('auth controller', () => {
 
     expect(receivedInput).toEqual({
       userId: validatedSession.user.id,
+      currentPassword: 'Password1!',
     });
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);

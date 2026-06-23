@@ -86,6 +86,7 @@ export type UserMediaAssetResult = {
 export type ExportUserDataInput = {
   userId: string;
   currentSessionId: string;
+  currentPassword: string;
 };
 
 export type ExportUserDataResult = {
@@ -142,6 +143,7 @@ export type ExportUserDataResult = {
 
 export type DeleteAccountInput = {
   userId: string;
+  currentPassword: string;
 };
 
 export type DeleteAccountResult = {
@@ -217,6 +219,7 @@ export type ListUserSessionsResult = {
 
 export type LogoutAllSessionsInput = {
   userId: string;
+  currentPassword: string;
 };
 
 export type LogoutOtherSessionsInput = {

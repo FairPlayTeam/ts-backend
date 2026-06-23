@@ -37,6 +37,7 @@ let receivedPasswordResetRequest: unknown;
 let receivedGetSessionsRequest: unknown;
 let receivedExportUserDataRequest: unknown;
 let receivedDeleteAccountRequest: unknown;
+let receivedLogoutAllSessionsRequest: unknown;
 let receivedAvatarUpload: unknown;
 let receivedAvatarDeletion: unknown;
 let receivedBannerUpload: unknown;
@@ -105,6 +106,10 @@ describe('auth routes', () => {
           deleteAccount: async (input) => {
             receivedDeleteAccountRequest = input;
             return authService.deleteAccount(input);
+          },
+          logoutAllSessions: async (input) => {
+            receivedLogoutAllSessionsRequest = input;
+            return authService.logoutAllSessions(input);
           },
         },
       },
@@ -183,15 +188,19 @@ describe('auth routes', () => {
     receivedExportUserDataRequest = undefined;
 
     const response = await fetch(`${baseUrl}/auth/me/export`, {
+      method: 'POST',
       headers: {
         authorization: 'Bearer test-session-key',
+        'content-type': 'application/json',
       },
+      body: JSON.stringify({ currentPassword: 'Password1!' }),
     });
 
     expect(response.status).toBe(200);
     expect(receivedExportUserDataRequest).toEqual({
       userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
       currentSessionId: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+      currentPassword: 'Password1!',
     });
     expect(response.headers.get('content-disposition')).toBe(
       'attachment; filename="fairplay-user-data-export.json"',
@@ -261,7 +270,9 @@ describe('auth routes', () => {
   });
 
   test('requires a bearer session to export current user data', async () => {
-    const response = await fetch(`${baseUrl}/auth/me/export`);
+    const response = await fetch(`${baseUrl}/auth/me/export`, {
+      method: 'POST',
+    });
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({
@@ -277,12 +288,15 @@ describe('auth routes', () => {
       method: 'DELETE',
       headers: {
         authorization: 'Bearer test-session-key',
+        'content-type': 'application/json',
       },
+      body: JSON.stringify({ currentPassword: 'Password1!' }),
     });
 
     expect(response.status).toBe(200);
     expect(receivedDeleteAccountRequest).toEqual({
       userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      currentPassword: 'Password1!',
     });
     expect(await response.json()).toEqual({
       message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
@@ -755,14 +769,22 @@ describe('auth routes', () => {
   });
 
   test('logs out all sessions for a valid bearer session', async () => {
+    receivedLogoutAllSessionsRequest = undefined;
+
     const response = await fetch(`${baseUrl}/auth/sessions/all`, {
       method: 'DELETE',
       headers: {
         authorization: 'Bearer test-session-key',
+        'content-type': 'application/json',
       },
+      body: JSON.stringify({ currentPassword: 'Password1!' }),
     });
 
     expect(response.status).toBe(200);
+    expect(receivedLogoutAllSessionsRequest).toEqual({
+      userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      currentPassword: 'Password1!',
+    });
     expect(await response.json()).toEqual({
       message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
       sessionsLoggedOut: 1,

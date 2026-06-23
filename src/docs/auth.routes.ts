@@ -17,6 +17,7 @@ import {
   requestPasswordResetResponseSchema,
   resetPasswordBodySchema,
   resetPasswordResponseSchema,
+  sensitiveActionReauthenticationBodySchema,
   resendVerificationBodySchema,
   resendVerificationResponseSchema,
   userDataExportResponseSchema,
@@ -214,15 +215,29 @@ export const routeDocs = [
     },
   },
   {
-    method: 'get',
+    method: 'post',
     path: '/auth/me/export',
     summary: 'Export current user data',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: sensitiveActionReauthenticationBodySchema,
+          },
+        },
+      },
+    },
     responses: {
       200: jsonResponse('Current user data export', userDataExportResponseSchema),
 
+      ...badRequestErrorResponse,
+
       401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      403: jsonResponse('Account is not allowed to export data', ApiErrorSchema),
 
       ...commonErrorResponses,
     },
@@ -233,10 +248,24 @@ export const routeDocs = [
     summary: 'Delete current user account',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: sensitiveActionReauthenticationBodySchema,
+          },
+        },
+      },
+    },
     responses: {
       200: jsonResponse(DELETE_ACCOUNT_SUCCESS_MESSAGE, deleteAccountResponseSchema),
 
+      ...badRequestErrorResponse,
+
       401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      403: jsonResponse('Account is not allowed to delete account', ApiErrorSchema),
 
       ...commonErrorResponses,
     },
@@ -264,10 +293,24 @@ export const routeDocs = [
     summary: 'Logout from all sessions including current',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: sensitiveActionReauthenticationBodySchema,
+          },
+        },
+      },
+    },
     responses: {
       200: jsonResponse(LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE, logoutAllSessionsResponseSchema),
 
+      ...badRequestErrorResponse,
+
       401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      403: jsonResponse('Account is not allowed to log out sessions', ApiErrorSchema),
 
       ...commonErrorResponses,
     },

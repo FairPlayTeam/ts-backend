@@ -147,6 +147,14 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     user: {
       findUnique: async (args: unknown) => {
         calls.userFindUnique = args;
+        const select = (args as { select?: Record<string, unknown> }).select;
+
+        if (select?.passwordHash) {
+          return {
+            passwordHash: 'hashed-password',
+            isBanned: false,
+          };
+        }
 
         return {
           id: 'user-id',
@@ -273,6 +281,14 @@ function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     user: {
       findUnique: async (args: unknown) => {
         calls.userFindUnique = args;
+        const select = (args as { select?: Record<string, unknown> }).select;
+
+        if (select?.passwordHash) {
+          return {
+            passwordHash: 'hashed-password',
+            isBanned: false,
+          };
+        }
 
         return {
           id: 'user-id',
@@ -1614,9 +1630,16 @@ describe('auth service', () => {
     const { deps, calls } = createTestDeps();
     const service = createAuthService(deps);
 
-    await expect(service.logoutAllSessions({ userId: 'user-id' })).resolves.toEqual({
+    await expect(
+      service.logoutAllSessions({ userId: 'user-id', currentPassword: 'Password1!' }),
+    ).resolves.toEqual({
       message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
       sessionsLoggedOut: 2,
+    });
+
+    expect(calls.comparedPassword).toEqual({
+      password: 'Password1!',
+      hash: 'hashed-password',
     });
 
     expect(calls.sessionUpdateMany).toEqual({
@@ -2458,6 +2481,7 @@ describe('auth service', () => {
       service.exportUserData({
         userId: 'user-id',
         currentSessionId: 'session-id',
+        currentPassword: 'Password1!',
       }),
     ).resolves.toEqual({
       exportedAt: fixedNow,
@@ -2601,6 +2625,11 @@ describe('auth service', () => {
         },
       },
     });
+    expect(calls.comparedPassword).toEqual({
+      password: 'Password1!',
+      hash: 'hashed-password',
+    });
+
     const selectedFields = JSON.stringify(calls.userFindUnique);
     expect(selectedFields).not.toContain('"passwordHash":');
     expect(selectedFields).not.toContain('"sessionKey":');
@@ -2614,10 +2643,15 @@ describe('auth service', () => {
     await expect(
       service.deleteAccount({
         userId: 'user-id',
+        currentPassword: 'Password1!',
       }),
     ).resolves.toEqual({
       message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
       mediaCleanupQueued: 0,
+    });
+    expect(calls.comparedPassword).toEqual({
+      password: 'Password1!',
+      hash: 'hashed-password',
     });
 
     expect(calls.sessionDeleteMany).toEqual({
@@ -2694,6 +2728,7 @@ describe('auth service', () => {
     await expect(
       service.deleteAccount({
         userId: 'user-id',
+        currentPassword: 'Password1!',
       }),
     ).resolves.toEqual({
       message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
@@ -2779,6 +2814,7 @@ describe('auth service', () => {
     await expect(
       service.deleteAccount({
         userId: 'user-id',
+        currentPassword: 'Password1!',
       }),
     ).resolves.toEqual({
       message: DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,

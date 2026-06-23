@@ -64,9 +64,10 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/me']?.patch?.responses?.[200]).toBeDefined();
     expect(document.paths['/auth/me']?.patch?.responses?.[400]).toBeDefined();
     expect(document.paths['/auth/me']?.patch?.responses?.[401]).toBeDefined();
-    expect(document.paths['/auth/me']?.delete?.requestBody).toBeUndefined();
+    expect(document.paths['/auth/me']?.delete?.requestBody).toBeDefined();
     expect(document.paths['/auth/me']?.delete?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/auth/me']?.delete?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/me']?.delete?.responses?.[400]).toBeDefined();
     expect(document.paths['/auth/me']?.delete?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/me/avatar']?.put?.requestBody).toBeDefined();
     expect(document.paths['/auth/me/avatar']?.put?.requestBody?.content).toHaveProperty(
@@ -96,10 +97,11 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/me/banner']?.delete?.responses?.[200]).toBeDefined();
     expect(document.paths['/auth/me/banner']?.delete?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/me/banner']?.delete?.responses?.[503]).toBeDefined();
-    expect(document.paths['/auth/me/export']?.get?.requestBody).toBeUndefined();
-    expect(document.paths['/auth/me/export']?.get?.security).toEqual([{ bearerAuth: [] }]);
-    expect(document.paths['/auth/me/export']?.get?.responses?.[200]).toBeDefined();
-    expect(document.paths['/auth/me/export']?.get?.responses?.[401]).toBeDefined();
+    expect(document.paths['/auth/me/export']?.post?.requestBody).toBeDefined();
+    expect(document.paths['/auth/me/export']?.post?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths['/auth/me/export']?.post?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/me/export']?.post?.responses?.[400]).toBeDefined();
+    expect(document.paths['/auth/me/export']?.post?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/sessions']?.get?.requestBody).toBeUndefined();
     expect(document.paths['/auth/sessions']?.get?.parameters).toEqual(
       expect.arrayContaining([
@@ -120,9 +122,10 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/sessions']?.get?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/auth/sessions']?.get?.responses?.[200]).toBeDefined();
     expect(document.paths['/auth/sessions']?.get?.responses?.[401]).toBeDefined();
-    expect(document.paths['/auth/sessions/all']?.delete?.requestBody).toBeUndefined();
+    expect(document.paths['/auth/sessions/all']?.delete?.requestBody).toBeDefined();
     expect(document.paths['/auth/sessions/all']?.delete?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/auth/sessions/all']?.delete?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/sessions/all']?.delete?.responses?.[400]).toBeDefined();
     expect(document.paths['/auth/sessions/all']?.delete?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/sessions/others/all']?.delete?.requestBody).toBeUndefined();
     expect(document.paths['/auth/sessions/others/all']?.delete?.security).toEqual([

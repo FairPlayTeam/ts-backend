@@ -217,6 +217,36 @@ export const currentUserResponseSchema = z
   })
   .openapi('CurrentUserResponse');
 
+export const sensitiveActionReauthenticationBodySchema = z
+  .object({
+    currentPassword: z
+      .string()
+      .min(1, 'Current password is required')
+      .max(
+        PASSWORD_MAX_LENGTH,
+        `Current password must be at most ${PASSWORD_MAX_LENGTH} characters`,
+      )
+      .openapi({
+        format: 'password',
+        description: 'Current account password required to confirm this sensitive action.',
+        example: 'Password1!',
+      }),
+  })
+  .strict()
+  .openapi('SensitiveActionReauthenticationRequest');
+
+export const exportUserDataSchema = z.object({
+  body: sensitiveActionReauthenticationBodySchema,
+});
+
+export const deleteAccountSchema = z.object({
+  body: sensitiveActionReauthenticationBodySchema,
+});
+
+export const logoutAllSessionsSchema = z.object({
+  body: sensitiveActionReauthenticationBodySchema,
+});
+
 export const deleteAccountResponseSchema = z
   .object({
     message: z
@@ -548,6 +578,9 @@ export type VerifyEmailRequestBody = z.infer<typeof verifyEmailSchema>['body'];
 export type ResendVerificationRequestBody = z.infer<typeof resendVerificationSchema>['body'];
 export type RequestPasswordResetRequestBody = z.infer<typeof requestPasswordResetSchema>['body'];
 export type ResetPasswordRequestBody = z.infer<typeof resetPasswordSchema>['body'];
+export type SensitiveActionReauthenticationRequestBody = z.infer<
+  typeof sensitiveActionReauthenticationBodySchema
+>;
 export type UserSessionsQuery = z.infer<typeof userSessionsSchema>['query'];
 export type LogoutSessionParams = z.infer<typeof logoutSessionSchema>['params'];
 export type UpdateProfileRequestBody = z.infer<typeof updateProfileSchema>['body'];

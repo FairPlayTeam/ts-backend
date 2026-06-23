@@ -16,6 +16,7 @@ import {
   LOGOUT_SESSION_SUCCESS_MESSAGE,
   CLEANUP_SESSION_SUCCESS_MESSAGE,
 } from './auth.messages.js';
+import { reauthenticateSensitiveAction } from './auth.reauthentication.js';
 
 type PrepareSessionInput = {
   ipAddress?: string | undefined;
@@ -243,7 +244,10 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
 
     async logoutAllSessions({
       userId,
+      currentPassword,
     }: LogoutAllSessionsInput): Promise<{ message: string; sessionsLoggedOut: number }> {
+      await reauthenticateSensitiveAction(deps, { userId, currentPassword });
+
       const result = await deps.prisma.session.updateMany({
         where: {
           userId,

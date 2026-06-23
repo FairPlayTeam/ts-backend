@@ -1,10 +1,13 @@
 import type { AuthService, ExportUserDataInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
+import { reauthenticateSensitiveAction } from './auth.reauthentication.js';
 
 type DataExportService = Pick<AuthService, 'exportUserData'>;
 
 export const createDataExportService = (deps: AuthDependencies): DataExportService => ({
-  async exportUserData({ userId, currentSessionId }: ExportUserDataInput) {
+  async exportUserData({ userId, currentSessionId, currentPassword }: ExportUserDataInput) {
+    await reauthenticateSensitiveAction(deps, { userId, currentPassword });
+
     const exportedAt = deps.clock.now();
 
     const user = await deps.prisma.user.findUnique({

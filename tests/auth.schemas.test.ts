@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
   deleteAccountResponseSchema,
+  deleteAccountSchema,
+  exportUserDataSchema,
   loginSchema,
+  logoutAllSessionsSchema,
   logoutSessionSchema,
   registerSchema,
   requestPasswordResetSchema,
@@ -19,6 +22,10 @@ const validRegisterBody = {
   email: 'user@example.com',
   username: 'fairplay_user',
   password: 'Password1!',
+};
+
+const sensitiveActionBody = {
+  currentPassword: 'Password1!',
 };
 
 describe('registerSchema', () => {
@@ -275,6 +282,33 @@ describe('userSessionsSchema', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('sensitive action reauthentication schemas', () => {
+  test('accept valid current password confirmation payloads', () => {
+    expect(exportUserDataSchema.safeParse({ body: sensitiveActionBody }).success).toBe(true);
+    expect(deleteAccountSchema.safeParse({ body: sensitiveActionBody }).success).toBe(true);
+    expect(logoutAllSessionsSchema.safeParse({ body: sensitiveActionBody }).success).toBe(true);
+  });
+
+  test('reject missing or unexpected reauthentication fields', () => {
+    expect(exportUserDataSchema.safeParse({ body: {} }).success).toBe(false);
+    expect(
+      deleteAccountSchema.safeParse({
+        body: {
+          ...sensitiveActionBody,
+          reason: 'cleanup',
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      logoutAllSessionsSchema.safeParse({
+        body: {
+          currentPassword: '',
+        },
+      }).success,
+    ).toBe(false);
   });
 });
 

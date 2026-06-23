@@ -1,7 +1,10 @@
 import { Router, type RequestHandler } from 'express';
 import { createAuthController } from '../controllers/auth.controller.js';
 import {
+  deleteAccountSchema,
+  exportUserDataSchema,
   loginSchema,
+  logoutAllSessionsSchema,
   logoutSessionSchema,
   registerSchema,
   requestPasswordResetSchema,
@@ -100,15 +103,15 @@ const createAuthRouter = ({
     resendVerification,
   );
   router.get('/me', ...protect(), me);
-  router.get('/me/export', ...protect(), exportMe);
-  router.delete('/me', ...protect(), deleteMe);
+  router.post('/me/export', ...protect(), validate(exportUserDataSchema), exportMe);
+  router.delete('/me', ...protect(), validate(deleteAccountSchema), deleteMe);
   router.patch('/me', ...protect(), validate(updateProfileSchema), updateMe);
   router.put('/me/avatar', ...protect(), uploadAvatarFile, uploadAvatar);
   router.delete('/me/avatar', ...protect(), deleteAvatar);
   router.put('/me/banner', ...protect(), uploadBannerFile, uploadBanner);
   router.delete('/me/banner', ...protect(), deleteBanner);
   router.get('/sessions', authenticateSession, validate(userSessionsSchema), sessions);
-  router.delete('/sessions/all', authenticateSession, logoutAll);
+  router.delete('/sessions/all', authenticateSession, validate(logoutAllSessionsSchema), logoutAll);
   router.delete('/sessions/others/all', authenticateSession, logoutOthers);
   router.delete(
     '/sessions/:sessionId',

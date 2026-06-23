@@ -4,6 +4,7 @@ import {
   DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
 } from './auth.messages.js';
+import { reauthenticateSensitiveAction } from './auth.reauthentication.js';
 import {
   deleteStoredUserMediaObjectsAfterStateChange,
   queueUserMediaObjectDeletions,
@@ -12,7 +13,9 @@ import {
 type AccountDeletionService = Pick<AuthService, 'deleteAccount'>;
 
 export const createAccountDeletionService = (deps: AuthDependencies): AccountDeletionService => ({
-  async deleteAccount({ userId }: DeleteAccountInput) {
+  async deleteAccount({ userId, currentPassword }: DeleteAccountInput) {
+    await reauthenticateSensitiveAction(deps, { userId, currentPassword });
+
     const objectKeys = await deps.prisma.$transaction(async (tx) => {
       const mediaAssets = await tx.userMediaAsset.findMany({
         where: { userId },

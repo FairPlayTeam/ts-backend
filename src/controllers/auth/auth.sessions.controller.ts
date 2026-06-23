@@ -1,7 +1,11 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import { toAuthHttpError } from '../auth.errors.js';
-import type { LogoutSessionParams, UserSessionsQuery } from '../auth.schemas.js';
+import type {
+  LogoutSessionParams,
+  SensitiveActionReauthenticationRequestBody,
+  UserSessionsQuery,
+} from '../auth.schemas.js';
 import type { AuthControllerDependencies } from './auth.controller.types.js';
 import { toUserSessionsResponse } from './auth.responses.js';
 
@@ -34,11 +38,16 @@ export const createAuthSessionsController = (deps: AuthControllerDependencies) =
     }
   };
 
-  const logoutAll = async (req: Request, res: Response, next: NextFunction) => {
+  const logoutAll = async (
+    req: Request<unknown, unknown, SensitiveActionReauthenticationRequestBody>,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
       const authenticatedReq = req as AuthenticatedRequest;
       const result = await deps.authService.logoutAllSessions({
         userId: authenticatedReq.user.id,
+        currentPassword: req.body.currentPassword,
       });
 
       return res.status(200).json({
