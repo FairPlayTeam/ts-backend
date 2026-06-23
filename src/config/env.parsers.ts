@@ -246,24 +246,37 @@ export const parseSessionCleanupInactiveRetentionMs = (rawValue: string | undefi
 export const parseIsProduction = (rawValue: string | undefined): boolean =>
   rawValue === 'production';
 
-export const parseAllowedOrigins = (rawValue: string | undefined): string[] => {
+export const ALL_CORS_ORIGINS = '*' as const;
+
+export type AllowedCorsOrigins = typeof ALL_CORS_ORIGINS | string[];
+
+export const parseAllowedOrigins = (rawValue: string | undefined): AllowedCorsOrigins => {
   const value = rawValue?.trim();
 
   if (!value) {
     return [];
   }
 
+  const origins = value
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+
+  if (origins.includes(ALL_CORS_ORIGINS)) {
+    if (origins.length === 1) {
+      return ALL_CORS_ORIGINS;
+    }
+
+    throw new ServerConfigurationError('CORS_ORIGINS wildcard must be used alone');
+  }
+
   return [
     ...new Set(
-      value
-        .split(',')
-        .map((origin) => origin.trim())
-        .filter((origin) => origin.length > 0)
-        .map((origin) => {
-          const url = new URL(parseRequiredHttpUrl(origin, 'CORS_ORIGINS entry'));
+      origins.map((origin) => {
+        const url = new URL(parseRequiredHttpUrl(origin, 'CORS_ORIGINS entry'));
 
-          return url.origin;
-        }),
+        return url.origin;
+      }),
     ),
   ];
 };

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ALL_CORS_ORIGINS,
   ServerConfigurationError,
   parseAllowedOrigins,
   parseIsProduction,
@@ -117,10 +118,12 @@ describe('env parsers', () => {
 
   test('parses and normalizes allowed CORS origins', () => {
     expect(parseAllowedOrigins(undefined)).toEqual([]);
+    expect(parseAllowedOrigins('*')).toBe(ALL_CORS_ORIGINS);
     expect(parseAllowedOrigins('http://localhost:5173, https://example.com/path')).toEqual([
       'http://localhost:5173',
       'https://example.com',
     ]);
+    expect(() => parseAllowedOrigins('*, https://example.com')).toThrow(ServerConfigurationError);
     expect(() => parseAllowedOrigins('not-a-url')).toThrow(ServerConfigurationError);
     expect(() => parseAllowedOrigins('ftp://example.com')).toThrow(ServerConfigurationError);
   });

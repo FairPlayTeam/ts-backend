@@ -216,7 +216,8 @@ The full Swagger UI documentation will be available at /docs.
 - `TRUST_PROXY` Express proxy trust setting. Use `false`, `loopback`, a hop count such as `1`, or
   an explicit proxy list. Do not use `true`. For Cloudflare Tunnel forwarding to
   `127.0.0.1:3000`, use `loopback`.
-- `CORS_ORIGINS` comma-separated list of allowed request origins.
+- `CORS_ORIGINS` comma-separated list of allowed request origins. Use `*` by itself to allow any
+  browser origin for public Bearer-token API deployments.
 - `REDIS_URL` Redis URL used for distributed rate limiting, cooldowns, and maintenance locks.
   Managed Redis providers may require `rediss://` for TLS.
 - `RATE_LIMIT_KEY_SECRET` secret used to anonymize identifier-based rate limit keys. It must be at

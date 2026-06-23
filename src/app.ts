@@ -13,6 +13,7 @@ import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { createLimiters } from './middleware/limiters.js';
 import { createEmailCooldown } from './middleware/abuseProtection.js';
 import type { Config } from './config/env.js';
+import { ALL_CORS_ORIGINS } from './config/env.parsers.js';
 import type { RedisClient } from './lib/redis.js';
 import type { AuthService } from './services/auth.types.js';
 import helmet from 'helmet';
@@ -167,6 +168,11 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
           return;
         }
 
+        if (config.allowedOrigins === ALL_CORS_ORIGINS) {
+          cb(null, true);
+          return;
+        }
+
         if (!config.isProduction && config.allowedOrigins.length === 0) {
           cb(null, true);
           return;
@@ -179,7 +185,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
 
         cb(new HttpError(403, 'Forbidden', 'CORS origin not allowed'));
       },
-      credentials: true,
+      credentials: false,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
     }),
