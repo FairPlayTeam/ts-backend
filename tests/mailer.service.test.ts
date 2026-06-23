@@ -42,8 +42,8 @@ describe('mailer service', () => {
       },
     });
 
-    await service.sendVerificationEmail('user@example.com', 'plain-token');
-    await service.sendVerificationEmail('second@example.com', 'second-token');
+    await service.sendVerificationEmail('user@example.com', '123456');
+    await service.sendVerificationEmail('second@example.com', '654321');
 
     expect(transporterCreations).toBe(1);
     expect(sentEmails).toHaveLength(2);
@@ -54,8 +54,12 @@ describe('mailer service', () => {
     expect(firstEmail?.from).toBe('"FairPlay" <no-reply@example.com>');
     expect(firstEmail?.to).toBe('user@example.com');
     expect(firstEmail?.subject).toBe('Verify your email');
-    expect(firstEmail?.text).toContain('http://localhost:5173/verify-email?token=plain-token');
-    expect(firstEmail?.html).toContain('http://localhost:5173/verify-email?token=plain-token');
+    expect(firstEmail?.text).toContain('Code: 123456');
+    expect(firstEmail?.text).toContain('This code expires in 15 minutes.');
+    expect(firstEmail?.html).toContain('123456');
+    expect(firstEmail?.html).toContain('This code expires in 15 minutes.');
+    expect(firstEmail?.text).not.toContain('/verify-email');
+    expect(firstEmail?.html).not.toContain('/verify-email');
   });
 
   test('sends password reset emails through the configured transporter', async () => {
@@ -83,7 +87,7 @@ describe('mailer service', () => {
     const service = createMailerService({ config: null });
 
     await expect(
-      service.sendVerificationEmail('user@example.com', 'plain-token'),
+      service.sendVerificationEmail('user@example.com', '123456'),
     ).rejects.toBeInstanceOf(MailerConfigurationError);
   });
 
@@ -98,7 +102,7 @@ describe('mailer service', () => {
     });
 
     await expect(
-      service.sendVerificationEmail('user@example.com', 'plain-token'),
+      service.sendVerificationEmail('user@example.com', '123456'),
     ).rejects.toBeInstanceOf(MailerDeliveryError);
   });
 });

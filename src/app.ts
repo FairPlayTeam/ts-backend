@@ -94,6 +94,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     authLimiter,
     registrationIdentifierLimiter,
     loginIdentifierLimiter,
+    verifyEmailIdentifierLimiter,
     passwordResetIdentifierLimiter,
     resendVerificationIdentifierLimiter,
   } = createLimiters({
@@ -202,6 +203,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
       authLimiter,
       registrationIdentifierLimiter,
       loginIdentifierLimiter,
+      verifyEmailIdentifierLimiter,
       passwordResetEmailCooldown,
       passwordResetIdentifierLimiter,
       readinessChecks: deps.readinessChecks ?? null,

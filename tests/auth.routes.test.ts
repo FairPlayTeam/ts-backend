@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../src/app.js';
+import { VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MAX } from '../src/config/constants.js';
 import {
   LOGOUT_SESSION_ID_INVALID_MESSAGE,
   UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE,
@@ -9,6 +10,7 @@ import {
 } from '../src/controllers/auth.schemas.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
+import { VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MESSAGE } from '../src/middleware/limiters.js';
 import {
   ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
   ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
@@ -23,6 +25,7 @@ import {
   UPDATE_PROFILE_SUCCESS_MESSAGE,
   UPLOAD_AVATAR_SUCCESS_MESSAGE,
   UPLOAD_BANNER_SUCCESS_MESSAGE,
+  VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
 import { UPLOAD_FILE_TOO_LARGE_MESSAGE } from '../src/middleware/upload.js';
 import { createStubAuthService } from './support/auth.js';
@@ -32,6 +35,7 @@ let baseUrl: string;
 let receivedSessionKey: string | undefined;
 let receivedProfileRequest: unknown;
 let receivedProfileUpdate: unknown;
+let receivedVerifyEmailRequest: unknown;
 let receivedResendVerificationRequest: unknown;
 let receivedPasswordResetRequest: unknown;
 let receivedGetSessionsRequest: unknown;
@@ -62,6 +66,10 @@ describe('auth routes', () => {
           validateSession: async (sessionKey) => {
             receivedSessionKey = sessionKey;
             return authService.validateSession(sessionKey);
+          },
+          verifyEmail: async (input) => {
+            receivedVerifyEmailRequest = input;
+            return authService.verifyEmail(input);
           },
           getProfile: async (input) => {
             receivedProfileRequest = input;
@@ -604,6 +612,67 @@ describe('auth routes', () => {
     expect(await response.json()).toEqual({
       error: 'Unauthorized',
       message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+  });
+
+  test('verifies an email without requiring a bearer session', async () => {
+    receivedVerifyEmailRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/auth/verify-email`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: ' VERIFY@Example.COM ',
+        code: '123456',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(receivedVerifyEmailRequest).toMatchObject({
+      email: 'verify@example.com',
+      code: '123456',
+    });
+    expect(await response.json()).toMatchObject({
+      message: VERIFY_EMAIL_SUCCESS_MESSAGE,
+      sessionKey: 'test-session-key',
+    });
+  });
+
+  test('limits email verification attempts by normalized email', async () => {
+    const body = {
+      email: ' LIMITED@Example.COM ',
+      code: '123456',
+    };
+
+    for (let index = 0; index < VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MAX; index += 1) {
+      const response = await fetch(`${baseUrl}/auth/verify-email`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      expect(response.status).toBe(200);
+    }
+
+    const blockedResponse = await fetch(`${baseUrl}/auth/verify-email`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: 'limited@example.com',
+        code: '123456',
+      }),
+    });
+
+    expect(blockedResponse.status).toBe(429);
+    expect(await blockedResponse.json()).toEqual({
+      error: 'TooManyRequests',
+      message: VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MESSAGE,
     });
   });
 

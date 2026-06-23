@@ -1,6 +1,7 @@
 import { AccountBannedError, InvalidEmailVerificationTokenError } from '../auth.errors.js';
 import type { AuthService, VerifyEmailInput, ResendVerificationInput } from '../auth.types.js';
 import {
+  getEmailVerificationCodeSecret,
   normalizeEmail,
   getEmailVerificationExpiresAt,
   handleExpectedMailerError,
@@ -18,40 +19,53 @@ export const createVerificationService = (
   deps: AuthDependencies,
   sessionService: SessionService,
 ): VerificationService => ({
-  async verifyEmail({ token, ipAddress, userAgent }: VerifyEmailInput) {
-    const tokenHash = deps.token.hash(token);
+  async verifyEmail({ email, code, ipAddress, userAgent }: VerifyEmailInput) {
+    const emailNorm = normalizeEmail(email);
+    const codeNorm = code.trim();
     const { now, sessionKey, sessionData } = sessionService.prepareSession({
       ipAddress,
       userAgent,
     });
 
-    const record = await deps.prisma.emailVerificationToken.findUnique({
-      where: { token: tokenHash },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            username: true,
-            displayName: true,
-            bio: true,
-            role: true,
-            isBanned: true,
-          },
-        },
+    const user = await deps.prisma.user.findUnique({
+      where: { email: emailNorm },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        displayName: true,
+        bio: true,
+        role: true,
+        isVerified: true,
+        isBanned: true,
       },
     });
 
-    if (!record) {
+    if (!user || user.isVerified) {
+      throw new InvalidEmailVerificationTokenError();
+    }
+
+    const codeHash = deps.token.hash(getEmailVerificationCodeSecret(user.id, codeNorm));
+    const record = await deps.prisma.emailVerificationToken.findUnique({
+      where: { userId: user.id },
+      select: {
+        token: true,
+        expiresAt: true,
+      },
+    });
+
+    if (!record || record.token !== codeHash) {
       throw new InvalidEmailVerificationTokenError();
     }
 
     if (record.expiresAt <= now) {
-      await deps.prisma.emailVerificationToken.deleteMany({ where: { token: tokenHash } });
+      await deps.prisma.emailVerificationToken.deleteMany({
+        where: { userId: user.id, token: codeHash },
+      });
       throw new InvalidEmailVerificationTokenError();
     }
 
-    if (record.user.isBanned) {
+    if (user.isBanned) {
       throw new AccountBannedError();
     }
 
@@ -59,7 +73,8 @@ export const createVerificationService = (
       const consumedAt = deps.clock.now();
       const consumedToken = await tx.emailVerificationToken.deleteMany({
         where: {
-          token: tokenHash,
+          userId: user.id,
+          token: codeHash,
           expiresAt: {
             gt: consumedAt,
           },
@@ -71,13 +86,13 @@ export const createVerificationService = (
       }
 
       const updatedUser = await tx.user.updateMany({
-        where: { id: record.userId, isBanned: false },
+        where: { id: user.id, isBanned: false, isVerified: false },
         data: { isVerified: true, lastLogin: now },
       });
 
       if (updatedUser.count !== 1) {
         const currentUser = await tx.user.findUnique({
-          where: { id: record.userId },
+          where: { id: user.id },
           select: { isBanned: true },
         });
 
@@ -91,7 +106,7 @@ export const createVerificationService = (
       return tx.session.create({
         data: {
           ...sessionData,
-          userId: record.userId,
+          userId: user.id,
         },
         select: {
           id: true,
@@ -103,12 +118,12 @@ export const createVerificationService = (
     return {
       message: VERIFY_EMAIL_SUCCESS_MESSAGE,
       user: {
-        id: record.user.id,
-        email: record.user.email,
-        username: record.user.username,
-        displayName: record.user.displayName,
-        bio: record.user.bio,
-        role: record.user.role,
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        displayName: user.displayName,
+        bio: user.bio,
+        role: user.role,
       },
       sessionKey,
       session,
@@ -117,8 +132,7 @@ export const createVerificationService = (
 
   async resendVerification({ email }: ResendVerificationInput) {
     const emailNorm = normalizeEmail(email);
-    const token = deps.token.generate();
-    const tokenHash = deps.token.hash(token);
+    const code = deps.token.generateSixDigitCode();
     const expiresAt = getEmailVerificationExpiresAt(
       deps.clock.now(),
       deps.config.emailVerificationTokenTtlMs,
@@ -134,15 +148,17 @@ export const createVerificationService = (
         return null;
       }
 
+      const codeHash = deps.token.hash(getEmailVerificationCodeSecret(existingUser.id, code));
+
       await tx.emailVerificationToken.upsert({
         where: { userId: existingUser.id },
         update: {
-          token: tokenHash,
+          token: codeHash,
           expiresAt,
         },
         create: {
           userId: existingUser.id,
-          token: tokenHash,
+          token: codeHash,
           expiresAt,
         },
       });
@@ -152,7 +168,7 @@ export const createVerificationService = (
 
     if (user) {
       try {
-        await deps.mailer.sendVerificationEmail(user.email, token);
+        await deps.mailer.sendVerificationEmail(user.email, code);
       } catch (err) {
         await handleExpectedMailerError({
           err,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { generateToken, hashToken } from '../src/lib/crypto.js';
+import { generateSixDigitCode, generateToken, hashToken } from '../src/lib/crypto.js';
 
 describe('crypto utils', () => {
   test('hashToken returns sha256 hash', () => {
@@ -29,5 +29,11 @@ describe('crypto utils', () => {
     const b = generateToken();
 
     expect(a).not.toBe(b);
+  });
+
+  test('generateSixDigitCode returns a fixed-width numeric code', () => {
+    const code = generateSixDigitCode();
+
+    expect(code).toMatch(/^\d{6}$/);
   });
 });

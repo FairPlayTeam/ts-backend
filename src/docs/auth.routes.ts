@@ -176,7 +176,7 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/auth/resend-verification',
-    summary: 'Resend an email verification link',
+    summary: 'Resend an email verification code',
     tags: ['Auth'],
     request: {
       body: {

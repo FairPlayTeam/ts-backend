@@ -42,7 +42,7 @@ describe('auth error mapping', () => {
     expect((error as HttpError).code).toBe('Forbidden');
   });
 
-  test('maps invalid email verification tokens to an HTTP bad request', () => {
+  test('maps invalid email verification codes to an HTTP bad request', () => {
     const error = toAuthHttpError(new InvalidEmailVerificationTokenError());
 
     expect(error).toBeInstanceOf(HttpError);

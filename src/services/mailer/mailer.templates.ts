@@ -19,15 +19,35 @@ export function buildTransactionalEmailHtml({
   intro,
   actionLabel,
   actionUrl,
+  actionCode,
   expiryLabel,
   footerText,
 }: TransactionalEmailContent): string {
   const safeTitle = escapeHtml(title);
   const safeIntro = escapeHtml(intro);
-  const safeActionLabel = escapeHtml(actionLabel);
-  const safeActionUrl = escapeHtml(actionUrl);
+  const safeActionLabel = actionLabel ? escapeHtml(actionLabel) : null;
+  const safeActionUrl = actionUrl ? escapeHtml(actionUrl) : null;
+  const safeActionCode = actionCode ? escapeHtml(actionCode) : null;
   const safeExpiryLabel = escapeHtml(expiryLabel);
   const safeFooterHtml = escapeHtml(footerText).replace(/\n/g, '<br/>');
+  const actionHtml = (() => {
+    if (safeActionCode) {
+      return `<div style="display:inline-block;background:#f5f5f5;color:#111111;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;font-size:28px;font-weight:700;padding:14px 24px;border-radius:8px;border:1px solid #dddddd;">${safeActionCode}</div>`;
+    }
+
+    if (safeActionUrl && safeActionLabel) {
+      return `
+                <a href="${safeActionUrl}" style="display:inline-block;background:#111111;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:13px 36px;border-radius:8px;">
+                  ${safeActionLabel}
+                </a>
+                <p style="margin:28px 0 0;font-size:12px;color:#aaaaaa;">
+                  Or copy this link:<br/>
+                  <a href="${safeActionUrl}" style="color:#888888;word-break:break-all;">${safeActionUrl}</a>
+                </p>`;
+    }
+
+    return '';
+  })();
 
   return `
     <!DOCTYPE html>
@@ -52,13 +72,7 @@ export function buildTransactionalEmailHtml({
                   ${safeIntro}<br/>
                   <span style="font-size:13px;color:#999999;">${safeExpiryLabel}</span>
                 </p>
-                <a href="${safeActionUrl}" style="display:inline-block;background:#111111;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:13px 36px;border-radius:8px;">
-                  ${safeActionLabel}
-                </a>
-                <p style="margin:28px 0 0;font-size:12px;color:#aaaaaa;">
-                  Or copy this link:<br/>
-                  <a href="${safeActionUrl}" style="color:#888888;word-break:break-all;">${safeActionUrl}</a>
-                </p>
+                ${actionHtml}
               </td>
             </tr>
             <tr>
@@ -79,8 +93,14 @@ export function buildTransactionalEmailHtml({
 export function buildTransactionalEmailText({
   title,
   actionUrl,
+  actionCode,
   expiryLabel,
   footerText,
-}: Pick<TransactionalEmailContent, 'title' | 'actionUrl' | 'expiryLabel' | 'footerText'>): string {
-  return `${title}: ${actionUrl}\n\n${expiryLabel}\n\n${footerText}`;
+}: Pick<
+  TransactionalEmailContent,
+  'title' | 'actionUrl' | 'actionCode' | 'expiryLabel' | 'footerText'
+>): string {
+  const action = actionCode ? `Code: ${actionCode}` : `Link: ${actionUrl ?? ''}`;
+
+  return `${title}\n${action}\n\n${expiryLabel}\n\n${footerText}`;
 }

@@ -1,8 +1,7 @@
 import nodemailer from 'nodemailer';
 import {
   APP_PRODUCT_NAME,
-  EMAIL_VERIFICATION_PATH,
-  EMAIL_VERIFICATION_TOKEN_TTL_DAYS,
+  EMAIL_VERIFICATION_CODE_TTL_MINUTES,
   PASSWORD_RESET_PATH,
   PASSWORD_RESET_TOKEN_TTL_DAYS,
 } from '../../config/constants.js';
@@ -34,12 +33,6 @@ const createDefaultTransporter = (config: MailerConfig): MailTransporter =>
       pass: config.smtpPass,
     },
   });
-
-function buildVerifyUrl(token: string, frontendUrl: string): string {
-  const url = new URL(EMAIL_VERIFICATION_PATH, frontendUrl);
-  url.searchParams.set('token', token);
-  return url.toString();
-}
 
 function buildPasswordResetUrl(token: string, frontendUrl: string): string {
   const url = new URL(PASSWORD_RESET_PATH, frontendUrl);
@@ -81,13 +74,12 @@ export const createMailerService = (deps: MailerDependencies) => {
   };
 
   return {
-    async sendVerificationEmail(email: string, token: string): Promise<void> {
+    async sendVerificationEmail(email: string, code: string): Promise<void> {
       const mailerConfig = getMailerConfig(deps.config);
-      const verifyUrl = buildVerifyUrl(token, mailerConfig.frontendUrl);
       const title = 'Confirm your email';
       const intro =
-        'Thanks for signing up! Click the button below to verify your email address and activate your account.';
-      const expiryLabel = `This link expires in ${EMAIL_VERIFICATION_TOKEN_TTL_DAYS} days.`;
+        'Thanks for signing up! Enter the code below to verify your email address and activate your account.';
+      const expiryLabel = `This code expires in ${EMAIL_VERIFICATION_CODE_TTL_MINUTES} minutes.`;
       const footerText = `You received this email because you created an account on ${APP_PRODUCT_NAME}.\nIf you didn't, you can safely ignore it.`;
 
       try {
@@ -96,15 +88,14 @@ export const createMailerService = (deps: MailerDependencies) => {
           subject: 'Verify your email',
           text: buildTransactionalEmailText({
             title: `Verify your ${APP_PRODUCT_NAME} account`,
-            actionUrl: verifyUrl,
+            actionCode: code,
             expiryLabel,
             footerText,
           }),
           html: buildTransactionalEmailHtml({
             title,
             intro,
-            actionLabel: 'Verify my email',
-            actionUrl: verifyUrl,
+            actionCode: code,
             expiryLabel,
             footerText,
           }),

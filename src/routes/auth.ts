@@ -30,6 +30,7 @@ type AuthRouterDependencies = {
   authLimiter: RequestHandler;
   registrationIdentifierLimiter: RequestHandler;
   loginIdentifierLimiter: RequestHandler;
+  verifyEmailIdentifierLimiter: RequestHandler;
   passwordResetEmailCooldown: RequestHandler;
   passwordResetIdentifierLimiter: RequestHandler;
   resendVerificationEmailCooldown: RequestHandler;
@@ -42,6 +43,7 @@ const createAuthRouter = ({
   authLimiter,
   registrationIdentifierLimiter,
   loginIdentifierLimiter,
+  verifyEmailIdentifierLimiter,
   passwordResetEmailCooldown,
   passwordResetIdentifierLimiter,
   resendVerificationEmailCooldown,
@@ -89,7 +91,13 @@ const createAuthRouter = ({
     register,
   );
   router.post('/login', authLimiter, validate(loginSchema), loginIdentifierLimiter, login);
-  router.post('/verify-email', authLimiter, validate(verifyEmailSchema), verifyEmail);
+  router.post(
+    '/verify-email',
+    authLimiter,
+    validate(verifyEmailSchema),
+    verifyEmailIdentifierLimiter,
+    verifyEmail,
+  );
   router.post(
     '/resend-verification',
     authLimiter,

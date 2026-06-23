@@ -22,10 +22,11 @@ export type AuthDependencies = {
   };
   token: {
     generate(): string;
+    generateSixDigitCode(): string;
     hash(token: string): string;
   };
   mailer: {
-    sendVerificationEmail(email: string, token: string): Promise<void>;
+    sendVerificationEmail(email: string, code: string): Promise<void>;
     sendPasswordResetEmail(email: string, token: string): Promise<void>;
   };
   objectStorage: Pick<ObjectStorage, 'putObject' | 'deleteObject' | 'getSignedUrl'>;

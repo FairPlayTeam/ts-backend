@@ -108,15 +108,15 @@ export const loginSchema = z.object({
 
 export const verifyEmailBodySchema = z
   .object({
-    token: z
+    email: emailSchema,
+    code: z
       .string()
       .trim()
-      .length(64, 'Verification token must be 64 characters')
-      .regex(/^[a-f0-9]+$/i, 'Verification token must be hexadecimal')
-      .transform((value) => value.toLowerCase())
+      .length(6, 'Verification code must be 6 digits')
+      .regex(/^\d{6}$/, 'Verification code must contain only digits')
       .openapi({
-        description: 'Raw email verification token from the frontend verification link.',
-        example: 'd9f1f7d7b9d24e5c9f9b6a81a9a2eb1b2c1b0c9e7d6f5a4b3c2d1e0f9a8b7c6d',
+        description: 'Six-digit verification code sent by email.',
+        example: '123456',
       }),
   })
   .strict()
@@ -382,7 +382,7 @@ export const resetPasswordBodySchema = z
       .regex(/^[a-f0-9]+$/i, 'Reset token must be hexadecimal')
       .transform((value) => value.toLowerCase())
       .openapi({
-        description: 'Raw reset password token from the frontend verification link.',
+        description: 'Raw reset password token from the frontend reset link.',
         example: 'd9f1f7d7b9d24e5c9f9b6a81a9a2eb1b2c1b0c9e7d6f5a4b3c2d1e0f9a8b7c6d',
       }),
     password: passwordSchema,

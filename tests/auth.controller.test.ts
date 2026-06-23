@@ -52,7 +52,8 @@ const loginBody: LoginRequestBody = {
 };
 
 const verifyEmailBody: VerifyEmailRequestBody = {
-  token: 'a'.repeat(64),
+  email: 'user@example.com',
+  code: '123456',
 };
 
 const sensitiveActionBody = {

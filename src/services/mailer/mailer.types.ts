@@ -10,8 +10,9 @@ export type MailerConfig = {
 export type TransactionalEmailContent = {
   title: string;
   intro: string;
-  actionLabel: string;
-  actionUrl: string;
+  actionLabel?: string;
+  actionUrl?: string;
+  actionCode?: string;
   expiryLabel: string;
   footerText: string;
 };

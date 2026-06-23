@@ -35,7 +35,8 @@ export type LoginInput = {
 };
 
 export type VerifyEmailInput = {
-  token: string;
+  email: string;
+  code: string;
   ipAddress?: string | undefined;
   userAgent?: string | undefined;
 };

@@ -3,6 +3,8 @@ import { MailerConfigurationError, MailerDeliveryError } from '../mailer/mailer.
 export const normalizeEmail = (email: string): string => email.trim().toLowerCase();
 export const normalizeIdentifier = (identifier: string): string => identifier.trim().toLowerCase();
 export const getSessionKeySuffix = (sessionKey: string): string => sessionKey.slice(-8);
+export const getEmailVerificationCodeSecret = (userId: string, code: string): string =>
+  `${userId}:${code}`;
 
 export const getEmailVerificationExpiresAt = (
   now: Date,

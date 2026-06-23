@@ -11,7 +11,7 @@ import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainer
 
 import { createApp } from '../../src/app.js';
 import { createAuthService } from '../../src/services/auth.service.js';
-import { generateToken, hashToken } from '../../src/lib/crypto.js';
+import { generateSixDigitCode, generateToken, hashToken } from '../../src/lib/crypto.js';
 import { closeRedisClient, connectRedisClient, createRedisClient } from '../../src/lib/redis.js';
 import {
   AUTH_RATE_LIMIT_MESSAGE,
@@ -119,11 +119,12 @@ const createIntegrationAuthService = (
     },
     token: {
       generate: () => generateToken(),
+      generateSixDigitCode: () => generateSixDigitCode(),
       hash: (token) => hashToken(token),
     },
     mailer: {
-      sendVerificationEmail: async (email, token) => {
-        delivered.verification.push({ email, token });
+      sendVerificationEmail: async (email, code) => {
+        delivered.verification.push({ email, token: code });
       },
       sendPasswordResetEmail: async (email, token) => {
         delivered.passwordReset.push({ email, token });
@@ -300,12 +301,14 @@ describe('auth integration', () => {
     const verificationEmail = runtime.delivered.verification.at(-1);
     expect(verificationEmail).toEqual({
       email: TEST_EMAIL,
-      token: expect.stringMatching(/^[a-f0-9]{64}$/),
+      token: expect.stringMatching(/^\d{6}$/),
     });
 
     const storedVerificationToken = await runtime.prisma.emailVerificationToken.findFirstOrThrow();
     expect(storedVerificationToken.token).not.toBe(verificationEmail?.token);
-    expect(storedVerificationToken.token).toBe(hashToken(verificationEmail?.token ?? ''));
+    expect(storedVerificationToken.token).toBe(
+      hashToken(`${storedVerificationToken.userId}:${verificationEmail?.token ?? ''}`),
+    );
 
     await request(app)
       .post('/auth/login')
@@ -322,7 +325,8 @@ describe('auth integration', () => {
     const verifyResponse = await request(app)
       .post('/auth/verify-email')
       .send({
-        token: verificationEmail?.token,
+        email: TEST_EMAIL,
+        code: verificationEmail?.token,
       })
       .expect(200);
 
@@ -503,7 +507,10 @@ describe('auth integration', () => {
     });
 
     const verificationEmail = runtime.delivered.verification.at(-1);
-    await runtime.authService.verifyEmail({ token: verificationEmail?.token ?? '' });
+    await runtime.authService.verifyEmail({
+      email,
+      code: verificationEmail?.token ?? '',
+    });
 
     for (let index = 0; index < 5; index += 1) {
       await request(app)
@@ -595,7 +602,10 @@ describe('auth integration', () => {
     });
 
     const verificationEmail = runtime.delivered.verification.at(-1);
-    await runtime.authService.verifyEmail({ token: verificationEmail?.token ?? '' });
+    await runtime.authService.verifyEmail({
+      email,
+      code: verificationEmail?.token ?? '',
+    });
     runtime.delivered.passwordReset = [];
 
     await request(app)

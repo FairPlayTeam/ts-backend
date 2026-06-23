@@ -7,3 +7,7 @@ export function hashToken(token: string): string {
 export function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
+
+export function generateSixDigitCode(): string {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+}

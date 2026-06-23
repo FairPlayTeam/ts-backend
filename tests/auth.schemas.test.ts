@@ -176,23 +176,26 @@ describe('loginSchema', () => {
 });
 
 describe('verifyEmailSchema', () => {
-  test('accepts a valid verification token and normalizes it', () => {
+  test('accepts a valid verification code and normalizes the email', () => {
     const result = verifyEmailSchema.safeParse({
       body: {
-        token: 'A'.repeat(64),
+        email: ' USER@Example.COM ',
+        code: '012345',
       },
     });
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.body.token).toBe('a'.repeat(64));
+      expect(result.data.body.email).toBe('user@example.com');
+      expect(result.data.body.code).toBe('012345');
     }
   });
 
-  test('rejects malformed verification tokens', () => {
+  test('rejects malformed verification codes', () => {
     const result = verifyEmailSchema.safeParse({
       body: {
-        token: 'not-a-token',
+        email: 'user@example.com',
+        code: 'not-a-code',
       },
     });
 
@@ -202,8 +205,9 @@ describe('verifyEmailSchema', () => {
   test('rejects unexpected verification properties', () => {
     const result = verifyEmailSchema.safeParse({
       body: {
-        token: 'a'.repeat(64),
         email: 'user@example.com',
+        code: '123456',
+        token: 'a'.repeat(64),
       },
     });
 
