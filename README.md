@@ -98,10 +98,12 @@ These overrides should be reviewed periodically and removed once the parent depe
 
 Current overrides:
 
-- `qs`: security fix for the version pulled by Express/body-parser.
-- `fast-uri`: security fix for the version pulled by Prisma tooling/AJV.
-- `brace-expansion`: security fix for the version pulled by ESLint tooling.
-- `hono` and `@hono/node-server`: security fixes for versions pulled by Prisma tooling.
+- `@hono/node-server`
+- `form-data`
+- `hono`
+- `nodemailer`
+- `protobufjs`
+- `vite`
 
 See https://bun.sh/docs/pm/overrides for more details about overrides.
 
