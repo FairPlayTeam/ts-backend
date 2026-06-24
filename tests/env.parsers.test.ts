@@ -136,7 +136,6 @@ describe('env parsers', () => {
         smtpUser: undefined,
         smtpPass: undefined,
         smtpFrom: undefined,
-        frontendUrl: undefined,
       }),
     ).toBeNull();
 
@@ -147,18 +146,16 @@ describe('env parsers', () => {
         smtpUser: 'user@example.com',
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
-        frontendUrl: 'http://localhost:5173',
       }),
     ).toThrow(ServerConfigurationError);
 
     expect(() =>
       parseMailerConfig({
         smtpHost: 'smtp.example.com',
-        smtpPort: '587',
+        smtpPort: 'not-a-port',
         smtpUser: 'user@example.com',
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
-        frontendUrl: 'ftp://localhost:5173',
       }),
     ).toThrow(ServerConfigurationError);
 
@@ -169,7 +166,6 @@ describe('env parsers', () => {
         smtpUser: 'user@example.com',
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
-        frontendUrl: 'http://localhost:5173',
       }),
     ).toEqual({
       smtpHost: 'smtp.example.com',
@@ -177,7 +173,6 @@ describe('env parsers', () => {
       smtpUser: 'user@example.com',
       smtpPass: 'secret',
       smtpFrom: 'no-reply@example.com',
-      frontendUrl: 'http://localhost:5173/',
     });
   });
 

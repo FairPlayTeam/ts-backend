@@ -429,7 +429,7 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/auth/forgot-password',
-    summary: 'Request a password reset email',
+    summary: 'Request a password reset code',
     tags: ['Auth'],
     request: {
       body: {
@@ -454,7 +454,7 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/auth/reset-password',
-    summary: 'Reset account password using an emailed token',
+    summary: 'Reset account password using an emailed code',
     tags: ['Auth'],
     request: {
       body: {

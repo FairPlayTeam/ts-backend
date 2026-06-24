@@ -7,6 +7,7 @@ import {
 import type { AuthService, RequestPasswordResetInput, ResetPasswordInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
+  getPasswordResetCodeSecret,
   getPasswordResetExpiresAt,
   handleExpectedMailerError,
   normalizeEmail,
@@ -18,8 +19,7 @@ type ResetPasswordService = Pick<AuthService, 'requestPasswordReset' | 'resetPas
 export const createResetPasswordService = (deps: AuthDependencies): ResetPasswordService => ({
   async requestPasswordReset({ email }: RequestPasswordResetInput) {
     const normalizedEmail = normalizeEmail(email);
-    const token = deps.token.generate();
-    const tokenHash = deps.token.hash(token);
+    const code = deps.token.generateSixDigitCode();
     const expiresAt = getPasswordResetExpiresAt(
       deps.clock.now(),
       deps.config.passwordResetTokenTtlMs,
@@ -40,15 +40,17 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
         return null;
       }
 
+      const codeHash = deps.token.hash(getPasswordResetCodeSecret(existingUser.id, code));
+
       await tx.passwordResetToken.upsert({
         where: { userId: existingUser.id },
         update: {
-          token: tokenHash,
+          token: codeHash,
           expiresAt,
         },
         create: {
           userId: existingUser.id,
-          token: tokenHash,
+          token: codeHash,
           expiresAt,
         },
       });
@@ -58,7 +60,7 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
 
     if (user) {
       try {
-        await deps.mailer.sendPasswordResetEmail(user.email, token);
+        await deps.mailer.sendPasswordResetEmail(user.email, code);
       } catch (err) {
         await handleExpectedMailerError({
           err,
@@ -75,40 +77,51 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
     return { message: RESET_PASSWORD_EMAIL_MESSAGE };
   },
 
-  async resetPassword({ token, password }: ResetPasswordInput) {
-    const tokenHash = deps.token.hash(String(token).trim());
+  async resetPassword({ email, code, password }: ResetPasswordInput) {
+    const normalizedEmail = normalizeEmail(email);
+    const codeNorm = code.trim();
     const now = deps.clock.now();
 
-    const record = await deps.prisma.passwordResetToken.findUnique({
-      where: { token: tokenHash },
-      include: {
-        user: {
-          select: {
-            id: true,
-            passwordHash: true,
-            isBanned: true,
-          },
-        },
+    const user = await deps.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: {
+        id: true,
+        passwordHash: true,
+        isVerified: true,
+        isBanned: true,
       },
     });
 
-    if (!record) {
+    if (!user || !user.isVerified) {
+      throw new InvalidPasswordResetTokenError();
+    }
+
+    const codeHash = deps.token.hash(getPasswordResetCodeSecret(user.id, codeNorm));
+    const record = await deps.prisma.passwordResetToken.findUnique({
+      where: { userId: user.id },
+      select: {
+        token: true,
+        expiresAt: true,
+      },
+    });
+
+    if (!record || record.token !== codeHash) {
       throw new InvalidPasswordResetTokenError();
     }
 
     if (record.expiresAt <= now) {
       await deps.prisma.passwordResetToken.deleteMany({
-        where: { token: tokenHash },
+        where: { userId: user.id, token: codeHash },
       });
 
       throw new InvalidPasswordResetTokenError();
     }
 
-    if (record.user.isBanned) {
+    if (user.isBanned) {
       throw new AccountBannedError();
     }
 
-    const isCurrentPassword = await deps.hasher.compare(password, record.user.passwordHash);
+    const isCurrentPassword = await deps.hasher.compare(password, user.passwordHash);
 
     if (isCurrentPassword) {
       throw new PasswordResetPasswordReuseError();
@@ -120,7 +133,8 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
       const consumedAt = deps.clock.now();
       const consumed = await tx.passwordResetToken.deleteMany({
         where: {
-          token: tokenHash,
+          userId: user.id,
+          token: codeHash,
           expiresAt: {
             gt: consumedAt,
           },
@@ -132,7 +146,7 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
       }
 
       const currentUser = await tx.user.findUnique({
-        where: { id: record.userId },
+        where: { id: user.id },
         select: {
           passwordHash: true,
           isBanned: true,
@@ -147,13 +161,13 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
         throw new AccountBannedError();
       }
 
-      if (currentUser.passwordHash !== record.user.passwordHash) {
+      if (currentUser.passwordHash !== user.passwordHash) {
         throw new PasswordResetStateChangedError();
       }
 
       const updatedUser = await tx.user.updateMany({
         where: {
-          id: record.userId,
+          id: user.id,
           passwordHash: currentUser.passwordHash,
         },
         data: {
@@ -167,7 +181,7 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
 
       const revokedSessions = await tx.session.updateMany({
         where: {
-          userId: record.userId,
+          userId: user.id,
           isActive: true,
         },
         data: {

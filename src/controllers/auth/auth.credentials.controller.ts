@@ -108,10 +108,11 @@ export const createAuthCredentialsController = (deps: AuthControllerDependencies
     next: NextFunction,
   ) => {
     try {
-      const { token, password } = req.body;
+      const { email, code, password } = req.body;
 
       const result = await deps.authService.resetPassword({
-        token,
+        email,
+        code,
         password,
       });
 

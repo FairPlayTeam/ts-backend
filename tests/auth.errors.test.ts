@@ -50,7 +50,7 @@ describe('auth error mapping', () => {
     expect((error as HttpError).code).toBe('BadRequest');
   });
 
-  test('maps invalid password reset tokens to an HTTP bad request', () => {
+  test('maps invalid password reset codes to an HTTP bad request', () => {
     const error = toAuthHttpError(new InvalidPasswordResetTokenError());
 
     expect(error).toBeInstanceOf(HttpError);

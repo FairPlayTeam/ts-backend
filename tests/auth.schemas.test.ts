@@ -9,6 +9,7 @@ import {
   registerSchema,
   requestPasswordResetSchema,
   resendVerificationSchema,
+  resetPasswordSchema,
   updateProfileSchema,
   userSessionsSchema,
   verifyEmailSchema,
@@ -129,6 +130,50 @@ describe('requestPasswordResetSchema', () => {
       body: {
         email: 'user@example.com',
         token: 'unexpected',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('resetPasswordSchema', () => {
+  test('accepts a valid password reset code payload and normalizes email', () => {
+    const result = resetPasswordSchema.safeParse({
+      body: {
+        email: ' USER@Example.COM ',
+        code: '012345',
+        password: 'NewPassword1!',
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.body.email).toBe('user@example.com');
+      expect(result.data.body.code).toBe('012345');
+      expect(result.data.body.password).toBe('NewPassword1!');
+    }
+  });
+
+  test('rejects malformed password reset codes', () => {
+    const result = resetPasswordSchema.safeParse({
+      body: {
+        email: 'user@example.com',
+        code: 'not-a-code',
+        password: 'NewPassword1!',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects unexpected password reset properties', () => {
+    const result = resetPasswordSchema.safeParse({
+      body: {
+        email: 'user@example.com',
+        code: '123456',
+        password: 'NewPassword1!',
+        token: 'a'.repeat(64),
       },
     });
 

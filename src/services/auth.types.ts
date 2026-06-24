@@ -243,7 +243,8 @@ export type RequestPasswordResetInput = {
 };
 
 export type ResetPasswordInput = {
-  token: string;
+  email: string;
+  code: string;
   password: string;
 };
 

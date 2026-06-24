@@ -3,7 +3,7 @@ export const INVALID_CREDENTIALS_MESSAGE = 'Invalid credentials';
 const ACCOUNT_BANNED_MESSAGE = 'This account has been banned';
 export const EMAIL_NOT_VERIFIED_MESSAGE = 'Please verify your email address before logging in.';
 const INVALID_EMAIL_VERIFICATION_TOKEN_MESSAGE = 'Invalid or expired verification code.';
-const INVALID_PASSWORD_RESET_TOKEN_MESSAGE = 'Invalid or expired password reset link.';
+const INVALID_PASSWORD_RESET_TOKEN_MESSAGE = 'Invalid or expired password reset code.';
 const PASSWORD_RESET_PASSWORD_REUSE_MESSAGE =
   'New password must be different from the current password';
 const PASSWORD_RESET_STATE_CHANGED_MESSAGE =

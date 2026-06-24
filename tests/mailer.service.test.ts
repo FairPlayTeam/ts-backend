@@ -12,7 +12,6 @@ const mailerConfig: MailerConfig = {
   smtpUser: 'user@example.com',
   smtpPass: 'secret',
   smtpFrom: 'no-reply@example.com',
-  frontendUrl: 'http://localhost:5173/',
 };
 
 type SentMail = {
@@ -73,14 +72,18 @@ describe('mailer service', () => {
       }),
     });
 
-    await service.sendPasswordResetEmail('user@example.com', 'plain-token');
+    await service.sendPasswordResetEmail('user@example.com', '789012');
 
     const email = sentEmails.at(0) as SentMail | undefined;
 
     expect(email).toBeDefined();
     expect(email?.subject).toBe('Reset your password');
-    expect(email?.text).toContain('http://localhost:5173/reset-password?token=plain-token');
-    expect(email?.html).toContain('http://localhost:5173/reset-password?token=plain-token');
+    expect(email?.text).toContain('Code: 789012');
+    expect(email?.text).toContain('This code expires in 15 minutes.');
+    expect(email?.html).toContain('789012');
+    expect(email?.html).toContain('This code expires in 15 minutes.');
+    expect(email?.text).not.toContain('/reset-password');
+    expect(email?.html).not.toContain('/reset-password');
   });
 
   test('fails clearly when mailer configuration is missing', async () => {

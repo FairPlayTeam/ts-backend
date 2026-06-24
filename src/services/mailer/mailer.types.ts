@@ -4,15 +4,12 @@ export type MailerConfig = {
   smtpUser: string;
   smtpPass: string;
   smtpFrom: string;
-  frontendUrl: string;
 };
 
 export type TransactionalEmailContent = {
   title: string;
   intro: string;
-  actionLabel?: string;
-  actionUrl?: string;
-  actionCode?: string;
+  actionCode: string;
   expiryLabel: string;
   footerText: string;
 };

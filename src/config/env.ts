@@ -25,7 +25,6 @@ const mailer = parseMailerConfig({
   smtpUser: process.env.SMTP_USER,
   smtpPass: process.env.SMTP_PASS,
   smtpFrom: process.env.SMTP_FROM,
-  frontendUrl: process.env.FRONTEND_URL,
 });
 
 const objectStorage = parseOptionalObjectStorageConfig({
@@ -64,7 +63,7 @@ const config = {
 
 if (isProduction && !mailer) {
   throw new ServerConfigurationError(
-    'Email delivery must be configured in production. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, and FRONTEND_URL.',
+    'Email delivery must be configured in production. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, and SMTP_FROM.',
   );
 }
 

@@ -2,8 +2,7 @@ import nodemailer from 'nodemailer';
 import {
   APP_PRODUCT_NAME,
   EMAIL_VERIFICATION_CODE_TTL_MINUTES,
-  PASSWORD_RESET_PATH,
-  PASSWORD_RESET_TOKEN_TTL_DAYS,
+  PASSWORD_RESET_CODE_TTL_MINUTES,
 } from '../../config/constants.js';
 import { buildTransactionalEmailHtml, buildTransactionalEmailText } from './mailer.templates.js';
 import { MailerConfigurationError, MailerDeliveryError } from './mailer.errors.js';
@@ -23,6 +22,17 @@ type SendAppEmailInput = {
   html: string;
 };
 
+type SendCodeEmailInput = {
+  code: string;
+  email: string;
+  expiryMinutes: number;
+  footerText: string;
+  htmlTitle: string;
+  intro: string;
+  subject: string;
+  textTitle: string;
+};
+
 const createDefaultTransporter = (config: MailerConfig): MailTransporter =>
   nodemailer.createTransport({
     host: config.smtpHost,
@@ -34,16 +44,10 @@ const createDefaultTransporter = (config: MailerConfig): MailTransporter =>
     },
   });
 
-function buildPasswordResetUrl(token: string, frontendUrl: string): string {
-  const url = new URL(PASSWORD_RESET_PATH, frontendUrl);
-  url.searchParams.set('token', token);
-  return url.toString();
-}
-
 const getMailerConfig = (mailerConfig: MailerConfig | null): MailerConfig => {
   if (!mailerConfig) {
     throw new MailerConfigurationError(
-      'Email delivery is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, and FRONTEND_URL.',
+      'Email delivery is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, and SMTP_FROM.',
     );
   }
 
@@ -73,69 +77,69 @@ export const createMailerService = (deps: MailerDependencies) => {
     });
   };
 
+  const sendCodeEmail = async ({
+    code,
+    email,
+    expiryMinutes,
+    footerText,
+    htmlTitle,
+    intro,
+    subject,
+    textTitle,
+  }: SendCodeEmailInput): Promise<void> => {
+    const mailerConfig = getMailerConfig(deps.config);
+    const expiryLabel = `This code expires in ${expiryMinutes} minutes.`;
+
+    try {
+      await sendAppEmail(mailerConfig, {
+        email,
+        subject,
+        text: buildTransactionalEmailText({
+          title: textTitle,
+          actionCode: code,
+          expiryLabel,
+          footerText,
+        }),
+        html: buildTransactionalEmailHtml({
+          title: htmlTitle,
+          intro,
+          actionCode: code,
+          expiryLabel,
+          footerText,
+        }),
+      });
+    } catch (err) {
+      throw new MailerDeliveryError('Email delivery failed', err);
+    }
+  };
+
   return {
     async sendVerificationEmail(email: string, code: string): Promise<void> {
-      const mailerConfig = getMailerConfig(deps.config);
-      const title = 'Confirm your email';
-      const intro =
-        'Thanks for signing up! Enter the code below to verify your email address and activate your account.';
-      const expiryLabel = `This code expires in ${EMAIL_VERIFICATION_CODE_TTL_MINUTES} minutes.`;
-      const footerText = `You received this email because you created an account on ${APP_PRODUCT_NAME}.\nIf you didn't, you can safely ignore it.`;
-
-      try {
-        await sendAppEmail(mailerConfig, {
-          email,
-          subject: 'Verify your email',
-          text: buildTransactionalEmailText({
-            title: `Verify your ${APP_PRODUCT_NAME} account`,
-            actionCode: code,
-            expiryLabel,
-            footerText,
-          }),
-          html: buildTransactionalEmailHtml({
-            title,
-            intro,
-            actionCode: code,
-            expiryLabel,
-            footerText,
-          }),
-        });
-      } catch (err) {
-        throw new MailerDeliveryError('Email delivery failed', err);
-      }
+      await sendCodeEmail({
+        code,
+        email,
+        expiryMinutes: EMAIL_VERIFICATION_CODE_TTL_MINUTES,
+        footerText: `You received this email because you created an account on ${APP_PRODUCT_NAME}.\nIf you didn't, you can safely ignore it.`,
+        htmlTitle: 'Confirm your email',
+        intro:
+          'Thanks for signing up! Enter the code below to verify your email address and activate your account.',
+        subject: 'Verify your email',
+        textTitle: `Verify your ${APP_PRODUCT_NAME} account`,
+      });
     },
 
-    async sendPasswordResetEmail(email: string, token: string): Promise<void> {
-      const mailerConfig = getMailerConfig(deps.config);
-      const resetUrl = buildPasswordResetUrl(token, mailerConfig.frontendUrl);
-      const title = 'Reset your password';
-      const intro =
-        'We received a request to reset your password. Click the button below to choose a new one.';
-      const expiryLabel = `This link expires in ${PASSWORD_RESET_TOKEN_TTL_DAYS} days.`;
-      const footerText = `You received this email because you requested to reset your password on ${APP_PRODUCT_NAME}.\nIf you didn't, you can safely ignore it.`;
-
-      try {
-        await sendAppEmail(mailerConfig, {
-          email,
-          subject: 'Reset your password',
-          text: buildTransactionalEmailText({
-            title: `Reset your ${APP_PRODUCT_NAME} password`,
-            actionUrl: resetUrl,
-            expiryLabel,
-            footerText,
-          }),
-          html: buildTransactionalEmailHtml({
-            title,
-            intro,
-            actionLabel: 'Reset my password',
-            actionUrl: resetUrl,
-            expiryLabel,
-            footerText,
-          }),
-        });
-      } catch (err) {
-        throw new MailerDeliveryError('Email delivery failed', err);
-      }
+    async sendPasswordResetEmail(email: string, code: string): Promise<void> {
+      await sendCodeEmail({
+        code,
+        email,
+        expiryMinutes: PASSWORD_RESET_CODE_TTL_MINUTES,
+        footerText: `You received this email because you requested to reset your password on ${APP_PRODUCT_NAME}.\nIf you didn't, you can safely ignore it.`,
+        htmlTitle: 'Reset your password',
+        intro:
+          'We received a request to reset your password. Enter the code below to choose a new one.',
+        subject: 'Reset your password',
+        textTitle: `Reset your ${APP_PRODUCT_NAME} password`,
+      });
     },
   };
 };

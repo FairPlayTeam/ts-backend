@@ -12,6 +12,8 @@ import {
   PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
   REGISTRATION_IDENTIFIER_RATE_LIMIT_MAX,
   REGISTRATION_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
+  RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_MAX,
+  RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
   RESEND_VERIFICATION_IDENTIFIER_RATE_LIMIT_MAX,
   RESEND_VERIFICATION_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
   VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MAX,
@@ -29,6 +31,8 @@ export const VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MESSAGE =
   'Too many email verification attempts for this email, please try again after 10 minutes.';
 const PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_MESSAGE =
   'Too many password reset requests for this email, please try again later.';
+export const RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_MESSAGE =
+  'Too many password reset attempts for this email, please try again after 10 minutes.';
 const RESEND_VERIFICATION_IDENTIFIER_RATE_LIMIT_MESSAGE =
   'Too many verification email requests for this email, please try again later.';
 
@@ -127,6 +131,7 @@ export function createLimiters(deps: {
   const loginIdentifierStore = makeStore('rl:auth:login-id:', deps.redisClient);
   const verifyEmailIdentifierStore = makeStore('rl:auth:verify-email-id:', deps.redisClient);
   const passwordResetIdentifierStore = makeStore('rl:auth:password-reset-id:', deps.redisClient);
+  const resetPasswordIdentifierStore = makeStore('rl:auth:reset-password-id:', deps.redisClient);
   const resendVerificationIdentifierStore = makeStore(
     'rl:auth:resend-verification-id:',
     deps.redisClient,
@@ -187,6 +192,15 @@ export function createLimiters(deps: {
       bodyKey: 'email',
       store: passwordResetIdentifierStore,
       message: PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_MESSAGE,
+    }),
+    resetPasswordIdentifierLimiter: createIdentifierLimiter({
+      windowMs: RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
+      limit: RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_MAX,
+      keyPrefix: 'reset-password',
+      keySecret: deps.rateLimitKeySecret,
+      bodyKey: 'email',
+      store: resetPasswordIdentifierStore,
+      message: RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_MESSAGE,
     }),
     resendVerificationIdentifierLimiter: createIdentifierLimiter({
       windowMs: RESEND_VERIFICATION_IDENTIFIER_RATE_LIMIT_WINDOW_MS,

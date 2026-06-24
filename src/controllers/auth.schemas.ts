@@ -44,6 +44,17 @@ const emailSchema = z
   .transform((v) => v.toLowerCase())
   .openapi({ example: 'creator@example.com' });
 
+const sixDigitCodeSchema = (label: string, description: string) =>
+  z
+    .string()
+    .trim()
+    .length(6, `${label} code must be 6 digits`)
+    .regex(/^\d{6}$/, `${label} code must contain only digits`)
+    .openapi({
+      description,
+      example: '123456',
+    });
+
 const passwordSchema = z
   .string()
   .min(PASSWORD_MIN_LENGTH, `Password must be at least ${PASSWORD_MIN_LENGTH} characters`)
@@ -109,15 +120,7 @@ export const loginSchema = z.object({
 export const verifyEmailBodySchema = z
   .object({
     email: emailSchema,
-    code: z
-      .string()
-      .trim()
-      .length(6, 'Verification code must be 6 digits')
-      .regex(/^\d{6}$/, 'Verification code must contain only digits')
-      .openapi({
-        description: 'Six-digit verification code sent by email.',
-        example: '123456',
-      }),
+    code: sixDigitCodeSchema('Verification', 'Six-digit verification code sent by email.'),
   })
   .strict()
   .openapi('VerifyEmailRequest');
@@ -375,16 +378,8 @@ export const requestPasswordResetSchema = z.object({
 
 export const resetPasswordBodySchema = z
   .object({
-    token: z
-      .string()
-      .trim()
-      .length(64, 'Reset token must be 64 characters')
-      .regex(/^[a-f0-9]+$/i, 'Reset token must be hexadecimal')
-      .transform((value) => value.toLowerCase())
-      .openapi({
-        description: 'Raw reset password token from the frontend reset link.',
-        example: 'd9f1f7d7b9d24e5c9f9b6a81a9a2eb1b2c1b0c9e7d6f5a4b3c2d1e0f9a8b7c6d',
-      }),
+    email: emailSchema,
+    code: sixDigitCodeSchema('Password reset', 'Six-digit password reset code sent by email.'),
     password: passwordSchema,
   })
   .strict()

@@ -7,6 +7,7 @@ import type {
   RegisterRequestBody,
   RequestPasswordResetRequestBody,
   ResendVerificationRequestBody,
+  ResetPasswordRequestBody,
   UpdateProfileRequestBody,
   UserSessionsQuery,
   VerifyEmailRequestBody,
@@ -44,6 +45,12 @@ const resendVerificationBody: ResendVerificationRequestBody = {
 
 const requestPasswordResetBody: RequestPasswordResetRequestBody = {
   email: 'user@example.com',
+};
+
+const resetPasswordBody: ResetPasswordRequestBody = {
+  email: 'user@example.com',
+  code: '123456',
+  password: 'NewPassword1!',
 };
 
 const loginBody: LoginRequestBody = {
@@ -387,6 +394,37 @@ describe('auth controller', () => {
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
       message: RESET_PASSWORD_EMAIL_MESSAGE,
+    });
+  });
+
+  test('resets password through the injected auth service', async () => {
+    let receivedInput: ResetPasswordRequestBody | undefined;
+    let receivedError: unknown;
+    const { response, state } = createMockResponse();
+    const controller = createTestAuthController({
+      resetPassword: async (input) => {
+        receivedInput = input;
+        return {
+          message: RESET_PASSWORD_SUCCESS_MESSAGE,
+          sessionsLoggedOut: 2,
+        };
+      },
+    });
+
+    await controller.resetPassword(
+      { body: resetPasswordBody } as Request<unknown, unknown, ResetPasswordRequestBody>,
+      response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedInput).toEqual(resetPasswordBody);
+    expect(receivedError).toBeUndefined();
+    expect(state.statusCode).toBe(200);
+    expect(state.body).toEqual({
+      message: RESET_PASSWORD_SUCCESS_MESSAGE,
+      sessionsLoggedOut: 2,
     });
   });
 

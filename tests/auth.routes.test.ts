@@ -2,7 +2,10 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../src/app.js';
-import { VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MAX } from '../src/config/constants.js';
+import {
+  RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_MAX,
+  VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MAX,
+} from '../src/config/constants.js';
 import {
   LOGOUT_SESSION_ID_INVALID_MESSAGE,
   UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE,
@@ -10,7 +13,10 @@ import {
 } from '../src/controllers/auth.schemas.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
-import { VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MESSAGE } from '../src/middleware/limiters.js';
+import {
+  RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_MESSAGE,
+  VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MESSAGE,
+} from '../src/middleware/limiters.js';
 import {
   ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
   ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
@@ -22,6 +28,7 @@ import {
   LOGOUT_SESSION_SUCCESS_MESSAGE,
   RESEND_VERIFICATION_EMAIL_MESSAGE,
   RESET_PASSWORD_EMAIL_MESSAGE,
+  RESET_PASSWORD_SUCCESS_MESSAGE,
   UPDATE_PROFILE_SUCCESS_MESSAGE,
   UPLOAD_AVATAR_SUCCESS_MESSAGE,
   UPLOAD_BANNER_SUCCESS_MESSAGE,
@@ -38,6 +45,7 @@ let receivedProfileUpdate: unknown;
 let receivedVerifyEmailRequest: unknown;
 let receivedResendVerificationRequest: unknown;
 let receivedPasswordResetRequest: unknown;
+let receivedResetPasswordRequest: unknown;
 let receivedGetSessionsRequest: unknown;
 let receivedExportUserDataRequest: unknown;
 let receivedDeleteAccountRequest: unknown;
@@ -102,6 +110,10 @@ describe('auth routes', () => {
           requestPasswordReset: async (input) => {
             receivedPasswordResetRequest = input;
             return authService.requestPasswordReset(input);
+          },
+          resetPassword: async (input) => {
+            receivedResetPasswordRequest = input;
+            return authService.resetPassword(input);
           },
           getUserSessions: async (input) => {
             receivedGetSessionsRequest = input;
@@ -755,6 +767,71 @@ describe('auth routes', () => {
     expect(await response.json()).toEqual({
       error: 'Conflict',
       message: ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
+    });
+  });
+
+  test('resets password without requiring a bearer session', async () => {
+    receivedResetPasswordRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/auth/reset-password`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: ' RESET@Example.COM ',
+        code: '123456',
+        password: 'NewPassword1!',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(receivedResetPasswordRequest).toEqual({
+      email: 'reset@example.com',
+      code: '123456',
+      password: 'NewPassword1!',
+    });
+    expect(await response.json()).toEqual({
+      message: RESET_PASSWORD_SUCCESS_MESSAGE,
+      sessionsLoggedOut: 1,
+    });
+  });
+
+  test('limits password reset attempts by normalized email', async () => {
+    const body = {
+      email: ' RESET-LIMITED@Example.COM ',
+      code: '123456',
+      password: 'NewPassword1!',
+    };
+
+    for (let index = 0; index < RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_MAX; index += 1) {
+      const response = await fetch(`${baseUrl}/auth/reset-password`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      expect(response.status).toBe(200);
+    }
+
+    const blockedResponse = await fetch(`${baseUrl}/auth/reset-password`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: 'reset-limited@example.com',
+        code: '123456',
+        password: 'NewPassword1!',
+      }),
+    });
+
+    expect(blockedResponse.status).toBe(429);
+    expect(await blockedResponse.json()).toEqual({
+      error: 'TooManyRequests',
+      message: RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_MESSAGE,
     });
   });
 

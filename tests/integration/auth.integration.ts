@@ -126,8 +126,8 @@ const createIntegrationAuthService = (
       sendVerificationEmail: async (email, code) => {
         delivered.verification.push({ email, token: code });
       },
-      sendPasswordResetEmail: async (email, token) => {
-        delivered.passwordReset.push({ email, token });
+      sendPasswordResetEmail: async (email, code) => {
+        delivered.passwordReset.push({ email, token: code });
       },
     },
     objectStorage: {
@@ -388,13 +388,20 @@ describe('auth integration', () => {
     const resetEmail = runtime.delivered.passwordReset.at(-1);
     expect(resetEmail).toEqual({
       email: TEST_EMAIL,
-      token: expect.stringMatching(/^[a-f0-9]{64}$/),
+      token: expect.stringMatching(/^\d{6}$/),
     });
+
+    const storedPasswordResetToken = await runtime.prisma.passwordResetToken.findFirstOrThrow();
+    expect(storedPasswordResetToken.token).not.toBe(resetEmail?.token);
+    expect(storedPasswordResetToken.token).toBe(
+      hashToken(`${storedPasswordResetToken.userId}:${resetEmail?.token ?? ''}`),
+    );
 
     await request(app)
       .post('/auth/reset-password')
       .send({
-        token: resetEmail?.token,
+        email: TEST_EMAIL,
+        code: resetEmail?.token,
         password: NEXT_PASSWORD,
       })
       .expect(200)

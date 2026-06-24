@@ -19,7 +19,7 @@ export const CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE =
 export const CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE =
   'Pending user media deletions cleaned up successfully';
 export const RESET_PASSWORD_EMAIL_MESSAGE =
-  'If this email exists and is eligible for password reset, a reset link has been sent.';
+  'If this email exists and is eligible for password reset, a reset code has been sent.';
 export const ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE =
   'Already authenticated users cannot request a password reset';
 export const RESET_PASSWORD_SUCCESS_MESSAGE =

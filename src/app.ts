@@ -96,6 +96,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     loginIdentifierLimiter,
     verifyEmailIdentifierLimiter,
     passwordResetIdentifierLimiter,
+    resetPasswordIdentifierLimiter,
     resendVerificationIdentifierLimiter,
   } = createLimiters({
     redisClient: deps.redisClient ?? null,
@@ -206,6 +207,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
       verifyEmailIdentifierLimiter,
       passwordResetEmailCooldown,
       passwordResetIdentifierLimiter,
+      resetPasswordIdentifierLimiter,
       readinessChecks: deps.readinessChecks ?? null,
       resendVerificationEmailCooldown,
       resendVerificationIdentifierLimiter,

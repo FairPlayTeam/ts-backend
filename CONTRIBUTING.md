@@ -114,8 +114,7 @@ In production:
 - set `REDIS_URL` to the shared Redis instance
 - set `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_ACCESS_KEY`, and `OBJECT_STORAGE_SECRET_KEY` to
   the shared S3-compatible object storage instance
-- configure SMTP with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, and
-  `FRONTEND_URL`
+- configure SMTP with `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM`
 - configure `BASE_URL`, `CORS_ORIGINS`, and `TRUST_PROXY` for the public reverse proxy or load
   balancer
 - set a strong, unique `RATE_LIMIT_KEY_SECRET` with at least 32 characters
@@ -234,7 +233,7 @@ The full Swagger UI documentation will be available at /docs.
 - `PROFILE_MEDIA_MAX_UPLOAD_BYTES` maximum accepted raw profile media upload size in bytes,
   currently for avatar and banner uploads. Defaults to `3145728`.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` configure email delivery.
-- `FRONTEND_URL` frontend URL used to generate password reset links. Email verification uses a six-digit code and does not depend on a frontend URL.
+  Email verification and password reset use six-digit codes and do not depend on a frontend URL.
 
 ### Notes
 

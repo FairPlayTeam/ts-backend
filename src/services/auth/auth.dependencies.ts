@@ -27,7 +27,7 @@ export type AuthDependencies = {
   };
   mailer: {
     sendVerificationEmail(email: string, code: string): Promise<void>;
-    sendPasswordResetEmail(email: string, token: string): Promise<void>;
+    sendPasswordResetEmail(email: string, code: string): Promise<void>;
   };
   objectStorage: Pick<ObjectStorage, 'putObject' | 'deleteObject' | 'getSignedUrl'>;
   userMediaProcessor: UserMediaProcessor;

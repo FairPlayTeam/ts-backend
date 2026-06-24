@@ -410,16 +410,12 @@ const parseSmtpPort = (rawPort: string | undefined): number => {
   return smtpPort;
 };
 
-const parseFrontendUrl = (rawUrl: string | undefined): string =>
-  parseRequiredHttpUrl(rawUrl, 'FRONTEND_URL');
-
 type RawMailerConfig = {
   smtpHost: string | undefined;
   smtpPort: string | undefined;
   smtpUser: string | undefined;
   smtpPass: string | undefined;
   smtpFrom: string | undefined;
-  frontendUrl: string | undefined;
 };
 
 const mailerEnvNames = {
@@ -428,7 +424,6 @@ const mailerEnvNames = {
   smtpUser: 'SMTP_USER',
   smtpPass: 'SMTP_PASS',
   smtpFrom: 'SMTP_FROM',
-  frontendUrl: 'FRONTEND_URL',
 } as const satisfies Record<keyof RawMailerConfig, string>;
 
 export const parseMailerConfig = (rawConfig: RawMailerConfig): MailerConfig | null => {
@@ -452,6 +447,5 @@ export const parseMailerConfig = (rawConfig: RawMailerConfig): MailerConfig | nu
     smtpUser: readRequiredEnv(rawConfig.smtpUser, 'SMTP_USER'),
     smtpPass: readRequiredEnv(rawConfig.smtpPass, 'SMTP_PASS'),
     smtpFrom: readRequiredEnv(rawConfig.smtpFrom, 'SMTP_FROM'),
-    frontendUrl: parseFrontendUrl(rawConfig.frontendUrl),
   };
 };
