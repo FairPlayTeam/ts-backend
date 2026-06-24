@@ -1077,7 +1077,9 @@ describe('auth controller', () => {
   });
 
   test('logs out other sessions while keeping the current authenticated session', async () => {
-    let receivedInput: { userId: string; currentSessionId: string } | undefined;
+    let receivedInput:
+      | { userId: string; currentSessionId: string; currentPassword: string }
+      | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
     const controller = createTestAuthController({
@@ -1094,6 +1096,7 @@ describe('auth controller', () => {
       {
         user: validatedSession.user,
         session: validatedSession.session,
+        body: sensitiveActionBody,
       } as AuthenticatedRequest,
       response,
       ((err?: unknown) => {
@@ -1104,6 +1107,7 @@ describe('auth controller', () => {
     expect(receivedInput).toEqual({
       userId: validatedSession.user.id,
       currentSessionId: validatedSession.session.id,
+      currentPassword: 'Password1!',
     });
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);

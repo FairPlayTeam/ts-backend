@@ -1728,10 +1728,16 @@ describe('auth service', () => {
       service.logoutOtherSessions({
         userId: 'user-id',
         currentSessionId: 'session-id',
+        currentPassword: 'Password1!',
       }),
     ).resolves.toEqual({
       message: LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
       sessionsLoggedOut: 2,
+    });
+
+    expect(calls.comparedPassword).toEqual({
+      password: 'Password1!',
+      hash: 'hashed-password',
     });
 
     expect(calls.sessionUpdateMany).toEqual({
@@ -1746,6 +1752,35 @@ describe('auth service', () => {
         isActive: false,
       },
     });
+  });
+
+  test('rejects logging out other sessions when reauthentication fails', async () => {
+    let comparedPassword: unknown;
+    const { deps, calls } = createTestDeps({
+      hasher: {
+        hash: async () => 'hashed-password',
+        compare: async (password: string, hash: string) => {
+          comparedPassword = { password, hash };
+
+          return false;
+        },
+      },
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.logoutOtherSessions({
+        userId: 'user-id',
+        currentSessionId: 'session-id',
+        currentPassword: 'WrongPassword1!',
+      }),
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
+
+    expect(comparedPassword).toEqual({
+      password: 'WrongPassword1!',
+      hash: 'hashed-password',
+    });
+    expect(calls.sessionUpdateMany).toBeUndefined();
   });
 
   test('logs out one active user session', async () => {

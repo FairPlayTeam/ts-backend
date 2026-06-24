@@ -62,6 +62,17 @@ const serviceUnavailableErrorResponse = {
   503: jsonResponse('Object storage unavailable', ApiErrorSchema),
 };
 
+const sensitiveActionReauthenticationRequest = {
+  body: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: sensitiveActionReauthenticationBodySchema,
+      },
+    },
+  },
+};
+
 const userMediaUploadResponses = (
   successMessage: string,
   responseSchema: Parameters<typeof jsonResponse>[1],
@@ -220,16 +231,7 @@ export const routeDocs = [
     summary: 'Export current user data',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
-    request: {
-      body: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: sensitiveActionReauthenticationBodySchema,
-          },
-        },
-      },
-    },
+    request: sensitiveActionReauthenticationRequest,
     responses: {
       200: jsonResponse('Current user data export', userDataExportResponseSchema),
 
@@ -248,16 +250,7 @@ export const routeDocs = [
     summary: 'Delete current user account',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
-    request: {
-      body: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: sensitiveActionReauthenticationBodySchema,
-          },
-        },
-      },
-    },
+    request: sensitiveActionReauthenticationRequest,
     responses: {
       200: jsonResponse(DELETE_ACCOUNT_SUCCESS_MESSAGE, deleteAccountResponseSchema),
 
@@ -293,16 +286,7 @@ export const routeDocs = [
     summary: 'Logout from all sessions including current',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
-    request: {
-      body: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: sensitiveActionReauthenticationBodySchema,
-          },
-        },
-      },
-    },
+    request: sensitiveActionReauthenticationRequest,
     responses: {
       200: jsonResponse(LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE, logoutAllSessionsResponseSchema),
 
@@ -321,10 +305,15 @@ export const routeDocs = [
     summary: 'Logout from other sessions while keeping the current session',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
+    request: sensitiveActionReauthenticationRequest,
     responses: {
       200: jsonResponse(LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE, logoutOtherSessionsResponseSchema),
 
+      ...badRequestErrorResponse,
+
       401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      403: jsonResponse('Account is not allowed to log out sessions', ApiErrorSchema),
 
       ...commonErrorResponses,
     },

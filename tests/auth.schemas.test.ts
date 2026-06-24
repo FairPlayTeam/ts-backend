@@ -5,6 +5,7 @@ import {
   exportUserDataSchema,
   loginSchema,
   logoutAllSessionsSchema,
+  logoutOtherSessionsSchema,
   logoutSessionSchema,
   registerSchema,
   requestPasswordResetSchema,
@@ -339,6 +340,7 @@ describe('sensitive action reauthentication schemas', () => {
     expect(exportUserDataSchema.safeParse({ body: sensitiveActionBody }).success).toBe(true);
     expect(deleteAccountSchema.safeParse({ body: sensitiveActionBody }).success).toBe(true);
     expect(logoutAllSessionsSchema.safeParse({ body: sensitiveActionBody }).success).toBe(true);
+    expect(logoutOtherSessionsSchema.safeParse({ body: sensitiveActionBody }).success).toBe(true);
   });
 
   test('reject missing or unexpected reauthentication fields', () => {
@@ -358,6 +360,7 @@ describe('sensitive action reauthentication schemas', () => {
         },
       }).success,
     ).toBe(false);
+    expect(logoutOtherSessionsSchema.safeParse({ body: {} }).success).toBe(false);
   });
 });
 

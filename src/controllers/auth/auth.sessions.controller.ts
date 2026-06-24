@@ -59,12 +59,17 @@ export const createAuthSessionsController = (deps: AuthControllerDependencies) =
     }
   };
 
-  const logoutOthers = async (req: Request, res: Response, next: NextFunction) => {
+  const logoutOthers = async (
+    req: Request<unknown, unknown, SensitiveActionReauthenticationRequestBody>,
+    res: Response,
+    next: NextFunction,
+  ) => {
     try {
       const authenticatedReq = req as AuthenticatedRequest;
       const result = await deps.authService.logoutOtherSessions({
         userId: authenticatedReq.user.id,
         currentSessionId: authenticatedReq.session.id,
+        currentPassword: req.body.currentPassword,
       });
 
       return res.status(200).json({

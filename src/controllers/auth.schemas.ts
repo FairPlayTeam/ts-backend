@@ -238,17 +238,14 @@ export const sensitiveActionReauthenticationBodySchema = z
   .strict()
   .openapi('SensitiveActionReauthenticationRequest');
 
-export const exportUserDataSchema = z.object({
+const sensitiveActionReauthenticationSchema = z.object({
   body: sensitiveActionReauthenticationBodySchema,
 });
 
-export const deleteAccountSchema = z.object({
-  body: sensitiveActionReauthenticationBodySchema,
-});
-
-export const logoutAllSessionsSchema = z.object({
-  body: sensitiveActionReauthenticationBodySchema,
-});
+export const exportUserDataSchema = sensitiveActionReauthenticationSchema;
+export const deleteAccountSchema = sensitiveActionReauthenticationSchema;
+export const logoutAllSessionsSchema = sensitiveActionReauthenticationSchema;
+export const logoutOtherSessionsSchema = sensitiveActionReauthenticationSchema;
 
 export const deleteAccountResponseSchema = z
   .object({

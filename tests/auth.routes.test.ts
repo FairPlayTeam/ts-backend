@@ -50,6 +50,7 @@ let receivedGetSessionsRequest: unknown;
 let receivedExportUserDataRequest: unknown;
 let receivedDeleteAccountRequest: unknown;
 let receivedLogoutAllSessionsRequest: unknown;
+let receivedLogoutOtherSessionsRequest: unknown;
 let receivedAvatarUpload: unknown;
 let receivedAvatarDeletion: unknown;
 let receivedBannerUpload: unknown;
@@ -130,6 +131,10 @@ describe('auth routes', () => {
           logoutAllSessions: async (input) => {
             receivedLogoutAllSessionsRequest = input;
             return authService.logoutAllSessions(input);
+          },
+          logoutOtherSessions: async (input) => {
+            receivedLogoutOtherSessionsRequest = input;
+            return authService.logoutOtherSessions(input);
           },
         },
       },
@@ -950,18 +955,54 @@ describe('auth routes', () => {
   });
 
   test('logs out other sessions for a valid bearer session', async () => {
+    receivedLogoutOtherSessionsRequest = undefined;
+
     const response = await fetch(`${baseUrl}/auth/sessions/others/all`, {
       method: 'DELETE',
       headers: {
         authorization: 'Bearer test-session-key',
+        'content-type': 'application/json',
       },
+      body: JSON.stringify({ currentPassword: 'Password1!' }),
     });
 
     expect(response.status).toBe(200);
+    expect(receivedLogoutOtherSessionsRequest).toEqual({
+      userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      currentSessionId: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+      currentPassword: 'Password1!',
+    });
     expect(await response.json()).toEqual({
       message: LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
       sessionsLoggedOut: 1,
     });
+  });
+
+  test('rejects missing reauthentication when logging out other sessions', async () => {
+    receivedLogoutOtherSessionsRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/auth/sessions/others/all`, {
+      method: 'DELETE',
+      headers: {
+        authorization: 'Bearer test-session-key',
+        'content-type': 'application/json',
+      },
+      body: '{}',
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        error: 'ValidationError',
+        message: REQUEST_VALIDATION_FAILED_MESSAGE,
+        details: expect.arrayContaining([
+          expect.objectContaining({
+            field: 'body.currentPassword',
+          }),
+        ]),
+      }),
+    );
+    expect(receivedLogoutOtherSessionsRequest).toBeUndefined();
   });
 
   test('requires a bearer session to log out other sessions', async () => {

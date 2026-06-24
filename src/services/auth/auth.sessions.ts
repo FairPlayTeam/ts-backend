@@ -267,7 +267,10 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
     async logoutOtherSessions({
       userId,
       currentSessionId,
+      currentPassword,
     }: LogoutOtherSessionsInput): Promise<{ message: string; sessionsLoggedOut: number }> {
+      await reauthenticateSensitiveAction(deps, { userId, currentPassword });
+
       const result = await deps.prisma.session.updateMany({
         where: {
           userId,

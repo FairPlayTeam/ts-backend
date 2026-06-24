@@ -127,12 +127,16 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/sessions/all']?.delete?.responses?.[200]).toBeDefined();
     expect(document.paths['/auth/sessions/all']?.delete?.responses?.[400]).toBeDefined();
     expect(document.paths['/auth/sessions/all']?.delete?.responses?.[401]).toBeDefined();
-    expect(document.paths['/auth/sessions/others/all']?.delete?.requestBody).toBeUndefined();
+    expect(document.paths['/auth/sessions/others/all']?.delete?.requestBody).toEqual(
+      document.paths['/auth/sessions/all']?.delete?.requestBody,
+    );
     expect(document.paths['/auth/sessions/others/all']?.delete?.security).toEqual([
       { bearerAuth: [] },
     ]);
     expect(document.paths['/auth/sessions/others/all']?.delete?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/sessions/others/all']?.delete?.responses?.[400]).toBeDefined();
     expect(document.paths['/auth/sessions/others/all']?.delete?.responses?.[401]).toBeDefined();
+    expect(document.paths['/auth/sessions/others/all']?.delete?.responses?.[403]).toBeDefined();
     expect(document.paths['/auth/sessions/{sessionId}']?.delete?.requestBody).toBeUndefined();
     expect(document.paths['/auth/sessions/{sessionId}']?.delete?.security).toEqual([
       { bearerAuth: [] },

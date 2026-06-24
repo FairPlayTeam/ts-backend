@@ -226,6 +226,7 @@ export type LogoutAllSessionsInput = {
 export type LogoutOtherSessionsInput = {
   userId: string;
   currentSessionId: string;
+  currentPassword: string;
 };
 
 export type LogoutSessionInput = {

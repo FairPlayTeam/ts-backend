@@ -5,6 +5,7 @@ import {
   exportUserDataSchema,
   loginSchema,
   logoutAllSessionsSchema,
+  logoutOtherSessionsSchema,
   logoutSessionSchema,
   registerSchema,
   requestPasswordResetSchema,
@@ -122,7 +123,12 @@ const createAuthRouter = ({
   router.delete('/me/banner', ...protect(), deleteBanner);
   router.get('/sessions', authenticateSession, validate(userSessionsSchema), sessions);
   router.delete('/sessions/all', authenticateSession, validate(logoutAllSessionsSchema), logoutAll);
-  router.delete('/sessions/others/all', authenticateSession, logoutOthers);
+  router.delete(
+    '/sessions/others/all',
+    authenticateSession,
+    validate(logoutOtherSessionsSchema),
+    logoutOthers,
+  );
   router.delete(
     '/sessions/:sessionId',
     authenticateSession,
