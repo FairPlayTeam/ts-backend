@@ -1,5 +1,5 @@
 import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from './registry.js';
-import { jsonResponse } from './openapi.helpers.js';
+import { jsonRequest, jsonResponse, multipartFormDataRequest } from './openapi.helpers.js';
 import {
   currentUserResponseSchema,
   deleteAccountResponseSchema,
@@ -58,20 +58,31 @@ const badRequestErrorResponse = {
   400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
 };
 
+const authRequiredErrorResponse = {
+  401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+};
+
 const serviceUnavailableErrorResponse = {
   503: jsonResponse('Object storage unavailable', ApiErrorSchema),
 };
 
-const sensitiveActionReauthenticationRequest = {
-  body: {
-    required: true,
-    content: {
-      'application/json': {
-        schema: sensitiveActionReauthenticationBodySchema,
-      },
-    },
-  },
-};
+const sensitiveActionReauthenticationRequest = jsonRequest(
+  sensitiveActionReauthenticationBodySchema,
+);
+
+const sensitiveActionErrorResponses = (forbiddenDescription: string) => ({
+  ...badRequestErrorResponse,
+
+  ...authRequiredErrorResponse,
+
+  403: jsonResponse(forbiddenDescription, ApiErrorSchema),
+
+  ...commonErrorResponses,
+});
+
+const logoutSessionsSensitiveActionResponses = sensitiveActionErrorResponses(
+  'Account is not allowed to log out sessions',
+);
 
 const userMediaUploadResponses = (
   successMessage: string,
@@ -81,7 +92,7 @@ const userMediaUploadResponses = (
 
   ...badRequestErrorResponse,
 
-  401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+  ...authRequiredErrorResponse,
 
   413: jsonResponse('Uploaded file too large', ApiErrorSchema),
 
@@ -98,7 +109,7 @@ const userMediaDeleteResponses = (
 ) => ({
   200: jsonResponse(successMessage, responseSchema),
 
-  401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+  ...authRequiredErrorResponse,
 
   ...serviceUnavailableErrorResponse,
 
@@ -113,16 +124,7 @@ export const routeDocs = [
     path: '/auth/register',
     summary: 'Register a new user',
     tags: ['Auth'],
-    request: {
-      body: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: registerBodySchema,
-          },
-        },
-      },
-    },
+    request: jsonRequest(registerBodySchema),
     responses: {
       201: jsonResponse('Account created', registerResponseSchema),
 
@@ -138,16 +140,7 @@ export const routeDocs = [
     path: '/auth/login',
     summary: 'Log in with an email or username',
     tags: ['Auth'],
-    request: {
-      body: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: loginBodySchema,
-          },
-        },
-      },
-    },
+    request: jsonRequest(loginBodySchema),
     responses: {
       200: jsonResponse(LOGIN_SUCCESS_MESSAGE, loginResponseSchema),
 
@@ -164,16 +157,7 @@ export const routeDocs = [
     path: '/auth/verify-email',
     summary: 'Verify an email address',
     tags: ['Auth'],
-    request: {
-      body: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: verifyEmailBodySchema,
-          },
-        },
-      },
-    },
+    request: jsonRequest(verifyEmailBodySchema),
     responses: {
       200: jsonResponse('Email verified and session created', verifyEmailResponseSchema),
 
@@ -189,16 +173,7 @@ export const routeDocs = [
     path: '/auth/resend-verification',
     summary: 'Resend an email verification code',
     tags: ['Auth'],
-    request: {
-      body: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: resendVerificationBodySchema,
-          },
-        },
-      },
-    },
+    request: jsonRequest(resendVerificationBodySchema),
     responses: {
       200: jsonResponse('Verification resend request accepted', resendVerificationResponseSchema),
 
@@ -218,7 +193,7 @@ export const routeDocs = [
     responses: {
       200: jsonResponse('Current user profile', currentUserResponseSchema),
 
-      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+      ...authRequiredErrorResponse,
 
       ...serviceUnavailableErrorResponse,
 
@@ -235,13 +210,7 @@ export const routeDocs = [
     responses: {
       200: jsonResponse('Current user data export', userDataExportResponseSchema),
 
-      ...badRequestErrorResponse,
-
-      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
-
-      403: jsonResponse('Account is not allowed to export data', ApiErrorSchema),
-
-      ...commonErrorResponses,
+      ...sensitiveActionErrorResponses('Account is not allowed to export data'),
     },
   },
   {
@@ -254,13 +223,7 @@ export const routeDocs = [
     responses: {
       200: jsonResponse(DELETE_ACCOUNT_SUCCESS_MESSAGE, deleteAccountResponseSchema),
 
-      ...badRequestErrorResponse,
-
-      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
-
-      403: jsonResponse('Account is not allowed to delete account', ApiErrorSchema),
-
-      ...commonErrorResponses,
+      ...sensitiveActionErrorResponses('Account is not allowed to delete account'),
     },
   },
   {
@@ -275,7 +238,7 @@ export const routeDocs = [
     responses: {
       200: jsonResponse('Current user active sessions', userSessionsResponseSchema),
 
-      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+      ...authRequiredErrorResponse,
 
       ...commonErrorResponses,
     },
@@ -290,13 +253,7 @@ export const routeDocs = [
     responses: {
       200: jsonResponse(LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE, logoutAllSessionsResponseSchema),
 
-      ...badRequestErrorResponse,
-
-      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
-
-      403: jsonResponse('Account is not allowed to log out sessions', ApiErrorSchema),
-
-      ...commonErrorResponses,
+      ...logoutSessionsSensitiveActionResponses,
     },
   },
   {
@@ -309,13 +266,7 @@ export const routeDocs = [
     responses: {
       200: jsonResponse(LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE, logoutOtherSessionsResponseSchema),
 
-      ...badRequestErrorResponse,
-
-      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
-
-      403: jsonResponse('Account is not allowed to log out sessions', ApiErrorSchema),
-
-      ...commonErrorResponses,
+      ...logoutSessionsSensitiveActionResponses,
     },
   },
   {
@@ -332,7 +283,7 @@ export const routeDocs = [
 
       ...badRequestErrorResponse,
 
-      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+      ...authRequiredErrorResponse,
 
       ...commonErrorResponses,
     },
@@ -343,22 +294,13 @@ export const routeDocs = [
     summary: 'Update current user profile',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
-    request: {
-      body: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: updateProfileBodySchema,
-          },
-        },
-      },
-    },
+    request: jsonRequest(updateProfileBodySchema),
     responses: {
       200: jsonResponse(UPDATE_PROFILE_SUCCESS_MESSAGE, updateProfileResponseSchema),
 
       ...badRequestErrorResponse,
 
-      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+      ...authRequiredErrorResponse,
 
       ...commonErrorResponses,
     },
@@ -369,16 +311,7 @@ export const routeDocs = [
     summary: 'Upload or replace current user avatar',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
-    request: {
-      body: {
-        required: true,
-        content: {
-          'multipart/form-data': {
-            schema: uploadAvatarBodySchema,
-          },
-        },
-      },
-    },
+    request: multipartFormDataRequest(uploadAvatarBodySchema),
     responses: userMediaUploadResponses(UPLOAD_AVATAR_SUCCESS_MESSAGE, uploadAvatarResponseSchema),
   },
   {
@@ -395,16 +328,7 @@ export const routeDocs = [
     summary: 'Upload or replace current user banner',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
-    request: {
-      body: {
-        required: true,
-        content: {
-          'multipart/form-data': {
-            schema: uploadBannerBodySchema,
-          },
-        },
-      },
-    },
+    request: multipartFormDataRequest(uploadBannerBodySchema),
     responses: userMediaUploadResponses(UPLOAD_BANNER_SUCCESS_MESSAGE, uploadBannerResponseSchema),
   },
   {
@@ -420,16 +344,7 @@ export const routeDocs = [
     path: '/auth/forgot-password',
     summary: 'Request a password reset code',
     tags: ['Auth'],
-    request: {
-      body: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: requestPasswordResetBodySchema,
-          },
-        },
-      },
-    },
+    request: jsonRequest(requestPasswordResetBodySchema),
     responses: {
       200: jsonResponse('Password reset request accepted', requestPasswordResetResponseSchema),
 
@@ -445,16 +360,7 @@ export const routeDocs = [
     path: '/auth/reset-password',
     summary: 'Reset account password using an emailed code',
     tags: ['Auth'],
-    request: {
-      body: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: resetPasswordBodySchema,
-          },
-        },
-      },
-    },
+    request: jsonRequest(resetPasswordBodySchema),
     responses: {
       200: jsonResponse('Password reset successfully', resetPasswordResponseSchema),
 

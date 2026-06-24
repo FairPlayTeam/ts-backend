@@ -39,6 +39,8 @@ type AuthRouterDependencies = {
   resendVerificationIdentifierLimiter: RequestHandler;
 };
 
+type ValidationSchema = Parameters<typeof validate>[0];
+
 const createAuthRouter = ({
   authService,
   profileMediaMaxUploadBytes,
@@ -85,21 +87,29 @@ const createAuthRouter = ({
     fieldName: 'banner',
     maxFileSizeBytes: profileMediaMaxUploadBytes,
   });
+  const validateRoute = (schema: ValidationSchema, ...handlers: RequestHandler[]) => [
+    validate(schema),
+    ...handlers,
+  ];
+  const protectedValidatedRoute = (schema: ValidationSchema, ...handlers: RequestHandler[]) => [
+    ...protect(),
+    ...validateRoute(schema, ...handlers),
+  ];
+  const sessionValidatedRoute = (schema: ValidationSchema, ...handlers: RequestHandler[]) => [
+    authenticateSession,
+    ...validateRoute(schema, ...handlers),
+  ];
 
   router.post(
     '/register',
     authLimiter,
-    validate(registerSchema),
-    registrationIdentifierLimiter,
-    register,
+    ...validateRoute(registerSchema, registrationIdentifierLimiter, register),
   );
-  router.post('/login', authLimiter, validate(loginSchema), loginIdentifierLimiter, login);
+  router.post('/login', authLimiter, ...validateRoute(loginSchema, loginIdentifierLimiter, login));
   router.post(
     '/verify-email',
     authLimiter,
-    validate(verifyEmailSchema),
-    verifyEmailIdentifierLimiter,
-    verifyEmail,
+    ...validateRoute(verifyEmailSchema, verifyEmailIdentifierLimiter, verifyEmail),
   );
   router.post(
     '/resend-verification',
@@ -108,32 +118,30 @@ const createAuthRouter = ({
       access: 'guest',
       conflictMessage: ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
     }),
-    validate(resendVerificationSchema),
-    resendVerificationIdentifierLimiter,
-    resendVerificationEmailCooldown,
-    resendVerification,
+    ...validateRoute(
+      resendVerificationSchema,
+      resendVerificationIdentifierLimiter,
+      resendVerificationEmailCooldown,
+      resendVerification,
+    ),
   );
   router.get('/me', ...protect(), me);
-  router.post('/me/export', ...protect(), validate(exportUserDataSchema), exportMe);
-  router.delete('/me', ...protect(), validate(deleteAccountSchema), deleteMe);
-  router.patch('/me', ...protect(), validate(updateProfileSchema), updateMe);
+  router.post('/me/export', ...protectedValidatedRoute(exportUserDataSchema, exportMe));
+  router.delete('/me', ...protectedValidatedRoute(deleteAccountSchema, deleteMe));
+  router.patch('/me', ...protectedValidatedRoute(updateProfileSchema, updateMe));
   router.put('/me/avatar', ...protect(), uploadAvatarFile, uploadAvatar);
   router.delete('/me/avatar', ...protect(), deleteAvatar);
   router.put('/me/banner', ...protect(), uploadBannerFile, uploadBanner);
   router.delete('/me/banner', ...protect(), deleteBanner);
-  router.get('/sessions', authenticateSession, validate(userSessionsSchema), sessions);
-  router.delete('/sessions/all', authenticateSession, validate(logoutAllSessionsSchema), logoutAll);
+  router.get('/sessions', ...sessionValidatedRoute(userSessionsSchema, sessions));
+  router.delete('/sessions/all', ...sessionValidatedRoute(logoutAllSessionsSchema, logoutAll));
   router.delete(
     '/sessions/others/all',
-    authenticateSession,
-    validate(logoutOtherSessionsSchema),
-    logoutOthers,
+    ...sessionValidatedRoute(logoutOtherSessionsSchema, logoutOthers),
   );
   router.delete(
     '/sessions/:sessionId',
-    authenticateSession,
-    validate(logoutSessionSchema),
-    logoutSession,
+    ...sessionValidatedRoute(logoutSessionSchema, logoutSession),
   );
   router.post(
     '/forgot-password',
@@ -142,17 +150,17 @@ const createAuthRouter = ({
       access: 'guest',
       conflictMessage: ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
     }),
-    validate(requestPasswordResetSchema),
-    passwordResetIdentifierLimiter,
-    passwordResetEmailCooldown,
-    requestPasswordReset,
+    ...validateRoute(
+      requestPasswordResetSchema,
+      passwordResetIdentifierLimiter,
+      passwordResetEmailCooldown,
+      requestPasswordReset,
+    ),
   );
   router.post(
     '/reset-password',
     authLimiter,
-    validate(resetPasswordSchema),
-    resetPasswordIdentifierLimiter,
-    resetPassword,
+    ...validateRoute(resetPasswordSchema, resetPasswordIdentifierLimiter, resetPassword),
   );
 
   return router;
