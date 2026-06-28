@@ -39,6 +39,7 @@ export const createAuthProfileController = (deps: AuthControllerDependencies) =>
       });
 
       res.set('Content-Disposition', 'attachment; filename="fairplay-user-data-export.json"');
+      res.set('Cache-Control', 'no-store');
 
       return res
         .status(200)

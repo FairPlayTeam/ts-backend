@@ -606,6 +606,7 @@ describe('auth controller', () => {
     expect(state.headers['Content-Disposition']).toBe(
       'attachment; filename="fairplay-user-data-export.json"',
     );
+    expect(state.headers['Cache-Control']).toBe('no-store');
     expect(state.contentType).toBe('application/json');
     expect(state.statusCode).toBe(200);
     expect(typeof state.body).toBe('string');

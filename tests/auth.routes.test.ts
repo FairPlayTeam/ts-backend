@@ -230,6 +230,7 @@ describe('auth routes', () => {
     expect(response.headers.get('content-disposition')).toBe(
       'attachment; filename="fairplay-user-data-export.json"',
     );
+    expect(response.headers.get('cache-control')).toBe('no-store');
     expect(response.headers.get('content-type')).toContain('application/json');
     const bodyText = await response.text();
     expect(bodyText).toContain('\n  "exportedAt": "2026-01-01T00:00:00.000Z"');
