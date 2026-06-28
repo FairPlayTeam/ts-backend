@@ -13,7 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test",
     "test:integration": "vitest run --config vitest.config.ts",
-    "check": "bun run typecheck && bun run lint && bun run format:check && bun run test && bun run build",
+    "check": "bun run typecheck && bun run lint && bun run format:check && bunx prisma validate && bun run test && bun run test:integration && bun audit && bun run build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
