@@ -1,4 +1,5 @@
 import {
+  assertProductionMailerConfig,
   parseBcryptRounds,
   parseAllowedOrigins,
   parseMailerConfig,
@@ -22,6 +23,7 @@ const isProduction = parseIsProduction(process.env.NODE_ENV);
 const mailer = parseMailerConfig({
   smtpHost: process.env.SMTP_HOST,
   smtpPort: process.env.SMTP_PORT,
+  smtpTlsMode: process.env.SMTP_TLS_MODE,
   smtpUser: process.env.SMTP_USER,
   smtpPass: process.env.SMTP_PASS,
   smtpFrom: process.env.SMTP_FROM,
@@ -61,10 +63,8 @@ const config = {
   mailer,
 };
 
-if (isProduction && !mailer) {
-  throw new ServerConfigurationError(
-    'Email delivery must be configured in production. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, and SMTP_FROM.',
-  );
+if (isProduction) {
+  assertProductionMailerConfig(mailer);
 }
 
 if (isProduction && !config.redisUrl) {

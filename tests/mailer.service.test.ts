@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { createMailerService } from '../src/services/mailer/mailer.service.js';
+import {
+  createMailerService,
+  createSmtpTransportOptions,
+} from '../src/services/mailer/mailer.service.js';
 import {
   MailerConfigurationError,
   MailerDeliveryError,
@@ -9,6 +12,7 @@ import type { MailerConfig } from '../src/services/mailer/mailer.types.js';
 const mailerConfig: MailerConfig = {
   smtpHost: 'smtp.example.com',
   smtpPort: 587,
+  smtpTlsMode: 'starttls',
   smtpUser: 'user@example.com',
   smtpPass: 'secret',
   smtpFrom: 'no-reply@example.com',
@@ -23,6 +27,52 @@ type SentMail = {
 };
 
 describe('mailer service', () => {
+  test('maps explicit SMTP TLS modes to Nodemailer transport options', () => {
+    expect(createSmtpTransportOptions(mailerConfig)).toEqual({
+      host: 'smtp.example.com',
+      port: 587,
+      secure: false,
+      requireTLS: true,
+      auth: {
+        user: 'user@example.com',
+        pass: 'secret',
+      },
+    });
+
+    expect(
+      createSmtpTransportOptions({
+        ...mailerConfig,
+        smtpPort: 465,
+        smtpTlsMode: 'implicit',
+      }),
+    ).toEqual({
+      host: 'smtp.example.com',
+      port: 465,
+      secure: true,
+      auth: {
+        user: 'user@example.com',
+        pass: 'secret',
+      },
+    });
+
+    expect(
+      createSmtpTransportOptions({
+        ...mailerConfig,
+        smtpPort: 1025,
+        smtpTlsMode: 'none',
+      }),
+    ).toEqual({
+      host: 'smtp.example.com',
+      port: 1025,
+      secure: false,
+      ignoreTLS: true,
+      auth: {
+        user: 'user@example.com',
+        pass: 'secret',
+      },
+    });
+  });
+
   test('sends verification emails through the configured transporter', async () => {
     const sentEmails: unknown[] = [];
     let transporterCreations = 0;

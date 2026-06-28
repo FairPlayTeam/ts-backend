@@ -15,6 +15,18 @@ type MailerDependencies = {
   createTransporter?: (config: MailerConfig) => MailTransporter;
 };
 
+type SmtpTransportOptions = {
+  host: string;
+  port: number;
+  secure: boolean;
+  ignoreTLS?: true;
+  requireTLS?: true;
+  auth: {
+    user: string;
+    pass: string;
+  };
+};
+
 type SendAppEmailInput = {
   email: string;
   subject: string;
@@ -33,21 +45,36 @@ type SendCodeEmailInput = {
   textTitle: string;
 };
 
-const createDefaultTransporter = (config: MailerConfig): MailTransporter =>
-  nodemailer.createTransport({
+export const createSmtpTransportOptions = (config: MailerConfig): SmtpTransportOptions => {
+  const tlsOptions = (() => {
+    switch (config.smtpTlsMode) {
+      case 'implicit':
+        return { secure: true };
+      case 'starttls':
+        return { secure: false, requireTLS: true as const };
+      case 'none':
+        return { secure: false, ignoreTLS: true as const };
+    }
+  })();
+
+  return {
     host: config.smtpHost,
     port: config.smtpPort,
-    secure: config.smtpPort === 465,
+    ...tlsOptions,
     auth: {
       user: config.smtpUser,
       pass: config.smtpPass,
     },
-  });
+  };
+};
+
+const createDefaultTransporter = (config: MailerConfig): MailTransporter =>
+  nodemailer.createTransport(createSmtpTransportOptions(config));
 
 const getMailerConfig = (mailerConfig: MailerConfig | null): MailerConfig => {
   if (!mailerConfig) {
     throw new MailerConfigurationError(
-      'Email delivery is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, and SMTP_FROM.',
+      'Email delivery is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_TLS_MODE, SMTP_USER, SMTP_PASS, and SMTP_FROM.',
     );
   }
 

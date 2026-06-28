@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   ALL_CORS_ORIGINS,
   ServerConfigurationError,
+  assertProductionMailerConfig,
   parseAllowedOrigins,
   parseIsProduction,
   parseJsonBodyLimitBytes,
@@ -133,6 +134,7 @@ describe('env parsers', () => {
       parseMailerConfig({
         smtpHost: undefined,
         smtpPort: undefined,
+        smtpTlsMode: undefined,
         smtpUser: undefined,
         smtpPass: undefined,
         smtpFrom: undefined,
@@ -143,6 +145,7 @@ describe('env parsers', () => {
       parseMailerConfig({
         smtpHost: 'smtp.example.com',
         smtpPort: undefined,
+        smtpTlsMode: 'starttls',
         smtpUser: 'user@example.com',
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
@@ -153,6 +156,18 @@ describe('env parsers', () => {
       parseMailerConfig({
         smtpHost: 'smtp.example.com',
         smtpPort: 'not-a-port',
+        smtpTlsMode: 'starttls',
+        smtpUser: 'user@example.com',
+        smtpPass: 'secret',
+        smtpFrom: 'no-reply@example.com',
+      }),
+    ).toThrow(ServerConfigurationError);
+
+    expect(() =>
+      parseMailerConfig({
+        smtpHost: 'smtp.example.com',
+        smtpPort: '587',
+        smtpTlsMode: 'ssl',
         smtpUser: 'user@example.com',
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
@@ -163,6 +178,7 @@ describe('env parsers', () => {
       parseMailerConfig({
         smtpHost: 'smtp.example.com',
         smtpPort: '587',
+        smtpTlsMode: 'STARTTLS',
         smtpUser: 'user@example.com',
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
@@ -170,10 +186,37 @@ describe('env parsers', () => {
     ).toEqual({
       smtpHost: 'smtp.example.com',
       smtpPort: 587,
+      smtpTlsMode: 'starttls',
       smtpUser: 'user@example.com',
       smtpPass: 'secret',
       smtpFrom: 'no-reply@example.com',
     });
+  });
+
+  test('rejects missing or unencrypted mailer configuration in production', () => {
+    expect(() => assertProductionMailerConfig(null)).toThrow(ServerConfigurationError);
+
+    expect(() =>
+      assertProductionMailerConfig({
+        smtpHost: 'smtp.example.com',
+        smtpPort: 1025,
+        smtpTlsMode: 'none',
+        smtpUser: 'user@example.com',
+        smtpPass: 'secret',
+        smtpFrom: 'no-reply@example.com',
+      }),
+    ).toThrow(ServerConfigurationError);
+
+    expect(() =>
+      assertProductionMailerConfig({
+        smtpHost: 'smtp.example.com',
+        smtpPort: 587,
+        smtpTlsMode: 'starttls',
+        smtpUser: 'user@example.com',
+        smtpPass: 'secret',
+        smtpFrom: 'no-reply@example.com',
+      }),
+    ).not.toThrow();
   });
 
   test('parses optional object storage configuration', () => {

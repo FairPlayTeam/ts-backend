@@ -9,7 +9,11 @@ import {
   SESSION_CLEANUP_INACTIVE_RETENTION_DAYS,
   SESSION_CLEANUP_INTERVAL_MINUTES,
 } from './constants.js';
-import type { MailerConfig } from '../services/mailer/mailer.types.js';
+import {
+  SMTP_TLS_MODES,
+  type MailerConfig,
+  type SmtpTlsMode,
+} from '../services/mailer/mailer.types.js';
 
 const HTTP_URL_PROTOCOLS = ['http:', 'https:'] as const;
 const REDIS_URL_PROTOCOLS = ['redis:', 'rediss:'] as const;
@@ -410,9 +414,22 @@ const parseSmtpPort = (rawPort: string | undefined): number => {
   return smtpPort;
 };
 
+const parseSmtpTlsMode = (rawMode: string | undefined): SmtpTlsMode => {
+  const value = readRequiredEnv(rawMode, 'SMTP_TLS_MODE').toLowerCase();
+
+  if (!SMTP_TLS_MODES.includes(value as SmtpTlsMode)) {
+    throw new ServerConfigurationError(
+      `SMTP_TLS_MODE must be one of: ${SMTP_TLS_MODES.join(', ')}`,
+    );
+  }
+
+  return value as SmtpTlsMode;
+};
+
 type RawMailerConfig = {
   smtpHost: string | undefined;
   smtpPort: string | undefined;
+  smtpTlsMode: string | undefined;
   smtpUser: string | undefined;
   smtpPass: string | undefined;
   smtpFrom: string | undefined;
@@ -421,6 +438,7 @@ type RawMailerConfig = {
 const mailerEnvNames = {
   smtpHost: 'SMTP_HOST',
   smtpPort: 'SMTP_PORT',
+  smtpTlsMode: 'SMTP_TLS_MODE',
   smtpUser: 'SMTP_USER',
   smtpPass: 'SMTP_PASS',
   smtpFrom: 'SMTP_FROM',
@@ -444,8 +462,21 @@ export const parseMailerConfig = (rawConfig: RawMailerConfig): MailerConfig | nu
   return {
     smtpHost: readRequiredEnv(rawConfig.smtpHost, 'SMTP_HOST'),
     smtpPort: parseSmtpPort(rawConfig.smtpPort),
+    smtpTlsMode: parseSmtpTlsMode(rawConfig.smtpTlsMode),
     smtpUser: readRequiredEnv(rawConfig.smtpUser, 'SMTP_USER'),
     smtpPass: readRequiredEnv(rawConfig.smtpPass, 'SMTP_PASS'),
     smtpFrom: readRequiredEnv(rawConfig.smtpFrom, 'SMTP_FROM'),
   };
+};
+
+export const assertProductionMailerConfig = (mailer: MailerConfig | null): void => {
+  if (!mailer) {
+    throw new ServerConfigurationError(
+      'Email delivery must be configured in production. Set SMTP_HOST, SMTP_PORT, SMTP_TLS_MODE, SMTP_USER, SMTP_PASS, and SMTP_FROM.',
+    );
+  }
+
+  if (mailer.smtpTlsMode === 'none') {
+    throw new ServerConfigurationError('SMTP_TLS_MODE=none is not allowed in production');
+  }
 };
