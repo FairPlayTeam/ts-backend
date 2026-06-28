@@ -4,7 +4,11 @@ import {
   PasswordResetPasswordReuseError,
   PasswordResetStateChangedError,
 } from '../auth.errors.js';
-import type { AuthService, RequestPasswordResetInput, ResetPasswordInput } from '../auth.types.js';
+import type {
+  AuthPasswordResetPort,
+  RequestPasswordResetInput,
+  ResetPasswordInput,
+} from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
   getPasswordResetCodeSecret,
@@ -14,7 +18,7 @@ import {
 } from './auth.helpers.js';
 import { RESET_PASSWORD_EMAIL_MESSAGE, RESET_PASSWORD_SUCCESS_MESSAGE } from './auth.messages.js';
 
-type ResetPasswordService = Pick<AuthService, 'requestPasswordReset' | 'resetPassword'>;
+type ResetPasswordService = AuthPasswordResetPort;
 
 export const createResetPasswordService = (deps: AuthDependencies): ResetPasswordService => ({
   async requestPasswordReset({ email }: RequestPasswordResetInput) {

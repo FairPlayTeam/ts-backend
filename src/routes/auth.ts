@@ -23,10 +23,10 @@ import {
   ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
   ALREADY_AUTHENTICATED_VERIFICATION_MESSAGE,
 } from '../services/auth/auth.messages.js';
-import type { AuthService } from '../services/auth.types.js';
+import type { AuthRoutePort } from '../services/auth.types.js';
 
 type AuthRouterDependencies = {
-  authService: AuthService;
+  authService: AuthRoutePort;
   profileMediaMaxUploadBytes: number;
   authLimiter: RequestHandler;
   registrationIdentifierLimiter: RequestHandler;

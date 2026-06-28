@@ -37,7 +37,7 @@ import {
   REGISTRATION_IDENTIFIER_RATE_LIMIT_MAX,
   SESSION_TTL_MS,
 } from '../../src/config/constants.js';
-import type { AuthService } from '../../src/services/auth.types.js';
+import type { AuthPorts } from '../../src/services/auth.types.js';
 import type { Redis } from 'ioredis';
 
 const execFileAsync = promisify(execFile);
@@ -62,7 +62,7 @@ type TestRuntime = {
   redisContainer: StartedTestContainer;
   prisma: PrismaClient;
   redisClient: Redis;
-  authService: AuthService;
+  authService: AuthPorts;
   delivered: {
     verification: DeliveredEmail[];
     passwordReset: DeliveredEmail[];
@@ -108,7 +108,7 @@ const createPrismaClient = (databaseUrl: string): PrismaClient =>
 const createIntegrationAuthService = (
   prisma: PrismaClient,
   delivered: TestRuntime['delivered'],
-): AuthService =>
+): AuthPorts =>
   createAuthService({
     prisma,
     isUniqueError: (err): boolean =>

@@ -1,7 +1,9 @@
 import { getSessionExpiresAt, getSessionKeySuffix } from './auth.helpers.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import type {
-  AuthService,
+  AuthMaintenancePort,
+  AuthSessionManagementPort,
+  AuthSessionValidationPort,
   Session,
   ListUserSessionsInput,
   ListUserSessionsResult,
@@ -48,7 +50,7 @@ type CreateSessionResult = {
 };
 
 export type SessionService = Pick<
-  AuthService,
+  AuthSessionValidationPort & AuthSessionManagementPort & AuthMaintenancePort,
   | 'validateSession'
   | 'getUserSessions'
   | 'logoutAllSessions'

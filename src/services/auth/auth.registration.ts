@@ -1,5 +1,5 @@
 import { UserAlreadyExistsError } from '../auth.errors.js';
-import type { AuthService, RegisterInput } from '../auth.types.js';
+import type { AuthCredentialsPort, RegisterInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
   getEmailVerificationCodeSecret,
@@ -9,7 +9,7 @@ import {
 } from './auth.helpers.js';
 import { REGISTER_SUCCESS_MESSAGE } from './auth.messages.js';
 
-type RegistrationService = Pick<AuthService, 'register'>;
+type RegistrationService = Pick<AuthCredentialsPort, 'register'>;
 
 export const createRegistrationService = (deps: AuthDependencies): RegistrationService => ({
   async register({ email, username, password }: RegisterInput) {

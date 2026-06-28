@@ -5,19 +5,13 @@ import {
   createRejectAuthenticatedSession,
   type AuthenticatedRequest,
 } from './auth.js';
-import type { AuthRole } from '../services/auth.types.js';
+import type { AuthRole, AuthSessionValidationPort } from '../services/auth.types.js';
 
 const ROUTE_PROTECTION_MISCONFIGURED_MESSAGE = 'Route protection misconfigured';
 export const INSUFFICIENT_PERMISSIONS_MESSAGE = 'Insufficient permissions';
 
-type AuthServiceForProtection = {
-  validateSession: Parameters<
-    typeof createAuthenticateSession
-  >[0]['authService']['validateSession'];
-};
-
 type RouteProtectorDependencies = {
-  authService: AuthServiceForProtection;
+  authService: AuthSessionValidationPort;
 };
 
 type AuthenticatedProtection = {

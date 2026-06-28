@@ -1,4 +1,4 @@
-import type { AuthService, LoginInput } from '../auth.types.js';
+import type { AuthCredentialsPort, LoginInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import { normalizeIdentifier } from './auth.helpers.js';
 import {
@@ -11,7 +11,7 @@ import type { SessionService } from './auth.sessions.js';
 
 const MISSING_USER_PASSWORD = 'missing-user-password';
 
-type LoginService = Pick<AuthService, 'login'>;
+type LoginService = Pick<AuthCredentialsPort, 'login'>;
 
 export const createLoginService = (
   deps: AuthDependencies,

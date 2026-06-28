@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { AuthService } from '../services/auth.types.js';
+import type { AuthMaintenancePort } from '../services/auth.types.js';
 import type { RedisClient } from '../lib/redis.js';
 
 const AUTH_CLEANUP_LOCK_KEY = 'maintenance:auth-cleanup:lock';
@@ -11,11 +11,6 @@ end
 return 0
 `;
 
-type AuthCleanupService = Pick<
-  AuthService,
-  'cleanupExpiredAuthTokens' | 'cleanupPendingUserMediaDeletions' | 'cleanupSessions'
->;
-
 type AuthCleanupLock = {
   release(): Promise<void>;
 };
@@ -25,7 +20,7 @@ type AuthCleanupLockManager = {
 };
 
 type AuthCleanupJobDependencies = {
-  authService: AuthCleanupService;
+  authService: AuthMaintenancePort;
   clock: {
     now(): Date;
   };

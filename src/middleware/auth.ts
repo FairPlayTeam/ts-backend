@@ -1,33 +1,22 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { HttpError } from '../errors/http.js';
-import type { AuthUser } from '../services/auth.types.js';
+import type { AuthSessionValidationPort, ValidatedAuthSession } from '../services/auth.types.js';
 
 export const AUTH_SESSION_REQUIRED_MESSAGE = 'Bearer session token is required';
 export const INVALID_AUTH_SESSION_MESSAGE = 'Invalid or expired session';
 const DEFAULT_AUTHENTICATED_SESSION_CONFLICT_MESSAGE =
   'Already authenticated users cannot access this route';
 
-type AuthenticatedUser = AuthUser;
-
-type AuthenticatedSession = {
-  id: string;
-  expiresAt: Date;
-};
+type AuthenticatedUser = ValidatedAuthSession['user'];
+type AuthenticatedSession = ValidatedAuthSession['session'];
 
 export type AuthenticatedRequest = Request & {
   user: AuthenticatedUser;
   session: AuthenticatedSession;
 };
 
-type SessionValidationResult = {
-  user: AuthenticatedUser;
-  session: AuthenticatedSession;
-};
-
 type AuthMiddlewareDependencies = {
-  authService: {
-    validateSession(sessionKey: string): Promise<SessionValidationResult | null>;
-  };
+  authService: AuthSessionValidationPort;
 };
 
 type RejectAuthenticatedSessionDependencies = AuthMiddlewareDependencies & {

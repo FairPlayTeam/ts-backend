@@ -15,7 +15,7 @@ import { createEmailCooldown } from './middleware/abuseProtection.js';
 import type { Config } from './config/env.js';
 import { ALL_CORS_ORIGINS } from './config/env.parsers.js';
 import type { RedisClient } from './lib/redis.js';
-import type { AuthService } from './services/auth.types.js';
+import type { AuthRoutePort } from './services/auth.types.js';
 import helmet from 'helmet';
 import {
   PASSWORD_RESET_EMAIL_COOLDOWN_MS,
@@ -38,7 +38,7 @@ type CreateAppConfig = Pick<
 >;
 
 type CreateAppDependencies = {
-  authService: AuthService;
+  authService: AuthRoutePort;
   redisClient?: RedisClient | null;
   readinessChecks?: ReadinessChecks | null;
 };

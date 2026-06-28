@@ -1,8 +1,8 @@
-import type { AuthService, ExportUserDataInput } from '../auth.types.js';
+import type { AuthAccountPort, ExportUserDataInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import { reauthenticateSensitiveAction } from './auth.reauthentication.js';
 
-type DataExportService = Pick<AuthService, 'exportUserData'>;
+type DataExportService = Pick<AuthAccountPort, 'exportUserData'>;
 
 export const createDataExportService = (deps: AuthDependencies): DataExportService => ({
   async exportUserData({ userId, currentSessionId, currentPassword }: ExportUserDataInput) {

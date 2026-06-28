@@ -1,5 +1,9 @@
 import { AccountBannedError, InvalidEmailVerificationTokenError } from '../auth.errors.js';
-import type { AuthService, VerifyEmailInput, ResendVerificationInput } from '../auth.types.js';
+import type {
+  AuthEmailVerificationPort,
+  VerifyEmailInput,
+  ResendVerificationInput,
+} from '../auth.types.js';
 import {
   getEmailVerificationCodeSecret,
   normalizeEmail,
@@ -13,7 +17,7 @@ import {
   RESEND_VERIFICATION_EMAIL_MESSAGE,
 } from './auth.messages.js';
 
-type VerificationService = Pick<AuthService, 'verifyEmail' | 'resendVerification'>;
+type VerificationService = AuthEmailVerificationPort;
 
 export const createVerificationService = (
   deps: AuthDependencies,

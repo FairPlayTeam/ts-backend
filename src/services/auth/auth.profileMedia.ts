@@ -1,5 +1,5 @@
 import type {
-  AuthService,
+  AuthProfileMediaPort,
   DeleteAvatarInput,
   DeleteBannerInput,
   UploadAvatarInput,
@@ -22,7 +22,7 @@ import {
 import type { UserMediaKind } from '../userMedia/userMedia.types.js';
 
 type ProfileMediaService = Pick<
-  AuthService,
+  AuthProfileMediaPort,
   'uploadAvatar' | 'deleteAvatar' | 'uploadBanner' | 'deleteBanner'
 >;
 

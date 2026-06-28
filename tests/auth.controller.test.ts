@@ -31,7 +31,7 @@ import {
   UPLOAD_BANNER_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
-import type { AuthService } from '../src/services/auth.types.js';
+import type { AuthControllerPort } from '../src/services/auth.types.js';
 
 const registerBody: RegisterRequestBody = {
   email: 'user@example.com',
@@ -169,10 +169,7 @@ const userDataExportResult = {
   passwordResetToken: null,
 };
 
-type ControllerAuthService = Omit<
-  AuthService,
-  'cleanupExpiredAuthTokens' | 'cleanupPendingUserMediaDeletions' | 'cleanupSessions'
->;
+type ControllerAuthService = AuthControllerPort;
 
 const createControllerAuthService = (
   overrides: Partial<ControllerAuthService> = {},
@@ -180,7 +177,6 @@ const createControllerAuthService = (
   register: async () => ({ message: REGISTER_SUCCESS_MESSAGE }),
   login: async () => loginResult,
   verifyEmail: async () => verifyEmailResult,
-  validateSession: async () => validatedSession,
   resendVerification: async () => ({ message: RESEND_VERIFICATION_EMAIL_MESSAGE }),
   getProfile: async () => ({
     user: {

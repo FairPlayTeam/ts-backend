@@ -1,4 +1,4 @@
-import type { AuthService } from './auth.types.js';
+import type { AuthPorts } from './auth.types.js';
 import type { AuthDependencies } from './auth/auth.dependencies.js';
 import { createVerificationService } from './auth/auth.emailVerification.js';
 import { createRegistrationService } from './auth/auth.registration.js';
@@ -12,7 +12,7 @@ import { createDataExportService } from './auth/auth.dataExport.js';
 import { createAccountDeletionService } from './auth/auth.accountDeletion.js';
 import { createMediaDeletionCleanupService } from './auth/auth.mediaDeletionCleanup.js';
 
-export const createAuthService = (deps: AuthDependencies): AuthService => {
+export const createAuthService = (deps: AuthDependencies): AuthPorts => {
   const sessionService = createSessionService(deps);
   const registrationService = createRegistrationService(deps);
   const loginService = createLoginService(deps, sessionService);

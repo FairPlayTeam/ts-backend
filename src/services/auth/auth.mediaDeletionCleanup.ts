@@ -1,13 +1,13 @@
 import { HOUR_MS, MINUTE_MS } from '../../config/constants.js';
 import type {
-  AuthService,
+  AuthMaintenancePort,
   CleanupPendingUserMediaDeletionsInput,
   CleanupPendingUserMediaDeletionsResult,
 } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import { CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE } from './auth.messages.js';
 
-type MediaDeletionCleanupService = Pick<AuthService, 'cleanupPendingUserMediaDeletions'>;
+type MediaDeletionCleanupService = Pick<AuthMaintenancePort, 'cleanupPendingUserMediaDeletions'>;
 
 const DEFAULT_MEDIA_DELETION_CLEANUP_LIMIT = 50;
 const MAX_MEDIA_DELETION_CLEANUP_LIMIT = 200;

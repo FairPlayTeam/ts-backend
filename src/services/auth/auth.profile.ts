@@ -1,11 +1,11 @@
-import type { AuthService, GetProfileInput, UpdateProfileInput } from '../auth.types.js';
+import type { AuthProfilePort, GetProfileInput, UpdateProfileInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import { UPDATE_PROFILE_SUCCESS_MESSAGE } from './auth.messages.js';
 import { toUserMediaAssetUrl } from './auth.userMedia.js';
 import type { UserMediaKind } from '../userMedia/userMedia.types.js';
 import { ProfileUpdateEmptyError } from '../auth.errors.js';
 
-type ProfileService = Pick<AuthService, 'getProfile' | 'updateProfile'>;
+type ProfileService = AuthProfilePort;
 
 type ProfileMediaAsset = {
   kind: UserMediaKind;

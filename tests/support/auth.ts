@@ -1,4 +1,4 @@
-import type { AuthService } from '../../src/services/auth.types.js';
+import type { AuthPorts } from '../../src/services/auth.types.js';
 import {
   CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
   CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
@@ -112,7 +112,7 @@ const userDataExportResult = {
   passwordResetToken: null,
 };
 
-export const createStubAuthService = (): AuthService => ({
+export const createStubAuthService = (): AuthPorts => ({
   register: async () => ({
     message: REGISTER_SUCCESS_MESSAGE,
   }),

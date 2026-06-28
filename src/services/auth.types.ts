@@ -249,47 +249,87 @@ export type ResetPasswordInput = {
   password: string;
 };
 
-export type AuthService = {
-  register(input: RegisterInput): Promise<{ message: string }>;
-  login(input: LoginInput): Promise<AuthSessionResult>;
-  verifyEmail(input: VerifyEmailInput): Promise<AuthSessionResult>;
-  validateSession(sessionKey: string): Promise<ValidatedAuthSession | null>;
-  resendVerification(input: ResendVerificationInput): Promise<{ message: string }>;
-  getProfile(input: GetProfileInput): Promise<{ user: AuthUserProfile }>;
-  getUserSessions(input: ListUserSessionsInput): Promise<ListUserSessionsResult>;
-  logoutAllSessions(
+export type AuthCredentialsPort = {
+  register: (input: RegisterInput) => Promise<{ message: string }>;
+  login: (input: LoginInput) => Promise<AuthSessionResult>;
+};
+
+export type AuthEmailVerificationPort = {
+  verifyEmail: (input: VerifyEmailInput) => Promise<AuthSessionResult>;
+  resendVerification: (input: ResendVerificationInput) => Promise<{ message: string }>;
+};
+
+export type AuthPasswordResetPort = {
+  requestPasswordReset: (input: RequestPasswordResetInput) => Promise<{ message: string }>;
+  resetPassword: (
+    input: ResetPasswordInput,
+  ) => Promise<{ message: string; sessionsLoggedOut: number }>;
+};
+
+export type AuthSessionValidationPort = {
+  validateSession: (sessionKey: string) => Promise<ValidatedAuthSession | null>;
+};
+
+export type AuthProfilePort = {
+  getProfile: (input: GetProfileInput) => Promise<{ user: AuthUserProfile }>;
+  updateProfile: (input: UpdateProfileInput) => Promise<{ message: string; user: AuthUser }>;
+};
+
+export type AuthSessionManagementPort = {
+  getUserSessions: (input: ListUserSessionsInput) => Promise<ListUserSessionsResult>;
+  logoutAllSessions: (
     input: LogoutAllSessionsInput,
-  ): Promise<{ message: string; sessionsLoggedOut: number }>;
-  logoutOtherSessions(
+  ) => Promise<{ message: string; sessionsLoggedOut: number }>;
+  logoutOtherSessions: (
     input: LogoutOtherSessionsInput,
-  ): Promise<{ message: string; sessionsLoggedOut: number }>;
-  logoutSession(input: LogoutSessionInput): Promise<{ message: string; sessionsLoggedOut: number }>;
-  updateProfile(input: UpdateProfileInput): Promise<{ message: string; user: AuthUser }>;
-  uploadAvatar(input: UploadAvatarInput): Promise<{
+  ) => Promise<{ message: string; sessionsLoggedOut: number }>;
+  logoutSession: (
+    input: LogoutSessionInput,
+  ) => Promise<{ message: string; sessionsLoggedOut: number }>;
+};
+
+export type AuthProfileMediaPort = {
+  uploadAvatar: (input: UploadAvatarInput) => Promise<{
     message: string;
     avatar: UserMediaAssetResult;
   }>;
-  deleteAvatar(input: DeleteAvatarInput): Promise<{
+  deleteAvatar: (input: DeleteAvatarInput) => Promise<{
     message: string;
     avatar: null;
   }>;
-  uploadBanner(input: UploadBannerInput): Promise<{
+  uploadBanner: (input: UploadBannerInput) => Promise<{
     message: string;
     banner: UserMediaAssetResult;
   }>;
-  deleteBanner(input: DeleteBannerInput): Promise<{
+  deleteBanner: (input: DeleteBannerInput) => Promise<{
     message: string;
     banner: null;
   }>;
-  cleanupSessions(input: CleanupSessionsInput): Promise<CleanupSessionsResult>;
-  cleanupExpiredAuthTokens(
-    input: CleanupExpiredAuthTokensInput,
-  ): Promise<CleanupExpiredAuthTokensResult>;
-  cleanupPendingUserMediaDeletions(
-    input: CleanupPendingUserMediaDeletionsInput,
-  ): Promise<CleanupPendingUserMediaDeletionsResult>;
-  requestPasswordReset(input: RequestPasswordResetInput): Promise<{ message: string }>;
-  resetPassword(input: ResetPasswordInput): Promise<{ message: string; sessionsLoggedOut: number }>;
-  exportUserData(input: ExportUserDataInput): Promise<ExportUserDataResult>;
-  deleteAccount(input: DeleteAccountInput): Promise<DeleteAccountResult>;
 };
+
+export type AuthAccountPort = {
+  exportUserData: (input: ExportUserDataInput) => Promise<ExportUserDataResult>;
+  deleteAccount: (input: DeleteAccountInput) => Promise<DeleteAccountResult>;
+};
+
+export type AuthMaintenancePort = {
+  cleanupSessions: (input: CleanupSessionsInput) => Promise<CleanupSessionsResult>;
+  cleanupExpiredAuthTokens: (
+    input: CleanupExpiredAuthTokensInput,
+  ) => Promise<CleanupExpiredAuthTokensResult>;
+  cleanupPendingUserMediaDeletions: (
+    input: CleanupPendingUserMediaDeletionsInput,
+  ) => Promise<CleanupPendingUserMediaDeletionsResult>;
+};
+
+export type AuthControllerPort = AuthCredentialsPort &
+  AuthEmailVerificationPort &
+  AuthPasswordResetPort &
+  AuthProfilePort &
+  AuthSessionManagementPort &
+  AuthProfileMediaPort &
+  AuthAccountPort;
+
+export type AuthRoutePort = AuthControllerPort & AuthSessionValidationPort;
+
+export type AuthPorts = AuthRoutePort & AuthMaintenancePort;

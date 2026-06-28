@@ -1,4 +1,4 @@
-import type { AuthService, DeleteAccountInput } from '../auth.types.js';
+import type { AuthAccountPort, DeleteAccountInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
   DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
@@ -10,7 +10,7 @@ import {
   queueUserMediaObjectDeletions,
 } from './auth.userMedia.js';
 
-type AccountDeletionService = Pick<AuthService, 'deleteAccount'>;
+type AccountDeletionService = Pick<AuthAccountPort, 'deleteAccount'>;
 
 export const createAccountDeletionService = (deps: AuthDependencies): AccountDeletionService => ({
   async deleteAccount({ userId, currentPassword }: DeleteAccountInput) {
