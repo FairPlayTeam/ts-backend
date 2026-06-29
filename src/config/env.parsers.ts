@@ -290,33 +290,69 @@ const PRODUCTION_RATE_LIMIT_KEY_SECRET_PLACEHOLDERS = new Set([
   DEV_RATE_LIMIT_KEY_SECRET,
   'change-me-with-at-least-32-characters',
 ]);
+const DEV_AUTH_CODE_PEPPER = 'development-auth-code-pepper-change-me';
+const PRODUCTION_AUTH_CODE_PEPPER_PLACEHOLDERS = new Set([
+  DEV_AUTH_CODE_PEPPER,
+  'change-me-auth-code-pepper-32-characters',
+  'local-compose-auth-code-pepper-4f9e1a7b2c8d0e6f',
+]);
 
-export const parseRateLimitKeySecret = (
-  rawValue: string | undefined,
-  isProduction: boolean,
-): string => {
+const parseSecret = ({
+  rawValue,
+  envName,
+  isProduction,
+  developmentFallback,
+  productionPlaceholders,
+}: {
+  rawValue: string | undefined;
+  envName: string;
+  isProduction: boolean;
+  developmentFallback: string;
+  productionPlaceholders: ReadonlySet<string>;
+}): string => {
   const value = rawValue?.trim();
 
   if (!value) {
     if (isProduction) {
-      throw new ServerConfigurationError('RATE_LIMIT_KEY_SECRET is required in production');
+      throw new ServerConfigurationError(`${envName} is required in production`);
     }
 
-    return DEV_RATE_LIMIT_KEY_SECRET;
+    return developmentFallback;
   }
 
   if (value.length < 32) {
-    throw new ServerConfigurationError('RATE_LIMIT_KEY_SECRET must be at least 32 characters long');
+    throw new ServerConfigurationError(`${envName} must be at least 32 characters long`);
   }
 
-  if (isProduction && PRODUCTION_RATE_LIMIT_KEY_SECRET_PLACEHOLDERS.has(value.toLowerCase())) {
+  if (isProduction && productionPlaceholders.has(value.toLowerCase())) {
     throw new ServerConfigurationError(
-      'RATE_LIMIT_KEY_SECRET must not use a default placeholder in production',
+      `${envName} must not use a default placeholder in production`,
     );
   }
 
   return value;
 };
+
+export const parseRateLimitKeySecret = (
+  rawValue: string | undefined,
+  isProduction: boolean,
+): string =>
+  parseSecret({
+    rawValue,
+    envName: 'RATE_LIMIT_KEY_SECRET',
+    isProduction,
+    developmentFallback: DEV_RATE_LIMIT_KEY_SECRET,
+    productionPlaceholders: PRODUCTION_RATE_LIMIT_KEY_SECRET_PLACEHOLDERS,
+  });
+
+export const parseAuthCodePepper = (rawValue: string | undefined, isProduction: boolean): string =>
+  parseSecret({
+    rawValue,
+    envName: 'AUTH_CODE_PEPPER',
+    isProduction,
+    developmentFallback: DEV_AUTH_CODE_PEPPER,
+    productionPlaceholders: PRODUCTION_AUTH_CODE_PEPPER_PLACEHOLDERS,
+  });
 
 const parseObjectStorageRegion = (rawValue: string | undefined): string => {
   const value = rawValue?.trim() || DEFAULT_OBJECT_STORAGE_REGION;

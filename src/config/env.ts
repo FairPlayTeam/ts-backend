@@ -1,5 +1,6 @@
 import {
   assertProductionMailerConfig,
+  parseAuthCodePepper,
   parseBcryptRounds,
   parseAllowedOrigins,
   parseMailerConfig,
@@ -53,6 +54,7 @@ const config = {
   allowedOrigins: parseAllowedOrigins(process.env.CORS_ORIGINS),
   redisUrl: parseOptionalRedisUrl(process.env.REDIS_URL, 'REDIS_URL'),
   objectStorage,
+  authCodePepper: parseAuthCodePepper(process.env.AUTH_CODE_PEPPER, isProduction),
   rateLimitKeySecret: parseRateLimitKeySecret(process.env.RATE_LIMIT_KEY_SECRET, isProduction),
   sessionCleanupIntervalMs: parseSessionCleanupIntervalMs(
     process.env.SESSION_CLEANUP_INTERVAL_MINUTES,

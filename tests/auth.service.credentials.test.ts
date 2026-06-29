@@ -43,7 +43,7 @@ describe('auth service credentials', () => {
     expect(calls.tokenCreate).toEqual({
       data: {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: new Date('2026-01-01T00:00:01.000Z'),
       },
     });

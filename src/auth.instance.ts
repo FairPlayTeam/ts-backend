@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import config from './config/env.js';
 import { isPrismaUniqueError, prisma } from './lib/prisma.js';
-import { generateSixDigitCode, generateToken, hashToken } from './lib/crypto.js';
+import { generateSixDigitCode, generateToken, hashAuthCode, hashToken } from './lib/crypto.js';
 import {
   EMAIL_VERIFICATION_TOKEN_TTL_MS,
   PASSWORD_RESET_TOKEN_TTL_MS,
@@ -22,7 +22,8 @@ const bcryptHasher = {
 const tokenService = {
   generate: () => generateToken(),
   generateSixDigitCode: () => generateSixDigitCode(),
-  hash: (token: string) => hashToken(token),
+  hashAuthCode: (secret: string) => hashAuthCode(secret, config.authCodePepper),
+  hashOpaqueToken: (token: string) => hashToken(token),
 };
 
 const systemClock = {

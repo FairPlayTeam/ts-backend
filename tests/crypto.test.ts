@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { generateSixDigitCode, generateToken, hashToken } from '../src/lib/crypto.js';
+import { generateSixDigitCode, generateToken, hashAuthCode, hashToken } from '../src/lib/crypto.js';
 
 describe('crypto utils', () => {
   test('hashToken returns sha256 hash', () => {
@@ -14,6 +14,18 @@ describe('crypto utils', () => {
     const token = 'abc123';
 
     expect(hashToken(token)).toBe(hashToken(token));
+  });
+
+  test('hashAuthCode returns an HMAC using the configured pepper', () => {
+    const secret = 'user-id:123456';
+    const pepper = 'test-auth-code-pepper-123456789012';
+
+    expect(hashAuthCode(secret, pepper)).toBe(
+      '0d443effbecd5eea9ba9244c27c52ee9b5cad1b97ff3b8eed4ee50dc7da0d87c',
+    );
+    expect(hashAuthCode(secret, 'other-auth-code-pepper-123456789')).not.toBe(
+      hashAuthCode(secret, pepper),
+    );
   });
 
   test('generateToken returns 64-char hex string', () => {

@@ -4,6 +4,7 @@ import {
   ServerConfigurationError,
   assertProductionMailerConfig,
   parseAllowedOrigins,
+  parseAuthCodePepper,
   parseIsProduction,
   parseJsonBodyLimitBytes,
   parseMailerConfig,
@@ -115,6 +116,19 @@ describe('env parsers', () => {
     expect(() => parseRateLimitKeySecret('change-me-with-at-least-32-characters', true)).toThrow(
       ServerConfigurationError,
     );
+  });
+
+  test('parses auth code peppers', () => {
+    expect(parseAuthCodePepper(undefined, false)).toBe('development-auth-code-pepper-change-me');
+    expect(parseAuthCodePepper('b'.repeat(32), true)).toBe('b'.repeat(32));
+    expect(() => parseAuthCodePepper(undefined, true)).toThrow(ServerConfigurationError);
+    expect(() => parseAuthCodePepper('too-short', false)).toThrow(ServerConfigurationError);
+    expect(() => parseAuthCodePepper('change-me-auth-code-pepper-32-characters', true)).toThrow(
+      ServerConfigurationError,
+    );
+    expect(() =>
+      parseAuthCodePepper('local-compose-auth-code-pepper-4f9e1a7b2c8d0e6f', true),
+    ).toThrow(ServerConfigurationError);
   });
 
   test('parses and normalizes allowed CORS origins', () => {

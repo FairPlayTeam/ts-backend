@@ -79,7 +79,7 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
     const now = deps.clock.now();
     const expiresAt = getSessionExpiresAt(now, deps.config.sessionTtlMs);
     const sessionKey = deps.token.generate();
-    const sessionKeyHash = deps.token.hash(sessionKey);
+    const sessionKeyHash = deps.token.hashOpaqueToken(sessionKey);
 
     return {
       now,
@@ -130,7 +130,7 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
     createSession,
 
     async validateSession(sessionKey: string) {
-      const sessionKeyHash = deps.token.hash(sessionKey);
+      const sessionKeyHash = deps.token.hashOpaqueToken(sessionKey);
       const now = deps.clock.now();
 
       const session = await deps.prisma.session.findUnique({

@@ -76,6 +76,7 @@ docker build --target migrator -t fairplay-backend-migrator:<tag> .
 Run the migrator image once per release, then run one or more replicas of the runtime image behind
 a reverse proxy or load balancer. Production requires shared PostgreSQL, Redis, and object storage
 instances, SMTP configuration, and a strong `RATE_LIMIT_KEY_SECRET`.
+Use a separate strong `AUTH_CODE_PEPPER` for email verification and password reset code hashing.
 
 Managed PostgreSQL, Redis, and S3-compatible object storage providers are supported. For example,
 Neon can provide PostgreSQL, Upstash can provide Redis, and Infomaniak Object Storage or another

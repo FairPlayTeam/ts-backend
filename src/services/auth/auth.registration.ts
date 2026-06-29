@@ -39,7 +39,7 @@ export const createRegistrationService = (deps: AuthDependencies): RegistrationS
         await tx.emailVerificationToken.create({
           data: {
             userId: createdUser.id,
-            token: deps.token.hash(getEmailVerificationCodeSecret(createdUser.id, code)),
+            token: deps.token.hashAuthCode(getEmailVerificationCodeSecret(createdUser.id, code)),
             expiresAt,
           },
         });

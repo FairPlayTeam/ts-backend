@@ -23,7 +23,8 @@ export type AuthDependencies = {
   token: {
     generate(): string;
     generateSixDigitCode(): string;
-    hash(token: string): string;
+    hashAuthCode(secret: string): string;
+    hashOpaqueToken(token: string): string;
   };
   mailer: {
     sendVerificationEmail(email: string, code: string): Promise<void>;

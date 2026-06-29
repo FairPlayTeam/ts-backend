@@ -71,7 +71,7 @@ describe('auth service email verification', () => {
     expect(calls.tokenDeleteMany).toEqual({
       where: {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: {
           gt: fixedNow,
         },
@@ -103,7 +103,7 @@ describe('auth service email verification', () => {
           findUnique: async () => ({
             id: 'verification-token-id',
             userId: 'user-id',
-            token: 'hashed-user-id:654321',
+            token: 'hashed-code-user-id:654321',
             expiresAt: new Date('2026-01-01T00:00:01.000Z'),
             createdAt: fixedNow,
           }),
@@ -158,7 +158,7 @@ describe('auth service email verification', () => {
           findUnique: async () => ({
             id: 'verification-token-id',
             userId: 'user-id',
-            token: 'hashed-user-id:123456',
+            token: 'hashed-code-user-id:123456',
             expiresAt: fixedNow,
             createdAt: fixedNow,
           }),
@@ -181,7 +181,7 @@ describe('auth service email verification', () => {
     ).rejects.toBeInstanceOf(InvalidEmailVerificationTokenError);
 
     expect(calls.tokenDeleteMany).toEqual({
-      where: { userId: 'user-id', token: 'hashed-user-id:123456' },
+      where: { userId: 'user-id', token: 'hashed-code-user-id:123456' },
     });
   });
 
@@ -274,7 +274,7 @@ describe('auth service email verification', () => {
     expect(calls.tokenDeleteMany).toEqual({
       where: {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: {
           gt: consumedAt,
         },
@@ -304,7 +304,7 @@ describe('auth service email verification', () => {
           findUnique: async () => ({
             id: 'verification-token-id',
             userId: 'user-id',
-            token: 'hashed-user-id:123456',
+            token: 'hashed-code-user-id:123456',
             expiresAt: new Date('2026-01-01T00:00:01.000Z'),
             createdAt: fixedNow,
           }),
@@ -408,12 +408,12 @@ describe('auth service email verification', () => {
     expect(calls.tokenUpsert).toEqual({
       where: { userId: 'user-id' },
       update: {
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: new Date('2026-01-01T00:00:01.000Z'),
       },
       create: {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: new Date('2026-01-01T00:00:01.000Z'),
       },
     });

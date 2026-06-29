@@ -11,7 +11,12 @@ import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainer
 
 import { createApp } from '../../src/app.js';
 import { createAuthService } from '../../src/services/auth.service.js';
-import { generateSixDigitCode, generateToken, hashToken } from '../../src/lib/crypto.js';
+import {
+  generateSixDigitCode,
+  generateToken,
+  hashAuthCode,
+  hashToken,
+} from '../../src/lib/crypto.js';
 import { closeRedisClient, connectRedisClient, createRedisClient } from '../../src/lib/redis.js';
 import {
   AUTH_RATE_LIMIT_MESSAGE,
@@ -49,6 +54,7 @@ const TEST_EMAIL = 'integration@example.com';
 const TEST_USERNAME = 'integration_user';
 const INITIAL_PASSWORD = 'Password1!';
 const NEXT_PASSWORD = 'NewPassword1!';
+const AUTH_CODE_PEPPER = 'integration-auth-code-pepper-change-me';
 
 type DeliveredEmail = {
   email: string;
@@ -120,7 +126,8 @@ const createIntegrationAuthService = (
     token: {
       generate: () => generateToken(),
       generateSixDigitCode: () => generateSixDigitCode(),
-      hash: (token) => hashToken(token),
+      hashAuthCode: (secret) => hashAuthCode(secret, AUTH_CODE_PEPPER),
+      hashOpaqueToken: (token) => hashToken(token),
     },
     mailer: {
       sendVerificationEmail: async (email, code) => {
@@ -307,7 +314,10 @@ describe('auth integration', () => {
     const storedVerificationToken = await runtime.prisma.emailVerificationToken.findFirstOrThrow();
     expect(storedVerificationToken.token).not.toBe(verificationEmail?.token);
     expect(storedVerificationToken.token).toBe(
-      hashToken(`${storedVerificationToken.userId}:${verificationEmail?.token ?? ''}`),
+      hashAuthCode(
+        `${storedVerificationToken.userId}:${verificationEmail?.token ?? ''}`,
+        AUTH_CODE_PEPPER,
+      ),
     );
 
     await request(app)
@@ -394,7 +404,10 @@ describe('auth integration', () => {
     const storedPasswordResetToken = await runtime.prisma.passwordResetToken.findFirstOrThrow();
     expect(storedPasswordResetToken.token).not.toBe(resetEmail?.token);
     expect(storedPasswordResetToken.token).toBe(
-      hashToken(`${storedPasswordResetToken.userId}:${resetEmail?.token ?? ''}`),
+      hashAuthCode(
+        `${storedPasswordResetToken.userId}:${resetEmail?.token ?? ''}`,
+        AUTH_CODE_PEPPER,
+      ),
     );
 
     await request(app)

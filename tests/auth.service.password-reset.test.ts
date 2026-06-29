@@ -49,12 +49,12 @@ describe('auth service password reset', () => {
     expect(calls.passwordResetTokenUpsert).toEqual({
       where: { userId: 'user-id' },
       update: {
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: new Date('2026-01-01T00:15:00.000Z'),
       },
       create: {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: new Date('2026-01-01T00:15:00.000Z'),
       },
     });
@@ -140,7 +140,7 @@ describe('auth service password reset', () => {
     const { deps, calls } = createPasswordResetConfirmationTestDeps(
       {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: new Date('2026-01-01T00:00:01.000Z'),
         user: {
           id: 'user-id',
@@ -196,7 +196,7 @@ describe('auth service password reset', () => {
     expect(calls.passwordResetTokenDeleteMany).toEqual({
       where: {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: {
           gt: fixedNow,
         },
@@ -248,7 +248,7 @@ describe('auth service password reset', () => {
   test('rejects mismatched password reset codes without consuming the record', async () => {
     const { deps, calls } = createPasswordResetConfirmationTestDeps({
       userId: 'user-id',
-      token: 'hashed-user-id:654321',
+      token: 'hashed-code-user-id:654321',
       expiresAt: new Date('2026-01-01T00:00:01.000Z'),
       user: {
         id: 'user-id',
@@ -274,7 +274,7 @@ describe('auth service password reset', () => {
   test('deletes and rejects expired password reset codes', async () => {
     const { deps, calls } = createPasswordResetConfirmationTestDeps({
       userId: 'user-id',
-      token: 'hashed-user-id:123456',
+      token: 'hashed-code-user-id:123456',
       expiresAt: fixedNow,
       user: {
         id: 'user-id',
@@ -294,7 +294,7 @@ describe('auth service password reset', () => {
     ).rejects.toBeInstanceOf(InvalidPasswordResetTokenError);
 
     expect(calls.passwordResetTokenDeleteMany).toEqual({
-      where: { userId: 'user-id', token: 'hashed-user-id:123456' },
+      where: { userId: 'user-id', token: 'hashed-code-user-id:123456' },
     });
     expect(calls.userUpdateMany).toBeUndefined();
   });
@@ -305,7 +305,7 @@ describe('auth service password reset', () => {
     const { deps, calls } = createPasswordResetConfirmationTestDeps(
       {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: new Date('2026-01-01T00:00:01.000Z'),
         user: {
           id: 'user-id',
@@ -342,7 +342,7 @@ describe('auth service password reset', () => {
     expect(calls.passwordResetTokenDeleteMany).toEqual({
       where: {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: {
           gt: consumedAt,
         },
@@ -355,7 +355,7 @@ describe('auth service password reset', () => {
   test('rejects password reset for banned users', async () => {
     const { deps, calls } = createPasswordResetConfirmationTestDeps({
       userId: 'user-id',
-      token: 'hashed-user-id:123456',
+      token: 'hashed-code-user-id:123456',
       expiresAt: new Date('2026-01-01T00:00:01.000Z'),
       user: {
         id: 'user-id',
@@ -381,7 +381,7 @@ describe('auth service password reset', () => {
   test('rejects password reset when the new password matches the current password', async () => {
     const { deps, calls } = createPasswordResetConfirmationTestDeps({
       userId: 'user-id',
-      token: 'hashed-user-id:123456',
+      token: 'hashed-code-user-id:123456',
       expiresAt: new Date('2026-01-01T00:00:01.000Z'),
       user: {
         id: 'user-id',
@@ -412,7 +412,7 @@ describe('auth service password reset', () => {
     const { deps, calls } = createPasswordResetConfirmationTestDeps(
       {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: new Date('2026-01-01T00:00:01.000Z'),
         user: {
           id: 'user-id',
@@ -446,7 +446,7 @@ describe('auth service password reset', () => {
     expect(calls.passwordResetTokenDeleteMany).toEqual({
       where: {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: {
           gt: fixedNow,
         },
@@ -464,7 +464,7 @@ describe('auth service password reset', () => {
     const { deps, calls } = createPasswordResetConfirmationTestDeps(
       {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: new Date('2026-01-01T00:00:01.000Z'),
         user: {
           id: 'user-id',
@@ -511,7 +511,7 @@ describe('auth service password reset', () => {
     const { deps, calls } = createPasswordResetConfirmationTestDeps(
       {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: new Date('2026-01-01T00:00:01.000Z'),
         user: {
           id: 'user-id',
@@ -541,7 +541,7 @@ describe('auth service password reset', () => {
     expect(calls.passwordResetTokenDeleteMany).toEqual({
       where: {
         userId: 'user-id',
-        token: 'hashed-user-id:123456',
+        token: 'hashed-code-user-id:123456',
         expiresAt: {
           gt: fixedNow,
         },

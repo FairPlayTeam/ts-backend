@@ -118,6 +118,7 @@ In production:
 - configure `BASE_URL`, `CORS_ORIGINS`, and `TRUST_PROXY` for the public reverse proxy or load
   balancer
 - set a strong, unique `RATE_LIMIT_KEY_SECRET` with at least 32 characters
+- set a separate strong, unique `AUTH_CODE_PEPPER` with at least 32 characters
 - run migrations as a singleton step, not in every backend replica
 
 Docker env files should not wrap values in quotes. Use `BASE_URL=https://api.example.com`, not
@@ -135,6 +136,7 @@ Operational requirements:
 - every backend instance must use the same `REDIS_URL`
 - every backend instance must use the same object storage bucket and credentials
 - every backend instance must use the same `RATE_LIMIT_KEY_SECRET`
+- every backend instance must use the same `AUTH_CODE_PEPPER`
 - credentials must stay in `.env.production`, deployment secrets, or a secret manager
 - credentials must not be committed to Git
 
@@ -221,6 +223,8 @@ The full Swagger UI documentation will be available at /docs.
   Managed Redis providers may require `rediss://` for TLS.
 - `RATE_LIMIT_KEY_SECRET` secret used to anonymize identifier-based rate limit keys. It must be at
   least 32 characters and must not be a placeholder in production.
+- `AUTH_CODE_PEPPER` secret used as the HMAC key for email verification and password reset codes.
+  It must be at least 32 characters and must not be a placeholder in production.
 - `OBJECT_STORAGE_ENDPOINT` internal HTTP(S) origin for S3-compatible object storage, for example
   `http://localhost:9000` locally, `http://minio:9000` in the local Compose network, or a managed
   S3-compatible origin such as `https://s3.pub1.infomaniak.cloud`.
@@ -239,10 +243,10 @@ The full Swagger UI documentation will be available at /docs.
 
 ### Notes
 
-Redis, object storage, SMTP, and `RATE_LIMIT_KEY_SECRET` are mandatory in production. Redis is
-optional in development; if unavailable, the backend falls back to in-memory rate limiting.
-`TRUST_PROXY` should be configured explicitly when the backend runs behind a reverse proxy or load
-balancer.
+Redis, object storage, SMTP, `RATE_LIMIT_KEY_SECRET`, and `AUTH_CODE_PEPPER` are mandatory in
+production. Redis is optional in development; if unavailable, the backend falls back to in-memory
+rate limiting. `TRUST_PROXY` should be configured explicitly when the backend runs behind a reverse
+proxy or load balancer.
 
 ### Commit template
 

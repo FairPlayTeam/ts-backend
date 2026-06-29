@@ -431,7 +431,7 @@ export function createTestDeps(overrides: Partial<AuthDeps> = {}) {
         return {
           id: 'verification-token-id',
           userId: 'user-id',
-          token: 'hashed-user-id:123456',
+          token: 'hashed-code-user-id:123456',
           expiresAt: new Date('2026-01-01T00:00:01.000Z'),
           createdAt: fixedNow,
         };
@@ -537,7 +537,8 @@ export function createTestDeps(overrides: Partial<AuthDeps> = {}) {
     token: {
       generate: () => 'plain-token',
       generateSixDigitCode: () => '123456',
-      hash: (token: string) => `hashed-${token}`,
+      hashAuthCode: (secret: string) => `hashed-code-${secret}`,
+      hashOpaqueToken: (token: string) => `hashed-${token}`,
     },
     mailer: {
       sendVerificationEmail: async (email: string, code: string) => {
