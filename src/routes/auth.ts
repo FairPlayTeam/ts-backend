@@ -29,6 +29,8 @@ type AuthRouterDependencies = {
   authService: AuthRoutePort;
   profileMediaMaxUploadBytes: number;
   authLimiter: RequestHandler;
+  profileMediaUploadLimiter: RequestHandler;
+  expensiveAuthMutationLimiter: RequestHandler;
   registrationIdentifierLimiter: RequestHandler;
   loginIdentifierLimiter: RequestHandler;
   verifyEmailIdentifierLimiter: RequestHandler;
@@ -45,6 +47,8 @@ const createAuthRouter = ({
   authService,
   profileMediaMaxUploadBytes,
   authLimiter,
+  profileMediaUploadLimiter,
+  expensiveAuthMutationLimiter,
   registrationIdentifierLimiter,
   loginIdentifierLimiter,
   verifyEmailIdentifierLimiter,
@@ -126,18 +130,27 @@ const createAuthRouter = ({
     ),
   );
   router.get('/me', ...protect(), me);
-  router.post('/me/export', ...protectedValidatedRoute(exportUserDataSchema, exportMe));
-  router.delete('/me', ...protectedValidatedRoute(deleteAccountSchema, deleteMe));
+  router.post(
+    '/me/export',
+    ...protectedValidatedRoute(exportUserDataSchema, expensiveAuthMutationLimiter, exportMe),
+  );
+  router.delete(
+    '/me',
+    ...protectedValidatedRoute(deleteAccountSchema, expensiveAuthMutationLimiter, deleteMe),
+  );
   router.patch('/me', ...protectedValidatedRoute(updateProfileSchema, updateMe));
-  router.put('/me/avatar', ...protect(), uploadAvatarFile, uploadAvatar);
-  router.delete('/me/avatar', ...protect(), deleteAvatar);
-  router.put('/me/banner', ...protect(), uploadBannerFile, uploadBanner);
-  router.delete('/me/banner', ...protect(), deleteBanner);
+  router.put('/me/avatar', ...protect(), profileMediaUploadLimiter, uploadAvatarFile, uploadAvatar);
+  router.delete('/me/avatar', ...protect(), expensiveAuthMutationLimiter, deleteAvatar);
+  router.put('/me/banner', ...protect(), profileMediaUploadLimiter, uploadBannerFile, uploadBanner);
+  router.delete('/me/banner', ...protect(), expensiveAuthMutationLimiter, deleteBanner);
   router.get('/sessions', ...sessionValidatedRoute(userSessionsSchema, sessions));
-  router.delete('/sessions/all', ...sessionValidatedRoute(logoutAllSessionsSchema, logoutAll));
+  router.delete(
+    '/sessions/all',
+    ...sessionValidatedRoute(logoutAllSessionsSchema, expensiveAuthMutationLimiter, logoutAll),
+  );
   router.delete(
     '/sessions/others/all',
-    ...sessionValidatedRoute(logoutOtherSessionsSchema, logoutOthers),
+    ...sessionValidatedRoute(logoutOtherSessionsSchema, expensiveAuthMutationLimiter, logoutOthers),
   );
   router.delete(
     '/sessions/:sessionId',

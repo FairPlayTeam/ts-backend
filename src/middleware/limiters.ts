@@ -1,15 +1,19 @@
 import type { Request, RequestHandler } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
 import { HttpError } from '../errors/http.js';
 import type { SendCommandFn } from 'rate-limit-redis';
 import type { RedisClient } from '../lib/redis.js';
 import type { Logger } from 'pino';
 import {
+  EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_MAX,
+  EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_WINDOW_MS,
   LOGIN_IDENTIFIER_RATE_LIMIT_MAX,
   LOGIN_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
   PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_MAX,
   PASSWORD_RESET_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
+  PROFILE_MEDIA_UPLOAD_RATE_LIMIT_MAX,
+  PROFILE_MEDIA_UPLOAD_RATE_LIMIT_WINDOW_MS,
   REGISTRATION_IDENTIFIER_RATE_LIMIT_MAX,
   REGISTRATION_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
   RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_MAX,
@@ -20,9 +24,14 @@ import {
   VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
 } from '../config/constants.js';
 import { hashRateLimitIdentifier } from './abuseProtection.js';
+import type { AuthenticatedRequest } from './auth.js';
 
 export const AUTH_RATE_LIMIT_MESSAGE = 'Too many auth attempts, please try again after 10 minutes.';
 const API_RATE_LIMIT_MESSAGE = 'Too many requests, please try again after 15 minutes.';
+export const PROFILE_MEDIA_UPLOAD_RATE_LIMIT_MESSAGE =
+  'Too many media uploads, please try again after 15 minutes.';
+export const EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_MESSAGE =
+  'Too many account actions, please try again after 15 minutes.';
 export const REGISTRATION_IDENTIFIER_RATE_LIMIT_MESSAGE =
   'Too many registration attempts for this email, please try again later.';
 export const LOGIN_IDENTIFIER_RATE_LIMIT_MESSAGE =
@@ -79,6 +88,21 @@ const createIdentifierKeyGenerator =
     return `${prefix}:${hashRateLimitIdentifier(keySecret, identifier)}`;
   };
 
+const getAuthenticatedUserId = (req: Request): string | null => {
+  const candidate = req as Partial<AuthenticatedRequest>;
+
+  return typeof candidate.user?.id === 'string' ? candidate.user.id : null;
+};
+
+const createAuthenticatedKeyGenerator =
+  (prefix: string, keySecret: string) =>
+  (req: Request): string => {
+    const userId = getAuthenticatedUserId(req);
+    const identity = userId ? `user:${userId}` : `ip:${ipKeyGenerator(req.ip ?? '0.0.0.0')}`;
+
+    return `${prefix}:${hashRateLimitIdentifier(keySecret, identity)}`;
+  };
+
 const createRateLimitHandler =
   (message: string): RequestHandler =>
   (_req, _res, next) => {
@@ -116,6 +140,35 @@ const createIdentifierLimiter = ({
     handler: createRateLimitHandler(message),
   });
 
+type AuthenticatedLimiterOptions = {
+  keyPrefix: string;
+  keySecret: string;
+  limit: number;
+  message: string;
+  store: ReturnType<typeof makeStore>;
+  windowMs: number;
+};
+
+const createAuthenticatedLimiter = ({
+  keyPrefix,
+  keySecret,
+  limit,
+  message,
+  store,
+  windowMs,
+}: AuthenticatedLimiterOptions): RequestHandler =>
+  rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    skipSuccessfulRequests: false,
+    passOnStoreError: false,
+    keyGenerator: createAuthenticatedKeyGenerator(keyPrefix, keySecret),
+    ...(store ? { store } : {}),
+    handler: createRateLimitHandler(message),
+  });
+
 export function createLimiters(deps: {
   redisClient: RedisClient | null;
   rateLimitKeySecret: string;
@@ -127,6 +180,8 @@ export function createLimiters(deps: {
 
   const apiStore = makeStore('rl:api:', deps.redisClient);
   const authStore = makeStore('rl:auth:', deps.redisClient);
+  const profileMediaUploadStore = makeStore('rl:auth:media-upload:', deps.redisClient);
+  const expensiveAuthMutationStore = makeStore('rl:auth:expensive-mutation:', deps.redisClient);
   const registrationIdentifierStore = makeStore('rl:auth:register-id:', deps.redisClient);
   const loginIdentifierStore = makeStore('rl:auth:login-id:', deps.redisClient);
   const verifyEmailIdentifierStore = makeStore('rl:auth:verify-email-id:', deps.redisClient);
@@ -156,6 +211,22 @@ export function createLimiters(deps: {
       passOnStoreError: false,
       ...(authStore ? { store: authStore } : {}),
       handler: authRateLimitExceededHandler,
+    }),
+    profileMediaUploadLimiter: createAuthenticatedLimiter({
+      windowMs: PROFILE_MEDIA_UPLOAD_RATE_LIMIT_WINDOW_MS,
+      limit: PROFILE_MEDIA_UPLOAD_RATE_LIMIT_MAX,
+      keyPrefix: 'media-upload',
+      keySecret: deps.rateLimitKeySecret,
+      store: profileMediaUploadStore,
+      message: PROFILE_MEDIA_UPLOAD_RATE_LIMIT_MESSAGE,
+    }),
+    expensiveAuthMutationLimiter: createAuthenticatedLimiter({
+      windowMs: EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_WINDOW_MS,
+      limit: EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_MAX,
+      keyPrefix: 'expensive-mutation',
+      keySecret: deps.rateLimitKeySecret,
+      store: expensiveAuthMutationStore,
+      message: EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_MESSAGE,
     }),
     registrationIdentifierLimiter: createIdentifierLimiter({
       windowMs: REGISTRATION_IDENTIFIER_RATE_LIMIT_WINDOW_MS,

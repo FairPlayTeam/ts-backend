@@ -92,6 +92,8 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
   const {
     apiLimiter,
     authLimiter,
+    profileMediaUploadLimiter,
+    expensiveAuthMutationLimiter,
     registrationIdentifierLimiter,
     loginIdentifierLimiter,
     verifyEmailIdentifierLimiter,
@@ -202,6 +204,8 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
       authService: deps.authService,
       profileMediaMaxUploadBytes: config.profileMediaMaxUploadBytes,
       authLimiter,
+      profileMediaUploadLimiter,
+      expensiveAuthMutationLimiter,
       registrationIdentifierLimiter,
       loginIdentifierLimiter,
       verifyEmailIdentifierLimiter,
