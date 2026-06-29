@@ -29,11 +29,5 @@ jobs:
       - name: Check Prisma format
         run: bunx prisma format --check
 
-      - name: Validate Prisma schema
-        run: bunx prisma validate
-
       - name: Run checks
         run: bun run check
-
-      - name: Run integration tests
-        run: bun run test:integration

@@ -116,7 +116,8 @@ In production:
   the shared S3-compatible object storage instance
 - configure SMTP with `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS_MODE`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM`
 - configure `BASE_URL`, `CORS_ORIGINS`, and `TRUST_PROXY` for the public reverse proxy or load
-  balancer
+  balancer. Use `CORS_ORIGINS=*` when the Bearer-token API is intentionally open to every browser
+  origin.
 - set a strong, unique `RATE_LIMIT_KEY_SECRET` with at least 32 characters
 - set a separate strong, unique `AUTH_CODE_PEPPER` with at least 32 characters
 - run migrations as a singleton step, not in every backend replica
