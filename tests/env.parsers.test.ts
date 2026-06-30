@@ -20,6 +20,8 @@ import {
   readRequiredEnv,
 } from '../src/config/env.parsers.js';
 import {
+  DEFAULT_OBJECT_STORAGE_TIMEOUT_MS,
+  DEFAULT_SMTP_TIMEOUT_MS,
   SESSION_CLEANUP_INACTIVE_RETENTION_MS,
   SESSION_CLEANUP_INTERVAL_MS,
 } from '../src/config/constants.js';
@@ -152,6 +154,7 @@ describe('env parsers', () => {
         smtpUser: undefined,
         smtpPass: undefined,
         smtpFrom: undefined,
+        operationTimeoutMs: undefined,
       }),
     ).toBeNull();
 
@@ -163,6 +166,7 @@ describe('env parsers', () => {
         smtpUser: 'user@example.com',
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
+        operationTimeoutMs: undefined,
       }),
     ).toThrow(ServerConfigurationError);
 
@@ -174,6 +178,7 @@ describe('env parsers', () => {
         smtpUser: 'user@example.com',
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
+        operationTimeoutMs: undefined,
       }),
     ).toThrow(ServerConfigurationError);
 
@@ -185,6 +190,7 @@ describe('env parsers', () => {
         smtpUser: 'user@example.com',
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
+        operationTimeoutMs: undefined,
       }),
     ).toThrow(ServerConfigurationError);
 
@@ -196,15 +202,41 @@ describe('env parsers', () => {
         smtpUser: 'user@example.com',
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
+        operationTimeoutMs: '2500',
       }),
     ).toEqual({
       smtpHost: 'smtp.example.com',
       smtpPort: 587,
       smtpTlsMode: 'starttls',
+      operationTimeoutMs: 2500,
       smtpUser: 'user@example.com',
       smtpPass: 'secret',
       smtpFrom: 'no-reply@example.com',
     });
+
+    expect(
+      parseMailerConfig({
+        smtpHost: 'smtp.example.com',
+        smtpPort: '587',
+        smtpTlsMode: 'STARTTLS',
+        smtpUser: 'user@example.com',
+        smtpPass: 'secret',
+        smtpFrom: 'no-reply@example.com',
+        operationTimeoutMs: undefined,
+      })?.operationTimeoutMs,
+    ).toBe(DEFAULT_SMTP_TIMEOUT_MS);
+
+    expect(() =>
+      parseMailerConfig({
+        smtpHost: 'smtp.example.com',
+        smtpPort: '587',
+        smtpTlsMode: 'STARTTLS',
+        smtpUser: 'user@example.com',
+        smtpPass: 'secret',
+        smtpFrom: 'no-reply@example.com',
+        operationTimeoutMs: '0',
+      }),
+    ).toThrow(ServerConfigurationError);
   });
 
   test('rejects missing or unencrypted mailer configuration in production', () => {
@@ -218,6 +250,7 @@ describe('env parsers', () => {
         smtpUser: 'user@example.com',
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
+        operationTimeoutMs: DEFAULT_SMTP_TIMEOUT_MS,
       }),
     ).toThrow(ServerConfigurationError);
 
@@ -229,6 +262,7 @@ describe('env parsers', () => {
         smtpUser: 'user@example.com',
         smtpPass: 'secret',
         smtpFrom: 'no-reply@example.com',
+        operationTimeoutMs: DEFAULT_SMTP_TIMEOUT_MS,
       }),
     ).not.toThrow();
   });
@@ -243,6 +277,7 @@ describe('env parsers', () => {
         accessKey: undefined,
         secretKey: undefined,
         signedUrlTtlSeconds: undefined,
+        operationTimeoutMs: undefined,
       }),
     ).toBeNull();
 
@@ -255,6 +290,7 @@ describe('env parsers', () => {
         accessKey: 'fairplay',
         secretKey: undefined,
         signedUrlTtlSeconds: undefined,
+        operationTimeoutMs: undefined,
       }),
     ).toThrow(ServerConfigurationError);
 
@@ -267,6 +303,7 @@ describe('env parsers', () => {
         accessKey: 'fairplay',
         secretKey: 'fairplay-minio-secret',
         signedUrlTtlSeconds: undefined,
+        operationTimeoutMs: undefined,
       }),
     ).toEqual({
       endpoint: 'http://localhost:9000',
@@ -276,6 +313,7 @@ describe('env parsers', () => {
       accessKey: 'fairplay',
       secretKey: 'fairplay-minio-secret',
       signedUrlTtlSeconds: 900,
+      operationTimeoutMs: DEFAULT_OBJECT_STORAGE_TIMEOUT_MS,
     });
 
     expect(
@@ -287,6 +325,7 @@ describe('env parsers', () => {
         accessKey: 'fairplay',
         secretKey: 'fairplay-minio-secret',
         signedUrlTtlSeconds: '60',
+        operationTimeoutMs: '2500',
       }),
     ).toEqual({
       endpoint: 'http://minio:9000',
@@ -296,6 +335,7 @@ describe('env parsers', () => {
       accessKey: 'fairplay',
       secretKey: 'fairplay-minio-secret',
       signedUrlTtlSeconds: 60,
+      operationTimeoutMs: 2500,
     });
 
     expect(() =>
@@ -307,6 +347,7 @@ describe('env parsers', () => {
         accessKey: 'fairplay',
         secretKey: 'fairplay-minio-secret',
         signedUrlTtlSeconds: undefined,
+        operationTimeoutMs: undefined,
       }),
     ).toThrow(ServerConfigurationError);
 
@@ -319,6 +360,7 @@ describe('env parsers', () => {
         accessKey: 'fairplay',
         secretKey: 'fairplay-minio-secret',
         signedUrlTtlSeconds: undefined,
+        operationTimeoutMs: undefined,
       }),
     ).toThrow(ServerConfigurationError);
 
@@ -331,6 +373,20 @@ describe('env parsers', () => {
         accessKey: 'fairplay',
         secretKey: 'fairplay-minio-secret',
         signedUrlTtlSeconds: String(7 * 24 * 60 * 60 + 1),
+        operationTimeoutMs: undefined,
+      }),
+    ).toThrow(ServerConfigurationError);
+
+    expect(() =>
+      parseOptionalObjectStorageConfig({
+        endpoint: 'http://localhost:9000',
+        publicUrl: undefined,
+        region: undefined,
+        bucket: undefined,
+        accessKey: 'fairplay',
+        secretKey: 'fairplay-minio-secret',
+        signedUrlTtlSeconds: undefined,
+        operationTimeoutMs: '0',
       }),
     ).toThrow(ServerConfigurationError);
   });

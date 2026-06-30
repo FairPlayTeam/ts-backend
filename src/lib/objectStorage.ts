@@ -1,6 +1,8 @@
+import { Agent as HttpAgent } from 'node:http';
+import { Agent as HttpsAgent } from 'node:https';
 import { Client } from 'minio';
-import type { Logger } from 'pino';
 import type { ObjectStorageConfig } from '../config/env.parsers.js';
+import { observeOperation, type OperationLogger } from './operationMetrics.js';
 
 type ObjectStorageClient = {
   bucketExists(bucketName: string): Promise<boolean>;
@@ -52,9 +54,32 @@ const toObjectStorageUnavailableError = (err: unknown): ObjectStorageUnavailable
     ? err
     : new ObjectStorageUnavailableError(undefined, { cause: err });
 
-const runObjectStorageOperation = async <T>(operation: () => Promise<T>): Promise<T> => {
+const runObjectStorageOperation = async <T>({
+  config,
+  data = {},
+  logger,
+  operation,
+  run,
+}: {
+  config: ObjectStorageConfig;
+  data?: Record<string, unknown>;
+  logger: OperationLogger;
+  operation: string;
+  run: () => Promise<T>;
+}): Promise<T> => {
   try {
-    return await operation();
+    return await observeOperation({
+      operation,
+      timeoutMs: config.operationTimeoutMs,
+      logger,
+      data: {
+        bucket: config.bucket,
+        ...data,
+      },
+      successMessage: 'Object storage operation completed',
+      failureMessage: 'Object storage operation failed',
+      run,
+    });
   } catch (err) {
     throw toObjectStorageUnavailableError(err);
   }
@@ -96,6 +121,10 @@ const rewriteSignedUrlOrigin = (signedUrl: string, publicUrl: string): string =>
 
 export const createMinioClient = (config: ObjectStorageConfig): Client => {
   const endpoint = new URL(config.endpoint);
+  const transportAgent =
+    endpoint.protocol === 'https:'
+      ? new HttpsAgent({ timeout: config.operationTimeoutMs })
+      : new HttpAgent({ timeout: config.operationTimeoutMs });
 
   return new Client({
     endPoint: endpoint.hostname,
@@ -105,23 +134,29 @@ export const createMinioClient = (config: ObjectStorageConfig): Client => {
     region: config.region,
     accessKey: config.accessKey,
     secretKey: config.secretKey,
+    transportAgent,
   });
 };
 
 export const createObjectStorage = (
   config: ObjectStorageConfig,
   client: ObjectStorageClient,
-  logger: Pick<Logger, 'warn'>,
+  logger: OperationLogger,
 ): ObjectStorage => {
   let bucketReady: Promise<void> | null = null;
 
   const ensureBucket = async (): Promise<void> => {
-    bucketReady ??= runObjectStorageOperation(async () => {
-      const exists = await client.bucketExists(config.bucket);
+    bucketReady ??= runObjectStorageOperation({
+      config,
+      logger,
+      operation: 'objectStorage.ensureBucket',
+      run: async () => {
+        const exists = await client.bucketExists(config.bucket);
 
-      if (!exists) {
-        await client.makeBucket(config.bucket, config.region);
-      }
+        if (!exists) {
+          await client.makeBucket(config.bucket, config.region);
+        }
+      },
     }).catch((err: unknown) => {
       bucketReady = null;
       throw err;
@@ -133,15 +168,23 @@ export const createObjectStorage = (
   const deleteObject = async (objectKey: string): Promise<void> => {
     await ensureBucket();
 
-    try {
-      await client.removeObject(config.bucket, objectKey);
-    } catch (err) {
-      if (isNotFoundStorageError(err)) {
-        return;
-      }
+    await runObjectStorageOperation({
+      config,
+      logger,
+      operation: 'objectStorage.deleteObject',
+      data: { objectKey },
+      run: async () => {
+        try {
+          await client.removeObject(config.bucket, objectKey);
+        } catch (err) {
+          if (isNotFoundStorageError(err)) {
+            return;
+          }
 
-      throw toObjectStorageUnavailableError(err);
-    }
+          throw err;
+        }
+      },
+    });
   };
 
   return {
@@ -151,11 +194,17 @@ export const createObjectStorage = (
     async putObject({ objectKey, body, contentType, cacheControl }: PutObjectInput) {
       await ensureBucket();
 
-      await runObjectStorageOperation(async () => {
-        await client.putObject(config.bucket, objectKey, body, body.length, {
-          'Content-Type': contentType,
-          ...(cacheControl ? { 'Cache-Control': cacheControl } : {}),
-        });
+      await runObjectStorageOperation({
+        config,
+        logger,
+        operation: 'objectStorage.putObject',
+        data: { contentType, objectKey, sizeBytes: body.length },
+        run: async () => {
+          await client.putObject(config.bucket, objectKey, body, body.length, {
+            'Content-Type': contentType,
+            ...(cacheControl ? { 'Cache-Control': cacheControl } : {}),
+          });
+        },
       });
     },
 
@@ -164,31 +213,35 @@ export const createObjectStorage = (
     async deleteObjects(objectKeys: readonly string[]) {
       const uniqueKeys = [...new Set(objectKeys)];
 
-      await Promise.all(
-        uniqueKeys.map((objectKey) =>
-          deleteObject(objectKey).catch((err: unknown) => {
-            logger.warn({ err, objectKey }, 'Object storage delete failed');
-            throw err;
-          }),
-        ),
-      );
+      await Promise.all(uniqueKeys.map((objectKey) => deleteObject(objectKey)));
     },
 
     async getSignedUrl(objectKey: string) {
       await ensureBucket();
-      const signedUrl = await runObjectStorageOperation(() =>
-        client.presignedGetObject(config.bucket, objectKey, config.signedUrlTtlSeconds),
-      );
+      const signedUrl = await runObjectStorageOperation({
+        config,
+        logger,
+        operation: 'objectStorage.getSignedUrl',
+        data: { objectKey, signedUrlTtlSeconds: config.signedUrlTtlSeconds },
+        run: () => client.presignedGetObject(config.bucket, objectKey, config.signedUrlTtlSeconds),
+      });
 
       return rewriteSignedUrlOrigin(signedUrl, config.publicUrl);
     },
 
     async checkReady() {
       await ensureBucket();
-      await client.statObject(config.bucket, '.readiness').catch((err: unknown) => {
-        if (!isNotFoundStorageError(err)) {
-          throw toObjectStorageUnavailableError(err);
-        }
+      await runObjectStorageOperation({
+        config,
+        logger,
+        operation: 'objectStorage.checkReady',
+        run: async () => {
+          await client.statObject(config.bucket, '.readiness').catch((err: unknown) => {
+            if (!isNotFoundStorageError(err)) {
+              throw err;
+            }
+          });
+        },
       });
     },
   };

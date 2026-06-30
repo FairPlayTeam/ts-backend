@@ -114,7 +114,8 @@ In production:
 - set `REDIS_URL` to the shared Redis instance
 - set `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_ACCESS_KEY`, and `OBJECT_STORAGE_SECRET_KEY` to
   the shared S3-compatible object storage instance
-- configure SMTP with `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS_MODE`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM`
+- configure SMTP with `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS_MODE`, `SMTP_USER`, `SMTP_PASS`, and
+  `SMTP_FROM`
 - configure `BASE_URL`, `CORS_ORIGINS`, and `TRUST_PROXY` for the public reverse proxy or load
   balancer. Use `CORS_ORIGINS=*` when the Bearer-token API is intentionally open to every browser
   origin.
@@ -235,12 +236,16 @@ The full Swagger UI documentation will be available at /docs.
 - `OBJECT_STORAGE_BUCKET` bucket for profile media. Defaults to `fairplay-user-media`.
 - `OBJECT_STORAGE_ACCESS_KEY` and `OBJECT_STORAGE_SECRET_KEY` object storage credentials.
 - `OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS` lifetime of signed media URLs. Defaults to `900`.
+- `OBJECT_STORAGE_TIMEOUT_MS` timeout for each object storage operation. Defaults to `5000` and
+  cannot exceed `120000`.
 - `PROFILE_MEDIA_MAX_UPLOAD_BYTES` maximum accepted raw profile media upload size in bytes,
   currently for avatar and banner uploads. Defaults to `3145728`.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS_MODE`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` configure
   email delivery. Use `SMTP_TLS_MODE=implicit` for implicit TLS, `starttls` for mandatory STARTTLS,
   or `none` only for trusted local SMTP servers without TLS. `none` is rejected in production.
   Email verification and password reset use six-digit codes and do not depend on a frontend URL.
+- `SMTP_TIMEOUT_MS` timeout for SMTP connection, greeting, socket, and send operations. Defaults to
+  `10000` and cannot exceed `120000`.
 
 ### Notes
 

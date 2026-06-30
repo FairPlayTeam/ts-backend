@@ -7,12 +7,18 @@ import {
 import { buildTransactionalEmailHtml, buildTransactionalEmailText } from './mailer.templates.js';
 import { MailerConfigurationError, MailerDeliveryError } from './mailer.errors.js';
 import type { MailerConfig } from './mailer.types.js';
+import {
+  noopOperationLogger,
+  observeOperation,
+  type OperationLogger,
+} from '../../lib/operationMetrics.js';
 
 type MailTransporter = Pick<nodemailer.Transporter, 'sendMail'>;
 
 type MailerDependencies = {
   config: MailerConfig | null;
   createTransporter?: (config: MailerConfig) => MailTransporter;
+  logger?: OperationLogger;
 };
 
 type SmtpTransportOptions = {
@@ -21,15 +27,21 @@ type SmtpTransportOptions = {
   secure: boolean;
   ignoreTLS?: true;
   requireTLS?: true;
+  connectionTimeout: number;
+  greetingTimeout: number;
+  socketTimeout: number;
   auth: {
     user: string;
     pass: string;
   };
 };
 
+type MailerTemplate = 'password-reset' | 'verification';
+
 type SendAppEmailInput = {
   email: string;
   subject: string;
+  template: MailerTemplate;
   text: string;
   html: string;
 };
@@ -42,6 +54,7 @@ type SendCodeEmailInput = {
   htmlTitle: string;
   intro: string;
   subject: string;
+  template: MailerTemplate;
   textTitle: string;
 };
 
@@ -61,6 +74,9 @@ export const createSmtpTransportOptions = (config: MailerConfig): SmtpTransportO
     host: config.smtpHost,
     port: config.smtpPort,
     ...tlsOptions,
+    connectionTimeout: config.operationTimeoutMs,
+    greetingTimeout: config.operationTimeoutMs,
+    socketTimeout: config.operationTimeoutMs,
     auth: {
       user: config.smtpUser,
       pass: config.smtpPass,
@@ -83,6 +99,7 @@ const getMailerConfig = (mailerConfig: MailerConfig | null): MailerConfig => {
 
 export const createMailerService = (deps: MailerDependencies) => {
   let transporter: MailTransporter | null = null;
+  const logger = deps.logger ?? noopOperationLogger;
 
   const getTransporter = (mailerConfig: MailerConfig): MailTransporter => {
     transporter ??= (deps.createTransporter ?? createDefaultTransporter)(mailerConfig);
@@ -91,16 +108,31 @@ export const createMailerService = (deps: MailerDependencies) => {
 
   const sendAppEmail = async (
     mailerConfig: MailerConfig,
-    { email, subject, text, html }: SendAppEmailInput,
+    { email, subject, template, text, html }: SendAppEmailInput,
   ): Promise<void> => {
     const mailer = getTransporter(mailerConfig);
 
-    await mailer.sendMail({
-      from: `"${APP_PRODUCT_NAME}" <${mailerConfig.smtpFrom}>`,
-      to: email,
-      subject,
-      text,
-      html,
+    await observeOperation({
+      operation: 'smtp.sendMail',
+      timeoutMs: mailerConfig.operationTimeoutMs,
+      logger,
+      data: {
+        smtpHost: mailerConfig.smtpHost,
+        smtpPort: mailerConfig.smtpPort,
+        smtpTlsMode: mailerConfig.smtpTlsMode,
+        subject,
+        template,
+      },
+      successMessage: 'SMTP email delivery completed',
+      failureMessage: 'SMTP email delivery failed',
+      run: () =>
+        mailer.sendMail({
+          from: `"${APP_PRODUCT_NAME}" <${mailerConfig.smtpFrom}>`,
+          to: email,
+          subject,
+          text,
+          html,
+        }),
     });
   };
 
@@ -112,6 +144,7 @@ export const createMailerService = (deps: MailerDependencies) => {
     htmlTitle,
     intro,
     subject,
+    template,
     textTitle,
   }: SendCodeEmailInput): Promise<void> => {
     const mailerConfig = getMailerConfig(deps.config);
@@ -121,6 +154,7 @@ export const createMailerService = (deps: MailerDependencies) => {
       await sendAppEmail(mailerConfig, {
         email,
         subject,
+        template,
         text: buildTransactionalEmailText({
           title: textTitle,
           actionCode: code,
@@ -136,7 +170,7 @@ export const createMailerService = (deps: MailerDependencies) => {
         }),
       });
     } catch (err) {
-      throw new MailerDeliveryError('Email delivery failed', err);
+      throw new MailerDeliveryError(`Email delivery failed for ${template}`, err);
     }
   };
 
@@ -151,6 +185,7 @@ export const createMailerService = (deps: MailerDependencies) => {
         intro:
           'Thanks for signing up! Enter the code below to verify your email address and activate your account.',
         subject: 'Verify your email',
+        template: 'verification',
         textTitle: `Verify your ${APP_PRODUCT_NAME} account`,
       });
     },
@@ -165,6 +200,7 @@ export const createMailerService = (deps: MailerDependencies) => {
         intro:
           'We received a request to reset your password. Enter the code below to choose a new one.',
         subject: 'Reset your password',
+        template: 'password-reset',
         textTitle: `Reset your ${APP_PRODUCT_NAME} password`,
       });
     },

@@ -6,6 +6,7 @@ export type MailerConfig = {
   smtpHost: string;
   smtpPort: number;
   smtpTlsMode: SmtpTlsMode;
+  operationTimeoutMs: number;
   smtpUser: string;
   smtpPass: string;
   smtpFrom: string;

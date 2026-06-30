@@ -8,6 +8,8 @@ import {
   MailerDeliveryError,
 } from '../src/services/mailer/mailer.errors.js';
 import type { MailerConfig } from '../src/services/mailer/mailer.types.js';
+import { OperationTimeoutError } from '../src/lib/operationMetrics.js';
+import { createOperationLogCollector } from './support/logCollector.js';
 
 const mailerConfig: MailerConfig = {
   smtpHost: 'smtp.example.com',
@@ -16,6 +18,7 @@ const mailerConfig: MailerConfig = {
   smtpUser: 'user@example.com',
   smtpPass: 'secret',
   smtpFrom: 'no-reply@example.com',
+  operationTimeoutMs: 10_000,
 };
 
 type SentMail = {
@@ -33,6 +36,9 @@ describe('mailer service', () => {
       port: 587,
       secure: false,
       requireTLS: true,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 10_000,
       auth: {
         user: 'user@example.com',
         pass: 'secret',
@@ -49,6 +55,9 @@ describe('mailer service', () => {
       host: 'smtp.example.com',
       port: 465,
       secure: true,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 10_000,
       auth: {
         user: 'user@example.com',
         pass: 'secret',
@@ -66,6 +75,9 @@ describe('mailer service', () => {
       port: 1025,
       secure: false,
       ignoreTLS: true,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 10_000,
       auth: {
         user: 'user@example.com',
         pass: 'secret',
@@ -74,11 +86,13 @@ describe('mailer service', () => {
   });
 
   test('sends verification emails through the configured transporter', async () => {
+    const { logger, logs } = createOperationLogCollector();
     const sentEmails: unknown[] = [];
     let transporterCreations = 0;
 
     const service = createMailerService({
       config: mailerConfig,
+      logger,
       createTransporter: (config) => {
         transporterCreations += 1;
         expect(config).toEqual(mailerConfig);
@@ -109,6 +123,23 @@ describe('mailer service', () => {
     expect(firstEmail?.html).toContain('This code expires in 15 minutes.');
     expect(firstEmail?.text).not.toContain('/verify-email');
     expect(firstEmail?.html).not.toContain('/verify-email');
+    expect(logs).toHaveLength(2);
+    expect(logs[0]).toMatchObject({
+      level: 'info',
+      message: 'SMTP email delivery completed',
+      data: {
+        operation: 'smtp.sendMail',
+        outcome: 'success',
+        smtpHost: 'smtp.example.com',
+        smtpPort: 587,
+        smtpTlsMode: 'starttls',
+        subject: 'Verify your email',
+        template: 'verification',
+        timeoutMs: 10_000,
+      },
+    });
+    expect(JSON.stringify(logs)).not.toContain('user@example.com');
+    expect(JSON.stringify(logs)).not.toContain('123456');
   });
 
   test('sends password reset emails through the configured transporter', async () => {
@@ -145,8 +176,10 @@ describe('mailer service', () => {
   });
 
   test('wraps transporter failures as delivery errors', async () => {
+    const { logger, logs } = createOperationLogCollector();
     const service = createMailerService({
       config: mailerConfig,
+      logger,
       createTransporter: () => ({
         sendMail: async () => {
           throw new Error('SMTP down');
@@ -157,5 +190,38 @@ describe('mailer service', () => {
     await expect(
       service.sendVerificationEmail('user@example.com', '123456'),
     ).rejects.toBeInstanceOf(MailerDeliveryError);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({
+      level: 'warn',
+      message: 'SMTP email delivery failed',
+      data: {
+        operation: 'smtp.sendMail',
+        outcome: 'failure',
+        smtpHost: 'smtp.example.com',
+        smtpPort: 587,
+        smtpTlsMode: 'starttls',
+        subject: 'Verify your email',
+        template: 'verification',
+        timeoutMs: 10_000,
+      },
+    });
+    expect(logs[0]?.data.err).toBeInstanceOf(Error);
+  });
+
+  test('times out slow SMTP deliveries with an explicit delivery error cause', async () => {
+    const service = createMailerService({
+      config: { ...mailerConfig, operationTimeoutMs: 1 },
+      createTransporter: () => ({
+        sendMail: () => new Promise((resolve) => setTimeout(resolve, 50)),
+      }),
+    });
+
+    try {
+      await service.sendVerificationEmail('user@example.com', '123456');
+      throw new Error('Expected sendVerificationEmail to fail');
+    } catch (err) {
+      expect(err).toBeInstanceOf(MailerDeliveryError);
+      expect((err as Error).cause).toBeInstanceOf(OperationTimeoutError);
+    }
   });
 });

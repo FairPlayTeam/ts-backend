@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { ObjectStorageConfig } from '../src/config/env.parsers.js';
-import { ObjectStorageUnavailableError, createObjectStorage } from '../src/lib/objectStorage.js';
+import {
+  ObjectStorageUnavailableError,
+  createMinioClient,
+  createObjectStorage,
+} from '../src/lib/objectStorage.js';
+import { OperationTimeoutError } from '../src/lib/operationMetrics.js';
+import { createOperationLogCollector } from './support/logCollector.js';
 
 const createConfig = (overrides: Partial<ObjectStorageConfig> = {}): ObjectStorageConfig => ({
   endpoint: 'http://minio:9000',
@@ -10,12 +16,25 @@ const createConfig = (overrides: Partial<ObjectStorageConfig> = {}): ObjectStora
   accessKey: 'fairplay',
   secretKey: 'fairplay-minio-secret',
   signedUrlTtlSeconds: 900,
+  operationTimeoutMs: 5_000,
   ...overrides,
 });
 
 describe('object storage', () => {
+  test('configures the MinIO transport agent with the object storage timeout', () => {
+    const client = createMinioClient(
+      createConfig({
+        endpoint: 'https://s3.example.com',
+        operationTimeoutMs: 2_500,
+      }),
+    ) as unknown as { transportAgent: { options: { timeout?: number } } };
+
+    expect(client.transportAgent.options.timeout).toBe(2_500);
+  });
+
   test('ensures the bucket once before writes and rewrites signed URLs to the public origin', async () => {
     const calls: unknown[] = [];
+    const { logger, logs } = createOperationLogCollector();
     const client = {
       bucketExists: async (bucket: string) => {
         calls.push(['bucketExists', bucket]);
@@ -44,7 +63,7 @@ describe('object storage', () => {
         return `http://minio:9000/${bucket}/${objectKey}?signature=test`;
       },
     };
-    const storage = createObjectStorage(createConfig(), client, { warn: () => undefined });
+    const storage = createObjectStorage(createConfig(), client, logger);
 
     await storage.putObject({
       objectKey: 'users/user-id/avatar/current-avatar.webp',
@@ -78,6 +97,36 @@ describe('object storage', () => {
         900,
       ],
     ]);
+    expect(
+      logs.map(({ level, data, message }) => ({ level, operation: data.operation, message })),
+    ).toEqual([
+      {
+        level: 'info',
+        operation: 'objectStorage.ensureBucket',
+        message: 'Object storage operation completed',
+      },
+      {
+        level: 'info',
+        operation: 'objectStorage.putObject',
+        message: 'Object storage operation completed',
+      },
+      {
+        level: 'info',
+        operation: 'objectStorage.getSignedUrl',
+        message: 'Object storage operation completed',
+      },
+    ]);
+    expect(logs[1]).toMatchObject({
+      data: {
+        bucket: 'fairplay-user-media',
+        contentType: 'image/webp',
+        objectKey: 'users/user-id/avatar/current-avatar.webp',
+        outcome: 'success',
+        sizeBytes: 6,
+        timeoutMs: 5_000,
+      },
+    });
+    expect(JSON.stringify(logs)).not.toContain('fairplay-minio-secret');
   });
 
   test('treats missing objects as already deleted', async () => {
@@ -93,7 +142,11 @@ describe('object storage', () => {
       statObject: async () => undefined,
       presignedGetObject: async () => 'http://minio:9000/test',
     };
-    const storage = createObjectStorage(createConfig(), client, { warn: () => undefined });
+    const storage = createObjectStorage(
+      createConfig(),
+      client,
+      createOperationLogCollector().logger,
+    );
 
     await expect(
       storage.deleteObject('users/user-id/avatar/current-avatar.webp'),
@@ -118,13 +171,18 @@ describe('object storage', () => {
       },
       presignedGetObject: async () => 'http://minio:9000/test',
     };
-    const storage = createObjectStorage(createConfig(), client, { warn: () => undefined });
+    const storage = createObjectStorage(
+      createConfig(),
+      client,
+      createOperationLogCollector().logger,
+    );
 
     await expect(storage.checkReady()).resolves.toBeUndefined();
     expect(calls).toEqual(['bucketExists', ['statObject', '.readiness']]);
   });
 
   test('wraps runtime storage client failures as unavailable service errors', async () => {
+    const { logger, logs } = createOperationLogCollector();
     const client = {
       bucketExists: async () => true,
       makeBucket: async () => undefined,
@@ -135,7 +193,7 @@ describe('object storage', () => {
       statObject: async () => undefined,
       presignedGetObject: async () => 'http://minio:9000/test',
     };
-    const storage = createObjectStorage(createConfig(), client, { warn: () => undefined });
+    const storage = createObjectStorage(createConfig(), client, logger);
 
     await expect(
       storage.putObject({
@@ -144,5 +202,45 @@ describe('object storage', () => {
         contentType: 'image/webp',
       }),
     ).rejects.toBeInstanceOf(ObjectStorageUnavailableError);
+    expect(logs.at(-1)).toMatchObject({
+      level: 'warn',
+      message: 'Object storage operation failed',
+      data: {
+        bucket: 'fairplay-user-media',
+        objectKey: 'users/user-id/avatar/current-avatar.webp',
+        operation: 'objectStorage.putObject',
+        outcome: 'failure',
+        timeoutMs: 5_000,
+      },
+    });
+    expect(logs.at(-1)?.data.err).toBeInstanceOf(Error);
+  });
+
+  test('times out slow storage client operations and keeps the timeout as the cause', async () => {
+    const client = {
+      bucketExists: async () => true,
+      makeBucket: async () => undefined,
+      putObject: () => new Promise((resolve) => setTimeout(resolve, 50)),
+      removeObject: async () => undefined,
+      statObject: async () => undefined,
+      presignedGetObject: async () => 'http://minio:9000/test',
+    };
+    const storage = createObjectStorage(
+      createConfig({ operationTimeoutMs: 1 }),
+      client,
+      createOperationLogCollector().logger,
+    );
+
+    try {
+      await storage.putObject({
+        objectKey: 'users/user-id/avatar/current-avatar.webp',
+        body: Buffer.from('avatar'),
+        contentType: 'image/webp',
+      });
+      throw new Error('Expected putObject to fail');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ObjectStorageUnavailableError);
+      expect((err as Error).cause).toBeInstanceOf(OperationTimeoutError);
+    }
   });
 });

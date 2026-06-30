@@ -4,7 +4,10 @@ import {
   DEFAULT_OBJECT_STORAGE_BUCKET,
   DEFAULT_OBJECT_STORAGE_REGION,
   DEFAULT_OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS,
+  DEFAULT_OBJECT_STORAGE_TIMEOUT_MS,
   DEFAULT_PROFILE_MEDIA_MAX_UPLOAD_BYTES,
+  DEFAULT_SMTP_TIMEOUT_MS,
+  MAX_EXTERNAL_OPERATION_TIMEOUT_MS,
   MINUTE_MS,
   SESSION_CLEANUP_INACTIVE_RETENTION_DAYS,
   SESSION_CLEANUP_INTERVAL_MINUTES,
@@ -29,6 +32,7 @@ export type ObjectStorageConfig = {
   accessKey: string;
   secretKey: string;
   signedUrlTtlSeconds: number;
+  operationTimeoutMs: number;
 };
 
 export class ServerConfigurationError extends Error {
@@ -247,6 +251,19 @@ export const parseSessionCleanupInactiveRetentionMs = (rawValue: string | undefi
     'days',
   ) * DAYS_MS;
 
+const parseExternalOperationTimeoutMs = (
+  rawValue: string | undefined,
+  fallback: number,
+  envName: string,
+): number =>
+  parsePositiveInteger(
+    rawValue,
+    fallback,
+    envName,
+    'milliseconds',
+    MAX_EXTERNAL_OPERATION_TIMEOUT_MS,
+  );
+
 export const parseIsProduction = (rawValue: string | undefined): boolean =>
   rawValue === 'production';
 
@@ -392,6 +409,7 @@ type RawObjectStorageConfig = {
   accessKey: string | undefined;
   secretKey: string | undefined;
   signedUrlTtlSeconds: string | undefined;
+  operationTimeoutMs: string | undefined;
 };
 
 const objectStorageRequiredEnvNames = {
@@ -436,6 +454,11 @@ export const parseOptionalObjectStorageConfig = (
       'seconds',
       MAX_OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS,
     ),
+    operationTimeoutMs: parseExternalOperationTimeoutMs(
+      rawConfig.operationTimeoutMs,
+      DEFAULT_OBJECT_STORAGE_TIMEOUT_MS,
+      'OBJECT_STORAGE_TIMEOUT_MS',
+    ),
   };
 };
 
@@ -469,6 +492,7 @@ type RawMailerConfig = {
   smtpUser: string | undefined;
   smtpPass: string | undefined;
   smtpFrom: string | undefined;
+  operationTimeoutMs: string | undefined;
 };
 
 const mailerEnvNames = {
@@ -478,14 +502,22 @@ const mailerEnvNames = {
   smtpUser: 'SMTP_USER',
   smtpPass: 'SMTP_PASS',
   smtpFrom: 'SMTP_FROM',
-} as const satisfies Record<keyof RawMailerConfig, string>;
+} as const satisfies Record<Exclude<keyof RawMailerConfig, 'operationTimeoutMs'>, string>;
 
 export const parseMailerConfig = (rawConfig: RawMailerConfig): MailerConfig | null => {
-  const missingKeys = Object.entries(rawConfig)
+  const requiredConfig = {
+    smtpHost: rawConfig.smtpHost,
+    smtpPort: rawConfig.smtpPort,
+    smtpTlsMode: rawConfig.smtpTlsMode,
+    smtpUser: rawConfig.smtpUser,
+    smtpPass: rawConfig.smtpPass,
+    smtpFrom: rawConfig.smtpFrom,
+  };
+  const missingKeys = Object.entries(requiredConfig)
     .filter(([, value]) => !value?.trim())
-    .map(([key]) => mailerEnvNames[key as keyof RawMailerConfig]);
+    .map(([key]) => mailerEnvNames[key as keyof typeof requiredConfig]);
 
-  if (missingKeys.length === Object.keys(rawConfig).length) {
+  if (missingKeys.length === Object.keys(requiredConfig).length) {
     return null;
   }
 
@@ -499,6 +531,11 @@ export const parseMailerConfig = (rawConfig: RawMailerConfig): MailerConfig | nu
     smtpHost: readRequiredEnv(rawConfig.smtpHost, 'SMTP_HOST'),
     smtpPort: parseSmtpPort(rawConfig.smtpPort),
     smtpTlsMode: parseSmtpTlsMode(rawConfig.smtpTlsMode),
+    operationTimeoutMs: parseExternalOperationTimeoutMs(
+      rawConfig.operationTimeoutMs,
+      DEFAULT_SMTP_TIMEOUT_MS,
+      'SMTP_TIMEOUT_MS',
+    ),
     smtpUser: readRequiredEnv(rawConfig.smtpUser, 'SMTP_USER'),
     smtpPass: readRequiredEnv(rawConfig.smtpPass, 'SMTP_PASS'),
     smtpFrom: readRequiredEnv(rawConfig.smtpFrom, 'SMTP_FROM'),

@@ -28,6 +28,7 @@ const mailer = parseMailerConfig({
   smtpUser: process.env.SMTP_USER,
   smtpPass: process.env.SMTP_PASS,
   smtpFrom: process.env.SMTP_FROM,
+  operationTimeoutMs: process.env.SMTP_TIMEOUT_MS,
 });
 
 const objectStorage = parseOptionalObjectStorageConfig({
@@ -38,6 +39,7 @@ const objectStorage = parseOptionalObjectStorageConfig({
   accessKey: process.env.OBJECT_STORAGE_ACCESS_KEY,
   secretKey: process.env.OBJECT_STORAGE_SECRET_KEY,
   signedUrlTtlSeconds: process.env.OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS,
+  operationTimeoutMs: process.env.OBJECT_STORAGE_TIMEOUT_MS,
 });
 
 const config = {
