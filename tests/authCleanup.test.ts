@@ -92,6 +92,66 @@ describe('auth cleanup job', () => {
     });
   });
 
+  test('continues remaining cleanup steps when one step fails', async () => {
+    const calls: string[] = [];
+    const cleanupError = new Error('session cleanup unavailable');
+    const { logs, logger } = createLogger();
+    const job = createAuthCleanupJob({
+      authService: {
+        cleanupSessions: async () => {
+          calls.push('sessions');
+          throw cleanupError;
+        },
+        cleanupExpiredAuthTokens: async () => {
+          calls.push('authTokens');
+
+          return {
+            message: CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
+            emailVerificationTokensDeleted: 3,
+            passwordResetTokensDeleted: 4,
+          };
+        },
+        cleanupPendingUserMediaDeletions: async () => {
+          calls.push('userMediaDeletionJobs');
+
+          return {
+            message: CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
+            mediaObjectsDeleted: 5,
+            mediaObjectDeletionJobsFailed: 1,
+          };
+        },
+      },
+      clock: {
+        now: () => new Date('2026-01-31T00:00:00.000Z'),
+      },
+      config: {
+        intervalMs: 60_000,
+        inactiveRetentionMs: 30 * 24 * 60 * 60 * 1000,
+      },
+      logger,
+    });
+
+    await job.runOnce();
+
+    expect(calls).toEqual(['sessions', 'authTokens', 'userMediaDeletionJobs']);
+    expect(logs).toContainEqual({
+      level: 'error',
+      data: { err: cleanupError, cleanupStep: 'sessions' },
+      message: 'Auth cleanup step failed',
+    });
+    expect(logs).toContainEqual({
+      level: 'warn',
+      data: {
+        emailVerificationTokensDeleted: 3,
+        passwordResetTokensDeleted: 4,
+        mediaObjectsDeleted: 5,
+        mediaObjectDeletionJobsFailed: 1,
+        failedCleanupSteps: ['sessions'],
+      },
+      message: 'Auth cleanup completed with failures',
+    });
+  });
+
   test('does not overlap concurrent cleanup runs', async () => {
     let calls = 0;
     let resolveCleanup: (() => void) | undefined;

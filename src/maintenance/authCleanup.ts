@@ -36,6 +36,16 @@ type AuthCleanupJobDependencies = {
   };
 };
 
+type AuthCleanupSummary = Partial<{
+  sessionsDeleted: number;
+  emailVerificationTokensDeleted: number;
+  passwordResetTokensDeleted: number;
+  mediaObjectsDeleted: number;
+  mediaObjectDeletionJobsFailed: number;
+}>;
+
+type AuthCleanupStep = 'authTokens' | 'sessions' | 'userMediaDeletionJobs';
+
 export type AuthCleanupJob = {
   runOnce(): Promise<void>;
   start(): void;
@@ -105,29 +115,73 @@ export const createAuthCleanupJob = ({
           return;
         }
 
-        const result = await authService.cleanupSessions({
-          expiredBefore: now,
-          inactiveUpdatedBefore,
-        });
+        const summary: AuthCleanupSummary = {};
+        const failedCleanupSteps: AuthCleanupStep[] = [];
+        const runCleanupStep = async <T>({
+          cleanupStep,
+          run,
+          updateSummary,
+        }: {
+          cleanupStep: AuthCleanupStep;
+          run: () => Promise<T>;
+          updateSummary: (result: T) => void;
+        }): Promise<void> => {
+          try {
+            updateSummary(await run());
+          } catch (error) {
+            failedCleanupSteps.push(cleanupStep);
+            logger.error({ err: error, cleanupStep }, 'Auth cleanup step failed');
+          }
+        };
 
-        const tokenResult = await authService.cleanupExpiredAuthTokens({
-          expiredBefore: now,
-        });
-
-        const mediaDeletionResult = await authService.cleanupPendingUserMediaDeletions({
-          pendingBefore: now,
-        });
-
-        logger.info(
-          {
-            sessionsDeleted: result.sessionsDeleted,
-            emailVerificationTokensDeleted: tokenResult.emailVerificationTokensDeleted,
-            passwordResetTokensDeleted: tokenResult.passwordResetTokensDeleted,
-            mediaObjectsDeleted: mediaDeletionResult.mediaObjectsDeleted,
-            mediaObjectDeletionJobsFailed: mediaDeletionResult.mediaObjectDeletionJobsFailed,
+        await runCleanupStep({
+          cleanupStep: 'sessions',
+          run: () =>
+            authService.cleanupSessions({
+              expiredBefore: now,
+              inactiveUpdatedBefore,
+            }),
+          updateSummary: (result) => {
+            summary.sessionsDeleted = result.sessionsDeleted;
           },
-          'Auth cleanup completed',
-        );
+        });
+
+        await runCleanupStep({
+          cleanupStep: 'authTokens',
+          run: () =>
+            authService.cleanupExpiredAuthTokens({
+              expiredBefore: now,
+            }),
+          updateSummary: (result) => {
+            summary.emailVerificationTokensDeleted = result.emailVerificationTokensDeleted;
+            summary.passwordResetTokensDeleted = result.passwordResetTokensDeleted;
+          },
+        });
+
+        await runCleanupStep({
+          cleanupStep: 'userMediaDeletionJobs',
+          run: () =>
+            authService.cleanupPendingUserMediaDeletions({
+              pendingBefore: now,
+            }),
+          updateSummary: (result) => {
+            summary.mediaObjectsDeleted = result.mediaObjectsDeleted;
+            summary.mediaObjectDeletionJobsFailed = result.mediaObjectDeletionJobsFailed;
+          },
+        });
+
+        if (failedCleanupSteps.length > 0) {
+          logger.warn(
+            {
+              ...summary,
+              failedCleanupSteps,
+            },
+            'Auth cleanup completed with failures',
+          );
+          return;
+        }
+
+        logger.info(summary, 'Auth cleanup completed');
       } catch (error) {
         logger.error({ err: error }, 'Auth cleanup failed');
       } finally {
