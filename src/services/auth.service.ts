@@ -1,4 +1,4 @@
-import type { AuthPorts } from './auth.types.js';
+import type { AuthPorts } from './auth/types/ports.types.js';
 import type { AuthDependencies } from './auth/auth.dependencies.js';
 import { createVerificationService } from './auth/auth.emailVerification.js';
 import { createRegistrationService } from './auth/auth.registration.js';

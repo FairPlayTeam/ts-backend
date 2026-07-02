@@ -8,7 +8,7 @@ import type {
   AuthPasswordResetPort,
   RequestPasswordResetInput,
   ResetPasswordInput,
-} from '../auth.types.js';
+} from './types/passwordReset.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
   getPasswordResetCodeSecret,

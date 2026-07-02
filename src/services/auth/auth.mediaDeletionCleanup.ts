@@ -3,7 +3,7 @@ import type {
   AuthMaintenancePort,
   CleanupPendingUserMediaDeletionsInput,
   CleanupPendingUserMediaDeletionsResult,
-} from '../auth.types.js';
+} from './types/maintenance.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import { CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE } from './auth.messages.js';
 

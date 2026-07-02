@@ -1,5 +1,4 @@
 import { UserAlreadyExistsError } from '../auth.errors.js';
-import type { AuthCredentialsPort, RegisterInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
   getEmailVerificationCodeSecret,
@@ -8,6 +7,7 @@ import {
   normalizeEmail,
 } from './auth.helpers.js';
 import { REGISTER_SUCCESS_MESSAGE } from './auth.messages.js';
+import type { AuthCredentialsPort, RegisterInput } from './types/credentials.types.js';
 
 type RegistrationService = Pick<AuthCredentialsPort, 'register'>;
 

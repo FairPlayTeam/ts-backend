@@ -1,9 +1,9 @@
 import { AccountBannedError, InvalidEmailVerificationTokenError } from '../auth.errors.js';
 import type {
   AuthEmailVerificationPort,
-  VerifyEmailInput,
   ResendVerificationInput,
-} from '../auth.types.js';
+  VerifyEmailInput,
+} from './types/emailVerification.types.js';
 import {
   getEmailVerificationCodeSecret,
   normalizeEmail,

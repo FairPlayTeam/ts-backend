@@ -2,7 +2,7 @@ import type {
   AuthMaintenancePort,
   CleanupExpiredAuthTokensInput,
   CleanupExpiredAuthTokensResult,
-} from '../auth.types.js';
+} from './types/maintenance.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import { CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE } from './auth.messages.js';
 

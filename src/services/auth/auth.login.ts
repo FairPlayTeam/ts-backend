@@ -1,4 +1,3 @@
-import type { AuthCredentialsPort, LoginInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import { normalizeIdentifier } from './auth.helpers.js';
 import {
@@ -8,6 +7,7 @@ import {
 } from '../auth.errors.js';
 import { LOGIN_SUCCESS_MESSAGE } from './auth.messages.js';
 import type { SessionService } from './auth.sessions.js';
+import type { AuthCredentialsPort, LoginInput } from './types/credentials.types.js';
 
 const MISSING_USER_PASSWORD = 'missing-user-password';
 

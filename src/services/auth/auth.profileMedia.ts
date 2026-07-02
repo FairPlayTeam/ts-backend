@@ -6,7 +6,7 @@ import type {
   UploadBannerInput,
   UploadUserMediaInput,
   UserMediaAssetResult,
-} from '../auth.types.js';
+} from './types/profileMedia.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
   DELETE_AVATAR_SUCCESS_MESSAGE,

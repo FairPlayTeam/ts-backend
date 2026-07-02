@@ -1,17 +1,17 @@
 import { getSessionExpiresAt, getSessionKeySuffix } from './auth.helpers.js';
 import type { AuthDependencies } from './auth.dependencies.js';
+import type { AuthMaintenancePort } from './types/maintenance.types.js';
 import type {
-  AuthMaintenancePort,
   AuthSessionManagementPort,
   AuthSessionValidationPort,
-  Session,
+  CleanupSessionsInput,
   ListUserSessionsInput,
   ListUserSessionsResult,
   LogoutAllSessionsInput,
   LogoutOtherSessionsInput,
   LogoutSessionInput,
-  CleanupSessionsInput,
-} from '../auth.types.js';
+  Session,
+} from './types/sessions.types.js';
 import {
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,

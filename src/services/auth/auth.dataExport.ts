@@ -1,6 +1,6 @@
-import type { AuthAccountPort, ExportUserDataInput } from '../auth.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import { reauthenticateSensitiveAction } from './auth.reauthentication.js';
+import type { AuthAccountPort, ExportUserDataInput } from './types/account.types.js';
 
 type DataExportService = Pick<AuthAccountPort, 'exportUserData'>;
 

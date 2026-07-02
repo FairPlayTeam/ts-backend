@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import type { AuthDependencies } from './auth.dependencies.js';
-import type { UserMediaAssetResult } from '../auth.types.js';
 import type { ProcessedUserMedia, UserMediaKind } from '../userMedia/userMedia.types.js';
+import type { UserMediaAssetResult } from './types/profileMedia.types.js';
 
 const USER_MEDIA_CACHE_CONTROL = 'private, max-age=900';
 const USER_MEDIA_TRANSACTION_MAX_ATTEMPTS = 3;
