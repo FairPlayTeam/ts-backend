@@ -9,7 +9,7 @@ import type {
   VerifyEmailRequestBody,
 } from '../auth.schemas.js';
 import type { AuthControllerDependencies } from './auth.controller.types.js';
-import { toAuthSessionResponse } from './auth.responses.js';
+import { sendNoStoreJson, toAuthSessionResponse } from './auth.responses.js';
 
 export const createAuthCredentialsController = (deps: AuthControllerDependencies) => {
   const register = async (
@@ -41,7 +41,7 @@ export const createAuthCredentialsController = (deps: AuthControllerDependencies
         userAgent,
       });
 
-      return res.status(200).json(toAuthSessionResponse(result));
+      return sendNoStoreJson(res, 200, toAuthSessionResponse(result));
     } catch (err) {
       next(toAuthHttpError(err));
     }
@@ -60,7 +60,7 @@ export const createAuthCredentialsController = (deps: AuthControllerDependencies
         userAgent,
       });
 
-      return res.status(200).json(toAuthSessionResponse(result));
+      return sendNoStoreJson(res, 200, toAuthSessionResponse(result));
     } catch (err) {
       next(toAuthHttpError(err));
     }
@@ -116,7 +116,7 @@ export const createAuthCredentialsController = (deps: AuthControllerDependencies
         password,
       });
 
-      return res.status(200).json({
+      return sendNoStoreJson(res, 200, {
         message: result.message,
         sessionsLoggedOut: result.sessionsLoggedOut,
       });

@@ -6,7 +6,13 @@ import type {
   UpdateProfileRequestBody,
 } from '../auth.schemas.js';
 import type { AuthControllerDependencies } from './auth.controller.types.js';
-import { toPrettyJson, toSessionResponse, toUserDataExportResponse } from './auth.responses.js';
+import {
+  sendNoStoreJson,
+  setNoStore,
+  toPrettyJson,
+  toSessionResponse,
+  toUserDataExportResponse,
+} from './auth.responses.js';
 
 export const createAuthProfileController = (deps: AuthControllerDependencies) => {
   const me = async (req: Request, res: Response, next: NextFunction) => {
@@ -16,7 +22,7 @@ export const createAuthProfileController = (deps: AuthControllerDependencies) =>
         userId: authenticatedReq.user.id,
       });
 
-      return res.status(200).json({
+      return sendNoStoreJson(res, 200, {
         user: result.user,
         session: toSessionResponse(authenticatedReq.session),
       });
@@ -39,7 +45,7 @@ export const createAuthProfileController = (deps: AuthControllerDependencies) =>
       });
 
       res.set('Content-Disposition', 'attachment; filename="fairplay-user-data-export.json"');
-      res.set('Cache-Control', 'no-store');
+      setNoStore(res);
 
       return res
         .status(200)
@@ -62,7 +68,7 @@ export const createAuthProfileController = (deps: AuthControllerDependencies) =>
         currentPassword: req.body.currentPassword,
       });
 
-      return res.status(200).json({
+      return sendNoStoreJson(res, 200, {
         message: result.message,
         mediaCleanupQueued: result.mediaCleanupQueued,
       });
@@ -84,7 +90,7 @@ export const createAuthProfileController = (deps: AuthControllerDependencies) =>
         ...req.body,
       });
 
-      return res.status(200).json({
+      return sendNoStoreJson(res, 200, {
         message: result.message,
         user: result.user,
       });

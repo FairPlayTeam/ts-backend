@@ -7,7 +7,7 @@ import type {
   UserSessionsQuery,
 } from '../auth.schemas.js';
 import type { AuthControllerDependencies } from './auth.controller.types.js';
-import { toUserSessionsResponse } from './auth.responses.js';
+import { sendNoStoreJson, toUserSessionsResponse } from './auth.responses.js';
 
 export const createAuthSessionsController = (deps: AuthControllerDependencies) => {
   const sessions = async (
@@ -32,7 +32,7 @@ export const createAuthSessionsController = (deps: AuthControllerDependencies) =
         ...(cursor ? { cursor } : {}),
       });
 
-      return res.status(200).json(toUserSessionsResponse(result));
+      return sendNoStoreJson(res, 200, toUserSessionsResponse(result));
     } catch (err) {
       next(toAuthHttpError(err));
     }
@@ -50,7 +50,7 @@ export const createAuthSessionsController = (deps: AuthControllerDependencies) =
         currentPassword: req.body.currentPassword,
       });
 
-      return res.status(200).json({
+      return sendNoStoreJson(res, 200, {
         message: result.message,
         sessionsLoggedOut: result.sessionsLoggedOut,
       });
@@ -72,7 +72,7 @@ export const createAuthSessionsController = (deps: AuthControllerDependencies) =
         currentPassword: req.body.currentPassword,
       });
 
-      return res.status(200).json({
+      return sendNoStoreJson(res, 200, {
         message: result.message,
         sessionsLoggedOut: result.sessionsLoggedOut,
       });
@@ -90,7 +90,7 @@ export const createAuthSessionsController = (deps: AuthControllerDependencies) =
         sessionId,
       });
 
-      return res.status(200).json({
+      return sendNoStoreJson(res, 200, {
         message: result.message,
         sessionsLoggedOut: result.sessionsLoggedOut,
       });

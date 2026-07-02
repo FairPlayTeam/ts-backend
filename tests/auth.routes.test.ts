@@ -23,6 +23,7 @@ import {
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
   DELETE_AVATAR_SUCCESS_MESSAGE,
   DELETE_BANNER_SUCCESS_MESSAGE,
+  LOGIN_SUCCESS_MESSAGE,
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_SESSION_SUCCESS_MESSAGE,
@@ -183,6 +184,7 @@ describe('auth routes', () => {
     expect(receivedProfileRequest).toEqual({
       userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
     });
+    expect(response.headers.get('cache-control')).toBe('no-store');
     expect(await response.json()).toEqual({
       user: {
         id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
@@ -680,6 +682,26 @@ describe('auth routes', () => {
     });
   });
 
+  test('logs in without caching the returned session key', async () => {
+    const response = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        emailOrUsername: 'user@example.com',
+        password: 'Password1!',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.json()).toMatchObject({
+      message: LOGIN_SUCCESS_MESSAGE,
+      sessionKey: 'test-session-key',
+    });
+  });
+
   test('verifies an email without requiring a bearer session', async () => {
     receivedVerifyEmailRequest = undefined;
 
@@ -699,6 +721,7 @@ describe('auth routes', () => {
       email: 'verify@example.com',
       code: '123456',
     });
+    expect(response.headers.get('cache-control')).toBe('no-store');
     expect(await response.json()).toMatchObject({
       message: VERIFY_EMAIL_SUCCESS_MESSAGE,
       sessionKey: 'test-session-key',
@@ -839,6 +862,7 @@ describe('auth routes', () => {
     });
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
     expect(receivedResetPasswordRequest).toEqual({
       email: 'reset@example.com',
       code: '123456',
@@ -911,6 +935,7 @@ describe('auth routes', () => {
     });
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
     expect(await response.json()).toEqual({
       sessions: [
         {

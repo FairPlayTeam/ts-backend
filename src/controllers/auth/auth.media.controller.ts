@@ -2,7 +2,11 @@ import type { NextFunction, Request, Response } from 'express';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import { toAuthHttpError } from '../auth.errors.js';
 import type { AuthControllerDependencies } from './auth.controller.types.js';
-import { toUserMediaAssetResponse, toUserMediaFileInput } from './auth.responses.js';
+import {
+  sendNoStoreJson,
+  toUserMediaAssetResponse,
+  toUserMediaFileInput,
+} from './auth.responses.js';
 
 export const createAuthMediaController = (deps: AuthControllerDependencies) => {
   const uploadAvatar = async (req: Request, res: Response, next: NextFunction) => {
@@ -13,7 +17,7 @@ export const createAuthMediaController = (deps: AuthControllerDependencies) => {
         file: toUserMediaFileInput(req.file),
       });
 
-      return res.status(200).json({
+      return sendNoStoreJson(res, 200, {
         message: result.message,
         avatar: toUserMediaAssetResponse(result.avatar),
       });
@@ -29,7 +33,7 @@ export const createAuthMediaController = (deps: AuthControllerDependencies) => {
         userId: authenticatedReq.user.id,
       });
 
-      return res.status(200).json({
+      return sendNoStoreJson(res, 200, {
         message: result.message,
         avatar: result.avatar,
       });
@@ -46,7 +50,7 @@ export const createAuthMediaController = (deps: AuthControllerDependencies) => {
         file: toUserMediaFileInput(req.file),
       });
 
-      return res.status(200).json({
+      return sendNoStoreJson(res, 200, {
         message: result.message,
         banner: toUserMediaAssetResponse(result.banner),
       });
@@ -62,7 +66,7 @@ export const createAuthMediaController = (deps: AuthControllerDependencies) => {
         userId: authenticatedReq.user.id,
       });
 
-      return res.status(200).json({
+      return sendNoStoreJson(res, 200, {
         message: result.message,
         banner: result.banner,
       });

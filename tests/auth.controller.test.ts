@@ -285,6 +285,12 @@ const createMockResponse = () => {
   return { response, state };
 };
 
+type MockResponseState = ReturnType<typeof createMockResponse>['state'];
+
+const expectNoStore = (state: MockResponseState) => {
+  expect(state.headers['Cache-Control']).toBe('no-store');
+};
+
 describe('auth controller', () => {
   test('registers a user through the injected auth service', async () => {
     let receivedInput: RegisterRequestBody | undefined;
@@ -422,6 +428,7 @@ describe('auth controller', () => {
       message: RESET_PASSWORD_SUCCESS_MESSAGE,
       sessionsLoggedOut: 2,
     });
+    expectNoStore(state);
   });
 
   test('logs in through the injected auth service', async () => {
@@ -463,6 +470,7 @@ describe('auth controller', () => {
         expiresAt: '2026-01-31T00:00:00.000Z',
       },
     });
+    expectNoStore(state);
   });
 
   test('verifies email through the injected auth service', async () => {
@@ -507,6 +515,7 @@ describe('auth controller', () => {
         expiresAt: '2026-01-31T00:00:00.000Z',
       },
     });
+    expectNoStore(state);
   });
 
   test('returns the authenticated user profile from the auth service', async () => {
@@ -553,6 +562,7 @@ describe('auth controller', () => {
         expiresAt: '2026-01-31T00:00:00.000Z',
       },
     });
+    expectNoStore(state);
   });
 
   test('exports authenticated user data as downloadable JSON', async () => {
@@ -705,6 +715,7 @@ describe('auth controller', () => {
       message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
       mediaCleanupQueued: 0,
     });
+    expectNoStore(state);
   });
 
   test('updates the authenticated user profile through the injected auth service', async () => {
@@ -756,6 +767,7 @@ describe('auth controller', () => {
       message: UPDATE_PROFILE_SUCCESS_MESSAGE,
       user: updatedUser,
     });
+    expectNoStore(state);
   });
 
   test('uploads an authenticated user avatar through the injected auth service', async () => {
@@ -824,6 +836,7 @@ describe('auth controller', () => {
         updatedAt: '2026-01-01T00:00:00.000Z',
       },
     });
+    expectNoStore(state);
   });
 
   test('deletes an authenticated user avatar through the injected auth service', async () => {
@@ -861,6 +874,7 @@ describe('auth controller', () => {
       message: DELETE_AVATAR_SUCCESS_MESSAGE,
       avatar: null,
     });
+    expectNoStore(state);
   });
 
   test('uploads an authenticated user banner through the injected auth service', async () => {
@@ -929,6 +943,7 @@ describe('auth controller', () => {
         updatedAt: '2026-01-01T00:00:00.000Z',
       },
     });
+    expectNoStore(state);
   });
 
   test('deletes an authenticated user banner through the injected auth service', async () => {
@@ -966,6 +981,7 @@ describe('auth controller', () => {
       message: DELETE_BANNER_SUCCESS_MESSAGE,
       banner: null,
     });
+    expectNoStore(state);
   });
 
   test('returns active sessions for the authenticated user', async () => {
@@ -1033,6 +1049,7 @@ describe('auth controller', () => {
         id: loginResult.session.id,
       },
     });
+    expectNoStore(state);
   });
 
   test('logs out all sessions for the authenticated user', async () => {
@@ -1071,6 +1088,7 @@ describe('auth controller', () => {
       message: LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
       sessionsLoggedOut: 3,
     });
+    expectNoStore(state);
   });
 
   test('logs out other sessions while keeping the current authenticated session', async () => {
@@ -1112,6 +1130,7 @@ describe('auth controller', () => {
       message: LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
       sessionsLoggedOut: 2,
     });
+    expectNoStore(state);
   });
 
   test('logs out one session for the authenticated user', async () => {
@@ -1152,5 +1171,6 @@ describe('auth controller', () => {
       message: LOGOUT_SESSION_SUCCESS_MESSAGE,
       sessionsLoggedOut: 1,
     });
+    expectNoStore(state);
   });
 });
