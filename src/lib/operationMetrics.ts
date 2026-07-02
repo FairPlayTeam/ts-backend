@@ -27,6 +27,7 @@ type ObserveOperationOptions<T> = {
   data?: Record<string, unknown>;
   successMessage: string;
   failureMessage: string;
+  onAbort?: (reason: OperationTimeoutError) => void;
   run: () => Promise<T>;
 };
 
@@ -37,6 +38,7 @@ export const observeOperation = async <T>({
   data = {},
   successMessage,
   failureMessage,
+  onAbort,
   run,
 }: ObserveOperationOptions<T>): Promise<T> => {
   const startedAt = Date.now();
@@ -44,7 +46,24 @@ export const observeOperation = async <T>({
 
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
     timeoutHandle = setTimeout(() => {
-      reject(new OperationTimeoutError(operation, timeoutMs));
+      const timeoutError = new OperationTimeoutError(operation, timeoutMs);
+      reject(timeoutError);
+
+      try {
+        onAbort?.(timeoutError);
+      } catch (abortError) {
+        logger.warn(
+          {
+            err: abortError,
+            ...data,
+            operation,
+            outcome: 'abort_cleanup_failure',
+            durationMs: Date.now() - startedAt,
+            timeoutMs,
+          },
+          'Operation abort cleanup failed',
+        );
+      }
     }, timeoutMs);
     timeoutHandle.unref?.();
   });

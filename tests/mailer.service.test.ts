@@ -209,11 +209,23 @@ describe('mailer service', () => {
   });
 
   test('times out slow SMTP deliveries with an explicit delivery error cause', async () => {
+    let closeCalls = 0;
+    let transporterCreations = 0;
     const service = createMailerService({
       config: { ...mailerConfig, operationTimeoutMs: 1 },
-      createTransporter: () => ({
-        sendMail: () => new Promise((resolve) => setTimeout(resolve, 50)),
-      }),
+      createTransporter: () => {
+        transporterCreations += 1;
+
+        return {
+          close: () => {
+            closeCalls += 1;
+          },
+          sendMail:
+            transporterCreations === 1
+              ? () => new Promise((resolve) => setTimeout(resolve, 50))
+              : async () => undefined,
+        };
+      },
     });
 
     try {
@@ -223,5 +235,13 @@ describe('mailer service', () => {
       expect(err).toBeInstanceOf(MailerDeliveryError);
       expect((err as Error).cause).toBeInstanceOf(OperationTimeoutError);
     }
+
+    expect(closeCalls).toBe(1);
+    expect(transporterCreations).toBe(1);
+
+    await service.sendVerificationEmail('user@example.com', '123456');
+
+    expect(closeCalls).toBe(1);
+    expect(transporterCreations).toBe(2);
   });
 });

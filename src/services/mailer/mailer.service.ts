@@ -13,7 +13,9 @@ import {
   type OperationLogger,
 } from '../../lib/operationMetrics.js';
 
-type MailTransporter = Pick<nodemailer.Transporter, 'sendMail'>;
+type MailTransporter = Pick<nodemailer.Transporter, 'sendMail'> & {
+  close?(): void;
+};
 
 type MailerDependencies = {
   config: MailerConfig | null;
@@ -106,6 +108,14 @@ export const createMailerService = (deps: MailerDependencies) => {
     return transporter;
   };
 
+  const abortActiveDelivery = (mailer: MailTransporter): void => {
+    mailer.close?.();
+
+    if (transporter === mailer) {
+      transporter = null;
+    }
+  };
+
   const sendAppEmail = async (
     mailerConfig: MailerConfig,
     { email, subject, template, text, html }: SendAppEmailInput,
@@ -125,6 +135,9 @@ export const createMailerService = (deps: MailerDependencies) => {
       },
       successMessage: 'SMTP email delivery completed',
       failureMessage: 'SMTP email delivery failed',
+      onAbort: () => {
+        abortActiveDelivery(mailer);
+      },
       run: () =>
         mailer.sendMail({
           from: `"${APP_PRODUCT_NAME}" <${mailerConfig.smtpFrom}>`,

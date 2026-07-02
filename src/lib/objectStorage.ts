@@ -5,6 +5,7 @@ import type { ObjectStorageConfig } from '../config/env.parsers.js';
 import { observeOperation, type OperationLogger } from './operationMetrics.js';
 
 type ObjectStorageClient = {
+  abortActiveRequests?(): void;
   bucketExists(bucketName: string): Promise<boolean>;
   makeBucket(bucketName: string, region?: string): Promise<void>;
   putObject(
@@ -58,6 +59,7 @@ const runObjectStorageOperation = async <T>({
   config,
   data = {},
   logger,
+  onAbort,
   operation,
   run,
 }: {
@@ -65,6 +67,7 @@ const runObjectStorageOperation = async <T>({
   data?: Record<string, unknown>;
   logger: OperationLogger;
   operation: string;
+  onAbort?: () => void;
   run: () => Promise<T>;
 }): Promise<T> => {
   try {
@@ -76,6 +79,7 @@ const runObjectStorageOperation = async <T>({
         bucket: config.bucket,
         ...data,
       },
+      ...(onAbort ? { onAbort } : {}),
       successMessage: 'Object storage operation completed',
       failureMessage: 'Object storage operation failed',
       run,
@@ -126,7 +130,7 @@ export const createMinioClient = (config: ObjectStorageConfig): Client => {
       ? new HttpsAgent({ timeout: config.operationTimeoutMs })
       : new HttpAgent({ timeout: config.operationTimeoutMs });
 
-  return new Client({
+  const client = new Client({
     endPoint: endpoint.hostname,
     port: endpoint.port ? Number(endpoint.port) : endpoint.protocol === 'https:' ? 443 : 80,
     useSSL: endpoint.protocol === 'https:',
@@ -136,6 +140,12 @@ export const createMinioClient = (config: ObjectStorageConfig): Client => {
     secretKey: config.secretKey,
     transportAgent,
   });
+
+  return Object.assign(client, {
+    abortActiveRequests: () => {
+      transportAgent.destroy();
+    },
+  });
 };
 
 export const createObjectStorage = (
@@ -144,12 +154,16 @@ export const createObjectStorage = (
   logger: OperationLogger,
 ): ObjectStorage => {
   let bucketReady: Promise<void> | null = null;
+  const abortActiveRequests = client.abortActiveRequests
+    ? (): void => client.abortActiveRequests?.()
+    : undefined;
 
   const ensureBucket = async (): Promise<void> => {
     bucketReady ??= runObjectStorageOperation({
       config,
       logger,
       operation: 'objectStorage.ensureBucket',
+      ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
       run: async () => {
         const exists = await client.bucketExists(config.bucket);
 
@@ -173,6 +187,7 @@ export const createObjectStorage = (
       logger,
       operation: 'objectStorage.deleteObject',
       data: { objectKey },
+      ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
       run: async () => {
         try {
           await client.removeObject(config.bucket, objectKey);
@@ -199,6 +214,7 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.putObject',
         data: { contentType, objectKey, sizeBytes: body.length },
+        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: async () => {
           await client.putObject(config.bucket, objectKey, body, body.length, {
             'Content-Type': contentType,
@@ -223,6 +239,7 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.getSignedUrl',
         data: { objectKey, signedUrlTtlSeconds: config.signedUrlTtlSeconds },
+        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: () => client.presignedGetObject(config.bucket, objectKey, config.signedUrlTtlSeconds),
       });
 
@@ -235,6 +252,7 @@ export const createObjectStorage = (
         config,
         logger,
         operation: 'objectStorage.checkReady',
+        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: async () => {
           await client.statObject(config.bucket, '.readiness').catch((err: unknown) => {
             if (!isNotFoundStorageError(err)) {

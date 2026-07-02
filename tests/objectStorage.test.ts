@@ -217,7 +217,11 @@ describe('object storage', () => {
   });
 
   test('times out slow storage client operations and keeps the timeout as the cause', async () => {
+    let abortCalls = 0;
     const client = {
+      abortActiveRequests: () => {
+        abortCalls += 1;
+      },
       bucketExists: async () => true,
       makeBucket: async () => undefined,
       putObject: () => new Promise((resolve) => setTimeout(resolve, 50)),
@@ -241,6 +245,59 @@ describe('object storage', () => {
     } catch (err) {
       expect(err).toBeInstanceOf(ObjectStorageUnavailableError);
       expect((err as Error).cause).toBeInstanceOf(OperationTimeoutError);
+      expect(abortCalls).toBe(1);
     }
+  });
+
+  test('retries bucket initialization after an aborted timeout', async () => {
+    let abortCalls = 0;
+    let bucketExistsCalls = 0;
+    let putObjectCalls = 0;
+    const client = {
+      abortActiveRequests: () => {
+        abortCalls += 1;
+      },
+      bucketExists: () => {
+        bucketExistsCalls += 1;
+
+        if (bucketExistsCalls === 1) {
+          return new Promise<boolean>(() => undefined);
+        }
+
+        return Promise.resolve(true);
+      },
+      makeBucket: async () => undefined,
+      putObject: async () => {
+        putObjectCalls += 1;
+      },
+      removeObject: async () => undefined,
+      statObject: async () => undefined,
+      presignedGetObject: async () => 'http://minio:9000/test',
+    };
+    const storage = createObjectStorage(
+      createConfig({ operationTimeoutMs: 1 }),
+      client,
+      createOperationLogCollector().logger,
+    );
+
+    await expect(
+      storage.putObject({
+        objectKey: 'users/user-id/avatar/current-avatar.webp',
+        body: Buffer.from('avatar'),
+        contentType: 'image/webp',
+      }),
+    ).rejects.toBeInstanceOf(ObjectStorageUnavailableError);
+
+    await expect(
+      storage.putObject({
+        objectKey: 'users/user-id/avatar/current-avatar.webp',
+        body: Buffer.from('avatar'),
+        contentType: 'image/webp',
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(abortCalls).toBe(1);
+    expect(bucketExistsCalls).toBe(2);
+    expect(putObjectCalls).toBe(1);
   });
 });
