@@ -34,7 +34,11 @@ import {
   UPLOAD_BANNER_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
-import { UPLOAD_FILE_TOO_LARGE_MESSAGE } from '../src/middleware/upload.js';
+import {
+  UPLOAD_FILE_TOO_LARGE_MESSAGE,
+  UPLOAD_INVALID_REQUEST_MESSAGE,
+  UPLOAD_UNEXPECTED_FILE_MESSAGE,
+} from '../src/middleware/upload.js';
 import { createStubAuthService } from './support/auth.js';
 
 let server: Server;
@@ -474,6 +478,49 @@ describe('auth routes', () => {
     expect(await response.json()).toEqual({
       error: 'PayloadTooLarge',
       message: UPLOAD_FILE_TOO_LARGE_MESSAGE,
+    });
+  });
+
+  test('rejects avatar uploads using an unexpected file field', async () => {
+    receivedAvatarUpload = undefined;
+    const form = new FormData();
+    form.append('profile', new Blob([Buffer.from('avatar')], { type: 'image/png' }), 'avatar.png');
+
+    const response = await fetch(`${baseUrl}/auth/me/avatar`, {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+      body: form,
+    });
+
+    expect(response.status).toBe(400);
+    expect(receivedAvatarUpload).toBeUndefined();
+    expect(await response.json()).toEqual({
+      error: 'BadRequest',
+      message: UPLOAD_UNEXPECTED_FILE_MESSAGE,
+    });
+  });
+
+  test('rejects avatar uploads with extra multipart fields', async () => {
+    receivedAvatarUpload = undefined;
+    const form = new FormData();
+    form.append('avatar', new Blob([Buffer.from('avatar')], { type: 'image/png' }), 'avatar.png');
+    form.append('caption', 'extra field');
+
+    const response = await fetch(`${baseUrl}/auth/me/avatar`, {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer test-session-key',
+      },
+      body: form,
+    });
+
+    expect(response.status).toBe(400);
+    expect(receivedAvatarUpload).toBeUndefined();
+    expect(await response.json()).toEqual({
+      error: 'BadRequest',
+      message: UPLOAD_INVALID_REQUEST_MESSAGE,
     });
   });
 

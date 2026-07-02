@@ -6,6 +6,11 @@ export const UPLOAD_FILE_TOO_LARGE_MESSAGE = 'Uploaded file is too large';
 export const UPLOAD_UNEXPECTED_FILE_MESSAGE = 'Unexpected uploaded file field';
 export const UPLOAD_INVALID_REQUEST_MESSAGE = 'Invalid multipart upload request';
 
+const MULTIPART_FIELD_NAME_MAX_BYTES = 64;
+const MULTIPART_FIELD_VALUE_MAX_BYTES = 1024;
+const MULTIPART_HEADER_PAIRS_MAX = 20;
+const MULTIPART_PARTS_MAX = 2;
+
 type SingleFileUploadOptions = {
   fieldName: string;
   maxFileSizeBytes: number;
@@ -36,8 +41,13 @@ export const createSingleFileUpload = ({
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
+      fieldNameSize: MULTIPART_FIELD_NAME_MAX_BYTES,
+      fieldSize: MULTIPART_FIELD_VALUE_MAX_BYTES,
+      fields: 0,
       fileSize: maxFileSizeBytes,
       files: 1,
+      headerPairs: MULTIPART_HEADER_PAIRS_MAX,
+      parts: MULTIPART_PARTS_MAX,
     },
   }).single(fieldName);
 
