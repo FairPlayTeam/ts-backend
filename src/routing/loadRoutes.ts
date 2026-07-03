@@ -11,7 +11,7 @@ type RouteRegister<TContext> = (
   context: TContext,
 ) => void | Promise<void>;
 
-type RouteFile = {
+export type RouteFile = {
   fileUrl: URL;
   relativeFile: string;
   routePath: string;
@@ -77,6 +77,20 @@ const compareRouteFiles = (left: RouteFile, right: RouteFile): number => {
   return left.relativeFile.localeCompare(right.relativeFile);
 };
 
+export async function discoverRouteFiles(routesDirUrl: URL): Promise<RouteFile[]> {
+  return (await walkFiles(routesDirUrl))
+    .map((fileUrl): RouteFile => {
+      const relativeFile = fileUrl.toString().slice(routesDirUrl.toString().length);
+
+      return {
+        fileUrl,
+        relativeFile,
+        routePath: normalizeRoutePath(routePathFromFile(relativeFile)),
+      };
+    })
+    .sort(compareRouteFiles);
+}
+
 async function loadRoutes<TContext>(
   app: Express,
   routesDirUrl: URL,
@@ -90,17 +104,7 @@ async function loadRoutes<TContext>(
     return { openApiRouteDocs: [] };
   }
 
-  const routeFiles = (await walkFiles(routesDirUrl))
-    .map((fileUrl): RouteFile => {
-      const relativeFile = fileUrl.toString().slice(routesDirUrl.toString().length);
-
-      return {
-        fileUrl,
-        relativeFile,
-        routePath: normalizeRoutePath(routePathFromFile(relativeFile)),
-      };
-    })
-    .sort(compareRouteFiles);
+  const routeFiles = await discoverRouteFiles(routesDirUrl);
 
   const openApiRouteDocs: RouteDoc[] = [];
 

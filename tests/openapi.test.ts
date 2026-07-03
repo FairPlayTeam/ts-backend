@@ -5,23 +5,126 @@ import { jsonResponse } from '../src/docs/openapi.helpers.js';
 import { generateOpenApi } from '../src/docs/openapi.js';
 import type { RouteDoc } from '../src/docs/registry.js';
 import { z } from '../src/docs/zod.js';
+import { discoverRouteFiles } from '../src/routing/loadRoutes.js';
 import { AUTH_ROLES } from '../src/services/auth.roles.js';
 import { createStubAuthService } from './support/auth.js';
 
+const documentedHttpMethods = new Set(['delete', 'get', 'patch', 'post', 'put']);
+
+type RuntimeRouteLayer = {
+  handle?: {
+    stack?: RuntimeRouteLayer[];
+  };
+  route?: {
+    methods?: Record<string, boolean>;
+    path?: unknown;
+  };
+};
+
+type ExpressWithRouterStack = {
+  _router?: { stack?: RuntimeRouteLayer[] };
+  router?: { stack?: RuntimeRouteLayer[] };
+};
+
+type OpenApiDocument = {
+  paths?: Record<string, Record<string, unknown>>;
+};
+
+const createOpenApiTestApp = () =>
+  createApp(
+    {
+      allowedOrigins: [],
+      profileMediaMaxUploadBytes: 3 * 1024 * 1024,
+      baseUrl: 'http://localhost:3000/',
+      isProduction: false,
+      jsonBodyLimitBytes: 1024 * 1024,
+      rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
+      trustProxy: false,
+    },
+    { authService: createStubAuthService() },
+  );
+
+const normalizeRoutePath = (path: string): string => {
+  const normalized = `/${path.split('/').filter(Boolean).join('/')}`;
+
+  return normalized === '/' ? '/' : normalized.replace(/\/$/, '');
+};
+
+const joinRoutePaths = (basePath: string, routePath: string): string =>
+  normalizeRoutePath(`${basePath}/${routePath}`);
+
+const toOpenApiRoutePath = (path: string): string =>
+  normalizeRoutePath(path).replace(/:([A-Za-z0-9_]+)/g, '{$1}');
+
+const formatRouteOperation = (method: string, path: string): string =>
+  `${method.toUpperCase()} ${toOpenApiRoutePath(path)}`;
+
+const toRoutePathList = (path: unknown): string[] => {
+  if (typeof path === 'string') {
+    return [path];
+  }
+
+  if (Array.isArray(path)) {
+    return path.filter((entry): entry is string => typeof entry === 'string');
+  }
+
+  return [];
+};
+
+const getRuntimeRouterLayers = (
+  app: Awaited<ReturnType<typeof createOpenApiTestApp>>,
+): RuntimeRouteLayer[] => {
+  const { _router, router } = app as unknown as ExpressWithRouterStack;
+  const stack = router?.stack ?? _router?.stack ?? [];
+
+  return stack.filter((layer) =>
+    layer.handle?.stack?.some((child: RuntimeRouteLayer) => child.route),
+  );
+};
+
+const getRuntimeRouteOperations = async (
+  app: Awaited<ReturnType<typeof createOpenApiTestApp>>,
+): Promise<string[]> => {
+  const routeFiles = await discoverRouteFiles(new URL('../src/routes/', import.meta.url));
+  const routerLayers = getRuntimeRouterLayers(app);
+
+  expect(routerLayers).toHaveLength(routeFiles.length);
+
+  const operations = routerLayers.flatMap((routerLayer, index) => {
+    const routeFile = routeFiles[index];
+
+    if (!routeFile) {
+      return [];
+    }
+
+    return (routerLayer.handle?.stack ?? []).flatMap((routeLayer) => {
+      const methods = Object.entries(routeLayer.route?.methods ?? {})
+        .filter(([method, enabled]) => enabled && documentedHttpMethods.has(method))
+        .map(([method]) => method);
+
+      return toRoutePathList(routeLayer.route?.path).flatMap((routePath) =>
+        methods.map((method) =>
+          formatRouteOperation(method, joinRoutePaths(routeFile.routePath, routePath)),
+        ),
+      );
+    });
+  });
+
+  return operations.sort();
+};
+
+const getOpenApiRouteOperations = (document: OpenApiDocument): string[] =>
+  Object.entries(document.paths ?? {})
+    .flatMap(([path, pathItem]) =>
+      Object.keys(pathItem)
+        .filter((method) => documentedHttpMethods.has(method))
+        .map((method) => formatRouteOperation(method, path)),
+    )
+    .sort();
+
 describe('OpenAPI generation', () => {
   test('includes auto-loaded routes and Zod request schemas', async () => {
-    const app = await createApp(
-      {
-        allowedOrigins: [],
-        profileMediaMaxUploadBytes: 3 * 1024 * 1024,
-        baseUrl: 'http://localhost:3000/',
-        isProduction: false,
-        jsonBodyLimitBytes: 1024 * 1024,
-        rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
-        trustProxy: false,
-      },
-      { authService: createStubAuthService() },
-    );
+    const app = await createOpenApiTestApp();
 
     const response = await request(app).get('/openapi.json').expect(200);
     const document = response.body;
@@ -225,6 +328,15 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.LivenessResponse).toBeDefined();
     expect(document.components?.schemas?.ReadinessResponse).toBeDefined();
     expect(document.components?.schemas?.ReadinessUnavailableResponse).toBeDefined();
+  });
+
+  test('keeps mounted runtime routes and OpenAPI operations in parity', async () => {
+    const app = await createOpenApiTestApp();
+    const response = await request(app).get('/openapi.json').expect(200);
+
+    await expect(getRuntimeRouteOperations(app)).resolves.toEqual(
+      getOpenApiRouteOperations(response.body as OpenApiDocument),
+    );
   });
 
   test('does not leak route docs between generated documents', () => {
