@@ -172,6 +172,9 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/me']?.delete?.requestBody).toBeDefined();
     expect(document.paths['/auth/me']?.delete?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/auth/me']?.delete?.responses?.[200]).toBeDefined();
+    expect(document.paths['/auth/me']?.delete?.responses?.[200]?.description).toBe(
+      'Account deletion result',
+    );
     expect(document.paths['/auth/me']?.delete?.responses?.[400]).toBeDefined();
     expect(document.paths['/auth/me']?.delete?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/me/avatar']?.put?.requestBody).toBeDefined();

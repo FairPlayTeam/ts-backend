@@ -9,7 +9,6 @@ import {
   deleteAccountResponseSchema,
   userDataExportResponseSchema,
 } from '../../controllers/auth.schemas.js';
-import { DELETE_ACCOUNT_SUCCESS_MESSAGE } from '../../services/auth/auth.messages.js';
 
 export const accountRouteDocs = [
   {
@@ -35,7 +34,7 @@ export const accountRouteDocs = [
     security: [{ bearerAuth: [] }],
     request: sensitiveActionReauthenticationRequest,
     responses: {
-      200: jsonResponse(DELETE_ACCOUNT_SUCCESS_MESSAGE, deleteAccountResponseSchema),
+      200: jsonResponse('Account deletion result', deleteAccountResponseSchema),
 
       ...sensitiveActionErrorResponses('Account is not allowed to delete account'),
     },
