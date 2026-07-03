@@ -4,7 +4,13 @@ import {
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_SESSION_SUCCESS_MESSAGE,
 } from '../../../services/auth/auth.messages.js';
-import { responseMessageSchema, sensitiveActionReauthenticationSchema } from './shared.schemas.js';
+import {
+  responseMessageSchema,
+  sensitiveActionReauthenticationSchema,
+  sessionDeviceInfoResponseSchema,
+  sessionIpAddressResponseSchema,
+  sessionUserAgentResponseSchema,
+} from './shared.schemas.js';
 
 export const LOGOUT_SESSION_ID_INVALID_MESSAGE = 'Session id must be a valid UUID';
 export const USER_SESSIONS_CURSOR_PAIR_MESSAGE =
@@ -55,9 +61,9 @@ export const userSessionsResponseSchema = z
       z.object({
         id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
         sessionKeySuffix: z.string().nullable().openapi({ example: '9a8b7c6d' }),
-        ipAddress: z.string().nullable().openapi({ example: '127.0.0.1' }),
-        userAgent: z.string().nullable().openapi({ example: 'Mozilla/5.0' }),
-        deviceInfo: z.string().nullable().openapi({ example: 'Mozilla/5.0' }),
+        ipAddress: sessionIpAddressResponseSchema,
+        userAgent: sessionUserAgentResponseSchema,
+        deviceInfo: sessionDeviceInfoResponseSchema,
         isCurrent: z.boolean().openapi({ example: true }),
         createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
         lastUsedAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),

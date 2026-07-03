@@ -13,6 +13,9 @@ import {
   authUserResponseSchema,
   responseMessageSchema,
   sensitiveActionReauthenticationSchema,
+  sessionDeviceInfoResponseSchema,
+  sessionIpAddressResponseSchema,
+  sessionUserAgentResponseSchema,
 } from './shared.schemas.js';
 
 export const UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE = PROFILE_UPDATE_EMPTY_MESSAGE;
@@ -90,9 +93,9 @@ export const userDataExportResponseSchema = z
       z.object({
         id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
         sessionKeySuffix: z.string().nullable().openapi({ example: '9a8b7c6d' }),
-        ipAddress: z.string().nullable().openapi({ example: '127.0.0.1' }),
-        userAgent: z.string().nullable().openapi({ example: 'Mozilla/5.0' }),
-        deviceInfo: z.string().nullable().openapi({ example: 'Mozilla/5.0' }),
+        ipAddress: sessionIpAddressResponseSchema,
+        userAgent: sessionUserAgentResponseSchema,
+        deviceInfo: sessionDeviceInfoResponseSchema,
         isActive: z.boolean().openapi({ example: true }),
         isCurrent: z.boolean().openapi({ example: true }),
         createdAt: userDataExportDateTimeSchema.openapi({

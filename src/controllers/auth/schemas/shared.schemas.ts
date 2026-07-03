@@ -3,6 +3,9 @@ import {
   EMAIL_MAX_LENGTH,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
+  SESSION_DEVICE_INFO_MAX_LENGTH,
+  SESSION_IP_ADDRESS_MAX_LENGTH,
+  SESSION_USER_AGENT_MAX_LENGTH,
 } from '../../../config/constants.js';
 import { AUTH_ROLES } from '../../../services/auth.roles.js';
 
@@ -72,6 +75,24 @@ export const authSessionResponseSchema = z.object({
   id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
   expiresAt: z.string().datetime().openapi({ example: '2026-01-31T00:00:00.000Z' }),
 });
+
+export const sessionIpAddressResponseSchema = z
+  .string()
+  .max(SESSION_IP_ADDRESS_MAX_LENGTH)
+  .nullable()
+  .openapi({ example: '127.0.0.1' });
+
+export const sessionUserAgentResponseSchema = z
+  .string()
+  .max(SESSION_USER_AGENT_MAX_LENGTH)
+  .nullable()
+  .openapi({ example: 'Mozilla/5.0' });
+
+export const sessionDeviceInfoResponseSchema = z
+  .string()
+  .max(SESSION_DEVICE_INFO_MAX_LENGTH)
+  .nullable()
+  .openapi({ example: 'Mozilla/5.0' });
 
 export const sensitiveActionReauthenticationBodySchema = z
   .object({

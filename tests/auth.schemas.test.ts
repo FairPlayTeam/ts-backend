@@ -13,8 +13,14 @@ import {
   resetPasswordSchema,
   updateProfileSchema,
   userSessionsSchema,
+  userSessionsResponseSchema,
   verifyEmailSchema,
 } from '../src/controllers/auth.schemas.js';
+import {
+  SESSION_DEVICE_INFO_MAX_LENGTH,
+  SESSION_IP_ADDRESS_MAX_LENGTH,
+  SESSION_USER_AGENT_MAX_LENGTH,
+} from '../src/config/constants.js';
 import {
   DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
@@ -329,6 +335,47 @@ describe('userSessionsSchema', () => {
       query: {
         limit: '101',
       },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('userSessionsResponseSchema', () => {
+  const validSession = {
+    id: '123e4567-e89b-42d3-a456-426614174000',
+    sessionKeySuffix: '9a8b7c6d',
+    ipAddress: '127.0.0.1',
+    userAgent: 'Mozilla/5.0',
+    deviceInfo: 'Mozilla/5.0',
+    isCurrent: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    lastUsedAt: '2026-01-01T00:00:00.000Z',
+    expiresAt: '2026-01-31T00:00:00.000Z',
+  };
+
+  test('accepts bounded session metadata', () => {
+    const result = userSessionsResponseSchema.safeParse({
+      sessions: [validSession],
+      total: 1,
+      nextCursor: null,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  test('rejects oversized session metadata', () => {
+    const result = userSessionsResponseSchema.safeParse({
+      sessions: [
+        {
+          ...validSession,
+          ipAddress: '1'.repeat(SESSION_IP_ADDRESS_MAX_LENGTH + 1),
+          userAgent: 'A'.repeat(SESSION_USER_AGENT_MAX_LENGTH + 1),
+          deviceInfo: 'A'.repeat(SESSION_DEVICE_INFO_MAX_LENGTH + 1),
+        },
+      ],
+      total: 1,
+      nextCursor: null,
     });
 
     expect(result.success).toBe(false);

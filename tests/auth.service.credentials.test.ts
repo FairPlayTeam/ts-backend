@@ -11,6 +11,11 @@ import {
   LOGIN_SUCCESS_MESSAGE,
   REGISTER_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
+import {
+  SESSION_DEVICE_INFO_MAX_LENGTH,
+  SESSION_IP_ADDRESS_MAX_LENGTH,
+  SESSION_USER_AGENT_MAX_LENGTH,
+} from '../src/config/constants.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
 import { createDefaultAuthPrisma, createTestDeps, fixedNow } from './support/authService.js';
 import type { AuthDeps } from './support/authService.js';
@@ -180,6 +185,54 @@ describe('auth service credentials', () => {
       where: { id: 'user-id' },
       data: { lastLogin: fixedNow },
     });
+  });
+
+  test('normalizes and truncates login session metadata before persistence', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+    const longIpAddress = ` ${'1'.repeat(SESSION_IP_ADDRESS_MAX_LENGTH + 10)} `;
+    const longUserAgent = ` ${'A'.repeat(
+      Math.max(SESSION_USER_AGENT_MAX_LENGTH, SESSION_DEVICE_INFO_MAX_LENGTH) + 10,
+    )} `;
+
+    await service.login({
+      emailOrUsername: 'user@example.com',
+      password: 'Password1!',
+      ipAddress: longIpAddress,
+      userAgent: longUserAgent,
+    });
+
+    expect(calls.sessionCreate).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          ipAddress: '1'.repeat(SESSION_IP_ADDRESS_MAX_LENGTH),
+          userAgent: 'A'.repeat(SESSION_USER_AGENT_MAX_LENGTH),
+          deviceInfo: 'A'.repeat(SESSION_DEVICE_INFO_MAX_LENGTH),
+        }),
+      }),
+    );
+  });
+
+  test('persists blank login session metadata as null values', async () => {
+    const { deps, calls } = createTestDeps();
+    const service = createAuthService(deps);
+
+    await service.login({
+      emailOrUsername: 'user@example.com',
+      password: 'Password1!',
+      ipAddress: '   ',
+      userAgent: '   ',
+    });
+
+    expect(calls.sessionCreate).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          ipAddress: null,
+          userAgent: null,
+          deviceInfo: null,
+        }),
+      }),
+    );
   });
 
   test('rejects login with generic invalid credentials for missing users', async () => {

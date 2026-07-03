@@ -1,5 +1,10 @@
 import { getSessionExpiresAt, getSessionKeySuffix } from './auth.helpers.js';
 import type { AuthDependencies } from './auth.dependencies.js';
+import {
+  SESSION_DEVICE_INFO_MAX_LENGTH,
+  SESSION_IP_ADDRESS_MAX_LENGTH,
+  SESSION_USER_AGENT_MAX_LENGTH,
+} from '../../config/constants.js';
 import type { AuthMaintenancePort } from './types/maintenance.types.js';
 import type {
   AuthSessionManagementPort,
@@ -66,6 +71,19 @@ const UPDATE_INTERVAL_MS = 1000 * 60 * 5;
 const DEFAULT_USER_SESSIONS_LIMIT = 20;
 const MAX_USER_SESSIONS_LIMIT = 100;
 
+const normalizeSessionMetadataValue = (
+  value: string | undefined,
+  maxLength: number,
+): string | null => {
+  const normalized = value?.trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.slice(0, maxLength);
+};
+
 const normalizeUserSessionsLimit = (limit: number | undefined): number => {
   if (limit === undefined || !Number.isFinite(limit)) {
     return DEFAULT_USER_SESSIONS_LIMIT;
@@ -80,6 +98,14 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
     const expiresAt = getSessionExpiresAt(now, deps.config.sessionTtlMs);
     const sessionKey = deps.token.generate();
     const sessionKeyHash = deps.token.hashOpaqueToken(sessionKey);
+    const normalizedUserAgent = normalizeSessionMetadataValue(
+      userAgent,
+      SESSION_USER_AGENT_MAX_LENGTH,
+    );
+    const normalizedDeviceInfo = normalizeSessionMetadataValue(
+      userAgent,
+      SESSION_DEVICE_INFO_MAX_LENGTH,
+    );
 
     return {
       now,
@@ -87,9 +113,9 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
       sessionData: {
         sessionKey: sessionKeyHash,
         sessionKeySuffix: getSessionKeySuffix(sessionKey),
-        ipAddress: ipAddress ?? null,
-        userAgent: userAgent ?? null,
-        deviceInfo: userAgent ?? null,
+        ipAddress: normalizeSessionMetadataValue(ipAddress, SESSION_IP_ADDRESS_MAX_LENGTH),
+        userAgent: normalizedUserAgent,
+        deviceInfo: normalizedDeviceInfo,
         expiresAt,
       },
     };
