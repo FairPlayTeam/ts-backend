@@ -6,17 +6,24 @@ import bcrypt from 'bcryptjs';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import request from 'supertest';
+import sharp from 'sharp';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 
 import { createApp } from '../../src/app.js';
 import { createAuthService } from '../../src/services/auth.service.js';
+import { createUserMediaProcessor } from '../../src/services/userMedia/userMedia.processor.js';
 import {
   generateSixDigitCode,
   generateToken,
   hashAuthCode,
   hashToken,
 } from '../../src/lib/crypto.js';
+import {
+  createMinioClient,
+  createObjectStorage,
+  type ObjectStorage,
+} from '../../src/lib/objectStorage.js';
 import { closeRedisClient, connectRedisClient, createRedisClient } from '../../src/lib/redis.js';
 import {
   AUTH_RATE_LIMIT_MESSAGE,
@@ -30,6 +37,7 @@ import {
   RESEND_VERIFICATION_EMAIL_MESSAGE,
   RESET_PASSWORD_EMAIL_MESSAGE,
   RESET_PASSWORD_SUCCESS_MESSAGE,
+  UPLOAD_AVATAR_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
 } from '../../src/services/auth/auth.messages.js';
 import {
@@ -44,12 +52,18 @@ import {
 } from '../../src/config/constants.js';
 import type { AuthPorts } from '../../src/services/auth.types.js';
 import type { Redis } from 'ioredis';
+import type { ObjectStorageConfig } from '../../src/config/env.parsers.js';
 
 const execFileAsync = promisify(execFile);
 const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
 
 const POSTGRES_PORT = 5432;
 const REDIS_PORT = 6379;
+const MINIO_PORT = 9000;
+const OBJECT_STORAGE_BUCKET = 'fairplay-integration-media';
+const OBJECT_STORAGE_ACCESS_KEY = 'fairplay';
+const OBJECT_STORAGE_SECRET_KEY = 'fairplay-minio-secret';
+const PROFILE_MEDIA_MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 const TEST_EMAIL = 'integration@example.com';
 const TEST_USERNAME = 'integration_user';
 const INITIAL_PASSWORD = 'Password1!';
@@ -64,10 +78,13 @@ type DeliveredEmail = {
 type TestRuntime = {
   databaseUrl: string;
   redisUrl: string;
+  objectStorageConfig: ObjectStorageConfig;
   postgresContainer: StartedTestContainer;
   redisContainer: StartedTestContainer;
+  minioContainer: StartedTestContainer;
   prisma: PrismaClient;
   redisClient: Redis;
+  objectStorage: ObjectStorage;
   authService: AuthPorts;
   delivered: {
     verification: DeliveredEmail[];
@@ -106,6 +123,33 @@ const buildRedisUrl = (container: StartedTestContainer): string => {
   return `redis://${host}:${port}`;
 };
 
+const buildObjectStorageConfig = (container: StartedTestContainer): ObjectStorageConfig => {
+  const origin = `http://${container.getHost()}:${container.getMappedPort(MINIO_PORT)}`;
+
+  return {
+    endpoint: origin,
+    publicUrl: origin,
+    region: 'us-east-1',
+    bucket: OBJECT_STORAGE_BUCKET,
+    accessKey: OBJECT_STORAGE_ACCESS_KEY,
+    secretKey: OBJECT_STORAGE_SECRET_KEY,
+    signedUrlTtlSeconds: 900,
+    operationTimeoutMs: 10_000,
+  };
+};
+
+const createPng = async (width = 800, height = 600): Promise<Buffer> =>
+  sharp({
+    create: {
+      width,
+      height,
+      channels: 3,
+      background: '#3388ff',
+    },
+  })
+    .png()
+    .toBuffer();
+
 const createPrismaClient = (databaseUrl: string): PrismaClient =>
   new PrismaClient({
     adapter: new PrismaPg({ connectionString: databaseUrl }),
@@ -113,6 +157,7 @@ const createPrismaClient = (databaseUrl: string): PrismaClient =>
 
 const createIntegrationAuthService = (
   prisma: PrismaClient,
+  objectStorage: ObjectStorage,
   delivered: TestRuntime['delivered'],
 ): AuthPorts =>
   createAuthService({
@@ -137,21 +182,10 @@ const createIntegrationAuthService = (
         delivered.passwordReset.push({ email, token: code });
       },
     },
-    objectStorage: {
-      putObject: async () => undefined,
-      deleteObject: async () => undefined,
-      getSignedUrl: async () =>
-        'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
-    },
-    userMediaProcessor: {
-      process: async () => ({
-        buffer: Buffer.from('avatar'),
-        mimeType: 'image/webp',
-        sizeBytes: 6,
-        width: 512,
-        height: 512,
-      }),
-    },
+    objectStorage,
+    userMediaProcessor: createUserMediaProcessor({
+      profileMediaMaxUploadBytes: PROFILE_MEDIA_MAX_UPLOAD_BYTES,
+    }),
     clock: {
       now: () => new Date(),
     },
@@ -170,7 +204,7 @@ const createIntegrationApp = async (runtime: TestRuntime) =>
   createApp(
     {
       allowedOrigins: [],
-      profileMediaMaxUploadBytes: 3 * 1024 * 1024,
+      profileMediaMaxUploadBytes: PROFILE_MEDIA_MAX_UPLOAD_BYTES,
       baseUrl: 'http://localhost:3000',
       isProduction: false,
       jsonBodyLimitBytes: 1024 * 1024,
@@ -187,13 +221,33 @@ const createIntegrationApp = async (runtime: TestRuntime) =>
         redis: async () => {
           await runtime.redisClient.ping();
         },
+        objectStorage: async () => {
+          await runtime.objectStorage.checkReady();
+        },
       },
     },
   );
 
+const expectIntegrationReadinessOk = async (
+  app: Awaited<ReturnType<typeof createIntegrationApp>>,
+): Promise<void> => {
+  await request(app)
+    .get('/health/ready')
+    .expect(200)
+    .expect({
+      status: 'ok',
+      services: {
+        database: 'ok',
+        redis: 'ok',
+        objectStorage: 'ok',
+      },
+    });
+};
+
 const startRuntime = async (): Promise<TestRuntime> => {
   let postgresContainer: StartedTestContainer | null = null;
   let redisContainer: StartedTestContainer | null = null;
+  let minioContainer: StartedTestContainer | null = null;
 
   try {
     postgresContainer = await new GenericContainer('postgres:17-alpine')
@@ -214,13 +268,30 @@ const startRuntime = async (): Promise<TestRuntime> => {
       .withStartupTimeout(60_000)
       .start();
 
+    minioContainer = await new GenericContainer('minio/minio:RELEASE.2025-09-07T16-13-09Z')
+      .withEnvironment({
+        MINIO_ROOT_USER: OBJECT_STORAGE_ACCESS_KEY,
+        MINIO_ROOT_PASSWORD: OBJECT_STORAGE_SECRET_KEY,
+      })
+      .withCommand(['server', '/data', '--console-address', ':9001'])
+      .withExposedPorts(MINIO_PORT)
+      .withWaitStrategy(Wait.forHttp('/minio/health/ready', MINIO_PORT).forStatusCode(200))
+      .withStartupTimeout(60_000)
+      .start();
+
     const databaseUrl = buildDatabaseUrl(postgresContainer);
     const redisUrl = buildRedisUrl(redisContainer);
+    const objectStorageConfig = buildObjectStorageConfig(minioContainer);
 
     await runPrismaMigrations(databaseUrl);
 
     const prisma = createPrismaClient(databaseUrl);
     const redisClient = createRedisClient(redisUrl, testLogger);
+    const objectStorage = createObjectStorage(
+      objectStorageConfig,
+      createMinioClient(objectStorageConfig),
+      testLogger,
+    );
     await connectRedisClient(redisClient);
 
     const delivered = {
@@ -231,14 +302,18 @@ const startRuntime = async (): Promise<TestRuntime> => {
     return {
       databaseUrl,
       redisUrl,
+      objectStorageConfig,
       postgresContainer,
       redisContainer,
+      minioContainer,
       prisma,
       redisClient,
-      authService: createIntegrationAuthService(prisma, delivered),
+      objectStorage,
+      authService: createIntegrationAuthService(prisma, objectStorage, delivered),
       delivered,
     };
   } catch (error) {
+    await minioContainer?.stop();
     await redisContainer?.stop();
     await postgresContainer?.stop();
     throw error;
@@ -252,6 +327,7 @@ const stopRuntime = async (runtime: TestRuntime | null): Promise<void> => {
 
   await runtime.prisma.$disconnect();
   await closeRedisClient(runtime.redisClient, testLogger);
+  await runtime.minioContainer.stop();
   await runtime.redisContainer.stop();
   await runtime.postgresContainer.stop();
 };
@@ -265,6 +341,34 @@ const resetState = async (runtime: TestRuntime): Promise<void> => {
   await runtime.redisClient.call('flushdb');
   runtime.delivered.verification = [];
   runtime.delivered.passwordReset = [];
+};
+
+const createVerifiedSession = async (
+  runtime: TestRuntime,
+  {
+    email,
+    username,
+  }: {
+    email: string;
+    username: string;
+  },
+): Promise<{ sessionKey: string; userId: string }> => {
+  await runtime.authService.register({
+    email,
+    username,
+    password: INITIAL_PASSWORD,
+  });
+
+  const verificationEmail = runtime.delivered.verification.at(-1);
+  const result = await runtime.authService.verifyEmail({
+    email,
+    code: verificationEmail?.token ?? '',
+  });
+
+  return {
+    sessionKey: result.sessionKey,
+    userId: result.user.id,
+  };
 };
 
 describe('auth integration', () => {
@@ -460,23 +564,102 @@ describe('auth integration', () => {
     );
   });
 
-  test('reports readiness against the real database and redis clients', async () => {
+  test('reports readiness against the real database, redis, and object storage clients', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
 
     const app = await createIntegrationApp(runtime);
 
-    await request(app)
-      .get('/health/ready')
-      .expect(200)
-      .expect({
-        status: 'ok',
-        services: {
-          database: 'ok',
-          redis: 'ok',
-        },
-      });
+    await expectIntegrationReadinessOk(app);
+  });
+
+  test('stores uploaded profile media in MinIO and serves it through signed profile URLs', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const { sessionKey, userId } = await createVerifiedSession(runtime, {
+      email: 'minio-media@example.com',
+      username: 'minio_media_user',
+    });
+    const avatarInput = await createPng();
+
+    const uploadResponse = await request(app)
+      .put('/auth/me/avatar')
+      .set('Authorization', `Bearer ${sessionKey}`)
+      .attach('avatar', avatarInput, {
+        filename: 'avatar.png',
+        contentType: 'image/png',
+      })
+      .expect(200);
+
+    expect(uploadResponse.body).toEqual({
+      message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
+      avatar: {
+        url: expect.any(String),
+        mimeType: 'image/webp',
+        sizeBytes: expect.any(Number),
+        width: 512,
+        height: 512,
+        updatedAt: expect.any(String),
+      },
+    });
+    const uploadedAvatar = uploadResponse.body.avatar as {
+      sizeBytes: number;
+      url: string;
+    };
+    const uploadUrl = new URL(uploadedAvatar.url);
+    expect(uploadUrl.origin).toBe(runtime.objectStorageConfig.publicUrl);
+    expect(uploadUrl.pathname).toMatch(
+      new RegExp(`^/${OBJECT_STORAGE_BUCKET}/users/[0-9a-f-]+/avatar/[0-9a-f-]+\\.webp$`),
+    );
+    expect(uploadUrl.search).not.toBe('');
+
+    const asset = await runtime.prisma.userMediaAsset.findFirstOrThrow({
+      where: {
+        userId,
+        kind: 'avatar',
+      },
+      select: {
+        objectKey: true,
+        mimeType: true,
+        sizeBytes: true,
+        width: true,
+        height: true,
+      },
+    });
+
+    expect(asset).toEqual({
+      objectKey: expect.stringMatching(/^users\/[0-9a-f-]+\/avatar\/[0-9a-f-]+\.webp$/),
+      mimeType: 'image/webp',
+      sizeBytes: uploadedAvatar.sizeBytes,
+      width: 512,
+      height: 512,
+    });
+
+    await expectIntegrationReadinessOk(app);
+
+    const profileResponse = await request(app)
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${sessionKey}`)
+      .expect(200);
+    const avatarUrl = profileResponse.body.user.avatarUrl;
+    expect(avatarUrl).toEqual(
+      expect.stringContaining(`/${OBJECT_STORAGE_BUCKET}/${asset.objectKey}?`),
+    );
+
+    const mediaResponse = await fetch(avatarUrl);
+    expect(mediaResponse.status).toBe(200);
+    expect(mediaResponse.headers.get('content-type')).toContain('image/webp');
+
+    const mediaBody = Buffer.from(await mediaResponse.arrayBuffer());
+    expect(mediaBody.length).toBe(asset.sizeBytes);
+    const metadata = await sharp(mediaBody).metadata();
+    expect(metadata.format).toBe('webp');
+    expect(metadata.width).toBe(512);
+    expect(metadata.height).toBe(512);
   });
 
   test('shares auth rate limits across two app instances through Redis', async () => {
