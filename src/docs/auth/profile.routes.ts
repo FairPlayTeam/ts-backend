@@ -3,6 +3,7 @@ import {
   authRequiredErrorResponse,
   badRequestErrorResponse,
   commonErrorResponses,
+  currentUserNotFoundErrorResponse,
   jsonRequest,
   jsonResponse,
   serviceUnavailableErrorResponse,
@@ -26,6 +27,8 @@ export const profileRouteDocs = [
 
       ...authRequiredErrorResponse,
 
+      ...currentUserNotFoundErrorResponse,
+
       ...serviceUnavailableErrorResponse,
 
       ...commonErrorResponses,
@@ -44,6 +47,8 @@ export const profileRouteDocs = [
       ...badRequestErrorResponse,
 
       ...authRequiredErrorResponse,
+
+      ...currentUserNotFoundErrorResponse,
 
       ...commonErrorResponses,
     },

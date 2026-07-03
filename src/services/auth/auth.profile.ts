@@ -1,8 +1,9 @@
 import type { AuthDependencies } from './auth.dependencies.js';
 import { UPDATE_PROFILE_SUCCESS_MESSAGE } from './auth.messages.js';
+import { isPrismaRecordNotFoundError } from './auth.prismaErrors.js';
 import { toUserMediaAssetUrl } from './auth.userMedia.js';
 import type { UserMediaKind } from '../userMedia/userMedia.types.js';
-import { ProfileUpdateEmptyError } from '../auth.errors.js';
+import { AuthenticatedUserNotFoundError, ProfileUpdateEmptyError } from '../auth.errors.js';
 import type {
   AuthProfilePort,
   GetProfileInput,
@@ -47,7 +48,7 @@ export const createProfileService = (deps: AuthDependencies): ProfileService => 
     });
 
     if (!user) {
-      throw new Error('Authenticated user could not be found for profile');
+      throw new AuthenticatedUserNotFoundError();
     }
 
     const { mediaAssets, ...profileUser } = user;
@@ -75,18 +76,26 @@ export const createProfileService = (deps: AuthDependencies): ProfileService => 
       throw new ProfileUpdateEmptyError();
     }
 
-    const user = await deps.prisma.user.update({
-      where: { id: userId },
-      data,
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        displayName: true,
-        bio: true,
-        role: true,
-      },
-    });
+    const user = await deps.prisma.user
+      .update({
+        where: { id: userId },
+        data,
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          displayName: true,
+          bio: true,
+          role: true,
+        },
+      })
+      .catch((err: unknown) => {
+        if (isPrismaRecordNotFoundError(err)) {
+          throw new AuthenticatedUserNotFoundError(err);
+        }
+
+        throw err;
+      });
 
     return {
       message: UPDATE_PROFILE_SUCCESS_MESSAGE,

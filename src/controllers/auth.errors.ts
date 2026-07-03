@@ -2,6 +2,7 @@ import { HttpError } from '../errors/http.js';
 import { ObjectStorageUnavailableError } from '../lib/objectStorage.js';
 import {
   AccountBannedError,
+  AuthenticatedUserNotFoundError,
   EmailNotVerifiedError,
   InvalidEmailVerificationTokenError,
   InvalidCredentialsError,
@@ -44,6 +45,10 @@ export function toAuthHttpError(err: unknown): Error {
 
   if (err instanceof ProfileUpdateEmptyError) {
     return new HttpError(400, 'BadRequest', err.message, { cause: err });
+  }
+
+  if (err instanceof AuthenticatedUserNotFoundError) {
+    return new HttpError(404, 'NotFound', err.message, { cause: err });
   }
 
   if (err instanceof AccountBannedError || err instanceof EmailNotVerifiedError) {

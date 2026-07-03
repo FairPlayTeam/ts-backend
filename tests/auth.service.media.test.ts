@@ -7,6 +7,7 @@ import {
   UPLOAD_AVATAR_SUCCESS_MESSAGE,
   UPLOAD_BANNER_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
+import { AuthenticatedUserNotFoundError } from '../src/services/auth.errors.js';
 import {
   avatarObjectKeyPattern,
   bannerObjectKeyPattern,
@@ -330,6 +331,38 @@ describe('auth service media', () => {
         },
       }),
     ).rejects.toBe(persistenceError);
+
+    const uploadedObjectKey = (calls.putObject as { objectKey: string }).objectKey;
+    expect(uploadedObjectKey).toMatch(avatarObjectKeyPattern);
+    expect(calls.deleteObject).toBe(uploadedObjectKey);
+  });
+
+  test('cleans up the uploaded avatar object when the authenticated user disappeared', async () => {
+    const missingUserError = new Prisma.PrismaClientKnownRequestError(
+      'Foreign key constraint failed',
+      {
+        code: 'P2003',
+        clientVersion: 'test',
+      },
+    );
+    const { deps, calls } = createTestDeps({
+      prisma: {
+        $transaction: async () => {
+          throw missingUserError;
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.uploadAvatar({
+        userId: 'user-id',
+        file: {
+          buffer: Buffer.from('raw-avatar'),
+          size: 10,
+        },
+      }),
+    ).rejects.toBeInstanceOf(AuthenticatedUserNotFoundError);
 
     const uploadedObjectKey = (calls.putObject as { objectKey: string }).objectKey;
     expect(uploadedObjectKey).toMatch(avatarObjectKeyPattern);

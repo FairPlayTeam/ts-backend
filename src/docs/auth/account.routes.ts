@@ -1,5 +1,6 @@
 import type { RouteDoc } from '../registry.js';
 import {
+  currentUserNotFoundErrorResponse,
   sensitiveActionErrorResponses,
   sensitiveActionReauthenticationRequest,
   jsonResponse,
@@ -22,6 +23,8 @@ export const accountRouteDocs = [
       200: jsonResponse('Current user data export', userDataExportResponseSchema),
 
       ...sensitiveActionErrorResponses('Account is not allowed to export data'),
+
+      ...currentUserNotFoundErrorResponse,
     },
   },
   {

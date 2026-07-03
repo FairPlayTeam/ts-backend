@@ -4,6 +4,7 @@ import {
   DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
+import { AuthenticatedUserNotFoundError } from '../src/services/auth.errors.js';
 import { createTestDeps, createUserMediaDeletionJobMock, fixedNow } from './support/authService.js';
 import type { AuthDeps } from './support/authService.js';
 
@@ -169,6 +170,36 @@ describe('auth service account data', () => {
     expect(selectedFields).not.toContain('"passwordHash":');
     expect(selectedFields).not.toContain('"sessionKey":');
     expect(selectedFields).not.toContain('"token":');
+  });
+
+  test('rejects data exports when the authenticated user disappeared after reauthentication', async () => {
+    const { deps } = createTestDeps({
+      prisma: {
+        user: {
+          findUnique: async (args: unknown) => {
+            const select = (args as { select?: Record<string, unknown> }).select;
+
+            if (select?.passwordHash) {
+              return {
+                passwordHash: 'hashed-password',
+                isBanned: false,
+              };
+            }
+
+            return null;
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.exportUserData({
+        userId: 'user-id',
+        currentSessionId: 'session-id',
+        currentPassword: 'Password1!',
+      }),
+    ).rejects.toBeInstanceOf(AuthenticatedUserNotFoundError);
   });
 
   test('deletes user personal data for account deletion', async () => {

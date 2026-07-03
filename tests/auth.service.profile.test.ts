@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import { Prisma } from '@prisma/client';
 import { createAuthService } from '../src/services/auth.service.js';
-import { ProfileUpdateEmptyError } from '../src/services/auth.errors.js';
+import {
+  AuthenticatedUserNotFoundError,
+  ProfileUpdateEmptyError,
+} from '../src/services/auth.errors.js';
 import { UPDATE_PROFILE_SUCCESS_MESSAGE } from '../src/services/auth/auth.messages.js';
 import { createTestDeps } from './support/authService.js';
 import type { AuthDeps } from './support/authService.js';
@@ -129,6 +133,23 @@ describe('auth service profile', () => {
     expect(calls.signedUrlObjectKeys).toEqual([]);
   });
 
+  test('rejects profile reads when the authenticated user disappeared', async () => {
+    const { deps } = createTestDeps({
+      prisma: {
+        user: {
+          findUnique: async () => null,
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.getProfile({
+        userId: 'user-id',
+      }),
+    ).rejects.toBeInstanceOf(AuthenticatedUserNotFoundError);
+  });
+
   test('updates profile fields for a user', async () => {
     const { deps, calls } = createTestDeps();
     const service = createAuthService(deps);
@@ -166,6 +187,30 @@ describe('auth service profile', () => {
         role: true,
       },
     });
+  });
+
+  test('rejects profile updates when the authenticated user disappeared', async () => {
+    const prismaError = new Prisma.PrismaClientKnownRequestError('Record not found', {
+      code: 'P2025',
+      clientVersion: 'test',
+    });
+    const { deps } = createTestDeps({
+      prisma: {
+        user: {
+          update: async () => {
+            throw prismaError;
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.updateProfile({
+        userId: 'user-id',
+        displayName: 'Fairplay Creator',
+      }),
+    ).rejects.toBeInstanceOf(AuthenticatedUserNotFoundError);
   });
 
   test('rejects empty profile updates at the service boundary', async () => {

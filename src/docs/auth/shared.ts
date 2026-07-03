@@ -22,6 +22,10 @@ export const authRequiredErrorResponse = {
   401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
 };
 
+export const currentUserNotFoundErrorResponse = {
+  404: jsonResponse('Authenticated user not found', ApiErrorSchema),
+};
+
 export const serviceUnavailableErrorResponse = {
   503: jsonResponse('Object storage unavailable', ApiErrorSchema),
 };
@@ -53,6 +57,8 @@ export const userMediaUploadResponses = (
   ...badRequestErrorResponse,
 
   ...authRequiredErrorResponse,
+
+  ...currentUserNotFoundErrorResponse,
 
   413: jsonResponse('Uploaded file too large', ApiErrorSchema),
 

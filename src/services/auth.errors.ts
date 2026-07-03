@@ -8,6 +8,7 @@ const PASSWORD_RESET_PASSWORD_REUSE_MESSAGE =
   'New password must be different from the current password';
 const PASSWORD_RESET_STATE_CHANGED_MESSAGE =
   'Password state changed during reset. Please try again.';
+export const AUTHENTICATED_USER_NOT_FOUND_MESSAGE = 'Authenticated user could not be found';
 export const PROFILE_UPDATE_EMPTY_MESSAGE = 'At least one profile field must be provided';
 
 export class UserAlreadyExistsError extends Error {
@@ -70,5 +71,12 @@ export class ProfileUpdateEmptyError extends Error {
   constructor() {
     super(PROFILE_UPDATE_EMPTY_MESSAGE);
     this.name = 'ProfileUpdateEmptyError';
+  }
+}
+
+export class AuthenticatedUserNotFoundError extends Error {
+  constructor(cause?: unknown) {
+    super(AUTHENTICATED_USER_NOT_FOUND_MESSAGE, { cause });
+    this.name = 'AuthenticatedUserNotFoundError';
   }
 }

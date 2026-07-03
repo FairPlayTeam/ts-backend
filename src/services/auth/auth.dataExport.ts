@@ -1,6 +1,7 @@
 import type { AuthDependencies } from './auth.dependencies.js';
 import { reauthenticateSensitiveAction } from './auth.reauthentication.js';
 import type { AuthAccountPort, ExportUserDataInput } from './types/account.types.js';
+import { AuthenticatedUserNotFoundError } from '../auth.errors.js';
 
 type DataExportService = Pick<AuthAccountPort, 'exportUserData'>;
 
@@ -74,7 +75,7 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
     });
 
     if (!user) {
-      throw new Error('Authenticated user could not be found for data export');
+      throw new AuthenticatedUserNotFoundError();
     }
 
     const { emailVerificationTokens, mediaAssets, passwordResetToken, sessions, ...exportedUser } =

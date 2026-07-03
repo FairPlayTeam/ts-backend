@@ -4,6 +4,7 @@ import { HttpError } from '../src/errors/http.js';
 import { ObjectStorageUnavailableError } from '../src/lib/objectStorage.js';
 import {
   AccountBannedError,
+  AuthenticatedUserNotFoundError,
   InvalidEmailVerificationTokenError,
   InvalidCredentialsError,
   InvalidPasswordResetTokenError,
@@ -80,6 +81,14 @@ describe('auth error mapping', () => {
     expect(error).toBeInstanceOf(HttpError);
     expect((error as HttpError).statusCode).toBe(400);
     expect((error as HttpError).code).toBe('BadRequest');
+  });
+
+  test('maps missing authenticated users to not found', () => {
+    const error = toAuthHttpError(new AuthenticatedUserNotFoundError());
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).statusCode).toBe(404);
+    expect((error as HttpError).code).toBe('NotFound');
   });
 
   test('maps oversized user media files to payload too large', () => {
