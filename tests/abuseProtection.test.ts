@@ -133,7 +133,49 @@ describe('abuse protection middleware', () => {
 
     response.status(200).json({ message: 'Sent' });
     response.emit('finish');
+    response.emit('close');
 
+    expect(calls).toEqual([
+      [
+        'set',
+        expect.stringMatching(/^email-cooldown:test:[a-f0-9]{64}$/),
+        expect.stringMatching(/^pending:/),
+        'PX',
+        '60000',
+        'NX',
+      ],
+      ['set', calls[0]?.[1], 'active', 'PX', '60000'],
+    ]);
+  });
+
+  test('sets an active cooldown when the response closes before finish', async () => {
+    const calls: unknown[][] = [];
+    const redisClient = createRedisClient(async (...args: unknown[]) => {
+      calls.push(args);
+      return 'OK';
+    });
+    const { response } = createResponse();
+    const { logger } = createLogger();
+    let nextCalled = false;
+
+    const middleware = createEmailCooldown({
+      redisClient,
+      keyPrefix: 'email-cooldown:test',
+      keySecret,
+      ttlMs: 60_000,
+      acceptedResponse: { message: 'Accepted' },
+      getIdentifier: (req) => (typeof req.body.email === 'string' ? req.body.email : null),
+      logger,
+    });
+
+    await middleware(createRequest(), response, (() => {
+      nextCalled = true;
+    }) as NextFunction);
+
+    response.emit('close');
+    response.emit('finish');
+
+    expect(nextCalled).toBe(true);
     expect(calls).toEqual([
       [
         'set',
@@ -173,6 +215,7 @@ describe('abuse protection middleware', () => {
 
     response.status(500).json({ message: 'Failed' });
     response.emit('finish');
+    response.emit('close');
 
     expect(nextCalled).toBe(true);
     expect(calls[0]).toEqual([
@@ -187,6 +230,7 @@ describe('abuse protection middleware', () => {
     expect(calls[1]?.[2]).toBe('1');
     expect(calls[1]?.[3]).toBe(calls[0]?.[1]);
     expect(calls[1]?.[4]).toBe(calls[0]?.[2]);
+    expect(calls).toHaveLength(2);
   });
 
   test('returns the accepted response during an active cooldown', async () => {

@@ -30,6 +30,17 @@ return 0
 const isRedisSetSuccess = (result: unknown): boolean => result === 'OK';
 const isSuccessfulResponse = (statusCode: number): boolean => statusCode >= 200 && statusCode < 400;
 
+const activateCooldown = (
+  redisClient: RedisClient,
+  key: string,
+  ttlMs: number,
+  logger: Pick<Logger, 'warn'>,
+): void => {
+  void redisClient.call('set', key, ACTIVE_COOLDOWN_VALUE, 'PX', String(ttlMs)).catch((err) => {
+    logger.warn({ err }, 'Email cooldown store unavailable after successful response');
+  });
+};
+
 const releasePendingCooldown = (
   redisClient: RedisClient,
   key: string,
@@ -60,11 +71,12 @@ export const createEmailCooldown = ({
       return;
     }
 
+    const cooldownStore = redisClient;
     const key = `${keyPrefix}:${hashRateLimitIdentifier(keySecret, identifier)}`;
     const pendingToken = `pending:${crypto.randomUUID()}`;
 
     try {
-      const result = await redisClient.call('set', key, pendingToken, 'PX', String(ttlMs), 'NX');
+      const result = await cooldownStore.call('set', key, pendingToken, 'PX', String(ttlMs), 'NX');
 
       if (!isRedisSetSuccess(result)) {
         res.status(200).json(acceptedResponse);
@@ -76,18 +88,35 @@ export const createEmailCooldown = ({
       return;
     }
 
-    res.once('finish', () => {
-      if (!isSuccessfulResponse(res.statusCode)) {
-        releasePendingCooldown(redisClient, key, pendingToken, logger);
+    let cooldownSettled = false;
+
+    function settleCooldown(event: 'close' | 'finish'): void {
+      if (cooldownSettled) {
         return;
       }
 
-      void redisClient
-        .call('set', key, ACTIVE_COOLDOWN_VALUE, 'PX', String(ttlMs))
-        .catch((err: unknown) => {
-          logger.warn({ err }, 'Email cooldown store unavailable after successful response');
-        });
-    });
+      cooldownSettled = true;
+      res.off('finish', onFinish);
+      res.off('close', onClose);
+
+      if (event === 'finish' && !isSuccessfulResponse(res.statusCode)) {
+        releasePendingCooldown(cooldownStore, key, pendingToken, logger);
+        return;
+      }
+
+      activateCooldown(cooldownStore, key, ttlMs, logger);
+    }
+
+    function onFinish(): void {
+      settleCooldown('finish');
+    }
+
+    function onClose(): void {
+      settleCooldown('close');
+    }
+
+    res.once('finish', onFinish);
+    res.once('close', onClose);
 
     next();
   };
