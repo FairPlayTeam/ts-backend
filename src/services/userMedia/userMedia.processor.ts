@@ -1,5 +1,5 @@
 import { fileTypeFromBuffer } from 'file-type';
-import sharp from 'sharp';
+import sharp from '../../lib/sharp.js';
 import {
   AVATAR_IMAGE_SIZE_PX,
   BANNER_IMAGE_HEIGHT_PX,

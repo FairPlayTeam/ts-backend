@@ -135,7 +135,7 @@ bun run lint
 bun run lint:fix
 bun run format:check
 bun run format
-bun test
+bun run test:unit
 bun run test:integration
 ```
 
@@ -144,6 +144,11 @@ To run the standard verification suite at once:
 ```bash
 bun run check
 ```
+
+`bun run check` runs typecheck, lint, formatting, Prisma validation, bounded-concurrency unit
+tests, Testcontainers-backed integration tests, dependency audit, and the production build in order.
+The test scripts set `SHARP_CONCURRENCY=1` by default for reproducible image-processing tests; set
+`SHARP_CONCURRENCY` explicitly to a positive integer in the environment to override it.
 
 ### Integration tests
 

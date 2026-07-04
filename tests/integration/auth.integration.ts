@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import request from 'supertest';
-import sharp from 'sharp';
+import sharp from '../../src/lib/sharp.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 

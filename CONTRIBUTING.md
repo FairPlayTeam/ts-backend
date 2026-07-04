@@ -254,6 +254,20 @@ production. Redis is optional in development; if unavailable, the backend falls 
 rate limiting. `TRUST_PROXY` should be configured explicitly when the backend runs behind a reverse
 proxy or load balancer.
 
+### Verification
+
+Use `bun run check` as the complete local and CI gate. It sets `SHARP_CONCURRENCY=1` by default so image-processing tests do not depend on the host machine. Override `SHARP_CONCURRENCY` with a positive integer in the
+environment only when you are intentionally stress-testing image processing.
+
+Dedicated verification commands are also available:
+
+```
+bun run check:static
+bun run check:tests
+bun run check:security
+bun run check:build
+```
+
 ### Commit template
 
 ```

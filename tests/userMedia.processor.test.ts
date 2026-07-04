@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import sharp from 'sharp';
+import sharp from '../src/lib/sharp.js';
 import { createUserMediaProcessor } from '../src/services/userMedia/userMedia.processor.js';
 import {
   UserMediaFileTooLargeError,
