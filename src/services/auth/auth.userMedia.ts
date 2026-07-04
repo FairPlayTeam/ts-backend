@@ -25,10 +25,8 @@ type UserMediaFileInput = {
 
 type UserMediaDeletionJobStore = Pick<AuthDependencies['prisma'], 'userMediaDeletionJob'>;
 
-export const createUserMediaObjectKey = (userId: string, kind: UserMediaKind): string =>
+const createUserMediaObjectKey = (userId: string, kind: UserMediaKind): string =>
   `users/${userId}/${kind}/${randomUUID()}.webp`;
-
-export const getUserMediaCacheControl = (): string => USER_MEDIA_CACHE_CONTROL;
 
 const uniqueObjectKeys = (objectKeys: readonly string[]): string[] => [...new Set(objectKeys)];
 
@@ -60,7 +58,7 @@ type UpsertStoredUserMediaAssetInput = {
 const isTransactionConflictError = (err: unknown): boolean =>
   err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034';
 
-export const upsertStoredUserMediaAsset = async (
+const upsertStoredUserMediaAsset = async (
   deps: AuthDependencies,
   { userId, kind, objectKey, media }: UpsertStoredUserMediaAssetInput,
 ): Promise<{ asset: StoredUserMediaAsset; previousObjectKey: string | null }> => {
@@ -193,7 +191,7 @@ export const uploadUserMediaAsset = async (
     objectKey,
     body: processedMedia.buffer,
     contentType: processedMedia.mimeType,
-    cacheControl: getUserMediaCacheControl(),
+    cacheControl: USER_MEDIA_CACHE_CONTROL,
   });
 
   const { asset, previousObjectKey } = await upsertStoredUserMediaAsset(deps, {

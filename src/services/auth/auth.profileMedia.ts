@@ -1,9 +1,6 @@
 import type {
   AuthProfileMediaPort,
-  DeleteAvatarInput,
-  DeleteBannerInput,
-  UploadAvatarInput,
-  UploadBannerInput,
+  DeleteUserMediaInput,
   UploadUserMediaInput,
   UserMediaAssetResult,
 } from './types/profileMedia.types.js';
@@ -54,7 +51,7 @@ const deleteProfileMedia = async (
 };
 
 export const createProfileMediaService = (deps: AuthDependencies): ProfileMediaService => ({
-  async uploadAvatar({ userId, file }: UploadAvatarInput) {
+  async uploadAvatar({ userId, file }: UploadUserMediaInput) {
     const avatar = await uploadProfileMedia(deps, {
       userId,
       kind: 'avatar',
@@ -67,7 +64,7 @@ export const createProfileMediaService = (deps: AuthDependencies): ProfileMediaS
     };
   },
 
-  async deleteAvatar({ userId }: DeleteAvatarInput) {
+  async deleteAvatar({ userId }: DeleteUserMediaInput) {
     await deleteProfileMedia(deps, userId, 'avatar');
 
     return {
@@ -76,7 +73,7 @@ export const createProfileMediaService = (deps: AuthDependencies): ProfileMediaS
     };
   },
 
-  async uploadBanner({ userId, file }: UploadBannerInput) {
+  async uploadBanner({ userId, file }: UploadUserMediaInput) {
     const banner = await uploadProfileMedia(deps, {
       userId,
       kind: 'banner',
@@ -89,7 +86,7 @@ export const createProfileMediaService = (deps: AuthDependencies): ProfileMediaS
     };
   },
 
-  async deleteBanner({ userId }: DeleteBannerInput) {
+  async deleteBanner({ userId }: DeleteUserMediaInput) {
     await deleteProfileMedia(deps, userId, 'banner');
 
     return {

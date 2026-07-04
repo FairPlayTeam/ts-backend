@@ -1,16 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
   deleteAccountResponseSchema,
-  deleteAccountSchema,
-  exportUserDataSchema,
   loginSchema,
-  logoutAllSessionsSchema,
-  logoutOtherSessionsSchema,
   logoutSessionSchema,
   registerSchema,
   requestPasswordResetSchema,
   resendVerificationSchema,
   resetPasswordSchema,
+  sensitiveActionReauthenticationSchema,
   updateProfileSchema,
   userSessionsSchema,
   userSessionsResponseSchema,
@@ -384,16 +381,15 @@ describe('userSessionsResponseSchema', () => {
 
 describe('sensitive action reauthentication schemas', () => {
   test('accept valid current password confirmation payloads', () => {
-    expect(exportUserDataSchema.safeParse({ body: sensitiveActionBody }).success).toBe(true);
-    expect(deleteAccountSchema.safeParse({ body: sensitiveActionBody }).success).toBe(true);
-    expect(logoutAllSessionsSchema.safeParse({ body: sensitiveActionBody }).success).toBe(true);
-    expect(logoutOtherSessionsSchema.safeParse({ body: sensitiveActionBody }).success).toBe(true);
+    const result = sensitiveActionReauthenticationSchema.safeParse({ body: sensitiveActionBody });
+
+    expect(result.success).toBe(true);
   });
 
   test('reject missing or unexpected reauthentication fields', () => {
-    expect(exportUserDataSchema.safeParse({ body: {} }).success).toBe(false);
+    expect(sensitiveActionReauthenticationSchema.safeParse({ body: {} }).success).toBe(false);
     expect(
-      deleteAccountSchema.safeParse({
+      sensitiveActionReauthenticationSchema.safeParse({
         body: {
           ...sensitiveActionBody,
           reason: 'cleanup',
@@ -401,13 +397,12 @@ describe('sensitive action reauthentication schemas', () => {
       }).success,
     ).toBe(false);
     expect(
-      logoutAllSessionsSchema.safeParse({
+      sensitiveActionReauthenticationSchema.safeParse({
         body: {
           currentPassword: '',
         },
       }).success,
     ).toBe(false);
-    expect(logoutOtherSessionsSchema.safeParse({ body: {} }).success).toBe(false);
   });
 });
 

@@ -1,7 +1,7 @@
-export const USER_MEDIA_FILE_REQUIRED_MESSAGE = 'A media file is required';
-export const USER_MEDIA_FILE_TOO_LARGE_MESSAGE = 'Media file is too large';
-export const USER_MEDIA_UNSUPPORTED_TYPE_MESSAGE = 'Media file must be a JPEG, PNG, or WebP image';
-export const USER_MEDIA_INVALID_IMAGE_MESSAGE = 'Media file could not be processed as an image';
+const USER_MEDIA_FILE_REQUIRED_MESSAGE = 'A media file is required';
+const USER_MEDIA_FILE_TOO_LARGE_MESSAGE = 'Media file is too large';
+const USER_MEDIA_UNSUPPORTED_TYPE_MESSAGE = 'Media file must be a JPEG, PNG, or WebP image';
+const USER_MEDIA_INVALID_IMAGE_MESSAGE = 'Media file could not be processed as an image';
 
 export class UserMediaFileRequiredError extends Error {
   constructor(message = USER_MEDIA_FILE_REQUIRED_MESSAGE) {

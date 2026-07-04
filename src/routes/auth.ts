@@ -1,16 +1,13 @@
 import { Router, type RequestHandler } from 'express';
 import { createAuthController } from '../controllers/auth.controller.js';
 import {
-  deleteAccountSchema,
-  exportUserDataSchema,
   loginSchema,
-  logoutAllSessionsSchema,
-  logoutOtherSessionsSchema,
   logoutSessionSchema,
   registerSchema,
   requestPasswordResetSchema,
   resendVerificationSchema,
   resetPasswordSchema,
+  sensitiveActionReauthenticationSchema,
   updateProfileSchema,
   userSessionsSchema,
   verifyEmailSchema,
@@ -43,7 +40,7 @@ type AuthRouterDependencies = {
 
 type ValidationSchema = Parameters<typeof validate>[0];
 
-const createAuthRouter = ({
+export const createRouter = ({
   authService,
   profileMediaMaxUploadBytes,
   authLimiter,
@@ -132,11 +129,19 @@ const createAuthRouter = ({
   router.get('/me', ...protect(), me);
   router.post(
     '/me/export',
-    ...protectedValidatedRoute(exportUserDataSchema, expensiveAuthMutationLimiter, exportMe),
+    ...protectedValidatedRoute(
+      sensitiveActionReauthenticationSchema,
+      expensiveAuthMutationLimiter,
+      exportMe,
+    ),
   );
   router.delete(
     '/me',
-    ...protectedValidatedRoute(deleteAccountSchema, expensiveAuthMutationLimiter, deleteMe),
+    ...protectedValidatedRoute(
+      sensitiveActionReauthenticationSchema,
+      expensiveAuthMutationLimiter,
+      deleteMe,
+    ),
   );
   router.patch('/me', ...protectedValidatedRoute(updateProfileSchema, updateMe));
   router.put('/me/avatar', ...protect(), profileMediaUploadLimiter, uploadAvatarFile, uploadAvatar);
@@ -146,11 +151,19 @@ const createAuthRouter = ({
   router.get('/sessions', ...sessionValidatedRoute(userSessionsSchema, sessions));
   router.delete(
     '/sessions/all',
-    ...sessionValidatedRoute(logoutAllSessionsSchema, expensiveAuthMutationLimiter, logoutAll),
+    ...sessionValidatedRoute(
+      sensitiveActionReauthenticationSchema,
+      expensiveAuthMutationLimiter,
+      logoutAll,
+    ),
   );
   router.delete(
     '/sessions/others/all',
-    ...sessionValidatedRoute(logoutOtherSessionsSchema, expensiveAuthMutationLimiter, logoutOthers),
+    ...sessionValidatedRoute(
+      sensitiveActionReauthenticationSchema,
+      expensiveAuthMutationLimiter,
+      logoutOthers,
+    ),
   );
   router.delete(
     '/sessions/:sessionId',
@@ -178,6 +191,4 @@ const createAuthRouter = ({
 
   return router;
 };
-
-export const createRouter = createAuthRouter;
 export { routeDocs } from '../docs/auth.routes.js';

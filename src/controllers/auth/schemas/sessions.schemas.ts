@@ -6,7 +6,6 @@ import {
 } from '../../../services/auth/auth.messages.js';
 import {
   responseMessageSchema,
-  sensitiveActionReauthenticationSchema,
   sessionDeviceInfoResponseSchema,
   sessionIpAddressResponseSchema,
   sessionUserAgentResponseSchema,
@@ -51,9 +50,6 @@ export const userSessionsQuerySchema = z
 export const userSessionsSchema = z.object({
   query: userSessionsQuerySchema,
 });
-
-export const logoutAllSessionsSchema = sensitiveActionReauthenticationSchema;
-export const logoutOtherSessionsSchema = sensitiveActionReauthenticationSchema;
 
 export const userSessionsResponseSchema = z
   .object({

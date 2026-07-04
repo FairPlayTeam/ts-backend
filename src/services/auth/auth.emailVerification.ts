@@ -5,9 +5,9 @@ import type {
   VerifyEmailInput,
 } from './types/emailVerification.types.js';
 import {
-  getEmailVerificationCodeSecret,
   normalizeEmail,
   getEmailVerificationExpiresAt,
+  getUserScopedAuthCodeSecret,
   handleExpectedMailerError,
 } from './auth.helpers.js';
 import type { AuthDependencies } from './auth.dependencies.js';
@@ -49,7 +49,7 @@ export const createVerificationService = (
       throw new InvalidEmailVerificationTokenError();
     }
 
-    const codeHash = deps.token.hashAuthCode(getEmailVerificationCodeSecret(user.id, codeNorm));
+    const codeHash = deps.token.hashAuthCode(getUserScopedAuthCodeSecret(user.id, codeNorm));
     const record = await deps.prisma.emailVerificationToken.findUnique({
       where: { userId: user.id },
       select: {
@@ -152,9 +152,7 @@ export const createVerificationService = (
         return null;
       }
 
-      const codeHash = deps.token.hashAuthCode(
-        getEmailVerificationCodeSecret(existingUser.id, code),
-      );
+      const codeHash = deps.token.hashAuthCode(getUserScopedAuthCodeSecret(existingUser.id, code));
 
       await tx.emailVerificationToken.upsert({
         where: { userId: existingUser.id },

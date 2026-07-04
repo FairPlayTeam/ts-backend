@@ -89,7 +89,7 @@ const createReadinessResponse = async (checks: ReadinessChecks | null) => {
   return { statusCode: allOk ? 200 : 503, body } as const;
 };
 
-const createHealthRouter = ({ readinessChecks = null }: HealthRouterDependencies = {}) => {
+export const createRouter = ({ readinessChecks = null }: HealthRouterDependencies = {}) => {
   const router = Router();
 
   router.get('/live', (_req, res) => {
@@ -117,8 +117,6 @@ const createHealthRouter = ({ readinessChecks = null }: HealthRouterDependencies
 
   return router;
 };
-
-export const createRouter = createHealthRouter;
 
 export const routeDocs = [
   {

@@ -30,7 +30,7 @@ export type ObjectStorage = {
   checkReady(): Promise<void>;
 };
 
-export type PutObjectInput = {
+type PutObjectInput = {
   objectKey: string;
   body: Buffer;
   contentType: string;

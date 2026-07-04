@@ -22,7 +22,7 @@ const HTTP_URL_PROTOCOLS = ['http:', 'https:'] as const;
 const REDIS_URL_PROTOCOLS = ['redis:', 'rediss:'] as const;
 const MAX_OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
 
-export type TrustProxySetting = boolean | number | string | string[];
+type TrustProxySetting = boolean | number | string | string[];
 
 export type ObjectStorageConfig = {
   endpoint: string;
@@ -122,7 +122,7 @@ export const parseRequiredHttpOriginUrl = (rawData: string | undefined, name: st
   return parsedUrl.origin;
 };
 
-export const parseRedisUrl = (rawData: string | undefined, name: string): string =>
+const parseRedisUrl = (rawData: string | undefined, name: string): string =>
   parseUrlWithProtocols(rawData, name, REDIS_URL_PROTOCOLS);
 
 export const parseOptionalRedisUrl = (rawData: string | undefined, name: string): string | null => {
@@ -269,7 +269,7 @@ export const parseIsProduction = (rawValue: string | undefined): boolean =>
 
 export const ALL_CORS_ORIGINS = '*' as const;
 
-export type AllowedCorsOrigins = typeof ALL_CORS_ORIGINS | string[];
+type AllowedCorsOrigins = typeof ALL_CORS_ORIGINS | string[];
 
 export const parseAllowedOrigins = (rawValue: string | undefined): AllowedCorsOrigins => {
   const value = rawValue?.trim();

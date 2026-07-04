@@ -46,7 +46,7 @@ type AuthCleanupSummary = Partial<{
 
 type AuthCleanupStep = 'authTokens' | 'sessions' | 'userMediaDeletionJobs';
 
-export type AuthCleanupJob = {
+type AuthCleanupJob = {
   runOnce(): Promise<void>;
   start(): void;
   stop(): Promise<void>;

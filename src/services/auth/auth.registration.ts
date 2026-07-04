@@ -1,8 +1,8 @@
 import { UserAlreadyExistsError } from '../auth.errors.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
-  getEmailVerificationCodeSecret,
   getEmailVerificationExpiresAt,
+  getUserScopedAuthCodeSecret,
   handleExpectedMailerError,
   normalizeEmail,
 } from './auth.helpers.js';
@@ -39,7 +39,7 @@ export const createRegistrationService = (deps: AuthDependencies): RegistrationS
         await tx.emailVerificationToken.create({
           data: {
             userId: createdUser.id,
-            token: deps.token.hashAuthCode(getEmailVerificationCodeSecret(createdUser.id, code)),
+            token: deps.token.hashAuthCode(getUserScopedAuthCodeSecret(createdUser.id, code)),
             expiresAt,
           },
         });

@@ -12,13 +12,10 @@ import {
   authUserProfileResponseSchema,
   authUserResponseSchema,
   responseMessageSchema,
-  sensitiveActionReauthenticationSchema,
   sessionDeviceInfoResponseSchema,
   sessionIpAddressResponseSchema,
   sessionUserAgentResponseSchema,
 } from './shared.schemas.js';
-
-export const UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE = PROFILE_UPDATE_EMPTY_MESSAGE;
 
 export const currentUserResponseSchema = z
   .object({
@@ -26,9 +23,6 @@ export const currentUserResponseSchema = z
     session: authSessionResponseSchema,
   })
   .openapi('CurrentUserResponse');
-
-export const exportUserDataSchema = sensitiveActionReauthenticationSchema;
-export const deleteAccountSchema = sensitiveActionReauthenticationSchema;
 
 export const deleteAccountResponseSchema = z
   .object({
@@ -142,7 +136,7 @@ export const updateProfileBodySchema = z
   })
   .strict()
   .refine((body) => body.displayName !== undefined || body.bio !== undefined, {
-    message: UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE,
+    message: PROFILE_UPDATE_EMPTY_MESSAGE,
   })
   .openapi('UpdateProfileRequest');
 

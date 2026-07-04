@@ -11,7 +11,7 @@ type RouteRegister<TContext> = (
   context: TContext,
 ) => void | Promise<void>;
 
-export type RouteFile = {
+type RouteFile = {
   fileUrl: URL;
   relativeFile: string;
   routePath: string;
@@ -24,7 +24,7 @@ type RouteModule<TContext> = {
   routeDocs?: readonly RouteDoc[];
 };
 
-export type LoadedRoutes = {
+type LoadedRoutes = {
   openApiRouteDocs: RouteDoc[];
 };
 

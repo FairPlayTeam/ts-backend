@@ -1,5 +1,4 @@
-export const USER_MEDIA_KINDS = ['avatar', 'banner'] as const;
-export type UserMediaKind = (typeof USER_MEDIA_KINDS)[number];
+export type UserMediaKind = 'avatar' | 'banner';
 
 export type UserMediaProcessingInput = {
   kind: UserMediaKind;

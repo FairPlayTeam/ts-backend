@@ -8,11 +8,11 @@ import {
 } from '../src/config/constants.js';
 import {
   LOGOUT_SESSION_ID_INVALID_MESSAGE,
-  UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE,
   USER_SESSIONS_CURSOR_PAIR_MESSAGE,
 } from '../src/controllers/auth.schemas.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
+import { PROFILE_UPDATE_EMPTY_MESSAGE } from '../src/services/auth.errors.js';
 import {
   RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_MESSAGE,
   VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MESSAGE,
@@ -399,7 +399,7 @@ describe('auth routes', () => {
       details: [
         {
           field: 'body',
-          message: UPDATE_PROFILE_REQUIRED_FIELD_MESSAGE,
+          message: PROFILE_UPDATE_EMPTY_MESSAGE,
         },
       ],
     });

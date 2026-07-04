@@ -11,8 +11,8 @@ import type {
 } from './types/passwordReset.types.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
-  getPasswordResetCodeSecret,
   getPasswordResetExpiresAt,
+  getUserScopedAuthCodeSecret,
   handleExpectedMailerError,
   normalizeEmail,
 } from './auth.helpers.js';
@@ -44,7 +44,7 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
         return null;
       }
 
-      const codeHash = deps.token.hashAuthCode(getPasswordResetCodeSecret(existingUser.id, code));
+      const codeHash = deps.token.hashAuthCode(getUserScopedAuthCodeSecret(existingUser.id, code));
 
       await tx.passwordResetToken.upsert({
         where: { userId: existingUser.id },
@@ -100,7 +100,7 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
       throw new InvalidPasswordResetTokenError();
     }
 
-    const codeHash = deps.token.hashAuthCode(getPasswordResetCodeSecret(user.id, codeNorm));
+    const codeHash = deps.token.hashAuthCode(getUserScopedAuthCodeSecret(user.id, codeNorm));
     const record = await deps.prisma.passwordResetToken.findUnique({
       where: { userId: user.id },
       select: {

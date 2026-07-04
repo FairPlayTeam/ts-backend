@@ -10,14 +10,6 @@ export type DeleteUserMediaInput = {
   userId: string;
 };
 
-export type UploadAvatarInput = UploadUserMediaInput;
-
-export type DeleteAvatarInput = DeleteUserMediaInput;
-
-export type UploadBannerInput = UploadUserMediaInput;
-
-export type DeleteBannerInput = DeleteUserMediaInput;
-
 export type UserMediaAssetResult = {
   url: string;
   mimeType: string;
@@ -28,19 +20,19 @@ export type UserMediaAssetResult = {
 };
 
 export type AuthProfileMediaPort = {
-  uploadAvatar: (input: UploadAvatarInput) => Promise<{
+  uploadAvatar: (input: UploadUserMediaInput) => Promise<{
     message: string;
     avatar: UserMediaAssetResult;
   }>;
-  deleteAvatar: (input: DeleteAvatarInput) => Promise<{
+  deleteAvatar: (input: DeleteUserMediaInput) => Promise<{
     message: string;
     avatar: null;
   }>;
-  uploadBanner: (input: UploadBannerInput) => Promise<{
+  uploadBanner: (input: UploadUserMediaInput) => Promise<{
     message: string;
     banner: UserMediaAssetResult;
   }>;
-  deleteBanner: (input: DeleteBannerInput) => Promise<{
+  deleteBanner: (input: DeleteUserMediaInput) => Promise<{
     message: string;
     banner: null;
   }>;
