@@ -42,6 +42,7 @@ import {
 } from '../src/middleware/upload.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
+import { createStubProfilesService } from './support/profiles.js';
 
 let server: Server;
 let baseUrl: string;
@@ -77,6 +78,7 @@ describe('auth routes', () => {
       },
       {
         adminService: createStubAdminService(),
+        profilesService: createStubProfilesService(),
         authService: {
           ...authService,
           validateSession: async (sessionKey) => {

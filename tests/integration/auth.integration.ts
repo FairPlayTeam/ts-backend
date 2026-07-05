@@ -13,6 +13,7 @@ import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainer
 import { createApp } from '../../src/app.js';
 import { createAdminService } from '../../src/services/admin.service.js';
 import { createAuthService } from '../../src/services/auth.service.js';
+import { createProfilesService } from '../../src/services/profiles.service.js';
 import { createUserMediaProcessor } from '../../src/services/userMedia/userMedia.processor.js';
 import {
   generateSixDigitCode,
@@ -53,6 +54,7 @@ import {
 } from '../../src/config/constants.js';
 import type { AuthPorts } from '../../src/services/auth.types.js';
 import type { AdminPorts } from '../../src/services/admin.types.js';
+import type { ProfilesPorts } from '../../src/services/profiles.types.js';
 import type { Redis } from 'ioredis';
 import type { ObjectStorageConfig } from '../../src/config/env.parsers.js';
 
@@ -94,6 +96,7 @@ type TestRuntime = {
   objectStorage: ObjectStorage;
   adminService: AdminPorts;
   authService: AuthPorts;
+  profilesService: ProfilesPorts;
   delivered: {
     verification: DeliveredEmail[];
     passwordReset: DeliveredEmail[];
@@ -230,6 +233,15 @@ const createIntegrationAdminService = (
     },
   });
 
+const createIntegrationProfilesService = (
+  prisma: PrismaClient,
+  objectStorage: ObjectStorage,
+): ProfilesPorts =>
+  createProfilesService({
+    prisma,
+    objectStorage,
+  });
+
 const createIntegrationApp = async (runtime: TestRuntime) =>
   createApp(
     {
@@ -244,6 +256,7 @@ const createIntegrationApp = async (runtime: TestRuntime) =>
     {
       adminService: runtime.adminService,
       authService: runtime.authService,
+      profilesService: runtime.profilesService,
       redisClient: runtime.redisClient,
       readinessChecks: {
         database: async () => {
@@ -343,6 +356,7 @@ const startRuntime = async (): Promise<TestRuntime> => {
       objectStorage,
       adminService: createIntegrationAdminService(prisma, objectStorage, delivered),
       authService: createIntegrationAuthService(prisma, objectStorage, delivered),
+      profilesService: createIntegrationProfilesService(prisma, objectStorage),
       delivered,
     };
   } catch (error) {

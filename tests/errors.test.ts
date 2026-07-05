@@ -16,6 +16,7 @@ import {
 } from '../src/middleware/limiters.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
+import { createStubProfilesService } from './support/profiles.js';
 
 type ErrorResponse = {
   error: string;
@@ -69,7 +70,11 @@ describe('error handling', () => {
         rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
         trustProxy: false,
       },
-      { adminService: createStubAdminService(), authService: createStubAuthService() },
+      {
+        adminService: createStubAdminService(),
+        authService: createStubAuthService(),
+        profilesService: createStubProfilesService(),
+      },
     );
 
     server = app.listen(0);

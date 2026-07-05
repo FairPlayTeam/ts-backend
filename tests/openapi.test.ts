@@ -9,6 +9,7 @@ import { discoverRouteFiles } from '../src/routing/loadRoutes.js';
 import { AUTH_ROLES } from '../src/services/auth.roles.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
+import { createStubProfilesService } from './support/profiles.js';
 
 const documentedHttpMethods = new Set(['delete', 'get', 'patch', 'post', 'put']);
 
@@ -42,7 +43,11 @@ const createOpenApiTestApp = () =>
       rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
       trustProxy: false,
     },
-    { adminService: createStubAdminService(), authService: createStubAuthService() },
+    {
+      adminService: createStubAdminService(),
+      authService: createStubAuthService(),
+      profilesService: createStubProfilesService(),
+    },
   );
 
 const normalizeRoutePath = (path: string): string => {
@@ -152,6 +157,7 @@ describe('OpenAPI generation', () => {
       '/health',
       '/health/live',
       '/health/ready',
+      '/profiles/{username}',
     ]);
     expect(document.paths['/auth/login']?.post?.requestBody).toBeDefined();
     expect(document.paths['/admin/users']?.get?.requestBody).toBeUndefined();
@@ -345,6 +351,24 @@ describe('OpenAPI generation', () => {
     ).toEqual({
       $ref: '#/components/schemas/ApiOrValidationError',
     });
+    expect(document.paths['/profiles/{username}']?.get?.requestBody).toBeUndefined();
+    expect(document.paths['/profiles/{username}']?.get?.security).toBeUndefined();
+    expect(document.paths['/profiles/{username}']?.get?.parameters).toEqual([
+      expect.objectContaining({
+        name: 'username',
+        in: 'path',
+        required: true,
+      }),
+    ]);
+    expect(document.paths['/profiles/{username}']?.get?.parameters?.[0]?.schema).toEqual(
+      expect.objectContaining({
+        pattern: '^[A-Za-z0-9_]+$',
+      }),
+    );
+    expect(document.paths['/profiles/{username}']?.get?.responses?.[200]).toBeDefined();
+    expect(document.paths['/profiles/{username}']?.get?.responses?.[400]).toBeDefined();
+    expect(document.paths['/profiles/{username}']?.get?.responses?.[404]).toBeDefined();
+    expect(document.paths['/profiles/{username}']?.get?.responses?.[503]).toBeDefined();
     expect(document.components?.schemas?.LoginRequest).toBeDefined();
     expect(document.components?.schemas?.LoginResponse).toBeDefined();
     expect(document.components?.schemas?.LoginResponse?.properties?.user?.properties?.role).toEqual(
@@ -360,6 +384,7 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.BanAdminAccountResponse).toBeDefined();
     expect(document.components?.schemas?.UpdateAdminAccountRoleRequest).toBeDefined();
     expect(document.components?.schemas?.UpdateAdminAccountRoleResponse).toBeDefined();
+    expect(document.components?.schemas?.PublicProfileResponse).toBeDefined();
     expect(
       document.components?.schemas?.CurrentUserResponse?.properties?.user?.properties?.avatarUrl,
     ).toBeDefined();

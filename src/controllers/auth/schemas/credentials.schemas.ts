@@ -1,10 +1,5 @@
 import { z } from '../../../docs/zod.js';
-import {
-  EMAIL_MAX_LENGTH,
-  PASSWORD_MAX_LENGTH,
-  USERNAME_MAX_LENGTH,
-  USERNAME_MIN_LENGTH,
-} from '../../../config/constants.js';
+import { EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../../../config/constants.js';
 import {
   LOGIN_SUCCESS_MESSAGE,
   REGISTER_SUCCESS_MESSAGE,
@@ -21,18 +16,12 @@ import {
   responseMessageSchema,
   sixDigitCodeSchema,
 } from './shared.schemas.js';
+import { usernameSchema } from '../../shared/user.schemas.js';
 
 export const registerBodySchema = z
   .object({
     email: emailSchema,
-    username: z
-      .string()
-      .trim()
-      .min(USERNAME_MIN_LENGTH)
-      .max(USERNAME_MAX_LENGTH)
-      .regex(/^[a-z0-9_]+$/i, 'Username may only contain letters, numbers, and underscores')
-      .transform((v) => v.toLowerCase())
-      .openapi({ example: 'fairplay_user' }),
+    username: usernameSchema,
     password: passwordSchema,
   })
   .strict()

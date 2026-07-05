@@ -5,6 +5,7 @@ import { createApp } from '../src/app.js';
 import { ALL_CORS_ORIGINS } from '../src/config/env.parsers.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
+import { createStubProfilesService } from './support/profiles.js';
 
 let server: Server;
 let baseUrl: string;
@@ -21,7 +22,11 @@ describe('security headers', () => {
         rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
         trustProxy: false,
       },
-      { adminService: createStubAdminService(), authService: createStubAuthService() },
+      {
+        adminService: createStubAdminService(),
+        authService: createStubAuthService(),
+        profilesService: createStubProfilesService(),
+      },
     );
 
     server = app.listen(0);
@@ -68,7 +73,11 @@ describe('security headers', () => {
         rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
         trustProxy: false,
       },
-      { adminService: createStubAdminService(), authService: createStubAuthService() },
+      {
+        adminService: createStubAdminService(),
+        authService: createStubAuthService(),
+        profilesService: createStubProfilesService(),
+      },
     );
 
     const corsServer = app.listen(0);

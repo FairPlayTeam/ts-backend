@@ -4,6 +4,7 @@ import config from './config/env.js';
 import { createApp } from './app.js';
 import { adminService } from './admin.instance.js';
 import { authService } from './auth.instance.js';
+import { profilesService } from './profiles.instance.js';
 import { objectStorage } from './objectStorage.instance.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
@@ -50,7 +51,13 @@ const readinessChecks = {
   ...(objectStorage ? createObjectStorageReadinessCheck(objectStorage) : {}),
 };
 
-const app = await createApp(config, { adminService, authService, redisClient, readinessChecks });
+const app = await createApp(config, {
+  adminService,
+  authService,
+  profilesService,
+  redisClient,
+  readinessChecks,
+});
 const authCleanupJob = createAuthCleanupJob({
   authService,
   clock: {

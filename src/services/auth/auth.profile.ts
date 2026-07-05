@@ -1,8 +1,11 @@
 import type { AuthDependencies } from './auth.dependencies.js';
 import { UPDATE_PROFILE_SUCCESS_MESSAGE } from './auth.messages.js';
 import { isPrismaRecordNotFoundError } from './auth.prismaErrors.js';
-import { toUserMediaAssetUrl } from './auth.userMedia.js';
-import type { UserMediaKind } from '../userMedia/userMedia.types.js';
+import {
+  profileMediaAssetSelect,
+  profileMediaAssetWhere,
+  toProfileMediaUrls,
+} from '../userMedia/userMedia.profileAssets.js';
 import { AuthenticatedUserNotFoundError, ProfileUpdateEmptyError } from '../auth.errors.js';
 import type {
   AuthProfilePort,
@@ -11,16 +14,6 @@ import type {
 } from './types/profile.types.js';
 
 type ProfileService = AuthProfilePort;
-
-type ProfileMediaAsset = {
-  kind: UserMediaKind;
-  objectKey: string;
-};
-
-const getProfileMediaAsset = (
-  mediaAssets: ProfileMediaAsset[],
-  kind: UserMediaKind,
-): ProfileMediaAsset | undefined => mediaAssets.find((asset) => asset.kind === kind);
 
 export const createProfileService = (deps: AuthDependencies): ProfileService => ({
   async getProfile({ userId }: GetProfileInput) {
@@ -34,15 +27,8 @@ export const createProfileService = (deps: AuthDependencies): ProfileService => 
         bio: true,
         role: true,
         mediaAssets: {
-          where: {
-            kind: {
-              in: ['avatar', 'banner'],
-            },
-          },
-          select: {
-            kind: true,
-            objectKey: true,
-          },
+          where: profileMediaAssetWhere,
+          select: profileMediaAssetSelect,
         },
       },
     });
@@ -52,10 +38,7 @@ export const createProfileService = (deps: AuthDependencies): ProfileService => 
     }
 
     const { mediaAssets, ...profileUser } = user;
-    const [avatarUrl, bannerUrl] = await Promise.all([
-      toUserMediaAssetUrl(deps, getProfileMediaAsset(mediaAssets, 'avatar')),
-      toUserMediaAssetUrl(deps, getProfileMediaAsset(mediaAssets, 'banner')),
-    ]);
+    const { avatarUrl, bannerUrl } = await toProfileMediaUrls(deps.objectStorage, mediaAssets);
 
     return {
       user: {

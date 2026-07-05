@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../src/app.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
+import { createStubProfilesService } from './support/profiles.js';
 
 type TestServer = {
   baseUrl: string;
@@ -30,6 +31,7 @@ const createTestServer = async (
     {
       adminService: createStubAdminService(),
       authService: createStubAuthService(),
+      profilesService: createStubProfilesService(),
       ...(readinessChecks !== undefined ? { readinessChecks } : {}),
     },
   );

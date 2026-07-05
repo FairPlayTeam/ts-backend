@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import type { AuthDependencies } from './auth.dependencies.js';
 import { isPrismaForeignKeyConstraintError } from './auth.prismaErrors.js';
 import type { ProcessedUserMedia, UserMediaKind } from '../userMedia/userMedia.types.js';
+import { toStoredUserMediaAssetUrl } from '../userMedia/userMedia.profileAssets.js';
 import type { UserMediaAssetResult } from './types/profileMedia.types.js';
 import { AuthenticatedUserNotFoundError } from '../auth.errors.js';
 
@@ -289,7 +290,7 @@ export async function toUserMediaAssetUrl(
   deps: AuthDependencies,
   asset: { objectKey: string } | null | undefined,
 ): Promise<string | null> {
-  return asset ? deps.objectStorage.getSignedUrl(asset.objectKey) : null;
+  return toStoredUserMediaAssetUrl(deps.objectStorage, asset);
 }
 
 export const toUserMediaAssetResult = async (
