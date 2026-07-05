@@ -158,6 +158,7 @@ describe('OpenAPI generation', () => {
       '/health/live',
       '/health/ready',
       '/profiles/{username}',
+      '/profiles/{username}/follow',
     ]);
     expect(document.paths['/auth/login']?.post?.requestBody).toBeDefined();
     expect(document.paths['/admin/users']?.get?.requestBody).toBeUndefined();
@@ -369,6 +370,38 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/profiles/{username}']?.get?.responses?.[400]).toBeDefined();
     expect(document.paths['/profiles/{username}']?.get?.responses?.[404]).toBeDefined();
     expect(document.paths['/profiles/{username}']?.get?.responses?.[503]).toBeDefined();
+    expect(document.paths['/profiles/{username}/follow']?.post?.requestBody).toBeUndefined();
+    expect(document.paths['/profiles/{username}/follow']?.post?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+    expect(document.paths['/profiles/{username}/follow']?.post?.parameters).toEqual([
+      expect.objectContaining({
+        name: 'username',
+        in: 'path',
+        required: true,
+      }),
+    ]);
+    expect(document.paths['/profiles/{username}/follow']?.post?.responses?.[200]).toBeDefined();
+    expect(document.paths['/profiles/{username}/follow']?.post?.responses?.[400]).toBeDefined();
+    expect(document.paths['/profiles/{username}/follow']?.post?.responses?.[401]).toBeDefined();
+    expect(document.paths['/profiles/{username}/follow']?.post?.responses?.[404]).toBeDefined();
+    expect(document.paths['/profiles/{username}/follow']?.post?.responses?.[503]).toBeDefined();
+    expect(document.paths['/profiles/{username}/follow']?.delete?.requestBody).toBeUndefined();
+    expect(document.paths['/profiles/{username}/follow']?.delete?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+    expect(document.paths['/profiles/{username}/follow']?.delete?.parameters).toEqual([
+      expect.objectContaining({
+        name: 'username',
+        in: 'path',
+        required: true,
+      }),
+    ]);
+    expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[200]).toBeDefined();
+    expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[400]).toBeDefined();
+    expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[401]).toBeDefined();
+    expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[404]).toBeDefined();
+    expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[503]).toBeDefined();
     expect(document.components?.schemas?.LoginRequest).toBeDefined();
     expect(document.components?.schemas?.LoginResponse).toBeDefined();
     expect(document.components?.schemas?.LoginResponse?.properties?.user?.properties?.role).toEqual(
@@ -385,6 +418,8 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.UpdateAdminAccountRoleRequest).toBeDefined();
     expect(document.components?.schemas?.UpdateAdminAccountRoleResponse).toBeDefined();
     expect(document.components?.schemas?.PublicProfileResponse).toBeDefined();
+    expect(document.components?.schemas?.FollowPublicProfileResponse).toBeDefined();
+    expect(document.components?.schemas?.UnfollowPublicProfileResponse).toBeDefined();
     expect(
       document.components?.schemas?.CurrentUserResponse?.properties?.user?.properties?.avatarUrl,
     ).toBeDefined();

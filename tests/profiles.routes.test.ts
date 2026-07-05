@@ -3,8 +3,17 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../src/app.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
+import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
 import { PublicProfileNotFoundError } from '../src/services/profiles.errors.js';
-import type { GetPublicProfileInput, ProfilesPorts } from '../src/services/profiles.types.js';
+import {
+  FOLLOW_PROFILE_SUCCESS_MESSAGE,
+  UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+} from '../src/services/profiles/profiles.messages.js';
+import type {
+  FollowPublicProfileInput,
+  GetPublicProfileInput,
+  ProfilesPorts,
+} from '../src/services/profiles.types.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
@@ -12,9 +21,13 @@ import { createStubProfilesService } from './support/profiles.js';
 let server: Server;
 let baseUrl: string;
 let receivedProfileRequest: GetPublicProfileInput | undefined;
+let receivedFollowProfileRequest: FollowPublicProfileInput | undefined;
+let receivedUnfollowProfileRequest: FollowPublicProfileInput | undefined;
+let receivedSessionKey: string | undefined;
 
 describe('profiles routes', () => {
   beforeAll(async () => {
+    const authService = createStubAuthService();
     const profilesService = createStubProfilesService();
     const app = await createApp(
       {
@@ -28,7 +41,14 @@ describe('profiles routes', () => {
       },
       {
         adminService: createStubAdminService(),
-        authService: createStubAuthService(),
+        authService: {
+          ...authService,
+          validateSession: async (sessionKey) => {
+            receivedSessionKey = sessionKey;
+
+            return authService.validateSession(sessionKey);
+          },
+        },
         profilesService: {
           ...profilesService,
           getPublicProfile: async (input) => {
@@ -39,6 +59,24 @@ describe('profiles routes', () => {
             }
 
             return profilesService.getPublicProfile(input);
+          },
+          followPublicProfile: async (input) => {
+            receivedFollowProfileRequest = input;
+
+            if (input.username === 'missing_user') {
+              throw new PublicProfileNotFoundError();
+            }
+
+            return profilesService.followPublicProfile(input);
+          },
+          unfollowPublicProfile: async (input) => {
+            receivedUnfollowProfileRequest = input;
+
+            if (input.username === 'missing_user') {
+              throw new PublicProfileNotFoundError();
+            }
+
+            return profilesService.unfollowPublicProfile(input);
           },
         } satisfies ProfilesPorts,
       },
@@ -88,8 +126,106 @@ describe('profiles routes', () => {
           'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
         bannerUrl:
           'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+        followerCount: 12,
+        followingCount: 3,
         createdAt: '2026-01-01T00:00:00.000Z',
       },
+    });
+  });
+
+  test('follows a public profile with an authenticated session', async () => {
+    receivedFollowProfileRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const response = await fetch(`${baseUrl}/profiles/Creator_User/follow`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer route-session-key',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const observedSessionKey = receivedSessionKey as string | undefined;
+    const observedFollowProfileRequest = receivedFollowProfileRequest as
+      | FollowPublicProfileInput
+      | undefined;
+    expect(observedSessionKey).toBe('route-session-key');
+    expect(observedFollowProfileRequest).toEqual({
+      actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      username: 'creator_user',
+    });
+    expect(await response.json()).toEqual({
+      message: FOLLOW_PROFILE_SUCCESS_MESSAGE,
+      profile: {
+        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+        username: 'fairplay_user',
+        displayName: 'FairPlay User',
+        bio: 'Sharing project updates with my subscribers.',
+        avatarUrl:
+          'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+        bannerUrl:
+          'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+        followerCount: 13,
+        followingCount: 3,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+  });
+
+  test('unfollows a public profile with an authenticated session', async () => {
+    receivedUnfollowProfileRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const response = await fetch(`${baseUrl}/profiles/Creator_User/follow`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: 'Bearer route-session-key',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const observedSessionKey = receivedSessionKey as string | undefined;
+    const observedUnfollowProfileRequest = receivedUnfollowProfileRequest as
+      | FollowPublicProfileInput
+      | undefined;
+    expect(observedSessionKey).toBe('route-session-key');
+    expect(observedUnfollowProfileRequest).toEqual({
+      actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      username: 'creator_user',
+    });
+    expect(await response.json()).toEqual({
+      message: UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+      profile: {
+        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+        username: 'fairplay_user',
+        displayName: 'FairPlay User',
+        bio: 'Sharing project updates with my subscribers.',
+        avatarUrl:
+          'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+        bannerUrl:
+          'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+        followerCount: 12,
+        followingCount: 3,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+  });
+
+  test('requires a session before following a profile', async () => {
+    receivedFollowProfileRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const response = await fetch(`${baseUrl}/profiles/fairplay_user/follow`, {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(401);
+    expect(receivedSessionKey).toBeUndefined();
+    expect(receivedFollowProfileRequest).toBeUndefined();
+    expect(await response.json()).toEqual({
+      error: 'Unauthorized',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
     });
   });
 

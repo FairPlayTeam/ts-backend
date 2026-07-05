@@ -1,5 +1,9 @@
 import { z } from '../../../docs/zod.js';
 import { usernameSchema } from '../../shared/user.schemas.js';
+import {
+  FOLLOW_PROFILE_SUCCESS_MESSAGE,
+  UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+} from '../../../services/profiles/profiles.messages.js';
 
 export const publicProfileParamsSchema = z
   .object({
@@ -9,6 +13,14 @@ export const publicProfileParamsSchema = z
   .openapi('PublicProfileParams');
 
 export const getPublicProfileSchema = z.object({
+  params: publicProfileParamsSchema,
+});
+
+export const followPublicProfileSchema = z.object({
+  params: publicProfileParamsSchema,
+});
+
+export const unfollowPublicProfileSchema = z.object({
   params: publicProfileParamsSchema,
 });
 
@@ -29,6 +41,8 @@ const publicProfileSchema = z.object({
     example:
       'http://localhost:9000/fairplay-user-media/users/9fdf5/banner/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
   }),
+  followerCount: z.number().int().nonnegative().openapi({ example: 128 }),
+  followingCount: z.number().int().nonnegative().openapi({ example: 42 }),
   createdAt: publicProfileDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
 
@@ -38,4 +52,24 @@ export const publicProfileResponseSchema = z
   })
   .openapi('PublicProfileResponse');
 
+export const followPublicProfileResponseSchema = z
+  .object({
+    message: z.literal(FOLLOW_PROFILE_SUCCESS_MESSAGE).openapi({
+      example: FOLLOW_PROFILE_SUCCESS_MESSAGE,
+    }),
+    profile: publicProfileSchema,
+  })
+  .openapi('FollowPublicProfileResponse');
+
+export const unfollowPublicProfileResponseSchema = z
+  .object({
+    message: z.literal(UNFOLLOW_PROFILE_SUCCESS_MESSAGE).openapi({
+      example: UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+    }),
+    profile: publicProfileSchema,
+  })
+  .openapi('UnfollowPublicProfileResponse');
+
 export type GetPublicProfileParams = z.infer<typeof getPublicProfileSchema>['params'];
+export type FollowPublicProfileParams = z.infer<typeof followPublicProfileSchema>['params'];
+export type UnfollowPublicProfileParams = z.infer<typeof unfollowPublicProfileSchema>['params'];

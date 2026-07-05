@@ -38,8 +38,23 @@ model User {
   emailVerificationTokens EmailVerificationToken[]
   passwordResetToken      PasswordResetToken?
   mediaAssets             UserMediaAsset[]
+  following               UserFollow[]             @relation("UserFollowing")
+  followers               UserFollow[]             @relation("UserFollowers")
 
   @@map("users")
+}
+
+model UserFollow {
+  followerId  String   @map("follower_id") @db.Uuid
+  followingId String   @map("following_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  follower  User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+  @@map("user_follows")
 }
 
 model UserMediaAsset {

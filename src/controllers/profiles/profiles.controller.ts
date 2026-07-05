@@ -1,11 +1,18 @@
-import type { NextFunction, Request, Response } from 'express';
-import type { GetPublicProfileParams } from '../profiles.schemas.js';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import type {
+  FollowPublicProfileParams,
+  GetPublicProfileParams,
+  UnfollowPublicProfileParams,
+} from '../profiles.schemas.js';
 import { sendNoStoreJson } from '../http.responses.js';
 import { toProfilesHttpError } from '../profiles.errors.js';
+import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import type { ProfilesControllerDependencies } from './profiles.controller.types.js';
-import { toPublicProfileResponse } from './profiles.responses.js';
+import { toFollowPublicProfileResponse, toPublicProfileResponse } from './profiles.responses.js';
 
 type GetPublicProfileRequest = Request<GetPublicProfileParams>;
+type FollowPublicProfileRequest = Request<FollowPublicProfileParams>;
+type UnfollowPublicProfileRequest = Request<UnfollowPublicProfileParams>;
 
 export const createProfilesController = (deps: ProfilesControllerDependencies) => {
   const getPublicProfile = async (
@@ -24,7 +31,39 @@ export const createProfilesController = (deps: ProfilesControllerDependencies) =
     }
   };
 
+  const followPublicProfile: RequestHandler = async (req, res, next) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const followReq = req as FollowPublicProfileRequest;
+      const result = await deps.profilesService.followPublicProfile({
+        actorUserId: authenticatedReq.user.id,
+        username: followReq.params.username,
+      });
+
+      return sendNoStoreJson(res, 200, toFollowPublicProfileResponse(result));
+    } catch (err) {
+      next(toProfilesHttpError(err));
+    }
+  };
+
+  const unfollowPublicProfile: RequestHandler = async (req, res, next) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const unfollowReq = req as UnfollowPublicProfileRequest;
+      const result = await deps.profilesService.unfollowPublicProfile({
+        actorUserId: authenticatedReq.user.id,
+        username: unfollowReq.params.username,
+      });
+
+      return sendNoStoreJson(res, 200, toFollowPublicProfileResponse(result));
+    } catch (err) {
+      next(toProfilesHttpError(err));
+    }
+  };
+
   return {
+    followPublicProfile,
     getPublicProfile,
+    unfollowPublicProfile,
   };
 };

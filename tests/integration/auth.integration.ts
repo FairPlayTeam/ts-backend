@@ -46,6 +46,11 @@ import {
   EMAIL_NOT_VERIFIED_MESSAGE,
   INVALID_CREDENTIALS_MESSAGE,
 } from '../../src/services/auth.errors.js';
+import { SELF_FOLLOW_MESSAGE } from '../../src/services/profiles.errors.js';
+import {
+  FOLLOW_PROFILE_SUCCESS_MESSAGE,
+  UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+} from '../../src/services/profiles/profiles.messages.js';
 import {
   EMAIL_VERIFICATION_TOKEN_TTL_MS,
   PASSWORD_RESET_TOKEN_TTL_MS,
@@ -384,6 +389,7 @@ const resetState = async (runtime: TestRuntime): Promise<void> => {
   await runtime.prisma.passwordResetToken.deleteMany();
   await runtime.prisma.emailVerificationToken.deleteMany();
   await runtime.prisma.session.deleteMany();
+  await runtime.prisma.userFollow.deleteMany();
   await runtime.prisma.user.deleteMany();
   await runtime.redisClient.call('flushdb');
   runtime.delivered.verification = [];
@@ -620,6 +626,108 @@ describe('auth integration', () => {
     const app = await createIntegrationApp(runtime);
 
     await expectIntegrationReadinessOk(app);
+  });
+
+  test('follows and unfollows public profiles through HTTP and Prisma', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const follower = await createVerifiedSession(runtime, {
+      email: 'profile-follower@example.com',
+      username: 'profile_follower',
+    });
+    const creator = await createVerifiedSession(runtime, {
+      email: 'profile-creator@example.com',
+      username: 'profile_creator',
+    });
+
+    await request(app)
+      .get('/profiles/profile_creator')
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.profile).toEqual(
+          expect.objectContaining({
+            id: creator.userId,
+            username: 'profile_creator',
+            followerCount: 0,
+            followingCount: 0,
+          }),
+        );
+      });
+
+    await request(app)
+      .post('/profiles/profile_creator/follow')
+      .set('Authorization', `Bearer ${follower.sessionKey}`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body).toEqual(
+          expect.objectContaining({
+            message: FOLLOW_PROFILE_SUCCESS_MESSAGE,
+            profile: expect.objectContaining({
+              id: creator.userId,
+              followerCount: 1,
+              followingCount: 0,
+            }),
+          }),
+        );
+      });
+
+    await expect(
+      runtime.prisma.userFollow.findUnique({
+        where: {
+          followerId_followingId: {
+            followerId: follower.userId,
+            followingId: creator.userId,
+          },
+        },
+      }),
+    ).resolves.toMatchObject({
+      followerId: follower.userId,
+      followingId: creator.userId,
+    });
+
+    await request(app)
+      .post('/profiles/profile_creator/follow')
+      .set('Authorization', `Bearer ${follower.sessionKey}`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.profile.followerCount).toBe(1);
+      });
+
+    await request(app)
+      .get('/profiles/profile_follower')
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.profile.followingCount).toBe(1);
+      });
+
+    await request(app)
+      .post('/profiles/profile_follower/follow')
+      .set('Authorization', `Bearer ${follower.sessionKey}`)
+      .expect(400)
+      .expect({
+        error: 'BadRequest',
+        message: SELF_FOLLOW_MESSAGE,
+      });
+
+    await request(app)
+      .delete('/profiles/profile_creator/follow')
+      .set('Authorization', `Bearer ${follower.sessionKey}`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body).toEqual(
+          expect.objectContaining({
+            message: UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+            profile: expect.objectContaining({
+              followerCount: 0,
+            }),
+          }),
+        );
+      });
+
+    await expect(runtime.prisma.userFollow.count()).resolves.toBe(0);
   });
 
   test('stores uploaded profile media in MinIO and serves it through signed profile URLs', async () => {
