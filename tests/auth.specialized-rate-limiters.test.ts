@@ -10,6 +10,7 @@ import {
   PROFILE_MEDIA_UPLOAD_RATE_LIMIT_MESSAGE,
 } from '../src/middleware/limiters.js';
 import type { AuthPorts } from '../src/services/auth.types.js';
+import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 
 type TestServer = {
@@ -64,7 +65,7 @@ const startAuthApp = async (authService: AuthPorts): Promise<TestServer> => {
       rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
       trustProxy: false,
     },
-    { authService },
+    { adminService: createStubAdminService(), authService },
   );
   const server = app.listen(0);
   const address = server.address();

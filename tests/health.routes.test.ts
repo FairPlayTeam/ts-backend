@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../src/app.js';
+import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 
 type TestServer = {
@@ -27,6 +28,7 @@ const createTestServer = async (
       trustProxy: false,
     },
     {
+      adminService: createStubAdminService(),
       authService: createStubAuthService(),
       ...(readinessChecks !== undefined ? { readinessChecks } : {}),
     },

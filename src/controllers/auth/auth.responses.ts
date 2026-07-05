@@ -1,27 +1,23 @@
-import type { Request, Response } from 'express';
+import type { Request } from 'express';
 import type {
   AuthSessionResult,
   ExportUserDataResult,
   ListUserSessionsResult,
   UserMediaAssetResult,
 } from '../../services/auth.types.js';
+import {
+  sendNoStoreJson,
+  setNoStore,
+  toIsoString,
+  toNullableIsoString,
+} from '../http.responses.js';
+
+export { sendNoStoreJson, setNoStore };
 
 type SessionResponseInput = {
   id: string;
   expiresAt: Date;
 };
-
-const SENSITIVE_RESPONSE_CACHE_CONTROL = 'no-store';
-
-const toIsoString = (date: Date): string => date.toISOString();
-
-const toNullableIsoString = (date: Date | null): string | null => (date ? toIsoString(date) : null);
-
-export const setNoStore = (res: Response): Response =>
-  res.set('Cache-Control', SENSITIVE_RESPONSE_CACHE_CONTROL);
-
-export const sendNoStoreJson = (res: Response, statusCode: number, body: unknown): Response =>
-  setNoStore(res).status(statusCode).json(body);
 
 export const toSessionResponse = (session: SessionResponseInput) => ({
   id: session.id,

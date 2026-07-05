@@ -14,6 +14,7 @@ import {
   AUTH_RATE_LIMIT_MESSAGE,
   authRateLimitExceededHandler,
 } from '../src/middleware/limiters.js';
+import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 
 type ErrorResponse = {
@@ -68,7 +69,7 @@ describe('error handling', () => {
         rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
         trustProxy: false,
       },
-      { authService: createStubAuthService() },
+      { adminService: createStubAdminService(), authService: createStubAuthService() },
     );
 
     server = app.listen(0);

@@ -2,6 +2,7 @@ import type { Server } from 'node:http';
 
 import config from './config/env.js';
 import { createApp } from './app.js';
+import { adminService } from './admin.instance.js';
 import { authService } from './auth.instance.js';
 import { objectStorage } from './objectStorage.instance.js';
 import { logger } from './lib/logger.js';
@@ -49,7 +50,7 @@ const readinessChecks = {
   ...(objectStorage ? createObjectStorageReadinessCheck(objectStorage) : {}),
 };
 
-const app = await createApp(config, { authService, redisClient, readinessChecks });
+const app = await createApp(config, { adminService, authService, redisClient, readinessChecks });
 const authCleanupJob = createAuthCleanupJob({
   authService,
   clock: {

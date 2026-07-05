@@ -15,6 +15,7 @@ import { createEmailCooldown } from './middleware/abuseProtection.js';
 import type { Config } from './config/env.js';
 import { ALL_CORS_ORIGINS } from './config/env.parsers.js';
 import type { RedisClient } from './lib/redis.js';
+import type { AdminRoutePort } from './services/admin.types.js';
 import type { AuthRoutePort } from './services/auth.types.js';
 import helmet from 'helmet';
 import {
@@ -38,6 +39,7 @@ type CreateAppConfig = Pick<
 >;
 
 type CreateAppDependencies = {
+  adminService: AdminRoutePort;
   authService: AuthRoutePort;
   redisClient?: RedisClient | null;
   readinessChecks?: ReadinessChecks | null;
@@ -201,6 +203,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     app,
     new URL('./routes/', import.meta.url),
     {
+      adminService: deps.adminService,
       authService: deps.authService,
       profileMediaMaxUploadBytes: config.profileMediaMaxUploadBytes,
       authLimiter,

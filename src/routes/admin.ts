@@ -1,0 +1,31 @@
+import { Router, type RequestHandler } from 'express';
+import { createAdminController } from '../controllers/admin.controller.js';
+import { adminAccountsSchema } from '../controllers/admin.schemas.js';
+import { createRouteProtector } from '../middleware/routeProtection.js';
+import { validate } from '../middleware/validation.js';
+import type { AdminRoutePort } from '../services/admin.types.js';
+import type { AuthSessionValidationPort } from '../services/auth.types.js';
+
+type AdminRouterDependencies = {
+  authService: AuthSessionValidationPort;
+  adminService: AdminRoutePort;
+};
+
+type ValidationSchema = Parameters<typeof validate>[0];
+
+export const createRouter = ({ adminService, authService }: AdminRouterDependencies) => {
+  const router = Router();
+  const { listAccounts } = createAdminController({ adminService });
+  const protect = createRouteProtector({ authService });
+  const adminRoute = (schema: ValidationSchema, ...handlers: RequestHandler[]) => [
+    ...protect({ roles: ['admin'] }),
+    validate(schema),
+    ...handlers,
+  ];
+
+  router.get('/users', ...adminRoute(adminAccountsSchema, listAccounts));
+
+  return router;
+};
+
+export { routeDocs } from '../docs/admin.routes.js';

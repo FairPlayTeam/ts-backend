@@ -7,6 +7,7 @@ import type { RouteDoc } from '../src/docs/registry.js';
 import { z } from '../src/docs/zod.js';
 import { discoverRouteFiles } from '../src/routing/loadRoutes.js';
 import { AUTH_ROLES } from '../src/services/auth.roles.js';
+import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 
 const documentedHttpMethods = new Set(['delete', 'get', 'patch', 'post', 'put']);
@@ -41,7 +42,7 @@ const createOpenApiTestApp = () =>
       rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
       trustProxy: false,
     },
-    { authService: createStubAuthService() },
+    { adminService: createStubAdminService(), authService: createStubAuthService() },
   );
 
 const normalizeRoutePath = (path: string): string => {
@@ -131,6 +132,7 @@ describe('OpenAPI generation', () => {
 
     expect(Object.keys(document.paths).sort()).toEqual([
       '/',
+      '/admin/users',
       '/auth/forgot-password',
       '/auth/login',
       '/auth/me',
@@ -150,6 +152,29 @@ describe('OpenAPI generation', () => {
       '/health/ready',
     ]);
     expect(document.paths['/auth/login']?.post?.requestBody).toBeDefined();
+    expect(document.paths['/admin/users']?.get?.requestBody).toBeUndefined();
+    expect(document.paths['/admin/users']?.get?.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'limit',
+          in: 'query',
+        }),
+        expect.objectContaining({
+          name: 'cursorCreatedAt',
+          in: 'query',
+        }),
+        expect.objectContaining({
+          name: 'cursorId',
+          in: 'query',
+        }),
+      ]),
+    );
+    expect(document.paths['/admin/users']?.get?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths['/admin/users']?.get?.responses?.[200]).toBeDefined();
+    expect(document.paths['/admin/users']?.get?.responses?.[400]).toBeDefined();
+    expect(document.paths['/admin/users']?.get?.responses?.[401]).toBeDefined();
+    expect(document.paths['/admin/users']?.get?.responses?.[403]).toBeDefined();
+    expect(document.paths['/admin/users']?.get?.responses?.[503]).toBeDefined();
     expect(document.paths['/auth/login']?.post?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/login']?.post?.responses?.[403]).toBeDefined();
     expect(document.components?.securitySchemes?.bearerAuth).toEqual({
@@ -294,6 +319,7 @@ describe('OpenAPI generation', () => {
       },
     );
     expect(document.components?.schemas?.CurrentUserResponse).toBeDefined();
+    expect(document.components?.schemas?.AdminAccountsResponse).toBeDefined();
     expect(
       document.components?.schemas?.CurrentUserResponse?.properties?.user?.properties?.avatarUrl,
     ).toBeDefined();

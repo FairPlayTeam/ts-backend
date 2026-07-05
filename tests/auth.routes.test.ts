@@ -40,6 +40,7 @@ import {
   UPLOAD_INVALID_REQUEST_MESSAGE,
   UPLOAD_UNEXPECTED_FILE_MESSAGE,
 } from '../src/middleware/upload.js';
+import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 
 let server: Server;
@@ -75,6 +76,7 @@ describe('auth routes', () => {
         trustProxy: false,
       },
       {
+        adminService: createStubAdminService(),
         authService: {
           ...authService,
           validateSession: async (sessionKey) => {

@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../src/app.js';
 import { ALL_CORS_ORIGINS } from '../src/config/env.parsers.js';
+import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 
 let server: Server;
@@ -20,7 +21,7 @@ describe('security headers', () => {
         rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
         trustProxy: false,
       },
-      { authService: createStubAuthService() },
+      { adminService: createStubAdminService(), authService: createStubAuthService() },
     );
 
     server = app.listen(0);
@@ -67,7 +68,7 @@ describe('security headers', () => {
         rateLimitKeySecret: 'test-rate-limit-key-secret-123456',
         trustProxy: false,
       },
-      { authService: createStubAuthService() },
+      { adminService: createStubAdminService(), authService: createStubAuthService() },
     );
 
     const corsServer = app.listen(0);
