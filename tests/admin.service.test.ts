@@ -1,14 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import type { AdminDependencies } from '../src/services/admin/admin.dependencies.js';
+import type { AuthRole } from '../src/services/auth.roles.js';
 import { createAdminService } from '../src/services/admin.service.js';
 import {
   AdminAccountAlreadyBannedError,
   AdminAccountNotFoundError,
   AdminBanReasonInvalidError,
+  AdminRoleAlreadyAssignedError,
+  AdminRoleAssignmentError,
   AdminRoleHierarchyError,
   AdminSelfBanError,
 } from '../src/services/admin.errors.js';
-import { BAN_ACCOUNT_SUCCESS_MESSAGE } from '../src/services/admin/admin.messages.js';
+import {
+  BAN_ACCOUNT_SUCCESS_MESSAGE,
+  UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
+} from '../src/services/admin/admin.messages.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
 
 const firstCreatedAt = new Date('2026-01-03T00:00:00.000Z');
@@ -49,17 +55,33 @@ const createBanTargetRecord = ({
 }: {
   id?: string;
   isBanned?: boolean;
-  role?: 'admin' | 'moderator' | 'user';
+  role?: AuthRole;
 } = {}) => ({
   id,
   email: 'target@example.com',
   username: 'target_user',
   displayName: 'Target User',
   role,
+  updatedAt,
   isBanned,
   bannedAt: isBanned ? new Date('2026-01-01T00:00:00.000Z') : null,
   banReason: isBanned ? 'Already banned' : null,
 });
+
+const applySelect = <RecordValue extends Record<string, unknown>>(
+  record: RecordValue,
+  select: Record<string, unknown> | undefined,
+): Partial<RecordValue> => {
+  if (!select) {
+    return record;
+  }
+
+  return Object.fromEntries(
+    Object.entries(select)
+      .filter(([, enabled]) => enabled === true)
+      .map(([key]) => [key, record[key]]),
+  ) as Partial<RecordValue>;
+};
 
 const createDeps = ({
   queriedAccounts = [
@@ -92,6 +114,7 @@ const createDeps = ({
   now?: Date;
 } = {}) => {
   let persistedBan: { bannedAt: Date; banReason: string } | null = null;
+  let persistedRole: AuthRole | null = null;
   const calls: {
     accountBanEmails: { email: string; reason: string }[];
     logs: { data: object; message: string }[];
@@ -129,25 +152,32 @@ const createDeps = ({
       user: {
         findUnique: async (args: unknown) => {
           calls.userFindUnique.push(args);
+          const { select } = args as { select?: Record<string, unknown> };
 
           if (!banTarget) {
             return null;
           }
 
           if (!persistedBan) {
-            return {
-              id: banTarget.id,
-              isBanned: banTarget.isBanned,
-              role: banTarget.role,
-            };
+            return applySelect(
+              {
+                ...banTarget,
+                ...(persistedRole ? { role: persistedRole, updatedAt: now } : {}),
+              },
+              select,
+            );
           }
 
-          return {
-            ...banTarget,
-            isBanned: true,
-            bannedAt: persistedBan.bannedAt,
-            banReason: persistedBan.banReason,
-          };
+          return applySelect(
+            {
+              ...banTarget,
+              ...(persistedRole ? { role: persistedRole, updatedAt: now } : {}),
+              isBanned: true,
+              bannedAt: persistedBan.bannedAt,
+              banReason: persistedBan.banReason,
+            },
+            select,
+          );
         },
         findMany: async (args: unknown) => {
           calls.userFindMany = args;
@@ -162,11 +192,32 @@ const createDeps = ({
         updateMany: async (args: unknown) => {
           calls.userUpdateMany = args;
 
-          if (!banTarget || banTarget.isBanned) {
+          const update = args as {
+            data?: { bannedAt?: Date; banReason?: string; role?: AuthRole };
+            where?: { role?: { in?: AuthRole[] } };
+          };
+
+          if (!banTarget) {
             return { count: 0 };
           }
 
-          const update = args as { data?: { bannedAt?: Date; banReason?: string } };
+          const currentRole = persistedRole ?? banTarget.role;
+          const allowedRoles = update.where?.role?.in;
+
+          if (allowedRoles && !allowedRoles.includes(currentRole)) {
+            return { count: 0 };
+          }
+
+          if (update.data?.role !== undefined) {
+            persistedRole = update.data.role;
+
+            return { count: 1 };
+          }
+
+          if (banTarget.isBanned) {
+            return { count: 0 };
+          }
+
           persistedBan = {
             bannedAt: update.data?.bannedAt ?? now,
             banReason: update.data?.banReason ?? '',
@@ -495,5 +546,134 @@ describe('admin service accounts', () => {
       }),
     ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
     expect(superiorAdmin.calls.userUpdateMany).toBeUndefined();
+  });
+
+  test('updates an account role when the target current role is lower', async () => {
+    const { calls, deps } = createDeps();
+    const service = createAdminService(deps);
+
+    await expect(
+      service.updateAccountRole({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+        role: 'admin',
+      }),
+    ).resolves.toEqual({
+      message: UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
+      account: {
+        id: targetUserId,
+        email: 'target@example.com',
+        username: 'target_user',
+        displayName: 'Target User',
+        role: 'admin',
+        updatedAt: banTime,
+      },
+    });
+
+    expect(calls.userUpdateMany).toEqual({
+      where: {
+        id: targetUserId,
+        role: { in: ['user', 'moderator'] },
+      },
+      data: {
+        role: 'admin',
+      },
+    });
+  });
+
+  test('allows a moderator to update a user to moderator but not admin', async () => {
+    const promotion = createDeps();
+
+    await expect(
+      createAdminService(promotion.deps).updateAccountRole({
+        actorUserId,
+        actorRole: 'moderator',
+        targetUserId,
+        role: 'moderator',
+      }),
+    ).resolves.toMatchObject({
+      account: {
+        role: 'moderator',
+      },
+    });
+    expect(promotion.calls.userUpdateMany).toEqual({
+      where: {
+        id: targetUserId,
+        role: { in: ['user'] },
+      },
+      data: {
+        role: 'moderator',
+      },
+    });
+
+    const escalation = createDeps();
+
+    await expect(
+      createAdminService(escalation.deps).updateAccountRole({
+        actorUserId,
+        actorRole: 'moderator',
+        targetUserId,
+        role: 'admin',
+      }),
+    ).rejects.toBeInstanceOf(AdminRoleAssignmentError);
+    expect(escalation.calls.userFindUnique).toEqual([]);
+    expect(escalation.calls.userUpdateMany).toBeUndefined();
+  });
+
+  test('rejects role updates against equivalent or higher current roles', async () => {
+    const equivalentAdmin = createDeps({
+      banTarget: createBanTargetRecord({ role: 'admin' }),
+    });
+
+    await expect(
+      createAdminService(equivalentAdmin.deps).updateAccountRole({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+        role: 'user',
+      }),
+    ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
+    expect(equivalentAdmin.calls.userUpdateMany).toBeUndefined();
+
+    const superiorAdmin = createDeps({
+      banTarget: createBanTargetRecord({ role: 'admin' }),
+    });
+
+    await expect(
+      createAdminService(superiorAdmin.deps).updateAccountRole({
+        actorUserId,
+        actorRole: 'moderator',
+        targetUserId,
+        role: 'user',
+      }),
+    ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
+    expect(superiorAdmin.calls.userUpdateMany).toBeUndefined();
+  });
+
+  test('rejects role update no-ops and missing accounts', async () => {
+    const sameRole = createDeps();
+
+    await expect(
+      createAdminService(sameRole.deps).updateAccountRole({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+        role: 'user',
+      }),
+    ).rejects.toBeInstanceOf(AdminRoleAlreadyAssignedError);
+    expect(sameRole.calls.userUpdateMany).toBeUndefined();
+
+    const unknownAccount = createDeps({ banTarget: null });
+
+    await expect(
+      createAdminService(unknownAccount.deps).updateAccountRole({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+        role: 'moderator',
+      }),
+    ).rejects.toBeInstanceOf(AdminAccountNotFoundError);
+    expect(unknownAccount.calls.userUpdateMany).toBeUndefined();
   });
 });

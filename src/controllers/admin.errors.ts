@@ -4,6 +4,8 @@ import {
   AdminAccountAlreadyBannedError,
   AdminAccountNotFoundError,
   AdminBanReasonInvalidError,
+  AdminRoleAlreadyAssignedError,
+  AdminRoleAssignmentError,
   AdminRoleHierarchyError,
   AdminSelfBanError,
 } from '../services/admin.errors.js';
@@ -13,7 +15,11 @@ export function toAdminHttpError(err: unknown): Error {
     return new HttpError(400, 'BadRequest', err.message, { cause: err });
   }
 
-  if (err instanceof AdminRoleHierarchyError || err instanceof AdminSelfBanError) {
+  if (
+    err instanceof AdminRoleAssignmentError ||
+    err instanceof AdminRoleHierarchyError ||
+    err instanceof AdminSelfBanError
+  ) {
     return new HttpError(403, 'Forbidden', err.message, { cause: err });
   }
 
@@ -21,7 +27,10 @@ export function toAdminHttpError(err: unknown): Error {
     return new HttpError(404, 'NotFound', err.message, { cause: err });
   }
 
-  if (err instanceof AdminAccountAlreadyBannedError) {
+  if (
+    err instanceof AdminAccountAlreadyBannedError ||
+    err instanceof AdminRoleAlreadyAssignedError
+  ) {
     return new HttpError(409, 'Conflict', err.message, { cause: err });
   }
 

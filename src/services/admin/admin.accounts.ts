@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import type { AdminDependencies } from './admin.dependencies.js';
 import { banAdminAccount } from './admin.accountBan.js';
+import { updateAdminAccountRole } from './admin.accountRoles.js';
 import type {
   BanAdminAccountInput,
   BanAdminAccountResult,
@@ -8,6 +9,8 @@ import type {
   AdminAccountsPort,
   ListAdminAccountsInput,
   ListAdminAccountsResult,
+  UpdateAdminAccountRoleInput,
+  UpdateAdminAccountRoleResult,
 } from './types/accounts.types.js';
 
 const DEFAULT_ADMIN_ACCOUNTS_LIMIT = 20;
@@ -106,5 +109,11 @@ export const createAdminAccountsService = (deps: AdminDependencies): AdminAccoun
 
   async banAccount(input: BanAdminAccountInput): Promise<BanAdminAccountResult> {
     return banAdminAccount(deps, input);
+  },
+
+  async updateAccountRole(
+    input: UpdateAdminAccountRoleInput,
+  ): Promise<UpdateAdminAccountRoleResult> {
+    return updateAdminAccountRole(deps, input);
   },
 });

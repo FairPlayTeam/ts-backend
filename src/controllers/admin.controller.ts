@@ -7,5 +7,6 @@ export const createAdminController = (deps: AdminControllerDependencies) => {
   return {
     banAccount: accounts.banAccount,
     listAccounts: accounts.listAccounts,
+    updateAccountRole: accounts.updateAccountRole,
   };
 };

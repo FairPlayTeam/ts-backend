@@ -1,6 +1,5 @@
 import type { Prisma } from '@prisma/client';
 import { BAN_REASON_MAX_LENGTH } from '../../config/constants.js';
-import { AUTH_ROLES, type AuthRole } from '../auth.roles.js';
 import {
   AdminAccountAlreadyBannedError,
   AdminAccountNotFoundError,
@@ -13,6 +12,7 @@ import {
 import { handleExpectedMailerError } from '../mailer/mailer.helpers.js';
 import type { AdminDependencies } from './admin.dependencies.js';
 import { BAN_ACCOUNT_SUCCESS_MESSAGE } from './admin.messages.js';
+import { canManageRole, getManageableRoles } from './admin.roleHierarchy.js';
 import type {
   BanAdminAccountInput,
   BanAdminAccountResult,
@@ -31,18 +31,6 @@ const bannedAccountSelect = {
 } satisfies Prisma.UserSelect;
 
 type BannedAccountRecord = Prisma.UserGetPayload<{ select: typeof bannedAccountSelect }>;
-
-const ROLE_RANK = {
-  user: 0,
-  moderator: 1,
-  admin: 2,
-} satisfies Record<AuthRole, number>;
-
-const canBanRole = (actorRole: AuthRole, targetRole: AuthRole): boolean =>
-  ROLE_RANK[actorRole] > ROLE_RANK[targetRole];
-
-const getBannableRoles = (actorRole: AuthRole): AuthRole[] =>
-  AUTH_ROLES.filter((targetRole) => canBanRole(actorRole, targetRole));
 
 const normalizeBanReason = (reason: string): string => {
   const normalizedReason = reason.trim();
@@ -80,7 +68,7 @@ export const banAdminAccount = async (
   }
 
   const normalizedReason = normalizeBanReason(reason);
-  const bannableRoles = getBannableRoles(actorRole);
+  const bannableRoles = getManageableRoles(actorRole);
   const bannedAt = deps.clock.now();
 
   const { account, sessionsRevoked } = await deps.prisma.$transaction(async (tx) => {
@@ -97,7 +85,7 @@ export const banAdminAccount = async (
       throw new AdminAccountAlreadyBannedError();
     }
 
-    if (!canBanRole(actorRole, existingAccount.role)) {
+    if (!canManageRole(actorRole, existingAccount.role)) {
       throw new AdminRoleHierarchyError();
     }
 
@@ -128,7 +116,7 @@ export const banAdminAccount = async (
         throw new AdminAccountAlreadyBannedError();
       }
 
-      if (!canBanRole(actorRole, currentAccount.role)) {
+      if (!canManageRole(actorRole, currentAccount.role)) {
         throw new AdminRoleHierarchyError();
       }
 

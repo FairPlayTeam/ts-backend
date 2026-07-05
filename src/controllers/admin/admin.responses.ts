@@ -1,5 +1,9 @@
 import { toIsoString, toNullableIsoString } from '../http.responses.js';
-import type { BanAdminAccountResult, ListAdminAccountsResult } from '../../services/admin.types.js';
+import type {
+  BanAdminAccountResult,
+  ListAdminAccountsResult,
+  UpdateAdminAccountRoleResult,
+} from '../../services/admin.types.js';
 
 export const toAdminAccountsResponse = ({
   accounts,
@@ -35,4 +39,15 @@ export const toBanAdminAccountResponse = ({
   },
   sessionsRevoked,
   notificationEmailSent,
+});
+
+export const toUpdateAdminAccountRoleResponse = ({
+  account,
+  message,
+}: UpdateAdminAccountRoleResult) => ({
+  message,
+  account: {
+    ...account,
+    updatedAt: toIsoString(account.updatedAt),
+  },
 });

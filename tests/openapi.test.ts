@@ -134,6 +134,7 @@ describe('OpenAPI generation', () => {
       '/',
       '/admin/users',
       '/admin/users/{userId}/ban',
+      '/admin/users/{userId}/role',
       '/auth/forgot-password',
       '/auth/login',
       '/auth/me',
@@ -193,6 +194,23 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/admin/users/{userId}/ban']?.post?.responses?.[403]).toBeDefined();
     expect(document.paths['/admin/users/{userId}/ban']?.post?.responses?.[404]).toBeDefined();
     expect(document.paths['/admin/users/{userId}/ban']?.post?.responses?.[409]).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/role']?.patch?.requestBody).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/role']?.patch?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+    expect(document.paths['/admin/users/{userId}/role']?.patch?.parameters).toEqual([
+      expect.objectContaining({
+        name: 'userId',
+        in: 'path',
+        required: true,
+      }),
+    ]);
+    expect(document.paths['/admin/users/{userId}/role']?.patch?.responses?.[200]).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/role']?.patch?.responses?.[400]).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/role']?.patch?.responses?.[401]).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/role']?.patch?.responses?.[403]).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/role']?.patch?.responses?.[404]).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/role']?.patch?.responses?.[409]).toBeDefined();
     expect(document.paths['/auth/login']?.post?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/login']?.post?.responses?.[403]).toBeDefined();
     expect(document.components?.securitySchemes?.bearerAuth).toEqual({
@@ -340,6 +358,8 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.AdminAccountsResponse).toBeDefined();
     expect(document.components?.schemas?.BanAdminAccountRequest).toBeDefined();
     expect(document.components?.schemas?.BanAdminAccountResponse).toBeDefined();
+    expect(document.components?.schemas?.UpdateAdminAccountRoleRequest).toBeDefined();
+    expect(document.components?.schemas?.UpdateAdminAccountRoleResponse).toBeDefined();
     expect(
       document.components?.schemas?.CurrentUserResponse?.properties?.user?.properties?.avatarUrl,
     ).toBeDefined();

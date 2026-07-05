@@ -1,5 +1,8 @@
 import type { AdminPorts } from '../../src/services/admin.types.js';
-import { BAN_ACCOUNT_SUCCESS_MESSAGE } from '../../src/services/admin/admin.messages.js';
+import {
+  BAN_ACCOUNT_SUCCESS_MESSAGE,
+  UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
+} from '../../src/services/admin/admin.messages.js';
 
 export const createStubAdminService = (): AdminPorts => ({
   banAccount: async () => ({
@@ -37,5 +40,16 @@ export const createStubAdminService = (): AdminPorts => ({
     ],
     total: 1,
     nextCursor: null,
+  }),
+  updateAccountRole: async () => ({
+    message: UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
+    account: {
+      id: '22222222-2222-4222-8222-222222222222',
+      email: 'role-updated@example.com',
+      username: 'role_updated',
+      displayName: 'Role Updated',
+      role: 'moderator',
+      updatedAt: new Date('2026-01-05T00:00:00.000Z'),
+    },
   }),
 });

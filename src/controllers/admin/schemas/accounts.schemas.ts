@@ -1,7 +1,10 @@
 import { z } from '../../../docs/zod.js';
 import { BAN_REASON_MAX_LENGTH } from '../../../config/constants.js';
 import { AUTH_ROLES } from '../../../services/auth.roles.js';
-import { BAN_ACCOUNT_SUCCESS_MESSAGE } from '../../../services/admin/admin.messages.js';
+import {
+  BAN_ACCOUNT_SUCCESS_MESSAGE,
+  UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
+} from '../../../services/admin/admin.messages.js';
 import { ADMIN_BAN_REASON_REQUIRED_MESSAGE } from '../../../services/admin.errors.js';
 
 export const ADMIN_ACCOUNTS_CURSOR_PAIR_MESSAGE =
@@ -29,7 +32,7 @@ export const adminAccountsSchema = z.object({
   query: adminAccountsQuerySchema,
 });
 
-export const banAdminAccountParamsSchema = z
+export const adminAccountParamsSchema = z
   .object({
     userId: z
       .string()
@@ -37,7 +40,7 @@ export const banAdminAccountParamsSchema = z
       .openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
   })
   .strict()
-  .openapi('BanAdminAccountParams');
+  .openapi('AdminAccountParams');
 
 export const banAdminAccountRequestSchema = z
   .object({
@@ -54,8 +57,20 @@ export const banAdminAccountRequestSchema = z
   .openapi('BanAdminAccountRequest');
 
 export const banAdminAccountSchema = z.object({
-  params: banAdminAccountParamsSchema,
+  params: adminAccountParamsSchema,
   body: banAdminAccountRequestSchema,
+});
+
+export const updateAdminAccountRoleRequestSchema = z
+  .object({
+    role: z.enum(AUTH_ROLES).openapi({ example: 'moderator' }),
+  })
+  .strict()
+  .openapi('UpdateAdminAccountRoleRequest');
+
+export const updateAdminAccountRoleSchema = z.object({
+  params: adminAccountParamsSchema,
+  body: updateAdminAccountRoleRequestSchema,
 });
 
 const accountDateTimeSchema = z.string().datetime();
@@ -116,6 +131,26 @@ export const banAdminAccountResponseSchema = z
   })
   .openapi('BanAdminAccountResponse');
 
+const updatedAdminAccountRoleResponseSchema = z.object({
+  id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
+  email: z.string().email().openapi({ example: 'creator@example.com' }),
+  username: z.string().openapi({ example: 'fairplay_creator' }),
+  displayName: z.string().nullable().openapi({ example: 'FairPlay Creator' }),
+  role: z.enum(AUTH_ROLES).openapi({ example: 'moderator' }),
+  updatedAt: accountDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+});
+
+export const updateAdminAccountRoleResponseSchema = z
+  .object({
+    message: z.literal(UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE).openapi({
+      example: UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
+    }),
+    account: updatedAdminAccountRoleResponseSchema,
+  })
+  .openapi('UpdateAdminAccountRoleResponse');
+
 export type AdminAccountsQuery = z.infer<typeof adminAccountsSchema>['query'];
 export type BanAdminAccountParams = z.infer<typeof banAdminAccountSchema>['params'];
 export type BanAdminAccountBody = z.infer<typeof banAdminAccountSchema>['body'];
+export type UpdateAdminAccountRoleParams = z.infer<typeof updateAdminAccountRoleSchema>['params'];
+export type UpdateAdminAccountRoleBody = z.infer<typeof updateAdminAccountRoleSchema>['body'];

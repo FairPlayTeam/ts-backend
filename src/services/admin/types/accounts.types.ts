@@ -30,6 +30,13 @@ export type BanAdminAccountInput = {
   reason: string;
 };
 
+export type UpdateAdminAccountRoleInput = {
+  actorUserId: string;
+  actorRole: AuthRole;
+  targetUserId: string;
+  role: AuthRole;
+};
+
 export type BannedAdminAccount = {
   id: string;
   email: string;
@@ -39,6 +46,15 @@ export type BannedAdminAccount = {
   isBanned: true;
   bannedAt: Date;
   banReason: string;
+};
+
+export type UpdatedAdminAccountRole = {
+  id: string;
+  email: string;
+  username: string;
+  displayName: string | null;
+  role: AuthRole;
+  updatedAt: Date;
 };
 
 export type ListAdminAccountsResult = {
@@ -57,7 +73,13 @@ export type BanAdminAccountResult = {
   notificationEmailSent: boolean;
 };
 
+export type UpdateAdminAccountRoleResult = {
+  message: string;
+  account: UpdatedAdminAccountRole;
+};
+
 export type AdminAccountsPort = {
   listAccounts: (input: ListAdminAccountsInput) => Promise<ListAdminAccountsResult>;
   banAccount: (input: BanAdminAccountInput) => Promise<BanAdminAccountResult>;
+  updateAccountRole: (input: UpdateAdminAccountRoleInput) => Promise<UpdateAdminAccountRoleResult>;
 };

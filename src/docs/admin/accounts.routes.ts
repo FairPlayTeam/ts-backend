@@ -1,14 +1,19 @@
 import {
+  adminAccountParamsSchema,
   adminAccountsQuerySchema,
   adminAccountsResponseSchema,
-  banAdminAccountParamsSchema,
   banAdminAccountRequestSchema,
   banAdminAccountResponseSchema,
+  updateAdminAccountRoleRequestSchema,
+  updateAdminAccountRoleResponseSchema,
 } from '../../controllers/admin.schemas.js';
 import { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../../middleware/routeProtection.js';
 import { jsonRequest, jsonResponse } from '../openapi.helpers.js';
 import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from '../registry.js';
-import { BAN_ACCOUNT_SUCCESS_MESSAGE } from '../../services/admin/admin.messages.js';
+import {
+  BAN_ACCOUNT_SUCCESS_MESSAGE,
+  UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
+} from '../../services/admin/admin.messages.js';
 
 export const adminAccountRouteDocs = [
   {
@@ -43,7 +48,7 @@ export const adminAccountRouteDocs = [
     tags: ['Admin'],
     security: [{ bearerAuth: [] }],
     request: {
-      params: banAdminAccountParamsSchema,
+      params: adminAccountParamsSchema,
       ...jsonRequest(banAdminAccountRequestSchema),
     },
     responses: {
@@ -61,6 +66,37 @@ export const adminAccountRouteDocs = [
       404: jsonResponse('Account not found', ApiErrorSchema),
 
       409: jsonResponse('Account is already banned', ApiErrorSchema),
+
+      429: jsonResponse('Too many requests', ApiErrorSchema),
+
+      500: jsonResponse('Internal server error', ApiErrorSchema),
+    },
+  },
+  {
+    method: 'patch',
+    path: '/admin/users/{userId}/role',
+    summary: 'Update a user account role',
+    tags: ['Admin'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      params: adminAccountParamsSchema,
+      ...jsonRequest(updateAdminAccountRoleRequestSchema),
+    },
+    responses: {
+      200: jsonResponse(UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE, updateAdminAccountRoleResponseSchema),
+
+      400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+
+      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      403: jsonResponse(
+        `${INSUFFICIENT_PERMISSIONS_MESSAGE}, self-update attempt, or role hierarchy violation`,
+        ApiErrorSchema,
+      ),
+
+      404: jsonResponse('Account not found', ApiErrorSchema),
+
+      409: jsonResponse('Account already has this role', ApiErrorSchema),
 
       429: jsonResponse('Too many requests', ApiErrorSchema),
 
