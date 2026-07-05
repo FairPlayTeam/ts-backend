@@ -1,6 +1,9 @@
 import type { Prisma } from '@prisma/client';
 import type { AdminDependencies } from './admin.dependencies.js';
+import { banAdminAccount } from './admin.accountBan.js';
 import type {
+  BanAdminAccountInput,
+  BanAdminAccountResult,
   AdminAccountSummary,
   AdminAccountsPort,
   ListAdminAccountsInput,
@@ -99,5 +102,9 @@ export const createAdminAccountsService = (deps: AdminDependencies): AdminAccoun
       total,
       nextCursor,
     };
+  },
+
+  async banAccount(input: BanAdminAccountInput): Promise<BanAdminAccountResult> {
+    return banAdminAccount(deps, input);
   },
 });

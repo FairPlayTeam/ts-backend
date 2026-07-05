@@ -4,9 +4,14 @@ import {
   EMAIL_VERIFICATION_CODE_TTL_MINUTES,
   PASSWORD_RESET_CODE_TTL_MINUTES,
 } from '../../config/constants.js';
-import { buildTransactionalEmailHtml, buildTransactionalEmailText } from './mailer.templates.js';
+import {
+  buildNoticeEmailHtml,
+  buildNoticeEmailText,
+  buildTransactionalEmailHtml,
+  buildTransactionalEmailText,
+} from './mailer.templates.js';
 import { MailerConfigurationError, MailerDeliveryError } from './mailer.errors.js';
-import type { MailerConfig } from './mailer.types.js';
+import type { MailerConfig, NoticeEmailContent } from './mailer.types.js';
 import {
   noopOperationLogger,
   observeOperation,
@@ -38,7 +43,9 @@ type SmtpTransportOptions = {
   };
 };
 
-type MailerTemplate = 'password-reset' | 'verification';
+type NoticeMailerTemplate = 'account-ban';
+type CodeMailerTemplate = 'password-reset' | 'verification';
+type MailerTemplate = CodeMailerTemplate | NoticeMailerTemplate;
 
 type SendAppEmailInput = {
   email: string;
@@ -56,8 +63,14 @@ type SendCodeEmailInput = {
   htmlTitle: string;
   intro: string;
   subject: string;
-  template: MailerTemplate;
+  template: CodeMailerTemplate;
   textTitle: string;
+};
+
+type SendNoticeEmailInput = NoticeEmailContent & {
+  email: string;
+  subject: string;
+  template: NoticeMailerTemplate;
 };
 
 export const createSmtpTransportOptions = (config: MailerConfig): SmtpTransportOptions => {
@@ -187,6 +200,27 @@ export const createMailerService = (deps: MailerDependencies) => {
     }
   };
 
+  const sendNoticeEmail = async ({
+    email,
+    subject,
+    template,
+    ...content
+  }: SendNoticeEmailInput): Promise<void> => {
+    const mailerConfig = getMailerConfig(deps.config);
+
+    try {
+      await sendAppEmail(mailerConfig, {
+        email,
+        subject,
+        template,
+        text: buildNoticeEmailText(content),
+        html: buildNoticeEmailHtml(content),
+      });
+    } catch (err) {
+      throw new MailerDeliveryError(`Email delivery failed for ${template}`, err);
+    }
+  };
+
   return {
     async sendVerificationEmail(email: string, code: string): Promise<void> {
       await sendCodeEmail({
@@ -215,6 +249,19 @@ export const createMailerService = (deps: MailerDependencies) => {
         subject: 'Reset your password',
         template: 'password-reset',
         textTitle: `Reset your ${APP_PRODUCT_NAME} password`,
+      });
+    },
+
+    async sendAccountBannedEmail(email: string, reason: string): Promise<void> {
+      await sendNoticeEmail({
+        email,
+        details: reason,
+        detailsLabel: 'Reason provided by the administrator',
+        footerText: `This message was sent to notify you about an administrative action on your ${APP_PRODUCT_NAME} account.`,
+        intro: 'An administrator has banned your account. You can no longer access it.',
+        subject: `Your ${APP_PRODUCT_NAME} account has been banned`,
+        template: 'account-ban',
+        title: `Your ${APP_PRODUCT_NAME} account has been banned`,
       });
     },
   };

@@ -9,3 +9,6 @@ export const sendVerificationEmail = (email: string, code: string): Promise<void
 
 export const sendPasswordResetEmail = (email: string, code: string): Promise<void> =>
   mailerService.sendPasswordResetEmail(email, code);
+
+export const sendAccountBannedEmail = (email: string, reason: string): Promise<void> =>
+  mailerService.sendAccountBannedEmail(email, reason);

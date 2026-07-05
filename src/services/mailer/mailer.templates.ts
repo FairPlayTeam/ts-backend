@@ -1,5 +1,5 @@
 import { APP_PRODUCT_NAME } from '../../config/constants.js';
-import type { TransactionalEmailContent } from './mailer.types.js';
+import type { NoticeEmailContent, TransactionalEmailContent } from './mailer.types.js';
 
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>"']/g, (char) => {
@@ -14,17 +14,16 @@ const escapeHtml = (value: string): string =>
     return entities[char] ?? char;
   });
 
-export function buildTransactionalEmailHtml({
-  title,
-  intro,
-  actionCode,
-  expiryLabel,
+const buildEmailLayoutHtml = ({
+  bodyHtml,
   footerText,
-}: TransactionalEmailContent): string {
+  title,
+}: {
+  bodyHtml: string;
+  footerText: string;
+  title: string;
+}): string => {
   const safeTitle = escapeHtml(title);
-  const safeIntro = escapeHtml(intro);
-  const safeActionCode = escapeHtml(actionCode);
-  const safeExpiryLabel = escapeHtml(expiryLabel);
   const safeFooterHtml = escapeHtml(footerText).replace(/\n/g, '<br/>');
 
   return `
@@ -46,11 +45,7 @@ export function buildTransactionalEmailHtml({
             <tr>
               <td style="background:#ffffff;padding:40px 32px 36px;text-align:center;">
                 <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;color:#111111;">${safeTitle}</h1>
-                <p style="margin:0 0 28px;font-size:15px;color:#555555;line-height:1.6;">
-                  ${safeIntro}<br/>
-                  <span style="font-size:13px;color:#999999;">${safeExpiryLabel}</span>
-                </p>
-                <div style="display:inline-block;background:#f5f5f5;color:#111111;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;font-size:28px;font-weight:700;padding:14px 24px;border-radius:8px;border:1px solid #dddddd;">${safeActionCode}</div>
+                ${bodyHtml}
               </td>
             </tr>
             <tr>
@@ -66,6 +61,30 @@ export function buildTransactionalEmailHtml({
     </body>
     </html>
   `;
+};
+
+export function buildTransactionalEmailHtml({
+  title,
+  intro,
+  actionCode,
+  expiryLabel,
+  footerText,
+}: TransactionalEmailContent): string {
+  const safeIntro = escapeHtml(intro);
+  const safeActionCode = escapeHtml(actionCode);
+  const safeExpiryLabel = escapeHtml(expiryLabel);
+
+  return buildEmailLayoutHtml({
+    title,
+    footerText,
+    bodyHtml: `
+                <p style="margin:0 0 28px;font-size:15px;color:#555555;line-height:1.6;">
+                  ${safeIntro}<br/>
+                  <span style="font-size:13px;color:#999999;">${safeExpiryLabel}</span>
+                </p>
+                <div style="display:inline-block;background:#f5f5f5;color:#111111;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;font-size:28px;font-weight:700;padding:14px 24px;border-radius:8px;border:1px solid #dddddd;">${safeActionCode}</div>
+    `,
+  });
 }
 
 export function buildTransactionalEmailText({
@@ -75,4 +94,40 @@ export function buildTransactionalEmailText({
   footerText,
 }: Pick<TransactionalEmailContent, 'title' | 'actionCode' | 'expiryLabel' | 'footerText'>): string {
   return `${title}\nCode: ${actionCode}\n\n${expiryLabel}\n\n${footerText}`;
+}
+
+export function buildNoticeEmailHtml({
+  title,
+  intro,
+  detailsLabel,
+  details,
+  footerText,
+}: NoticeEmailContent): string {
+  const safeIntro = escapeHtml(intro);
+  const safeDetailsLabel = escapeHtml(detailsLabel);
+  const safeDetails = escapeHtml(details);
+
+  return buildEmailLayoutHtml({
+    title,
+    footerText,
+    bodyHtml: `
+                <p style="margin:0 0 24px;font-size:15px;color:#555555;line-height:1.6;">
+                  ${safeIntro}
+                </p>
+                <div style="background:#f5f5f5;color:#111111;text-align:left;font-size:14px;line-height:1.6;padding:18px 20px;border-radius:8px;border:1px solid #dddddd;">
+                  <p style="margin:0 0 8px;font-weight:700;color:#111111;">${safeDetailsLabel}</p>
+                  <p style="margin:0;white-space:pre-wrap;color:#333333;">${safeDetails}</p>
+                </div>
+    `,
+  });
+}
+
+export function buildNoticeEmailText({
+  title,
+  intro,
+  detailsLabel,
+  details,
+  footerText,
+}: NoticeEmailContent): string {
+  return `${title}\n\n${intro}\n\n${detailsLabel}:\n${details}\n\n${footerText}`;
 }

@@ -28,6 +28,7 @@ model User {
   isVerified   Boolean   @default(false) @map("is_verified")
   isBanned     Boolean   @default(false) @map("is_banned")
   bannedAt     DateTime? @map("banned_at")
+  banReason    String?   @map("ban_reason") @db.VarChar(1000)
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
   lastLogin    DateTime? @map("last_login")

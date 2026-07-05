@@ -13,10 +13,10 @@ import type { AuthDependencies } from './auth.dependencies.js';
 import {
   getPasswordResetExpiresAt,
   getUserScopedAuthCodeSecret,
-  handleExpectedMailerError,
   normalizeEmail,
 } from './auth.helpers.js';
 import { RESET_PASSWORD_EMAIL_MESSAGE, RESET_PASSWORD_SUCCESS_MESSAGE } from './auth.messages.js';
+import { handleExpectedMailerError } from '../mailer/mailer.helpers.js';
 
 type ResetPasswordService = AuthPasswordResetPort;
 

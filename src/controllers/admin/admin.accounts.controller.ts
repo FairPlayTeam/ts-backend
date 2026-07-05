@@ -1,11 +1,17 @@
-import type { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { toAdminHttpError } from '../admin.errors.js';
-import type { AdminAccountsQuery } from '../admin.schemas.js';
+import type {
+  AdminAccountsQuery,
+  BanAdminAccountBody,
+  BanAdminAccountParams,
+} from '../admin.schemas.js';
 import { sendNoStoreJson } from '../http.responses.js';
+import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import type { AdminControllerDependencies } from './admin.controller.types.js';
-import { toAdminAccountsResponse } from './admin.responses.js';
+import { toAdminAccountsResponse, toBanAdminAccountResponse } from './admin.responses.js';
 
 type ListAccountsRequest = Request<unknown, unknown, unknown, AdminAccountsQuery>;
+type BanAccountRequest = Request<BanAdminAccountParams, unknown, BanAdminAccountBody>;
 
 export const createAdminAccountsController = (deps: AdminControllerDependencies) => {
   const listAccounts = async (req: ListAccountsRequest, res: Response, next: NextFunction) => {
@@ -29,7 +35,25 @@ export const createAdminAccountsController = (deps: AdminControllerDependencies)
     }
   };
 
+  const banAccount: RequestHandler = async (req, res, next) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const banReq = req as BanAccountRequest;
+      const result = await deps.adminService.banAccount({
+        actorUserId: authenticatedReq.user.id,
+        actorRole: authenticatedReq.user.role,
+        targetUserId: banReq.params.userId,
+        reason: banReq.body.reason,
+      });
+
+      return sendNoStoreJson(res, 200, toBanAdminAccountResponse(result));
+    } catch (err) {
+      next(toAdminHttpError(err));
+    }
+  };
+
   return {
+    banAccount,
     listAccounts,
   };
 };

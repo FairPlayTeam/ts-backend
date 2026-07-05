@@ -23,6 +23,24 @@ export type AdminAccountSummary = {
   role: AuthRole;
 };
 
+export type BanAdminAccountInput = {
+  actorUserId: string;
+  actorRole: AuthRole;
+  targetUserId: string;
+  reason: string;
+};
+
+export type BannedAdminAccount = {
+  id: string;
+  email: string;
+  username: string;
+  displayName: string | null;
+  role: AuthRole;
+  isBanned: true;
+  bannedAt: Date;
+  banReason: string;
+};
+
 export type ListAdminAccountsResult = {
   accounts: AdminAccountSummary[];
   total: number;
@@ -32,6 +50,14 @@ export type ListAdminAccountsResult = {
   } | null;
 };
 
+export type BanAdminAccountResult = {
+  message: string;
+  account: BannedAdminAccount;
+  sessionsRevoked: number;
+  notificationEmailSent: boolean;
+};
+
 export type AdminAccountsPort = {
   listAccounts: (input: ListAdminAccountsInput) => Promise<ListAdminAccountsResult>;
+  banAccount: (input: BanAdminAccountInput) => Promise<BanAdminAccountResult>;
 };

@@ -1,6 +1,6 @@
 import { Router, type RequestHandler } from 'express';
 import { createAdminController } from '../controllers/admin.controller.js';
-import { adminAccountsSchema } from '../controllers/admin.schemas.js';
+import { adminAccountsSchema, banAdminAccountSchema } from '../controllers/admin.schemas.js';
 import { createRouteProtector } from '../middleware/routeProtection.js';
 import { validate } from '../middleware/validation.js';
 import type { AdminRoutePort } from '../services/admin.types.js';
@@ -15,7 +15,7 @@ type ValidationSchema = Parameters<typeof validate>[0];
 
 export const createRouter = ({ adminService, authService }: AdminRouterDependencies) => {
   const router = Router();
-  const { listAccounts } = createAdminController({ adminService });
+  const { banAccount, listAccounts } = createAdminController({ adminService });
   const protect = createRouteProtector({ authService });
   const adminRoute = (schema: ValidationSchema, ...handlers: RequestHandler[]) => [
     ...protect({ roles: ['admin'] }),
@@ -24,6 +24,7 @@ export const createRouter = ({ adminService, authService }: AdminRouterDependenc
   ];
 
   router.get('/users', ...adminRoute(adminAccountsSchema, listAccounts));
+  router.post('/users/:userId/ban', ...adminRoute(banAdminAccountSchema, banAccount));
 
   return router;
 };

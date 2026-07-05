@@ -8,10 +8,10 @@ import {
   normalizeEmail,
   getEmailVerificationExpiresAt,
   getUserScopedAuthCodeSecret,
-  handleExpectedMailerError,
 } from './auth.helpers.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import type { SessionService } from './auth.sessions.js';
+import { handleExpectedMailerError } from '../mailer/mailer.helpers.js';
 import {
   VERIFY_EMAIL_SUCCESS_MESSAGE,
   RESEND_VERIFICATION_EMAIL_MESSAGE,

@@ -1,11 +1,23 @@
 import { describe, expect, test } from 'bun:test';
 import type { AdminDependencies } from '../src/services/admin/admin.dependencies.js';
 import { createAdminService } from '../src/services/admin.service.js';
+import {
+  AdminAccountAlreadyBannedError,
+  AdminAccountNotFoundError,
+  AdminBanReasonInvalidError,
+  AdminRoleHierarchyError,
+  AdminSelfBanError,
+} from '../src/services/admin.errors.js';
+import { BAN_ACCOUNT_SUCCESS_MESSAGE } from '../src/services/admin/admin.messages.js';
+import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
 
 const firstCreatedAt = new Date('2026-01-03T00:00:00.000Z');
 const secondCreatedAt = new Date('2026-01-02T00:00:00.000Z');
 const thirdCreatedAt = new Date('2026-01-01T00:00:00.000Z');
 const updatedAt = new Date('2026-01-04T00:00:00.000Z');
+const banTime = new Date('2026-01-05T00:00:00.000Z');
+const actorUserId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const targetUserId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 const createAccountRecord = ({
   createdAt,
@@ -30,6 +42,25 @@ const createAccountRecord = ({
   mediaAssets,
 });
 
+const createBanTargetRecord = ({
+  id = targetUserId,
+  isBanned = false,
+  role = 'user' as const,
+}: {
+  id?: string;
+  isBanned?: boolean;
+  role?: 'admin' | 'moderator' | 'user';
+} = {}) => ({
+  id,
+  email: 'target@example.com',
+  username: 'target_user',
+  displayName: 'Target User',
+  role,
+  isBanned,
+  bannedAt: isBanned ? new Date('2026-01-01T00:00:00.000Z') : null,
+  banReason: isBanned ? 'Already banned' : null,
+});
+
 const createDeps = ({
   queriedAccounts = [
     createAccountRecord({
@@ -48,26 +79,76 @@ const createDeps = ({
     }),
   ],
   total = 3,
+  banTarget = createBanTargetRecord(),
+  mailerError,
+  revokedSessionsCount = 2,
+  now = banTime,
 }: {
   queriedAccounts?: ReturnType<typeof createAccountRecord>[];
   total?: number;
+  banTarget?: ReturnType<typeof createBanTargetRecord> | null;
+  mailerError?: unknown;
+  revokedSessionsCount?: number;
+  now?: Date;
 } = {}) => {
+  let persistedBan: { bannedAt: Date; banReason: string } | null = null;
   const calls: {
+    accountBanEmails: { email: string; reason: string }[];
+    logs: { data: object; message: string }[];
+    sessionUpdateMany?: unknown;
     signedUrlObjectKeys: string[];
     transactionOperationCount?: number;
+    userFindUnique: unknown[];
     userCount?: unknown;
     userFindMany?: unknown;
+    userUpdateMany?: unknown;
   } = {
+    accountBanEmails: [],
+    logs: [],
     signedUrlObjectKeys: [],
+    userFindUnique: [],
   };
   const deps = {
     prisma: {
-      $transaction: async (operations: Promise<unknown>[]) => {
-        calls.transactionOperationCount = operations.length;
+      $transaction: async (input: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>)) => {
+        if (Array.isArray(input)) {
+          calls.transactionOperationCount = input.length;
 
-        return Promise.all(operations);
+          return Promise.all(input);
+        }
+
+        return input(deps.prisma);
+      },
+      session: {
+        updateMany: async (args: unknown) => {
+          calls.sessionUpdateMany = args;
+
+          return { count: revokedSessionsCount };
+        },
       },
       user: {
+        findUnique: async (args: unknown) => {
+          calls.userFindUnique.push(args);
+
+          if (!banTarget) {
+            return null;
+          }
+
+          if (!persistedBan) {
+            return {
+              id: banTarget.id,
+              isBanned: banTarget.isBanned,
+              role: banTarget.role,
+            };
+          }
+
+          return {
+            ...banTarget,
+            isBanned: true,
+            bannedAt: persistedBan.bannedAt,
+            banReason: persistedBan.banReason,
+          };
+        },
         findMany: async (args: unknown) => {
           calls.userFindMany = args;
 
@@ -78,6 +159,30 @@ const createDeps = ({
 
           return total;
         },
+        updateMany: async (args: unknown) => {
+          calls.userUpdateMany = args;
+
+          if (!banTarget || banTarget.isBanned) {
+            return { count: 0 };
+          }
+
+          const update = args as { data?: { bannedAt?: Date; banReason?: string } };
+          persistedBan = {
+            bannedAt: update.data?.bannedAt ?? now,
+            banReason: update.data?.banReason ?? '',
+          };
+
+          return { count: 1 };
+        },
+      },
+    },
+    mailer: {
+      sendAccountBannedEmail: async (email: string, reason: string) => {
+        calls.accountBanEmails.push({ email, reason });
+
+        if (mailerError) {
+          throw mailerError;
+        }
       },
     },
     objectStorage: {
@@ -85,6 +190,14 @@ const createDeps = ({
         calls.signedUrlObjectKeys.push(objectKey);
 
         return `signed:${objectKey}`;
+      },
+    },
+    clock: {
+      now: () => now,
+    },
+    logger: {
+      warn: (data: object, message: string) => {
+        calls.logs.push({ data, message });
       },
     },
   } as unknown as AdminDependencies;
@@ -188,5 +301,199 @@ describe('admin service accounts', () => {
         take: 101,
       }),
     );
+  });
+
+  test('bans an account, revokes active sessions, and sends the ban reason by email', async () => {
+    const { calls, deps } = createDeps();
+    const service = createAdminService(deps);
+
+    await expect(
+      service.banAccount({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+        reason: '  Repeated abusive behavior.  ',
+      }),
+    ).resolves.toEqual({
+      message: BAN_ACCOUNT_SUCCESS_MESSAGE,
+      account: {
+        id: targetUserId,
+        email: 'target@example.com',
+        username: 'target_user',
+        displayName: 'Target User',
+        role: 'user',
+        isBanned: true,
+        bannedAt: banTime,
+        banReason: 'Repeated abusive behavior.',
+      },
+      sessionsRevoked: 2,
+      notificationEmailSent: true,
+    });
+
+    expect(calls.userUpdateMany).toEqual({
+      where: {
+        id: targetUserId,
+        isBanned: false,
+        role: { in: ['user', 'moderator'] },
+      },
+      data: {
+        isBanned: true,
+        bannedAt: banTime,
+        banReason: 'Repeated abusive behavior.',
+      },
+    });
+    expect(calls.sessionUpdateMany).toEqual({
+      where: {
+        userId: targetUserId,
+        isActive: true,
+      },
+      data: {
+        isActive: false,
+      },
+    });
+    expect(calls.accountBanEmails).toEqual([
+      {
+        email: 'target@example.com',
+        reason: 'Repeated abusive behavior.',
+      },
+    ]);
+    expect(calls.logs).toEqual([]);
+  });
+
+  test('keeps the ban when the notification email cannot be delivered', async () => {
+    const { calls, deps } = createDeps({
+      mailerError: new MailerDeliveryError('SMTP unavailable'),
+    });
+    const service = createAdminService(deps);
+
+    await expect(
+      service.banAccount({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+        reason: 'Repeated abusive behavior.',
+      }),
+    ).resolves.toMatchObject({
+      notificationEmailSent: false,
+      account: {
+        isBanned: true,
+        banReason: 'Repeated abusive behavior.',
+      },
+    });
+
+    expect(calls.userUpdateMany).toBeDefined();
+    expect(calls.accountBanEmails).toEqual([
+      {
+        email: 'target@example.com',
+        reason: 'Repeated abusive behavior.',
+      },
+    ]);
+    expect(calls.logs).toEqual([
+      expect.objectContaining({
+        message: `Account ban notification email could not be sent for user ${targetUserId}`,
+      }),
+    ]);
+  });
+
+  test('rejects self-ban attempts before touching the target account', async () => {
+    const { calls, deps } = createDeps();
+    const service = createAdminService(deps);
+
+    await expect(
+      service.banAccount({
+        actorUserId: targetUserId,
+        actorRole: 'admin',
+        targetUserId,
+        reason: 'Compromised account.',
+      }),
+    ).rejects.toBeInstanceOf(AdminSelfBanError);
+
+    expect(calls.userFindUnique).toEqual([]);
+    expect(calls.userUpdateMany).toBeUndefined();
+    expect(calls.accountBanEmails).toEqual([]);
+  });
+
+  test('rejects unknown or already banned accounts', async () => {
+    const unknownAccount = createDeps({ banTarget: null });
+    await expect(
+      createAdminService(unknownAccount.deps).banAccount({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+        reason: 'Policy violation.',
+      }),
+    ).rejects.toBeInstanceOf(AdminAccountNotFoundError);
+    expect(unknownAccount.calls.userUpdateMany).toBeUndefined();
+
+    const alreadyBannedAccount = createDeps({
+      banTarget: createBanTargetRecord({ isBanned: true }),
+    });
+    await expect(
+      createAdminService(alreadyBannedAccount.deps).banAccount({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+        reason: 'Policy violation.',
+      }),
+    ).rejects.toBeInstanceOf(AdminAccountAlreadyBannedError);
+    expect(alreadyBannedAccount.calls.userUpdateMany).toBeUndefined();
+  });
+
+  test('rejects blank ban reasons at service boundary', async () => {
+    const { calls, deps } = createDeps();
+
+    await expect(
+      createAdminService(deps).banAccount({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+        reason: '   ',
+      }),
+    ).rejects.toBeInstanceOf(AdminBanReasonInvalidError);
+
+    expect(calls.userFindUnique).toEqual([]);
+    expect(calls.accountBanEmails).toEqual([]);
+  });
+
+  test('rejects bans against equivalent or higher roles', async () => {
+    const equivalentAdmin = createDeps({
+      banTarget: createBanTargetRecord({ role: 'admin' }),
+    });
+    await expect(
+      createAdminService(equivalentAdmin.deps).banAccount({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+        reason: 'Policy violation.',
+      }),
+    ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
+    expect(equivalentAdmin.calls.userUpdateMany).toBeUndefined();
+    expect(equivalentAdmin.calls.accountBanEmails).toEqual([]);
+
+    const equivalentModerator = createDeps({
+      banTarget: createBanTargetRecord({ role: 'moderator' }),
+    });
+    await expect(
+      createAdminService(equivalentModerator.deps).banAccount({
+        actorUserId,
+        actorRole: 'moderator',
+        targetUserId,
+        reason: 'Policy violation.',
+      }),
+    ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
+    expect(equivalentModerator.calls.userUpdateMany).toBeUndefined();
+
+    const superiorAdmin = createDeps({
+      banTarget: createBanTargetRecord({ role: 'admin' }),
+    });
+    await expect(
+      createAdminService(superiorAdmin.deps).banAccount({
+        actorUserId,
+        actorRole: 'moderator',
+        targetUserId,
+        reason: 'Policy violation.',
+      }),
+    ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
+    expect(superiorAdmin.calls.userUpdateMany).toBeUndefined();
   });
 });

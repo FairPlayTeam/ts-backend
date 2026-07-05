@@ -3,10 +3,10 @@ import type { AuthDependencies } from './auth.dependencies.js';
 import {
   getEmailVerificationExpiresAt,
   getUserScopedAuthCodeSecret,
-  handleExpectedMailerError,
   normalizeEmail,
 } from './auth.helpers.js';
 import { REGISTER_SUCCESS_MESSAGE } from './auth.messages.js';
+import { handleExpectedMailerError } from '../mailer/mailer.helpers.js';
 import type { AuthCredentialsPort, RegisterInput } from './types/credentials.types.js';
 
 type RegistrationService = Pick<AuthCredentialsPort, 'register'>;

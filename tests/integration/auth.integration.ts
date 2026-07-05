@@ -77,6 +77,11 @@ type DeliveredEmail = {
   token: string;
 };
 
+type DeliveredBanEmail = {
+  email: string;
+  reason: string;
+};
+
 type TestRuntime = {
   databaseUrl: string;
   redisUrl: string;
@@ -92,6 +97,7 @@ type TestRuntime = {
   delivered: {
     verification: DeliveredEmail[];
     passwordReset: DeliveredEmail[];
+    accountBan: DeliveredBanEmail[];
   };
 };
 
@@ -206,10 +212,22 @@ const createIntegrationAuthService = (
 const createIntegrationAdminService = (
   prisma: PrismaClient,
   objectStorage: ObjectStorage,
+  delivered: TestRuntime['delivered'],
 ): AdminPorts =>
   createAdminService({
     prisma,
     objectStorage,
+    mailer: {
+      sendAccountBannedEmail: async (email, reason) => {
+        delivered.accountBan.push({ email, reason });
+      },
+    },
+    clock: {
+      now: () => new Date(),
+    },
+    logger: {
+      warn: () => undefined,
+    },
   });
 
 const createIntegrationApp = async (runtime: TestRuntime) =>
@@ -308,8 +326,9 @@ const startRuntime = async (): Promise<TestRuntime> => {
     await connectRedisClient(redisClient);
 
     const delivered = {
-      verification: [],
-      passwordReset: [],
+      verification: [] as DeliveredEmail[],
+      passwordReset: [] as DeliveredEmail[],
+      accountBan: [] as DeliveredBanEmail[],
     };
 
     return {
@@ -322,7 +341,7 @@ const startRuntime = async (): Promise<TestRuntime> => {
       prisma,
       redisClient,
       objectStorage,
-      adminService: createIntegrationAdminService(prisma, objectStorage),
+      adminService: createIntegrationAdminService(prisma, objectStorage, delivered),
       authService: createIntegrationAuthService(prisma, objectStorage, delivered),
       delivered,
     };
@@ -355,6 +374,7 @@ const resetState = async (runtime: TestRuntime): Promise<void> => {
   await runtime.redisClient.call('flushdb');
   runtime.delivered.verification = [];
   runtime.delivered.passwordReset = [];
+  runtime.delivered.accountBan = [];
 };
 
 const createVerifiedSession = async (

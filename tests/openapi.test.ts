@@ -133,6 +133,7 @@ describe('OpenAPI generation', () => {
     expect(Object.keys(document.paths).sort()).toEqual([
       '/',
       '/admin/users',
+      '/admin/users/{userId}/ban',
       '/auth/forgot-password',
       '/auth/login',
       '/auth/me',
@@ -175,6 +176,23 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/admin/users']?.get?.responses?.[401]).toBeDefined();
     expect(document.paths['/admin/users']?.get?.responses?.[403]).toBeDefined();
     expect(document.paths['/admin/users']?.get?.responses?.[503]).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/ban']?.post?.requestBody).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/ban']?.post?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+    expect(document.paths['/admin/users/{userId}/ban']?.post?.parameters).toEqual([
+      expect.objectContaining({
+        name: 'userId',
+        in: 'path',
+        required: true,
+      }),
+    ]);
+    expect(document.paths['/admin/users/{userId}/ban']?.post?.responses?.[200]).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/ban']?.post?.responses?.[400]).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/ban']?.post?.responses?.[401]).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/ban']?.post?.responses?.[403]).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/ban']?.post?.responses?.[404]).toBeDefined();
+    expect(document.paths['/admin/users/{userId}/ban']?.post?.responses?.[409]).toBeDefined();
     expect(document.paths['/auth/login']?.post?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/login']?.post?.responses?.[403]).toBeDefined();
     expect(document.components?.securitySchemes?.bearerAuth).toEqual({
@@ -320,6 +338,8 @@ describe('OpenAPI generation', () => {
     );
     expect(document.components?.schemas?.CurrentUserResponse).toBeDefined();
     expect(document.components?.schemas?.AdminAccountsResponse).toBeDefined();
+    expect(document.components?.schemas?.BanAdminAccountRequest).toBeDefined();
+    expect(document.components?.schemas?.BanAdminAccountResponse).toBeDefined();
     expect(
       document.components?.schemas?.CurrentUserResponse?.properties?.user?.properties?.avatarUrl,
     ).toBeDefined();

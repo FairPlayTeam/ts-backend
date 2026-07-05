@@ -5,16 +5,22 @@ import { createApp } from '../src/app.js';
 import {
   ADMIN_ACCOUNTS_CURSOR_PAIR_MESSAGE,
   type AdminAccountsQuery,
+  type BanAdminAccountBody,
 } from '../src/controllers/admin.schemas.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
 import { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../src/middleware/routeProtection.js';
-import type { AdminPorts, ListAdminAccountsInput } from '../src/services/admin.types.js';
+import type {
+  AdminPorts,
+  BanAdminAccountInput,
+  ListAdminAccountsInput,
+} from '../src/services/admin.types.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 
 let server: Server;
 let baseUrl: string;
+let receivedBanAccountRequest: BanAdminAccountInput | undefined;
 let receivedListAccountsRequest: ListAdminAccountsInput | undefined;
 let receivedSessionKey: string | undefined;
 
@@ -40,6 +46,11 @@ describe('admin routes', () => {
       {
         adminService: {
           ...adminService,
+          banAccount: async (input) => {
+            receivedBanAccountRequest = input;
+
+            return adminService.banAccount(input);
+          },
           listAccounts: async (input) => {
             receivedListAccountsRequest = input;
 
@@ -143,8 +154,53 @@ describe('admin routes', () => {
     });
   });
 
+  test('bans an account for an administrator session', async () => {
+    receivedBanAccountRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const body: BanAdminAccountBody = {
+      reason: '  Repeated abusive behavior.  ',
+    };
+    const response = await fetch(`${baseUrl}/admin/users/${cursorId}/ban`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${adminSessionKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    expect(response.status).toBe(200);
+    const observedSessionKey = receivedSessionKey as string | undefined;
+    const observedBanAccountRequest = receivedBanAccountRequest as BanAdminAccountInput | undefined;
+    expect(observedSessionKey).toBe(adminSessionKey);
+    expect(observedBanAccountRequest).toEqual({
+      actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      actorRole: 'admin',
+      targetUserId: cursorId,
+      reason: 'Repeated abusive behavior.',
+    });
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.json()).toEqual({
+      message: 'Account banned successfully',
+      account: {
+        id: '22222222-2222-4222-8222-222222222222',
+        email: 'banned@example.com',
+        username: 'banned_user',
+        displayName: 'Banned User',
+        role: 'user',
+        isBanned: true,
+        bannedAt: '2026-01-04T00:00:00.000Z',
+        banReason: 'Repeated abusive behavior.',
+      },
+      sessionsRevoked: 2,
+      notificationEmailSent: true,
+    });
+  });
+
   test('rejects non-admin sessions before calling the admin service', async () => {
     receivedListAccountsRequest = undefined;
+    receivedBanAccountRequest = undefined;
 
     const response = await fetch(`${baseUrl}/admin/users`, {
       headers: {
@@ -154,6 +210,7 @@ describe('admin routes', () => {
 
     expect(response.status).toBe(403);
     expect(receivedListAccountsRequest).toBeUndefined();
+    expect(receivedBanAccountRequest).toBeUndefined();
     expect(await response.json()).toEqual({
       error: 'Forbidden',
       message: INSUFFICIENT_PERMISSIONS_MESSAGE,
@@ -170,6 +227,36 @@ describe('admin routes', () => {
     expect(await response.json()).toEqual({
       error: 'Unauthorized',
       message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+  });
+
+  test('rejects invalid ban requests before calling the admin service', async () => {
+    receivedBanAccountRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/admin/users/not-a-user-id/ban`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${adminSessionKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ reason: '   ' }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(receivedBanAccountRequest).toBeUndefined();
+    expect(await response.json()).toEqual({
+      error: 'ValidationError',
+      message: REQUEST_VALIDATION_FAILED_MESSAGE,
+      details: [
+        {
+          field: 'params.userId',
+          message: 'User id must be a valid UUID',
+        },
+        {
+          field: 'body.reason',
+          message: 'Ban reason is required',
+        },
+      ],
     });
   });
 

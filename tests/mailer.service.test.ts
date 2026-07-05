@@ -167,6 +167,46 @@ describe('mailer service', () => {
     expect(email?.html).not.toContain('/reset-password');
   });
 
+  test('sends account ban notification emails with the admin reason', async () => {
+    const { logger, logs } = createOperationLogCollector();
+    const sentEmails: unknown[] = [];
+    const service = createMailerService({
+      config: mailerConfig,
+      logger,
+      createTransporter: () => ({
+        sendMail: async (email: unknown) => {
+          sentEmails.push(email);
+        },
+      }),
+    });
+
+    await service.sendAccountBannedEmail(
+      'banned@example.com',
+      'Repeated abuse <script>alert("x")</script>',
+    );
+
+    const email = sentEmails.at(0) as SentMail | undefined;
+
+    expect(email).toBeDefined();
+    expect(email?.to).toBe('banned@example.com');
+    expect(email?.subject).toBe('Your FairPlay account has been banned');
+    expect(email?.text).toContain('Reason provided by the administrator:');
+    expect(email?.text).toContain('Repeated abuse <script>alert("x")</script>');
+    expect(email?.html).toContain('Reason provided by the administrator');
+    expect(email?.html).toContain(
+      'Repeated abuse &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;',
+    );
+    expect(logs[0]).toMatchObject({
+      level: 'info',
+      message: 'SMTP email delivery completed',
+      data: {
+        subject: 'Your FairPlay account has been banned',
+        template: 'account-ban',
+      },
+    });
+    expect(JSON.stringify(logs)).not.toContain('Repeated abuse');
+  });
+
   test('fails clearly when mailer configuration is missing', async () => {
     const service = createMailerService({ config: null });
 

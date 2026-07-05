@@ -9,6 +9,7 @@ export const DISPLAY_NAME_MAX_LENGTH = 30;
 export const BIO_MAX_LENGTH = 200;
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 128;
+export const BAN_REASON_MAX_LENGTH = 1000;
 
 export const HOUR_MS = 1000 * 60 * 60;
 export const DAYS_MS = 24 * HOUR_MS;

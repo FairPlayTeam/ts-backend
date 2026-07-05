@@ -5,6 +5,7 @@ export const createAdminController = (deps: AdminControllerDependencies) => {
   const accounts = createAdminAccountsController(deps);
 
   return {
+    banAccount: accounts.banAccount,
     listAccounts: accounts.listAccounts,
   };
 };

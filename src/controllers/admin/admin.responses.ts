@@ -1,5 +1,5 @@
 import { toIsoString, toNullableIsoString } from '../http.responses.js';
-import type { ListAdminAccountsResult } from '../../services/admin.types.js';
+import type { BanAdminAccountResult, ListAdminAccountsResult } from '../../services/admin.types.js';
 
 export const toAdminAccountsResponse = ({
   accounts,
@@ -20,4 +20,19 @@ export const toAdminAccountsResponse = ({
         id: nextCursor.id,
       }
     : null,
+});
+
+export const toBanAdminAccountResponse = ({
+  account,
+  message,
+  notificationEmailSent,
+  sessionsRevoked,
+}: BanAdminAccountResult) => ({
+  message,
+  account: {
+    ...account,
+    bannedAt: toIsoString(account.bannedAt),
+  },
+  sessionsRevoked,
+  notificationEmailSent,
 });

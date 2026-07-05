@@ -1,6 +1,22 @@
 import type { AdminPorts } from '../../src/services/admin.types.js';
+import { BAN_ACCOUNT_SUCCESS_MESSAGE } from '../../src/services/admin/admin.messages.js';
 
 export const createStubAdminService = (): AdminPorts => ({
+  banAccount: async () => ({
+    message: BAN_ACCOUNT_SUCCESS_MESSAGE,
+    account: {
+      id: '22222222-2222-4222-8222-222222222222',
+      email: 'banned@example.com',
+      username: 'banned_user',
+      displayName: 'Banned User',
+      role: 'user',
+      isBanned: true,
+      bannedAt: new Date('2026-01-04T00:00:00.000Z'),
+      banReason: 'Repeated abusive behavior.',
+    },
+    sessionsRevoked: 2,
+    notificationEmailSent: true,
+  }),
   listAccounts: async () => ({
     accounts: [
       {

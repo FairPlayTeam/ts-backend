@@ -19,3 +19,11 @@ export type TransactionalEmailContent = {
   expiryLabel: string;
   footerText: string;
 };
+
+export type NoticeEmailContent = {
+  title: string;
+  intro: string;
+  detailsLabel: string;
+  details: string;
+  footerText: string;
+};
