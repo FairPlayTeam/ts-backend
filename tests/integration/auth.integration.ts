@@ -704,6 +704,26 @@ describe('auth integration', () => {
       });
 
     await request(app)
+      .get('/profiles/me/following')
+      .set('Authorization', `Bearer ${follower.sessionKey}`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body).toEqual({
+          profiles: [
+            {
+              id: creator.userId,
+              username: 'profile_creator',
+              displayName: 'profile_creator',
+              avatarUrl: null,
+              followedAt: expect.any(String),
+            },
+          ],
+          total: 1,
+          nextCursor: null,
+        });
+      });
+
+    await request(app)
       .post('/profiles/profile_follower/follow')
       .set('Authorization', `Bearer ${follower.sessionKey}`)
       .expect(400)
@@ -728,6 +748,16 @@ describe('auth integration', () => {
       });
 
     await expect(runtime.prisma.userFollow.count()).resolves.toBe(0);
+
+    await request(app)
+      .get('/profiles/me/following')
+      .set('Authorization', `Bearer ${follower.sessionKey}`)
+      .expect(200)
+      .expect({
+        profiles: [],
+        total: 0,
+        nextCursor: null,
+      });
   });
 
   test('stores uploaded profile media in MinIO and serves it through signed profile URLs', async () => {

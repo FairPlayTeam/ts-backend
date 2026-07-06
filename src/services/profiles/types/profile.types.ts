@@ -7,6 +7,15 @@ export type FollowPublicProfileInput = {
   username: string;
 };
 
+export type ListFollowingProfilesInput = {
+  userId: string;
+  cursor?: {
+    followedAt: Date;
+    id: string;
+  };
+  limit?: number;
+};
+
 export type PublicProfile = {
   id: string;
   username: string;
@@ -19,6 +28,14 @@ export type PublicProfile = {
   createdAt: Date;
 };
 
+export type FollowingProfile = {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  followedAt: Date;
+};
+
 export type GetPublicProfileResult = {
   profile: PublicProfile;
 };
@@ -28,8 +45,20 @@ export type FollowPublicProfileResult = {
   profile: PublicProfile;
 };
 
+export type ListFollowingProfilesResult = {
+  profiles: FollowingProfile[];
+  total: number;
+  nextCursor: {
+    followedAt: Date;
+    id: string;
+  } | null;
+};
+
 export type ProfilesPort = {
   getPublicProfile: (input: GetPublicProfileInput) => Promise<GetPublicProfileResult>;
   followPublicProfile: (input: FollowPublicProfileInput) => Promise<FollowPublicProfileResult>;
+  listFollowingProfiles: (
+    input: ListFollowingProfilesInput,
+  ) => Promise<ListFollowingProfilesResult>;
   unfollowPublicProfile: (input: FollowPublicProfileInput) => Promise<FollowPublicProfileResult>;
 };

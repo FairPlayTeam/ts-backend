@@ -158,6 +158,7 @@ describe('OpenAPI generation', () => {
       '/health',
       '/health/live',
       '/health/ready',
+      '/profiles/me/following',
       '/profiles/{username}',
       '/profiles/{username}/follow',
     ]);
@@ -387,6 +388,28 @@ describe('OpenAPI generation', () => {
     ).toEqual({
       $ref: '#/components/schemas/ApiOrValidationError',
     });
+    expect(document.paths['/profiles/me/following']?.get?.requestBody).toBeUndefined();
+    expect(document.paths['/profiles/me/following']?.get?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths['/profiles/me/following']?.get?.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'limit',
+          in: 'query',
+        }),
+        expect.objectContaining({
+          name: 'cursorFollowedAt',
+          in: 'query',
+        }),
+        expect.objectContaining({
+          name: 'cursorId',
+          in: 'query',
+        }),
+      ]),
+    );
+    expect(document.paths['/profiles/me/following']?.get?.responses?.[200]).toBeDefined();
+    expect(document.paths['/profiles/me/following']?.get?.responses?.[400]).toBeDefined();
+    expect(document.paths['/profiles/me/following']?.get?.responses?.[401]).toBeDefined();
+    expect(document.paths['/profiles/me/following']?.get?.responses?.[503]).toBeDefined();
     expect(document.paths['/profiles/{username}']?.get?.requestBody).toBeUndefined();
     expect(document.paths['/profiles/{username}']?.get?.security).toBeUndefined();
     expect(document.paths['/profiles/{username}']?.get?.parameters).toEqual([
@@ -455,6 +478,7 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.UpdateAdminAccountRoleResponse).toBeDefined();
     expect(document.components?.schemas?.PublicProfileResponse).toBeDefined();
     expect(document.components?.schemas?.FollowPublicProfileResponse).toBeDefined();
+    expect(document.components?.schemas?.FollowingProfilesResponse).toBeDefined();
     expect(document.components?.schemas?.UnfollowPublicProfileResponse).toBeDefined();
     expect(
       document.components?.schemas?.CurrentUserResponse?.properties?.user?.properties?.avatarUrl,

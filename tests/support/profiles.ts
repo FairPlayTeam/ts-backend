@@ -16,6 +16,14 @@ const publicProfile = {
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
+const followingProfile = {
+  id: '22222222-2222-4222-8222-222222222222',
+  username: 'followed_creator',
+  displayName: 'Followed Creator',
+  avatarUrl: 'http://localhost:9000/fairplay-user-media/users/followed/avatar/current-avatar.webp',
+  followedAt: new Date('2026-01-02T00:00:00.000Z'),
+};
+
 export const createStubProfilesService = (): ProfilesPorts => ({
   getPublicProfile: async () => ({
     profile: publicProfile,
@@ -30,5 +38,10 @@ export const createStubProfilesService = (): ProfilesPorts => ({
   unfollowPublicProfile: async () => ({
     message: UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
     profile: publicProfile,
+  }),
+  listFollowingProfiles: async () => ({
+    profiles: [followingProfile],
+    total: 1,
+    nextCursor: null,
   }),
 });

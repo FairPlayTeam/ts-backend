@@ -1,5 +1,7 @@
 import {
   followPublicProfileResponseSchema,
+  followingProfilesQuerySchema,
+  followingProfilesResponseSchema,
   publicProfileParamsSchema,
   publicProfileResponseSchema,
   unfollowPublicProfileResponseSchema,
@@ -8,6 +10,29 @@ import { jsonResponse } from './openapi.helpers.js';
 import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from './registry.js';
 
 export const routeDocs = [
+  {
+    method: 'get',
+    path: '/profiles/me/following',
+    summary: 'List profiles followed by the current user',
+    tags: ['Profiles'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      query: followingProfilesQuerySchema,
+    },
+    responses: {
+      200: jsonResponse('Paginated followed profiles list', followingProfilesResponseSchema),
+
+      400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+
+      401: jsonResponse('Authentication required', ApiErrorSchema),
+
+      429: jsonResponse('Too many requests', ApiErrorSchema),
+
+      500: jsonResponse('Internal server error', ApiErrorSchema),
+
+      503: jsonResponse('Object storage unavailable', ApiErrorSchema),
+    },
+  },
   {
     method: 'get',
     path: '/profiles/{username}',

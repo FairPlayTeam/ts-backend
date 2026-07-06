@@ -3,6 +3,7 @@ import { createProfilesController } from '../controllers/profiles.controller.js'
 import {
   followPublicProfileSchema,
   getPublicProfileSchema,
+  listFollowingProfilesSchema,
   unfollowPublicProfileSchema,
 } from '../controllers/profiles.schemas.js';
 import { createRouteProtector } from '../middleware/routeProtection.js';
@@ -19,9 +20,8 @@ type ValidationSchema = Parameters<typeof validate>[0];
 
 export const createRouter = ({ authService, profilesService }: ProfilesRouterDependencies) => {
   const router = Router();
-  const { followPublicProfile, getPublicProfile, unfollowPublicProfile } = createProfilesController(
-    { profilesService },
-  );
+  const { followPublicProfile, getPublicProfile, listFollowingProfiles, unfollowPublicProfile } =
+    createProfilesController({ profilesService });
   const protect = createRouteProtector({ authService });
   const protectedValidatedRoute = (schema: ValidationSchema, ...handlers: RequestHandler[]) => [
     ...protect(),
@@ -29,6 +29,10 @@ export const createRouter = ({ authService, profilesService }: ProfilesRouterDep
     ...handlers,
   ];
 
+  router.get(
+    '/me/following',
+    ...protectedValidatedRoute(listFollowingProfilesSchema, listFollowingProfiles),
+  );
   router.post(
     '/:username/follow',
     ...protectedValidatedRoute(followPublicProfileSchema, followPublicProfile),

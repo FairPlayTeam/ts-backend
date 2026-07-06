@@ -8,6 +8,10 @@ import {
 import type { ProfilesDependencies } from '../src/services/profiles/profiles.dependencies.js';
 
 const profileCreatedAt = new Date('2026-01-01T00:00:00.000Z');
+const firstFollowedAt = new Date('2026-01-04T00:00:00.000Z');
+const secondFollowedAt = new Date('2026-01-03T00:00:00.000Z');
+const thirdFollowedAt = new Date('2026-01-02T00:00:00.000Z');
+const followerUserId = '11111111-1111-4111-8111-111111111111';
 
 const createProfileRecord = ({
   id = '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
@@ -36,15 +40,64 @@ const createProfileRecord = ({
   },
 });
 
+const createFollowingRecord = ({
+  displayName = 'Followed User',
+  followedAt,
+  id,
+  mediaAssets = [{ kind: 'avatar' as const, objectKey: `users/${id}/avatar/current-avatar.webp` }],
+  username = `followed_${id.slice(0, 4)}`,
+}: {
+  displayName?: string | null;
+  followedAt: Date;
+  id: string;
+  mediaAssets?: { kind: 'avatar'; objectKey: string }[];
+  username?: string;
+}) => ({
+  createdAt: followedAt,
+  followingId: id,
+  following: {
+    id,
+    username,
+    displayName,
+    mediaAssets,
+  },
+});
+
 const createDeps = ({
+  followingTotal = 3,
   profiles = [createProfileRecord()],
-}: { profiles?: unknown[] | unknown | null } = {}) => {
+  queriedFollows = [
+    createFollowingRecord({
+      id: '33333333-3333-4333-8333-333333333333',
+      followedAt: firstFollowedAt,
+      displayName: 'First Followed',
+    }),
+    createFollowingRecord({
+      id: '22222222-2222-4222-8222-222222222222',
+      followedAt: secondFollowedAt,
+      displayName: null,
+      mediaAssets: [],
+    }),
+    createFollowingRecord({
+      id: '11111111-1111-4111-8111-111111111111',
+      followedAt: thirdFollowedAt,
+      displayName: 'Extra Followed',
+    }),
+  ],
+}: {
+  followingTotal?: number;
+  profiles?: unknown[] | unknown | null;
+  queriedFollows?: ReturnType<typeof createFollowingRecord>[];
+} = {}) => {
   const profileQueue = Array.isArray(profiles) ? [...profiles] : [profiles];
   const calls: {
     signedUrlObjectKeys: string[];
+    transactionOperationCount?: number;
     transactionCount: number;
     userFindFirst: unknown[];
+    userFollowCount?: unknown;
     userFollowDeleteMany?: unknown;
+    userFollowFindMany?: unknown;
     userFollowUpsert?: unknown;
   } = {
     signedUrlObjectKeys: [],
@@ -62,6 +115,16 @@ const createDeps = ({
       },
     },
     userFollow: {
+      findMany: async (args: unknown) => {
+        calls.userFollowFindMany = args;
+
+        return queriedFollows;
+      },
+      count: async (args: unknown) => {
+        calls.userFollowCount = args;
+
+        return followingTotal;
+      },
       upsert: async (args: unknown) => {
         calls.userFollowUpsert = args;
 
@@ -75,6 +138,12 @@ const createDeps = ({
     },
     $transaction: async (input: unknown) => {
       calls.transactionCount += 1;
+
+      if (Array.isArray(input)) {
+        calls.transactionOperationCount = input.length;
+
+        return Promise.all(input);
+      }
 
       if (typeof input === 'function') {
         return input(prisma);
@@ -187,6 +256,111 @@ describe('profiles service', () => {
       }),
     ).rejects.toBeInstanceOf(PublicProfileNotFoundError);
     expect(calls.signedUrlObjectKeys).toEqual([]);
+  });
+
+  test('lists followed public profiles with stable cursor pagination and signed avatar urls', async () => {
+    const { calls, deps } = createDeps();
+
+    await expect(
+      createProfilesService(deps).listFollowingProfiles({
+        userId: followerUserId,
+        limit: 2,
+      }),
+    ).resolves.toEqual({
+      profiles: [
+        {
+          id: '33333333-3333-4333-8333-333333333333',
+          username: 'followed_3333',
+          displayName: 'First Followed',
+          avatarUrl: 'signed:users/33333333-3333-4333-8333-333333333333/avatar/current-avatar.webp',
+          followedAt: firstFollowedAt,
+        },
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          username: 'followed_2222',
+          displayName: null,
+          avatarUrl: null,
+          followedAt: secondFollowedAt,
+        },
+      ],
+      total: 3,
+      nextCursor: {
+        followedAt: secondFollowedAt,
+        id: '22222222-2222-4222-8222-222222222222',
+      },
+    });
+
+    const publicFollowingFilter = {
+      followerId: followerUserId,
+      following: {
+        isVerified: true,
+        isBanned: false,
+      },
+    };
+    expect(calls.userFollowFindMany).toEqual({
+      where: publicFollowingFilter,
+      select: {
+        createdAt: true,
+        followingId: true,
+        following: {
+          select: {
+            id: true,
+            username: true,
+            displayName: true,
+            mediaAssets: {
+              where: {
+                kind: 'avatar',
+              },
+              select: {
+                kind: true,
+                objectKey: true,
+              },
+              take: 1,
+            },
+          },
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { followingId: 'desc' }],
+      take: 3,
+    });
+    expect(calls.userFollowCount).toEqual({
+      where: publicFollowingFilter,
+    });
+    expect(calls.transactionOperationCount).toBe(2);
+    expect(calls.signedUrlObjectKeys).toEqual([
+      'users/33333333-3333-4333-8333-333333333333/avatar/current-avatar.webp',
+    ]);
+  });
+
+  test('applies followed profile cursor filtering and caps oversized limits', async () => {
+    const { calls, deps } = createDeps({ queriedFollows: [] });
+    const cursor = {
+      followedAt: new Date('2026-01-10T00:00:00.000Z'),
+      id: '99999999-9999-4999-8999-999999999999',
+    };
+
+    await createProfilesService(deps).listFollowingProfiles({
+      userId: followerUserId,
+      cursor,
+      limit: 10_000,
+    });
+
+    expect(calls.userFollowFindMany).toEqual(
+      expect.objectContaining({
+        where: {
+          followerId: followerUserId,
+          following: {
+            isVerified: true,
+            isBanned: false,
+          },
+          OR: [
+            { createdAt: { lt: cursor.followedAt } },
+            { createdAt: cursor.followedAt, followingId: { lt: cursor.id } },
+          ],
+        },
+        take: 101,
+      }),
+    );
   });
 
   test('follows a public profile idempotently and returns updated counts', async () => {
