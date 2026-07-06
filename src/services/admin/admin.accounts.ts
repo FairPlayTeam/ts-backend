@@ -1,6 +1,10 @@
 import type { Prisma } from '@prisma/client';
 import type { AdminDependencies } from './admin.dependencies.js';
 import { banAdminAccount } from './admin.accountBan.js';
+import {
+  DEFAULT_ADMIN_ACCOUNT_BAN_STATUS,
+  type AdminAccountBanStatus,
+} from './admin.accountFilters.js';
 import { unbanAdminAccount } from './admin.accountUnban.js';
 import { updateAdminAccountRole } from './admin.accountRoles.js';
 import type {
@@ -53,6 +57,56 @@ const normalizeAdminAccountsLimit = (limit: number | undefined): number => {
   return Math.min(Math.max(Math.trunc(limit), 1), MAX_ADMIN_ACCOUNTS_LIMIT);
 };
 
+const hasUserFilter = (filter: Prisma.UserWhereInput): boolean => Object.keys(filter).length > 0;
+
+const combineUserFilters = (...filters: Prisma.UserWhereInput[]): Prisma.UserWhereInput => {
+  const activeFilters = filters.filter(hasUserFilter);
+
+  if (activeFilters.length === 0) {
+    return {};
+  }
+
+  if (activeFilters.length === 1) {
+    return activeFilters[0] ?? {};
+  }
+
+  return { AND: activeFilters };
+};
+
+const normalizeAdminAccountsSearch = (search: string | undefined): string | undefined => {
+  const normalizedSearch = search?.trim();
+
+  return normalizedSearch ? normalizedSearch : undefined;
+};
+
+const getSearchFilter = (search: string | undefined): Prisma.UserWhereInput => {
+  const normalizedSearch = normalizeAdminAccountsSearch(search);
+
+  if (!normalizedSearch) {
+    return {};
+  }
+
+  return {
+    OR: [
+      { username: { contains: normalizedSearch, mode: 'insensitive' } },
+      { displayName: { contains: normalizedSearch, mode: 'insensitive' } },
+      { email: { contains: normalizedSearch, mode: 'insensitive' } },
+    ],
+  };
+};
+
+const getBanStatusFilter = (banStatus: AdminAccountBanStatus): Prisma.UserWhereInput => {
+  if (banStatus === 'banned') {
+    return { isBanned: true };
+  }
+
+  if (banStatus === 'notbanned') {
+    return { isBanned: false };
+  }
+
+  return {};
+};
+
 const getAvatarUrl = async (
   deps: AdminDependencies,
   mediaAssets: readonly AccountMediaAsset[],
@@ -75,8 +129,15 @@ const toAdminAccountSummary = async (
 };
 
 export const createAdminAccountsService = (deps: AdminDependencies): AdminAccountsPort => ({
-  async listAccounts({ cursor, limit }: ListAdminAccountsInput): Promise<ListAdminAccountsResult> {
+  async listAccounts({
+    banStatus = DEFAULT_ADMIN_ACCOUNT_BAN_STATUS,
+    cursor,
+    limit,
+    search,
+  }: ListAdminAccountsInput): Promise<ListAdminAccountsResult> {
     const pageSize = normalizeAdminAccountsLimit(limit);
+    const searchFilter = getSearchFilter(search);
+    const banStatusFilter = getBanStatusFilter(banStatus);
     const cursorFilter: Prisma.UserWhereInput = cursor
       ? {
           OR: [
@@ -85,15 +146,18 @@ export const createAdminAccountsService = (deps: AdminDependencies): AdminAccoun
           ],
         }
       : {};
+    const resultFilter = combineUserFilters(searchFilter, banStatusFilter);
+    const pageFilter = combineUserFilters(searchFilter, banStatusFilter, cursorFilter);
+    const countArgs = hasUserFilter(resultFilter) ? { where: resultFilter } : undefined;
 
     const [queriedAccounts, total] = await deps.prisma.$transaction([
       deps.prisma.user.findMany({
-        where: cursorFilter,
+        where: pageFilter,
         select: adminAccountSelect,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: pageSize + 1,
       }),
-      deps.prisma.user.count(),
+      deps.prisma.user.count(countArgs),
     ]);
 
     const accounts = queriedAccounts.slice(0, pageSize);

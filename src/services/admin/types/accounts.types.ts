@@ -1,4 +1,5 @@
 import type { AuthRole } from '../../auth.roles.js';
+import type { AdminAccountBanStatus } from '../admin.accountFilters.js';
 
 export type ListAdminAccountsInput = {
   cursor?: {
@@ -6,6 +7,8 @@ export type ListAdminAccountsInput = {
     id: string;
   };
   limit?: number;
+  search?: string;
+  banStatus?: AdminAccountBanStatus;
 };
 
 export type AdminAccountSummary = {

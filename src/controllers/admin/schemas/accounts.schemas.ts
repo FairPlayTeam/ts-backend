@@ -6,14 +6,22 @@ import {
   UNBAN_ACCOUNT_SUCCESS_MESSAGE,
   UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
 } from '../../../services/admin/admin.messages.js';
+import { ADMIN_ACCOUNT_BAN_STATUSES } from '../../../services/admin/admin.accountFilters.js';
 import { ADMIN_BAN_REASON_REQUIRED_MESSAGE } from '../../../services/admin.errors.js';
 
 export const ADMIN_ACCOUNTS_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorId must be provided together';
+const ADMIN_ACCOUNTS_SEARCH_MAX_LENGTH = 254;
 
 export const adminAccountsQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(100).optional().openapi({ example: 20 }),
+    search: z.string().trim().max(ADMIN_ACCOUNTS_SEARCH_MAX_LENGTH).optional().openapi({
+      example: 'creator@example.com',
+    }),
+    banStatus: z.enum(ADMIN_ACCOUNT_BAN_STATUSES).optional().openapi({
+      example: 'allUsers',
+    }),
     cursorCreatedAt: z.string().datetime().optional().openapi({
       example: '2026-01-01T00:00:00.000Z',
     }),

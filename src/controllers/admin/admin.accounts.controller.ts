@@ -30,7 +30,7 @@ type UpdateAccountRoleRequest = Request<
 export const createAdminAccountsController = (deps: AdminControllerDependencies) => {
   const listAccounts = async (req: ListAccountsRequest, res: Response, next: NextFunction) => {
     try {
-      const { cursorCreatedAt, cursorId, limit } = req.query;
+      const { banStatus, cursorCreatedAt, cursorId, limit, search } = req.query;
       const cursor =
         cursorCreatedAt !== undefined && cursorId !== undefined
           ? {
@@ -41,6 +41,8 @@ export const createAdminAccountsController = (deps: AdminControllerDependencies)
       const result = await deps.adminService.listAccounts({
         ...(cursor ? { cursor } : {}),
         ...(limit !== undefined ? { limit } : {}),
+        ...(search !== undefined ? { search } : {}),
+        ...(banStatus !== undefined ? { banStatus } : {}),
       });
 
       return sendNoStoreJson(res, 200, toAdminAccountsResponse(result));

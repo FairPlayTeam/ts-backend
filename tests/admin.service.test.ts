@@ -374,6 +374,66 @@ describe('admin service accounts', () => {
     );
   });
 
+  test('filters accounts by search and ban status without counting the cursor window', async () => {
+    const { calls, deps } = createDeps({ total: 7 });
+    const service = createAdminService(deps);
+    const cursor = {
+      createdAt: new Date('2026-01-10T00:00:00.000Z'),
+      id: '99999999-9999-4999-8999-999999999999',
+    };
+    const searchFilter = {
+      OR: [
+        { username: { contains: 'Target', mode: 'insensitive' } },
+        { displayName: { contains: 'Target', mode: 'insensitive' } },
+        { email: { contains: 'Target', mode: 'insensitive' } },
+      ],
+    };
+    const banStatusFilter = { isBanned: true };
+    const cursorFilter = {
+      OR: [
+        { createdAt: { lt: cursor.createdAt } },
+        { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+      ],
+    };
+
+    await service.listAccounts({
+      banStatus: 'banned',
+      cursor,
+      limit: 2,
+      search: '  Target  ',
+    });
+
+    expect(calls.userFindMany).toEqual(
+      expect.objectContaining({
+        where: {
+          AND: [searchFilter, banStatusFilter, cursorFilter],
+        },
+        take: 3,
+      }),
+    );
+    expect(calls.userCount).toEqual({
+      where: {
+        AND: [searchFilter, banStatusFilter],
+      },
+    });
+  });
+
+  test('filters accounts to non-banned users', async () => {
+    const { calls, deps } = createDeps({ queriedAccounts: [] });
+    const service = createAdminService(deps);
+
+    await service.listAccounts({ banStatus: 'notbanned' });
+
+    expect(calls.userFindMany).toEqual(
+      expect.objectContaining({
+        where: { isBanned: false },
+      }),
+    );
+    expect(calls.userCount).toEqual({
+      where: { isBanned: false },
+    });
+  });
+
   test('bans an account, revokes active sessions, and sends the ban reason by email', async () => {
     const { calls, deps } = createDeps();
     const service = createAdminService(deps);

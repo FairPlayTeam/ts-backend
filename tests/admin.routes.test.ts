@@ -122,17 +122,19 @@ describe('admin routes', () => {
   test('lists accounts for an administrator session', async () => {
     receivedListAccountsRequest = undefined;
     receivedSessionKey = undefined;
+    const query = new URLSearchParams({
+      banStatus: 'notbanned',
+      cursorCreatedAt,
+      cursorId,
+      limit: '10',
+      search: '  Admin Listed  ',
+    });
 
-    const response = await fetch(
-      `${baseUrl}/admin/users?limit=10&cursorCreatedAt=${encodeURIComponent(
-        cursorCreatedAt,
-      )}&cursorId=${cursorId}`,
-      {
-        headers: {
-          authorization: `Bearer ${adminSessionKey}`,
-        },
+    const response = await fetch(`${baseUrl}/admin/users?${query.toString()}`, {
+      headers: {
+        authorization: `Bearer ${adminSessionKey}`,
       },
-    );
+    });
 
     expect(response.status).toBe(200);
     const observedSessionKey = receivedSessionKey as string | undefined;
@@ -141,7 +143,9 @@ describe('admin routes', () => {
       | undefined;
     expect(observedSessionKey).toBe(adminSessionKey);
     expect(observedListAccountsRequest).toEqual({
+      banStatus: 'notbanned',
       limit: 10,
+      search: 'Admin Listed',
       cursor: {
         createdAt: new Date(cursorCreatedAt),
         id: cursorId,
@@ -439,6 +443,29 @@ describe('admin routes', () => {
         {
           field: 'query',
           message: ADMIN_ACCOUNTS_CURSOR_PAIR_MESSAGE,
+        },
+      ],
+    });
+  });
+
+  test('rejects invalid account ban status filters before calling the admin service', async () => {
+    receivedListAccountsRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/admin/users?banStatus=archived`, {
+      headers: {
+        authorization: `Bearer ${adminSessionKey}`,
+      },
+    });
+
+    expect(response.status).toBe(400);
+    expect(receivedListAccountsRequest).toBeUndefined();
+    expect(await response.json()).toEqual({
+      error: 'ValidationError',
+      message: REQUEST_VALIDATION_FAILED_MESSAGE,
+      details: [
+        {
+          field: 'query.banStatus',
+          message: 'Invalid option: expected one of "allUsers"|"banned"|"notbanned"',
         },
       ],
     });

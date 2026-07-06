@@ -170,6 +170,14 @@ describe('OpenAPI generation', () => {
           in: 'query',
         }),
         expect.objectContaining({
+          name: 'search',
+          in: 'query',
+        }),
+        expect.objectContaining({
+          name: 'banStatus',
+          in: 'query',
+        }),
+        expect.objectContaining({
           name: 'cursorCreatedAt',
           in: 'query',
         }),
@@ -178,6 +186,15 @@ describe('OpenAPI generation', () => {
           in: 'query',
         }),
       ]),
+    );
+    expect(
+      document.paths['/admin/users']?.get?.parameters?.find(
+        (parameter: { name?: string }) => parameter.name === 'banStatus',
+      )?.schema,
+    ).toEqual(
+      expect.objectContaining({
+        enum: ['allUsers', 'banned', 'notbanned'],
+      }),
     );
     expect(document.paths['/admin/users']?.get?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/admin/users']?.get?.responses?.[200]).toBeDefined();
