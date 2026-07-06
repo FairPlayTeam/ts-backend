@@ -2,6 +2,7 @@ import { toIsoString, toNullableIsoString } from '../http.responses.js';
 import type {
   BanAdminAccountResult,
   ListAdminAccountsResult,
+  UnbanAdminAccountResult,
   UpdateAdminAccountRoleResult,
 } from '../../services/admin.types.js';
 
@@ -39,6 +40,11 @@ export const toBanAdminAccountResponse = ({
   },
   sessionsRevoked,
   notificationEmailSent,
+});
+
+export const toUnbanAdminAccountResponse = ({ account, message }: UnbanAdminAccountResult) => ({
+  message,
+  account,
 });
 
 export const toUpdateAdminAccountRoleResponse = ({

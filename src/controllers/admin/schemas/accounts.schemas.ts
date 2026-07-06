@@ -3,6 +3,7 @@ import { BAN_REASON_MAX_LENGTH } from '../../../config/constants.js';
 import { AUTH_ROLES } from '../../../services/auth.roles.js';
 import {
   BAN_ACCOUNT_SUCCESS_MESSAGE,
+  UNBAN_ACCOUNT_SUCCESS_MESSAGE,
   UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
 } from '../../../services/admin/admin.messages.js';
 import { ADMIN_BAN_REASON_REQUIRED_MESSAGE } from '../../../services/admin.errors.js';
@@ -59,6 +60,10 @@ export const banAdminAccountRequestSchema = z
 export const banAdminAccountSchema = z.object({
   params: adminAccountParamsSchema,
   body: banAdminAccountRequestSchema,
+});
+
+export const unbanAdminAccountSchema = z.object({
+  params: adminAccountParamsSchema,
 });
 
 export const updateAdminAccountRoleRequestSchema = z
@@ -131,6 +136,26 @@ export const banAdminAccountResponseSchema = z
   })
   .openapi('BanAdminAccountResponse');
 
+const unbannedAdminAccountResponseSchema = z.object({
+  id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
+  email: z.string().email().openapi({ example: 'creator@example.com' }),
+  username: z.string().openapi({ example: 'fairplay_creator' }),
+  displayName: z.string().nullable().openapi({ example: 'FairPlay Creator' }),
+  role: z.enum(AUTH_ROLES).openapi({ example: 'user' }),
+  isBanned: z.boolean().openapi({ example: false }),
+  bannedAt: nullableAccountDateTimeSchema.openapi({ example: null }),
+  banReason: z.string().max(BAN_REASON_MAX_LENGTH).nullable().openapi({ example: null }),
+});
+
+export const unbanAdminAccountResponseSchema = z
+  .object({
+    message: z.literal(UNBAN_ACCOUNT_SUCCESS_MESSAGE).openapi({
+      example: UNBAN_ACCOUNT_SUCCESS_MESSAGE,
+    }),
+    account: unbannedAdminAccountResponseSchema,
+  })
+  .openapi('UnbanAdminAccountResponse');
+
 const updatedAdminAccountRoleResponseSchema = z.object({
   id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
   email: z.string().email().openapi({ example: 'creator@example.com' }),
@@ -152,5 +177,6 @@ export const updateAdminAccountRoleResponseSchema = z
 export type AdminAccountsQuery = z.infer<typeof adminAccountsSchema>['query'];
 export type BanAdminAccountParams = z.infer<typeof banAdminAccountSchema>['params'];
 export type BanAdminAccountBody = z.infer<typeof banAdminAccountSchema>['body'];
+export type UnbanAdminAccountParams = z.infer<typeof unbanAdminAccountSchema>['params'];
 export type UpdateAdminAccountRoleParams = z.infer<typeof updateAdminAccountRoleSchema>['params'];
 export type UpdateAdminAccountRoleBody = z.infer<typeof updateAdminAccountRoleSchema>['body'];

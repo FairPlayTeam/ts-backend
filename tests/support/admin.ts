@@ -1,6 +1,7 @@
 import type { AdminPorts } from '../../src/services/admin.types.js';
 import {
   BAN_ACCOUNT_SUCCESS_MESSAGE,
+  UNBAN_ACCOUNT_SUCCESS_MESSAGE,
   UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
 } from '../../src/services/admin/admin.messages.js';
 
@@ -19,6 +20,19 @@ export const createStubAdminService = (): AdminPorts => ({
     },
     sessionsRevoked: 2,
     notificationEmailSent: true,
+  }),
+  unbanAccount: async () => ({
+    message: UNBAN_ACCOUNT_SUCCESS_MESSAGE,
+    account: {
+      id: '22222222-2222-4222-8222-222222222222',
+      email: 'unbanned@example.com',
+      username: 'unbanned_user',
+      displayName: 'Unbanned User',
+      role: 'user',
+      isBanned: false,
+      bannedAt: null,
+      banReason: null,
+    },
   }),
   listAccounts: async () => ({
     accounts: [

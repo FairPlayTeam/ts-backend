@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import type { AdminDependencies } from './admin.dependencies.js';
 import { banAdminAccount } from './admin.accountBan.js';
+import { unbanAdminAccount } from './admin.accountUnban.js';
 import { updateAdminAccountRole } from './admin.accountRoles.js';
 import type {
   BanAdminAccountInput,
@@ -9,6 +10,8 @@ import type {
   AdminAccountsPort,
   ListAdminAccountsInput,
   ListAdminAccountsResult,
+  UnbanAdminAccountInput,
+  UnbanAdminAccountResult,
   UpdateAdminAccountRoleInput,
   UpdateAdminAccountRoleResult,
 } from './types/accounts.types.js';
@@ -109,6 +112,10 @@ export const createAdminAccountsService = (deps: AdminDependencies): AdminAccoun
 
   async banAccount(input: BanAdminAccountInput): Promise<BanAdminAccountResult> {
     return banAdminAccount(deps, input);
+  },
+
+  async unbanAccount(input: UnbanAdminAccountInput): Promise<UnbanAdminAccountResult> {
+    return unbanAdminAccount(deps, input);
   },
 
   async updateAccountRole(

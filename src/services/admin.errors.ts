@@ -2,7 +2,9 @@ import { BAN_REASON_MAX_LENGTH } from '../config/constants.js';
 
 export const ADMIN_ACCOUNT_NOT_FOUND_MESSAGE = 'Account not found';
 export const ADMIN_ACCOUNT_ALREADY_BANNED_MESSAGE = 'Account is already banned';
+export const ADMIN_ACCOUNT_NOT_BANNED_MESSAGE = 'Account is not banned';
 export const ADMIN_SELF_BAN_MESSAGE = 'Administrators cannot ban their own account';
+export const ADMIN_SELF_UNBAN_MESSAGE = 'Administrators cannot unban their own account';
 export const ADMIN_ROLE_HIERARCHY_MESSAGE =
   'Cannot manage an account with an equivalent or higher role';
 export const ADMIN_ROLE_ASSIGNMENT_MESSAGE = 'Cannot assign a role higher than your own';
@@ -24,10 +26,24 @@ export class AdminAccountAlreadyBannedError extends Error {
   }
 }
 
+export class AdminAccountNotBannedError extends Error {
+  constructor() {
+    super(ADMIN_ACCOUNT_NOT_BANNED_MESSAGE);
+    this.name = 'AdminAccountNotBannedError';
+  }
+}
+
 export class AdminSelfBanError extends Error {
   constructor() {
     super(ADMIN_SELF_BAN_MESSAGE);
     this.name = 'AdminSelfBanError';
+  }
+}
+
+export class AdminSelfUnbanError extends Error {
+  constructor() {
+    super(ADMIN_SELF_UNBAN_MESSAGE);
+    this.name = 'AdminSelfUnbanError';
   }
 }
 

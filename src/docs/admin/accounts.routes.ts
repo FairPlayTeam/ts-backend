@@ -4,6 +4,7 @@ import {
   adminAccountsResponseSchema,
   banAdminAccountRequestSchema,
   banAdminAccountResponseSchema,
+  unbanAdminAccountResponseSchema,
   updateAdminAccountRoleRequestSchema,
   updateAdminAccountRoleResponseSchema,
 } from '../../controllers/admin.schemas.js';
@@ -12,6 +13,7 @@ import { jsonRequest, jsonResponse } from '../openapi.helpers.js';
 import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from '../registry.js';
 import {
   BAN_ACCOUNT_SUCCESS_MESSAGE,
+  UNBAN_ACCOUNT_SUCCESS_MESSAGE,
   UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
 } from '../../services/admin/admin.messages.js';
 
@@ -66,6 +68,36 @@ export const adminAccountRouteDocs = [
       404: jsonResponse('Account not found', ApiErrorSchema),
 
       409: jsonResponse('Account is already banned', ApiErrorSchema),
+
+      429: jsonResponse('Too many requests', ApiErrorSchema),
+
+      500: jsonResponse('Internal server error', ApiErrorSchema),
+    },
+  },
+  {
+    method: 'post',
+    path: '/admin/users/{userId}/unban',
+    summary: 'Unban a user account',
+    tags: ['Admin'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      params: adminAccountParamsSchema,
+    },
+    responses: {
+      200: jsonResponse(UNBAN_ACCOUNT_SUCCESS_MESSAGE, unbanAdminAccountResponseSchema),
+
+      400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+
+      401: jsonResponse('Missing, invalid, or expired session', ApiErrorSchema),
+
+      403: jsonResponse(
+        `${INSUFFICIENT_PERMISSIONS_MESSAGE}, self-unban attempt, or role hierarchy violation`,
+        ApiErrorSchema,
+      ),
+
+      404: jsonResponse('Account not found', ApiErrorSchema),
+
+      409: jsonResponse('Account is not banned', ApiErrorSchema),
 
       429: jsonResponse('Too many requests', ApiErrorSchema),
 

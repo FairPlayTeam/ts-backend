@@ -4,15 +4,18 @@ import type { AuthRole } from '../src/services/auth.roles.js';
 import { createAdminService } from '../src/services/admin.service.js';
 import {
   AdminAccountAlreadyBannedError,
+  AdminAccountNotBannedError,
   AdminAccountNotFoundError,
   AdminBanReasonInvalidError,
   AdminRoleAlreadyAssignedError,
   AdminRoleAssignmentError,
   AdminRoleHierarchyError,
   AdminSelfBanError,
+  AdminSelfUnbanError,
 } from '../src/services/admin.errors.js';
 import {
   BAN_ACCOUNT_SUCCESS_MESSAGE,
+  UNBAN_ACCOUNT_SUCCESS_MESSAGE,
   UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
 } from '../src/services/admin/admin.messages.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
@@ -113,7 +116,13 @@ const createDeps = ({
   revokedSessionsCount?: number;
   now?: Date;
 } = {}) => {
-  let persistedBan: { bannedAt: Date; banReason: string } | null = null;
+  let currentBanState = banTarget
+    ? {
+        isBanned: banTarget.isBanned,
+        bannedAt: banTarget.bannedAt,
+        banReason: banTarget.banReason,
+      }
+    : null;
   let persistedRole: AuthRole | null = null;
   const calls: {
     accountBanEmails: { email: string; reason: string }[];
@@ -158,23 +167,11 @@ const createDeps = ({
             return null;
           }
 
-          if (!persistedBan) {
-            return applySelect(
-              {
-                ...banTarget,
-                ...(persistedRole ? { role: persistedRole, updatedAt: now } : {}),
-              },
-              select,
-            );
-          }
-
           return applySelect(
             {
               ...banTarget,
+              ...currentBanState,
               ...(persistedRole ? { role: persistedRole, updatedAt: now } : {}),
-              isBanned: true,
-              bannedAt: persistedBan.bannedAt,
-              banReason: persistedBan.banReason,
             },
             select,
           );
@@ -193,11 +190,16 @@ const createDeps = ({
           calls.userUpdateMany = args;
 
           const update = args as {
-            data?: { bannedAt?: Date; banReason?: string; role?: AuthRole };
-            where?: { role?: { in?: AuthRole[] } };
+            data?: {
+              bannedAt?: Date | null;
+              banReason?: string | null;
+              isBanned?: boolean;
+              role?: AuthRole;
+            };
+            where?: { isBanned?: boolean; role?: { in?: AuthRole[] } };
           };
 
-          if (!banTarget) {
+          if (!banTarget || !currentBanState) {
             return { count: 0 };
           }
 
@@ -214,16 +216,34 @@ const createDeps = ({
             return { count: 1 };
           }
 
-          if (banTarget.isBanned) {
+          if (
+            update.where?.isBanned !== undefined &&
+            currentBanState.isBanned !== update.where.isBanned
+          ) {
             return { count: 0 };
           }
 
-          persistedBan = {
-            bannedAt: update.data?.bannedAt ?? now,
-            banReason: update.data?.banReason ?? '',
-          };
+          if (update.data?.isBanned === true) {
+            currentBanState = {
+              isBanned: true,
+              bannedAt: update.data.bannedAt ?? now,
+              banReason: update.data.banReason ?? '',
+            };
 
-          return { count: 1 };
+            return { count: 1 };
+          }
+
+          if (update.data?.isBanned === false) {
+            currentBanState = {
+              isBanned: false,
+              bannedAt: null,
+              banReason: null,
+            };
+
+            return { count: 1 };
+          }
+
+          return { count: 0 };
         },
       },
     },
@@ -543,6 +563,115 @@ describe('admin service accounts', () => {
         actorRole: 'moderator',
         targetUserId,
         reason: 'Policy violation.',
+      }),
+    ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
+    expect(superiorAdmin.calls.userUpdateMany).toBeUndefined();
+  });
+
+  test('unbans a banned account and clears ban metadata', async () => {
+    const { calls, deps } = createDeps({
+      banTarget: createBanTargetRecord({ isBanned: true }),
+    });
+    const service = createAdminService(deps);
+
+    await expect(
+      service.unbanAccount({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+      }),
+    ).resolves.toEqual({
+      message: UNBAN_ACCOUNT_SUCCESS_MESSAGE,
+      account: {
+        id: targetUserId,
+        email: 'target@example.com',
+        username: 'target_user',
+        displayName: 'Target User',
+        role: 'user',
+        isBanned: false,
+        bannedAt: null,
+        banReason: null,
+      },
+    });
+
+    expect(calls.userUpdateMany).toEqual({
+      where: {
+        id: targetUserId,
+        isBanned: true,
+        role: { in: ['user', 'moderator'] },
+      },
+      data: {
+        isBanned: false,
+        bannedAt: null,
+        banReason: null,
+      },
+    });
+    expect(calls.sessionUpdateMany).toBeUndefined();
+    expect(calls.accountBanEmails).toEqual([]);
+  });
+
+  test('rejects self-unban attempts before touching the target account', async () => {
+    const { calls, deps } = createDeps({
+      banTarget: createBanTargetRecord({ isBanned: true }),
+    });
+
+    await expect(
+      createAdminService(deps).unbanAccount({
+        actorUserId: targetUserId,
+        actorRole: 'admin',
+        targetUserId,
+      }),
+    ).rejects.toBeInstanceOf(AdminSelfUnbanError);
+
+    expect(calls.userFindUnique).toEqual([]);
+    expect(calls.userUpdateMany).toBeUndefined();
+  });
+
+  test('rejects unban for missing or already unbanned accounts', async () => {
+    const unknownAccount = createDeps({ banTarget: null });
+    await expect(
+      createAdminService(unknownAccount.deps).unbanAccount({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+      }),
+    ).rejects.toBeInstanceOf(AdminAccountNotFoundError);
+    expect(unknownAccount.calls.userUpdateMany).toBeUndefined();
+
+    const alreadyUnbannedAccount = createDeps();
+    await expect(
+      createAdminService(alreadyUnbannedAccount.deps).unbanAccount({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+      }),
+    ).rejects.toBeInstanceOf(AdminAccountNotBannedError);
+    expect(alreadyUnbannedAccount.calls.userUpdateMany).toBeUndefined();
+  });
+
+  test('rejects unbans against equivalent or higher roles', async () => {
+    const equivalentAdmin = createDeps({
+      banTarget: createBanTargetRecord({ isBanned: true, role: 'admin' }),
+    });
+
+    await expect(
+      createAdminService(equivalentAdmin.deps).unbanAccount({
+        actorUserId,
+        actorRole: 'admin',
+        targetUserId,
+      }),
+    ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
+    expect(equivalentAdmin.calls.userUpdateMany).toBeUndefined();
+
+    const superiorAdmin = createDeps({
+      banTarget: createBanTargetRecord({ isBanned: true, role: 'admin' }),
+    });
+
+    await expect(
+      createAdminService(superiorAdmin.deps).unbanAccount({
+        actorUserId,
+        actorRole: 'moderator',
+        targetUserId,
       }),
     ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
     expect(superiorAdmin.calls.userUpdateMany).toBeUndefined();

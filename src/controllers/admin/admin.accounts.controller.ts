@@ -4,6 +4,7 @@ import type {
   AdminAccountsQuery,
   BanAdminAccountBody,
   BanAdminAccountParams,
+  UnbanAdminAccountParams,
   UpdateAdminAccountRoleBody,
   UpdateAdminAccountRoleParams,
 } from '../admin.schemas.js';
@@ -13,11 +14,13 @@ import type { AdminControllerDependencies } from './admin.controller.types.js';
 import {
   toAdminAccountsResponse,
   toBanAdminAccountResponse,
+  toUnbanAdminAccountResponse,
   toUpdateAdminAccountRoleResponse,
 } from './admin.responses.js';
 
 type ListAccountsRequest = Request<unknown, unknown, unknown, AdminAccountsQuery>;
 type BanAccountRequest = Request<BanAdminAccountParams, unknown, BanAdminAccountBody>;
+type UnbanAccountRequest = Request<UnbanAdminAccountParams>;
 type UpdateAccountRoleRequest = Request<
   UpdateAdminAccountRoleParams,
   unknown,
@@ -63,6 +66,22 @@ export const createAdminAccountsController = (deps: AdminControllerDependencies)
     }
   };
 
+  const unbanAccount: RequestHandler = async (req, res, next) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const unbanReq = req as UnbanAccountRequest;
+      const result = await deps.adminService.unbanAccount({
+        actorUserId: authenticatedReq.user.id,
+        actorRole: authenticatedReq.user.role,
+        targetUserId: unbanReq.params.userId,
+      });
+
+      return sendNoStoreJson(res, 200, toUnbanAdminAccountResponse(result));
+    } catch (err) {
+      next(toAdminHttpError(err));
+    }
+  };
+
   const updateAccountRole: RequestHandler = async (req, res, next) => {
     try {
       const authenticatedReq = req as AuthenticatedRequest;
@@ -83,6 +102,7 @@ export const createAdminAccountsController = (deps: AdminControllerDependencies)
   return {
     banAccount,
     listAccounts,
+    unbanAccount,
     updateAccountRole,
   };
 };

@@ -2,12 +2,14 @@ import { HttpError } from '../errors/http.js';
 import { ObjectStorageUnavailableError } from '../lib/objectStorage.js';
 import {
   AdminAccountAlreadyBannedError,
+  AdminAccountNotBannedError,
   AdminAccountNotFoundError,
   AdminBanReasonInvalidError,
   AdminRoleAlreadyAssignedError,
   AdminRoleAssignmentError,
   AdminRoleHierarchyError,
   AdminSelfBanError,
+  AdminSelfUnbanError,
 } from '../services/admin.errors.js';
 
 export function toAdminHttpError(err: unknown): Error {
@@ -18,7 +20,8 @@ export function toAdminHttpError(err: unknown): Error {
   if (
     err instanceof AdminRoleAssignmentError ||
     err instanceof AdminRoleHierarchyError ||
-    err instanceof AdminSelfBanError
+    err instanceof AdminSelfBanError ||
+    err instanceof AdminSelfUnbanError
   ) {
     return new HttpError(403, 'Forbidden', err.message, { cause: err });
   }
@@ -29,6 +32,7 @@ export function toAdminHttpError(err: unknown): Error {
 
   if (
     err instanceof AdminAccountAlreadyBannedError ||
+    err instanceof AdminAccountNotBannedError ||
     err instanceof AdminRoleAlreadyAssignedError
   ) {
     return new HttpError(409, 'Conflict', err.message, { cause: err });

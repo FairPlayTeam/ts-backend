@@ -15,6 +15,7 @@ import type {
   AdminPorts,
   BanAdminAccountInput,
   ListAdminAccountsInput,
+  UnbanAdminAccountInput,
   UpdateAdminAccountRoleInput,
 } from '../src/services/admin.types.js';
 import { createStubAdminService } from './support/admin.js';
@@ -25,6 +26,7 @@ let server: Server;
 let baseUrl: string;
 let receivedBanAccountRequest: BanAdminAccountInput | undefined;
 let receivedListAccountsRequest: ListAdminAccountsInput | undefined;
+let receivedUnbanAccountRequest: UnbanAdminAccountInput | undefined;
 let receivedUpdateAccountRoleRequest: UpdateAdminAccountRoleInput | undefined;
 let receivedSessionKey: string | undefined;
 
@@ -59,6 +61,11 @@ describe('admin routes', () => {
             receivedListAccountsRequest = input;
 
             return adminService.listAccounts(input);
+          },
+          unbanAccount: async (input) => {
+            receivedUnbanAccountRequest = input;
+
+            return adminService.unbanAccount(input);
           },
           updateAccountRole: async (input) => {
             receivedUpdateAccountRoleRequest = input;
@@ -208,6 +215,44 @@ describe('admin routes', () => {
     });
   });
 
+  test('unbans an account for an administrator session', async () => {
+    receivedSessionKey = undefined;
+    receivedUnbanAccountRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/admin/users/${cursorId}/unban`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${adminSessionKey}`,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const observedSessionKey = receivedSessionKey as string | undefined;
+    const observedUnbanAccountRequest = receivedUnbanAccountRequest as
+      | UnbanAdminAccountInput
+      | undefined;
+    expect(observedSessionKey).toBe(adminSessionKey);
+    expect(observedUnbanAccountRequest).toEqual({
+      actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      actorRole: 'admin',
+      targetUserId: cursorId,
+    });
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.json()).toEqual({
+      message: 'Account unbanned successfully',
+      account: {
+        id: '22222222-2222-4222-8222-222222222222',
+        email: 'unbanned@example.com',
+        username: 'unbanned_user',
+        displayName: 'Unbanned User',
+        role: 'user',
+        isBanned: false,
+        bannedAt: null,
+        banReason: null,
+      },
+    });
+  });
+
   test('updates an account role for an administrator session', async () => {
     receivedSessionKey = undefined;
     receivedUpdateAccountRoleRequest = undefined;
@@ -253,6 +298,7 @@ describe('admin routes', () => {
   test('rejects non-admin sessions before calling the admin service', async () => {
     receivedListAccountsRequest = undefined;
     receivedBanAccountRequest = undefined;
+    receivedUnbanAccountRequest = undefined;
     receivedUpdateAccountRoleRequest = undefined;
 
     const response = await fetch(`${baseUrl}/admin/users`, {
@@ -264,6 +310,7 @@ describe('admin routes', () => {
     expect(response.status).toBe(403);
     expect(receivedListAccountsRequest).toBeUndefined();
     expect(receivedBanAccountRequest).toBeUndefined();
+    expect(receivedUnbanAccountRequest).toBeUndefined();
     expect(receivedUpdateAccountRoleRequest).toBeUndefined();
     expect(await response.json()).toEqual({
       error: 'Forbidden',
@@ -309,6 +356,30 @@ describe('admin routes', () => {
         {
           field: 'body.reason',
           message: 'Ban reason is required',
+        },
+      ],
+    });
+  });
+
+  test('rejects invalid unban requests before calling the admin service', async () => {
+    receivedUnbanAccountRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/admin/users/not-a-user-id/unban`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${adminSessionKey}`,
+      },
+    });
+
+    expect(response.status).toBe(400);
+    expect(receivedUnbanAccountRequest).toBeUndefined();
+    expect(await response.json()).toEqual({
+      error: 'ValidationError',
+      message: REQUEST_VALIDATION_FAILED_MESSAGE,
+      details: [
+        {
+          field: 'params.userId',
+          message: 'User id must be a valid UUID',
         },
       ],
     });
