@@ -10,6 +10,7 @@ import { AUTH_ROLES } from '../src/services/auth.roles.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
+import { createStubVideosService } from './support/videos.js';
 
 const documentedHttpMethods = new Set(['delete', 'get', 'patch', 'post', 'put']);
 
@@ -47,6 +48,7 @@ const createOpenApiTestApp = () =>
       adminService: createStubAdminService(),
       authService: createStubAuthService(),
       profilesService: createStubProfilesService(),
+      videosService: createStubVideosService(),
     },
   );
 
@@ -161,6 +163,12 @@ describe('OpenAPI generation', () => {
       '/profiles/me/following',
       '/profiles/{username}',
       '/profiles/{username}/follow',
+      '/videos',
+      '/videos/{videoId}/upload/multipart/init',
+      '/videos/{videoId}/upload/multipart/{uploadSessionId}',
+      '/videos/{videoId}/upload/multipart/{uploadSessionId}/abort',
+      '/videos/{videoId}/upload/multipart/{uploadSessionId}/complete',
+      '/videos/{videoId}/upload/multipart/{uploadSessionId}/parts/sign',
     ]);
     expect(document.paths['/auth/login']?.post?.requestBody).toBeDefined();
     expect(document.paths['/admin/users']?.get?.requestBody).toBeUndefined();
@@ -460,6 +468,39 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[401]).toBeDefined();
     expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[404]).toBeDefined();
     expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[503]).toBeDefined();
+    expect(document.paths['/videos']?.post?.requestBody?.content).toHaveProperty(
+      'application/json',
+    );
+    expect(document.paths['/videos']?.post?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths['/videos']?.post?.responses?.[201]).toBeDefined();
+    expect(
+      document.paths['/videos/{videoId}/upload/multipart/init']?.post?.requestBody,
+    ).toBeUndefined();
+    expect(document.paths['/videos/{videoId}/upload/multipart/init']?.post?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+    expect(
+      document.paths['/videos/{videoId}/upload/multipart/init']?.post?.responses?.[201],
+    ).toBeDefined();
+    expect(
+      document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}/parts/sign']?.post
+        ?.requestBody,
+    ).toBeDefined();
+    expect(
+      document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}/parts/sign']?.post
+        ?.requestBody?.content,
+    ).toHaveProperty('application/json');
+    expect(
+      document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}/complete']?.post
+        ?.requestBody?.content,
+    ).toHaveProperty('application/json');
+    expect(
+      document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}/abort']?.post
+        ?.requestBody,
+    ).toBeUndefined();
+    expect(
+      document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}']?.get?.requestBody,
+    ).toBeUndefined();
     expect(document.components?.schemas?.LoginRequest).toBeDefined();
     expect(document.components?.schemas?.LoginResponse).toBeDefined();
     expect(document.components?.schemas?.LoginResponse?.properties?.user?.properties?.role).toEqual(
@@ -480,6 +521,12 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.FollowPublicProfileResponse).toBeDefined();
     expect(document.components?.schemas?.FollowingProfilesResponse).toBeDefined();
     expect(document.components?.schemas?.UnfollowPublicProfileResponse).toBeDefined();
+    expect(document.components?.schemas?.CreateVideoRequest).toBeDefined();
+    expect(document.components?.schemas?.CreateVideoResponse).toBeDefined();
+    expect(document.components?.schemas?.VideoUploadSessionResponse).toBeDefined();
+    expect(document.components?.schemas?.SignVideoMultipartUploadPartsRequest).toBeDefined();
+    expect(document.components?.schemas?.SignedVideoUploadPartsResponse).toBeDefined();
+    expect(document.components?.schemas?.CompleteVideoMultipartUploadRequest).toBeDefined();
     expect(
       document.components?.schemas?.CurrentUserResponse?.properties?.user?.properties?.avatarUrl,
     ).toBeDefined();

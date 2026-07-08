@@ -43,6 +43,7 @@ import {
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
+import { createStubVideosService } from './support/videos.js';
 
 let server: Server;
 let baseUrl: string;
@@ -79,6 +80,7 @@ describe('auth routes', () => {
       {
         adminService: createStubAdminService(),
         profilesService: createStubProfilesService(),
+        videosService: createStubVideosService(),
         authService: {
           ...authService,
           validateSession: async (sessionKey) => {

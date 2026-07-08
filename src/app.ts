@@ -18,6 +18,7 @@ import type { RedisClient } from './lib/redis.js';
 import type { AdminRoutePort } from './services/admin.types.js';
 import type { AuthRoutePort } from './services/auth.types.js';
 import type { ProfilesRoutePort } from './services/profiles.types.js';
+import type { VideosRoutePort } from './services/videos.types.js';
 import helmet from 'helmet';
 import {
   PASSWORD_RESET_EMAIL_COOLDOWN_MS,
@@ -43,6 +44,7 @@ type CreateAppDependencies = {
   adminService: AdminRoutePort;
   authService: AuthRoutePort;
   profilesService: ProfilesRoutePort;
+  videosService: VideosRoutePort;
   redisClient?: RedisClient | null;
   readinessChecks?: ReadinessChecks | null;
 };
@@ -208,6 +210,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
       adminService: deps.adminService,
       authService: deps.authService,
       profilesService: deps.profilesService,
+      videosService: deps.videosService,
       profileMediaMaxUploadBytes: config.profileMediaMaxUploadBytes,
       authLimiter,
       profileMediaUploadLimiter,

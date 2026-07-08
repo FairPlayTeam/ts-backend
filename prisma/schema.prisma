@@ -135,7 +135,7 @@ model UserMediaDeletionJob {
 
 model Video {
   id                 String                @id @default(uuid()) @db.Uuid
-  publicId           String                @unique @default(cuid()) @map("public_id") @db.VarChar(64)
+  publicId           String                @unique @map("public_id") @db.VarChar(64)
   ownerId            String                @map("owner_id") @db.Uuid
   title              String                @db.VarChar(120)
   description        String?               @db.VarChar(5000)

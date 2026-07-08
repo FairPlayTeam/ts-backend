@@ -14,6 +14,8 @@ import { createApp } from '../../src/app.js';
 import { createAdminService } from '../../src/services/admin.service.js';
 import { createAuthService } from '../../src/services/auth.service.js';
 import { createProfilesService } from '../../src/services/profiles.service.js';
+import { createVideosService } from '../../src/services/videos.service.js';
+import { createVideoPublicId } from '../../src/services/videos/videoPublicId.js';
 import { createUserMediaProcessor } from '../../src/services/userMedia/userMedia.processor.js';
 import {
   generateSixDigitCode,
@@ -60,6 +62,7 @@ import {
 import type { AuthPorts } from '../../src/services/auth.types.js';
 import type { AdminPorts } from '../../src/services/admin.types.js';
 import type { ProfilesPorts } from '../../src/services/profiles.types.js';
+import type { VideosPorts } from '../../src/services/videos.types.js';
 import type { Redis } from 'ioredis';
 import type { ObjectStorageConfig } from '../../src/config/env.parsers.js';
 
@@ -102,6 +105,7 @@ type TestRuntime = {
   adminService: AdminPorts;
   authService: AuthPorts;
   profilesService: ProfilesPorts;
+  videosService: VideosPorts;
   delivered: {
     verification: DeliveredEmail[];
     passwordReset: DeliveredEmail[];
@@ -247,6 +251,26 @@ const createIntegrationProfilesService = (
     objectStorage,
   });
 
+const createIntegrationVideosService = (
+  prisma: PrismaClient,
+  objectStorage: ObjectStorage,
+): VideosPorts =>
+  createVideosService({
+    prisma,
+    objectStorage,
+    clock: {
+      now: () => new Date(),
+    },
+    publicIdGenerator: {
+      generate: createVideoPublicId,
+    },
+    config: {
+      maxPartCount: 10_000,
+      partSizeBytes: 67_108_864,
+      sessionTtlSeconds: 86_400,
+    },
+  });
+
 const createIntegrationApp = async (runtime: TestRuntime) =>
   createApp(
     {
@@ -262,6 +286,7 @@ const createIntegrationApp = async (runtime: TestRuntime) =>
       adminService: runtime.adminService,
       authService: runtime.authService,
       profilesService: runtime.profilesService,
+      videosService: runtime.videosService,
       redisClient: runtime.redisClient,
       readinessChecks: {
         database: async () => {
@@ -362,6 +387,7 @@ const startRuntime = async (): Promise<TestRuntime> => {
       adminService: createIntegrationAdminService(prisma, objectStorage, delivered),
       authService: createIntegrationAuthService(prisma, objectStorage, delivered),
       profilesService: createIntegrationProfilesService(prisma, objectStorage),
+      videosService: createIntegrationVideosService(prisma, objectStorage),
       delivered,
     };
   } catch (error) {

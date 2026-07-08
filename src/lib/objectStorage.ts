@@ -6,7 +6,19 @@ import { observeOperation, type OperationLogger } from './operationMetrics.js';
 
 type ObjectStorageClient = {
   abortActiveRequests?(): void;
+  abortMultipartUpload?(bucketName: string, objectName: string, uploadId: string): Promise<void>;
   bucketExists(bucketName: string): Promise<boolean>;
+  completeMultipartUpload?(
+    bucketName: string,
+    objectName: string,
+    uploadId: string,
+    parts: { part: number; etag?: string }[],
+  ): Promise<unknown>;
+  initiateNewMultipartUpload?(
+    bucketName: string,
+    objectName: string,
+    headers: Record<string, string>,
+  ): Promise<string>;
   makeBucket(bucketName: string, region?: string): Promise<void>;
   putObject(
     bucketName: string,
@@ -18,16 +30,36 @@ type ObjectStorageClient = {
   removeObject(bucketName: string, objectName: string): Promise<void>;
   statObject(bucketName: string, objectName: string): Promise<unknown>;
   presignedGetObject(bucketName: string, objectName: string, expires?: number): Promise<string>;
+  presignedUrl?(
+    method: string,
+    bucketName: string,
+    objectName: string,
+    expires?: number,
+    reqParams?: Record<string, string>,
+  ): Promise<string>;
 };
 
 export type ObjectStorage = {
   bucket: string;
+  abortMultipartUpload(input: AbortMultipartUploadInput): Promise<void>;
+  completeMultipartUpload(input: CompleteMultipartUploadInput): Promise<void>;
   ensureBucket(): Promise<void>;
+  initiateMultipartUpload(input: InitiateMultipartUploadInput): Promise<MultipartUpload>;
   putObject(input: PutObjectInput): Promise<void>;
   deleteObject(objectKey: string): Promise<void>;
   deleteObjects(objectKeys: readonly string[]): Promise<void>;
   getSignedUrl(objectKey: string): Promise<string>;
+  signMultipartUploadPart(input: SignMultipartUploadPartInput): Promise<string>;
   checkReady(): Promise<void>;
+};
+
+export type MultipartUpload = {
+  uploadId: string;
+};
+
+export type MultipartUploadPart = {
+  partNumber: number;
+  etag: string;
 };
 
 type PutObjectInput = {
@@ -35,6 +67,28 @@ type PutObjectInput = {
   body: Buffer;
   contentType: string;
   cacheControl?: string;
+};
+
+type InitiateMultipartUploadInput = {
+  objectKey: string;
+  contentType?: string;
+};
+
+type SignMultipartUploadPartInput = {
+  objectKey: string;
+  uploadId: string;
+  partNumber: number;
+};
+
+type CompleteMultipartUploadInput = {
+  objectKey: string;
+  uploadId: string;
+  parts: readonly MultipartUploadPart[];
+};
+
+type AbortMultipartUploadInput = {
+  objectKey: string;
+  uploadId: string;
 };
 
 export class ObjectStorageUnavailableError extends Error {
@@ -91,11 +145,15 @@ const runObjectStorageOperation = async <T>({
 
 export const createUnavailableObjectStorage = (): ObjectStorage => ({
   bucket: '',
+  abortMultipartUpload: () => rejectUnavailableObjectStorage<void>(),
+  completeMultipartUpload: () => rejectUnavailableObjectStorage<void>(),
   ensureBucket: () => rejectUnavailableObjectStorage<void>(),
+  initiateMultipartUpload: () => rejectUnavailableObjectStorage<MultipartUpload>(),
   putObject: () => rejectUnavailableObjectStorage<void>(),
   deleteObject: () => rejectUnavailableObjectStorage<void>(),
   deleteObjects: () => rejectUnavailableObjectStorage<void>(),
   getSignedUrl: () => rejectUnavailableObjectStorage<string>(),
+  signMultipartUploadPart: () => rejectUnavailableObjectStorage<string>(),
   checkReady: () => rejectUnavailableObjectStorage<void>(),
 });
 
@@ -122,6 +180,9 @@ const rewriteSignedUrlOrigin = (signedUrl: string, publicUrl: string): string =>
 
   return url.toString();
 };
+
+const createUnsupportedMultipartError = (): ObjectStorageUnavailableError =>
+  new ObjectStorageUnavailableError('Object storage client does not support multipart uploads');
 
 export const createMinioClient = (config: ObjectStorageConfig): Client => {
   const endpoint = new URL(config.endpoint);
@@ -204,7 +265,72 @@ export const createObjectStorage = (
 
   return {
     bucket: config.bucket,
+    async abortMultipartUpload({ objectKey, uploadId }: AbortMultipartUploadInput) {
+      await ensureBucket();
+
+      await runObjectStorageOperation({
+        config,
+        logger,
+        operation: 'objectStorage.abortMultipartUpload',
+        data: { objectKey },
+        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
+        run: () => {
+          if (!client.abortMultipartUpload) {
+            throw createUnsupportedMultipartError();
+          }
+
+          return client.abortMultipartUpload(config.bucket, objectKey, uploadId);
+        },
+      });
+    },
+
+    async completeMultipartUpload({ objectKey, parts, uploadId }: CompleteMultipartUploadInput) {
+      await ensureBucket();
+
+      await runObjectStorageOperation({
+        config,
+        logger,
+        operation: 'objectStorage.completeMultipartUpload',
+        data: { objectKey, partCount: parts.length },
+        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
+        run: async () => {
+          if (!client.completeMultipartUpload) {
+            throw createUnsupportedMultipartError();
+          }
+
+          await client.completeMultipartUpload(
+            config.bucket,
+            objectKey,
+            uploadId,
+            parts.map((part) => ({ part: part.partNumber, etag: part.etag })),
+          );
+        },
+      });
+    },
+
     ensureBucket,
+
+    async initiateMultipartUpload({ contentType = 'application/octet-stream', objectKey }) {
+      await ensureBucket();
+      const uploadId = await runObjectStorageOperation({
+        config,
+        logger,
+        operation: 'objectStorage.initiateMultipartUpload',
+        data: { contentType, objectKey },
+        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
+        run: () => {
+          if (!client.initiateNewMultipartUpload) {
+            throw createUnsupportedMultipartError();
+          }
+
+          return client.initiateNewMultipartUpload(config.bucket, objectKey, {
+            'Content-Type': contentType,
+          });
+        },
+      });
+
+      return { uploadId };
+    },
 
     async putObject({ objectKey, body, contentType, cacheControl }: PutObjectInput) {
       await ensureBucket();
@@ -241,6 +367,33 @@ export const createObjectStorage = (
         data: { objectKey, signedUrlTtlSeconds: config.signedUrlTtlSeconds },
         ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: () => client.presignedGetObject(config.bucket, objectKey, config.signedUrlTtlSeconds),
+      });
+
+      return rewriteSignedUrlOrigin(signedUrl, config.publicUrl);
+    },
+
+    async signMultipartUploadPart({
+      objectKey,
+      partNumber,
+      uploadId,
+    }: SignMultipartUploadPartInput) {
+      await ensureBucket();
+      const signedUrl = await runObjectStorageOperation({
+        config,
+        logger,
+        operation: 'objectStorage.signMultipartUploadPart',
+        data: { objectKey, partNumber },
+        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
+        run: () => {
+          if (!client.presignedUrl) {
+            throw createUnsupportedMultipartError();
+          }
+
+          return client.presignedUrl('PUT', config.bucket, objectKey, config.signedUrlTtlSeconds, {
+            partNumber: String(partNumber),
+            uploadId,
+          });
+        },
       });
 
       return rewriteSignedUrlOrigin(signedUrl, config.publicUrl);

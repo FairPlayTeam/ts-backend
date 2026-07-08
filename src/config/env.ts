@@ -15,6 +15,7 @@ import {
   parseSessionCleanupInactiveRetentionMs,
   parseSessionCleanupIntervalMs,
   parseTrustProxy,
+  parseVideoUploadConfig,
   readRequiredEnv,
   ServerConfigurationError,
 } from './env.parsers.js';
@@ -42,6 +43,13 @@ const objectStorage = parseOptionalObjectStorageConfig({
   operationTimeoutMs: process.env.OBJECT_STORAGE_TIMEOUT_MS,
 });
 
+const videoUpload = parseVideoUploadConfig({
+  objectStorageBucket: process.env.VIDEO_OBJECT_STORAGE_BUCKET,
+  partSizeBytes: process.env.VIDEO_UPLOAD_PART_SIZE_BYTES,
+  maxPartCount: process.env.VIDEO_UPLOAD_MAX_PARTS,
+  sessionTtlSeconds: process.env.VIDEO_UPLOAD_SESSION_TTL_SECONDS,
+});
+
 const config = {
   port: parseServerPort(process.env.PORT),
   bcryptRounds: parseBcryptRounds(process.env.BCRYPT_ROUNDS),
@@ -56,6 +64,7 @@ const config = {
   allowedOrigins: parseAllowedOrigins(process.env.CORS_ORIGINS),
   redisUrl: parseOptionalRedisUrl(process.env.REDIS_URL, 'REDIS_URL'),
   objectStorage,
+  videoUpload,
   authCodePepper: parseAuthCodePepper(process.env.AUTH_CODE_PEPPER, isProduction),
   rateLimitKeySecret: parseRateLimitKeySecret(process.env.RATE_LIMIT_KEY_SECRET, isProduction),
   sessionCleanupIntervalMs: parseSessionCleanupIntervalMs(

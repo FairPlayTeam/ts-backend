@@ -13,6 +13,7 @@ import type { AuthPorts } from '../src/services/auth.types.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
+import { createStubVideosService } from './support/videos.js';
 
 type TestServer = {
   baseUrl: string;
@@ -70,6 +71,7 @@ const startAuthApp = async (authService: AuthPorts): Promise<TestServer> => {
       adminService: createStubAdminService(),
       authService,
       profilesService: createStubProfilesService(),
+      videosService: createStubVideosService(),
     },
   );
   const server = app.listen(0);

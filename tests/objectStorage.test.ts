@@ -153,6 +153,113 @@ describe('object storage', () => {
     ).resolves.toBeUndefined();
   });
 
+  test('orchestrates multipart uploads with signed part URLs', async () => {
+    const calls: unknown[] = [];
+    const client = {
+      bucketExists: async () => true,
+      makeBucket: async () => undefined,
+      putObject: async () => undefined,
+      removeObject: async () => undefined,
+      statObject: async () => undefined,
+      presignedGetObject: async () => 'http://minio:9000/test',
+      initiateNewMultipartUpload: async (
+        bucket: string,
+        objectKey: string,
+        headers: Record<string, string>,
+      ) => {
+        calls.push(['initiateNewMultipartUpload', bucket, objectKey, headers]);
+
+        return 'upload-id';
+      },
+      presignedUrl: async (
+        method: string,
+        bucket: string,
+        objectKey: string,
+        expires?: number,
+        reqParams?: Record<string, string>,
+      ) => {
+        calls.push(['presignedUrl', method, bucket, objectKey, expires, reqParams]);
+
+        return `http://minio:9000/${bucket}/${objectKey}?partNumber=${reqParams?.partNumber}&uploadId=${reqParams?.uploadId}`;
+      },
+      completeMultipartUpload: async (
+        bucket: string,
+        objectKey: string,
+        uploadId: string,
+        parts: { part: number; etag?: string }[],
+      ) => {
+        calls.push(['completeMultipartUpload', bucket, objectKey, uploadId, parts]);
+      },
+      abortMultipartUpload: async (bucket: string, objectKey: string, uploadId: string) => {
+        calls.push(['abortMultipartUpload', bucket, objectKey, uploadId]);
+      },
+    };
+    const storage = createObjectStorage(
+      createConfig({ bucket: 'videos' }),
+      client,
+      createOperationLogCollector().logger,
+    );
+
+    await expect(
+      storage.initiateMultipartUpload({
+        objectKey: 'user-id/video-id/original.mp4',
+        contentType: 'video/mp4',
+      }),
+    ).resolves.toEqual({ uploadId: 'upload-id' });
+    await expect(
+      storage.signMultipartUploadPart({
+        objectKey: 'user-id/video-id/original.mp4',
+        uploadId: 'upload-id',
+        partNumber: 1,
+      }),
+    ).resolves.toBe(
+      'http://localhost:9000/videos/user-id/video-id/original.mp4?partNumber=1&uploadId=upload-id',
+    );
+    await expect(
+      storage.completeMultipartUpload({
+        objectKey: 'user-id/video-id/original.mp4',
+        uploadId: 'upload-id',
+        parts: [
+          {
+            partNumber: 1,
+            etag: '"etag-1"',
+          },
+        ],
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      storage.abortMultipartUpload({
+        objectKey: 'user-id/video-id/original.mp4',
+        uploadId: 'upload-id',
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(calls).toEqual([
+      [
+        'initiateNewMultipartUpload',
+        'videos',
+        'user-id/video-id/original.mp4',
+        { 'Content-Type': 'video/mp4' },
+      ],
+      [
+        'presignedUrl',
+        'PUT',
+        'videos',
+        'user-id/video-id/original.mp4',
+        900,
+        { partNumber: '1', uploadId: 'upload-id' },
+      ],
+      [
+        'completeMultipartUpload',
+        'videos',
+        'user-id/video-id/original.mp4',
+        'upload-id',
+        [{ part: 1, etag: '"etag-1"' }],
+      ],
+      ['abortMultipartUpload', 'videos', 'user-id/video-id/original.mp4', 'upload-id'],
+    ]);
+  });
+
   test('readiness accepts a missing sentinel object after bucket creation succeeds', async () => {
     const calls: unknown[] = [];
     const client = {

@@ -17,9 +17,14 @@ import {
   parseSessionCleanupInactiveRetentionMs,
   parseSessionCleanupIntervalMs,
   parseTrustProxy,
+  parseVideoUploadConfig,
   readRequiredEnv,
 } from '../src/config/env.parsers.js';
 import {
+  DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET,
+  DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
+  DEFAULT_VIDEO_UPLOAD_PART_SIZE_BYTES,
+  DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
   DEFAULT_OBJECT_STORAGE_TIMEOUT_MS,
   DEFAULT_SMTP_TIMEOUT_MS,
   SESSION_CLEANUP_INACTIVE_RETENTION_MS,
@@ -387,6 +392,61 @@ describe('env parsers', () => {
         secretKey: 'fairplay-minio-secret',
         signedUrlTtlSeconds: undefined,
         operationTimeoutMs: '0',
+      }),
+    ).toThrow(ServerConfigurationError);
+  });
+
+  test('parses video upload configuration', () => {
+    expect(
+      parseVideoUploadConfig({
+        objectStorageBucket: undefined,
+        partSizeBytes: undefined,
+        maxPartCount: undefined,
+        sessionTtlSeconds: undefined,
+      }),
+    ).toEqual({
+      objectStorageBucket: DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET,
+      partSizeBytes: DEFAULT_VIDEO_UPLOAD_PART_SIZE_BYTES,
+      maxPartCount: DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
+      sessionTtlSeconds: DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
+    });
+
+    expect(
+      parseVideoUploadConfig({
+        objectStorageBucket: 'fairplay-videos',
+        partSizeBytes: String(95 * 1024 * 1024),
+        maxPartCount: '5000',
+        sessionTtlSeconds: '3600',
+      }),
+    ).toEqual({
+      objectStorageBucket: 'fairplay-videos',
+      partSizeBytes: 95 * 1024 * 1024,
+      maxPartCount: 5000,
+      sessionTtlSeconds: 3600,
+    });
+
+    expect(() =>
+      parseVideoUploadConfig({
+        objectStorageBucket: 'Invalid_Bucket',
+        partSizeBytes: undefined,
+        maxPartCount: undefined,
+        sessionTtlSeconds: undefined,
+      }),
+    ).toThrow(ServerConfigurationError);
+    expect(() =>
+      parseVideoUploadConfig({
+        objectStorageBucket: undefined,
+        partSizeBytes: String(100 * 1024 * 1024),
+        maxPartCount: undefined,
+        sessionTtlSeconds: undefined,
+      }),
+    ).toThrow(ServerConfigurationError);
+    expect(() =>
+      parseVideoUploadConfig({
+        objectStorageBucket: undefined,
+        partSizeBytes: undefined,
+        maxPartCount: '10001',
+        sessionTtlSeconds: undefined,
       }),
     ).toThrow(ServerConfigurationError);
   });

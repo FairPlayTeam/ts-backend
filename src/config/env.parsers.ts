@@ -7,6 +7,10 @@ import {
   DEFAULT_OBJECT_STORAGE_TIMEOUT_MS,
   DEFAULT_PROFILE_MEDIA_MAX_UPLOAD_BYTES,
   DEFAULT_SMTP_TIMEOUT_MS,
+  DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET,
+  DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
+  DEFAULT_VIDEO_UPLOAD_PART_SIZE_BYTES,
+  DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
   MAX_EXTERNAL_OPERATION_TIMEOUT_MS,
   MINUTE_MS,
   SESSION_CLEANUP_INACTIVE_RETENTION_DAYS,
@@ -21,6 +25,9 @@ import {
 const HTTP_URL_PROTOCOLS = ['http:', 'https:'] as const;
 const REDIS_URL_PROTOCOLS = ['redis:', 'rediss:'] as const;
 const MAX_OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
+const MIN_VIDEO_UPLOAD_PART_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_VIDEO_UPLOAD_PART_SIZE_BYTES = 99_999_999;
+const MAX_VIDEO_UPLOAD_PARTS = 10_000;
 
 type TrustProxySetting = boolean | number | string | string[];
 
@@ -33,6 +40,13 @@ export type ObjectStorageConfig = {
   secretKey: string;
   signedUrlTtlSeconds: number;
   operationTimeoutMs: number;
+};
+
+export type VideoUploadConfig = {
+  objectStorageBucket: string;
+  partSizeBytes: number;
+  maxPartCount: number;
+  sessionTtlSeconds: number;
 };
 
 export class ServerConfigurationError extends Error {
@@ -383,8 +397,12 @@ const parseObjectStorageRegion = (rawValue: string | undefined): string => {
   return value;
 };
 
-const parseObjectStorageBucket = (rawValue: string | undefined): string => {
-  const value = rawValue?.trim() || DEFAULT_OBJECT_STORAGE_BUCKET;
+const parseObjectStorageBucket = (
+  rawValue: string | undefined,
+  envName = 'OBJECT_STORAGE_BUCKET',
+  fallback = DEFAULT_OBJECT_STORAGE_BUCKET,
+): string => {
+  const value = rawValue?.trim() || fallback;
 
   if (
     value.length < 3 ||
@@ -394,11 +412,33 @@ const parseObjectStorageBucket = (rawValue: string | undefined): string => {
     /^\d+\.\d+\.\d+\.\d+$/.test(value)
   ) {
     throw new ServerConfigurationError(
-      'OBJECT_STORAGE_BUCKET must be a valid S3 bucket name between 3 and 63 characters',
+      `${envName} must be a valid S3 bucket name between 3 and 63 characters`,
     );
   }
 
   return value;
+};
+
+const parseVideoUploadPartSizeBytes = (rawValue: string | undefined): number => {
+  const value = rawValue?.trim();
+
+  if (!value) {
+    return DEFAULT_VIDEO_UPLOAD_PART_SIZE_BYTES;
+  }
+
+  const parsed = Number(value);
+
+  if (
+    !Number.isInteger(parsed) ||
+    parsed < MIN_VIDEO_UPLOAD_PART_SIZE_BYTES ||
+    parsed > MAX_VIDEO_UPLOAD_PART_SIZE_BYTES
+  ) {
+    throw new ServerConfigurationError(
+      `VIDEO_UPLOAD_PART_SIZE_BYTES must be an integer between ${MIN_VIDEO_UPLOAD_PART_SIZE_BYTES} and ${MAX_VIDEO_UPLOAD_PART_SIZE_BYTES} bytes, got: ${value}`,
+    );
+  }
+
+  return parsed;
 };
 
 type RawObjectStorageConfig = {
@@ -410,6 +450,13 @@ type RawObjectStorageConfig = {
   secretKey: string | undefined;
   signedUrlTtlSeconds: string | undefined;
   operationTimeoutMs: string | undefined;
+};
+
+type RawVideoUploadConfig = {
+  objectStorageBucket: string | undefined;
+  partSizeBytes: string | undefined;
+  maxPartCount: string | undefined;
+  sessionTtlSeconds: string | undefined;
 };
 
 const objectStorageRequiredEnvNames = {
@@ -461,6 +508,28 @@ export const parseOptionalObjectStorageConfig = (
     ),
   };
 };
+
+export const parseVideoUploadConfig = (rawConfig: RawVideoUploadConfig): VideoUploadConfig => ({
+  objectStorageBucket: parseObjectStorageBucket(
+    rawConfig.objectStorageBucket,
+    'VIDEO_OBJECT_STORAGE_BUCKET',
+    DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET,
+  ),
+  partSizeBytes: parseVideoUploadPartSizeBytes(rawConfig.partSizeBytes),
+  maxPartCount: parsePositiveInteger(
+    rawConfig.maxPartCount,
+    DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
+    'VIDEO_UPLOAD_MAX_PARTS',
+    'parts',
+    MAX_VIDEO_UPLOAD_PARTS,
+  ),
+  sessionTtlSeconds: parsePositiveInteger(
+    rawConfig.sessionTtlSeconds,
+    DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
+    'VIDEO_UPLOAD_SESSION_TTL_SECONDS',
+    'seconds',
+  ),
+});
 
 const parseSmtpPort = (rawPort: string | undefined): number => {
   const value = readRequiredEnv(rawPort, 'SMTP_PORT');

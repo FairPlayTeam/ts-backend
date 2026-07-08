@@ -17,6 +17,7 @@ import {
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
+import { createStubVideosService } from './support/videos.js';
 
 type ErrorResponse = {
   error: string;
@@ -74,6 +75,7 @@ describe('error handling', () => {
         adminService: createStubAdminService(),
         authService: createStubAuthService(),
         profilesService: createStubProfilesService(),
+        videosService: createStubVideosService(),
       },
     );
 

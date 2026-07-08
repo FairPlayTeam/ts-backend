@@ -5,6 +5,7 @@ import { createApp } from '../src/app.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
+import { createStubVideosService } from './support/videos.js';
 
 type TestServer = {
   baseUrl: string;
@@ -32,6 +33,7 @@ const createTestServer = async (
       adminService: createStubAdminService(),
       authService: createStubAuthService(),
       profilesService: createStubProfilesService(),
+      videosService: createStubVideosService(),
       ...(readinessChecks !== undefined ? { readinessChecks } : {}),
     },
   );

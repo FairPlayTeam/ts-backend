@@ -5,6 +5,7 @@ import { createApp } from './app.js';
 import { adminService } from './admin.instance.js';
 import { authService } from './auth.instance.js';
 import { profilesService } from './profiles.instance.js';
+import { videosService } from './videos.instance.js';
 import { objectStorage } from './objectStorage.instance.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
@@ -55,6 +56,7 @@ const app = await createApp(config, {
   adminService,
   authService,
   profilesService,
+  videosService,
   redisClient,
   readinessChecks,
 });
