@@ -6,7 +6,7 @@ import {
   InvalidVideoUploadSessionStateError,
 } from '../src/services/videos.errors.js';
 import type { VideosDependencies } from '../src/services/videos/videos.dependencies.js';
-import type { VideoUploadSession } from '../src/services/videos.types.js';
+import type { CreatedVideo, VideoUploadSession } from '../src/services/videos.types.js';
 import {
   createVideoPublicId,
   VIDEO_PUBLIC_ID_PATTERN,
@@ -17,6 +17,7 @@ const videoId = '0d4e55cb-c278-4d74-a192-bf7c10888c7a';
 const uploadSessionId = '22222222-2222-4222-8222-222222222222';
 const now = new Date('2026-01-01T00:00:00.000Z');
 const expiresAt = new Date('2026-01-02T00:00:00.000Z');
+const olderCreatedAt = new Date('2025-12-31T00:00:00.000Z');
 
 const createPublicIdCollisionError = () =>
   new Prisma.PrismaClientKnownRequestError('Unique constraint failed on publicId', {
@@ -46,17 +47,38 @@ const createUploadSession = (overrides: Partial<VideoUploadSession> = {}): Video
   ...overrides,
 });
 
+const createVideoMetadata = (overrides: Partial<CreatedVideo> = {}): CreatedVideo => ({
+  id: videoId,
+  publicId: 'AbCdEf123_',
+  ownerId: userId,
+  title: 'FairPlay launch recap',
+  description: null,
+  tags: [],
+  license: 'all_rights_reserved',
+  visibility: 'unlisted',
+  allowComments: true,
+  processingStatus: 'draft',
+  moderationStatus: 'pending',
+  createdAt: now,
+  updatedAt: now,
+  ...overrides,
+});
+
 const createDeps = ({
   activeSession = null,
+  listedVideos = [createVideoMetadata()],
   publicIdCollisionsBeforeSuccess = 0,
   publicIds = ['AbCdEf123_'],
   session = createUploadSession(),
+  totalVideos = listedVideos.length,
   video = { id: videoId, ownerId: userId, processingStatus: 'draft' },
 }: {
   activeSession?: { id: string } | null;
+  listedVideos?: CreatedVideo[];
   publicIdCollisionsBeforeSuccess?: number;
   publicIds?: string[];
   session?: VideoUploadSession;
+  totalVideos?: number;
   video?: { id: string; ownerId: string; processingStatus: string } | null;
 } = {}) => {
   type Calls = {
@@ -68,10 +90,14 @@ const createDeps = ({
     sessionUpdate: unknown[];
     sessionUpdateMany: unknown[];
     signMultipartUploadPart: unknown[];
+    transcodeJobCreateMany: unknown[];
     transaction: unknown[];
+    videoCount: unknown[];
     videoCreate: unknown[];
     videoFindFirst: unknown[];
+    videoFindMany: unknown[];
     videoUpdate: unknown[];
+    videoUpdateMany: unknown[];
   };
   const calls: Calls = {
     abortMultipartUpload: [],
@@ -82,10 +108,14 @@ const createDeps = ({
     sessionUpdate: [],
     sessionUpdateMany: [],
     signMultipartUploadPart: [],
+    transcodeJobCreateMany: [],
     transaction: [],
+    videoCount: [],
     videoCreate: [],
     videoFindFirst: [],
+    videoFindMany: [],
     videoUpdate: [],
+    videoUpdateMany: [],
   };
   let remainingPublicIdCollisions = publicIdCollisionsBeforeSuccess;
   const prisma = {
@@ -95,13 +125,13 @@ const createDeps = ({
           allowComments: boolean;
           description: string | null;
           license: string;
-          moderationStatus: string;
+          moderationStatus: CreatedVideo['moderationStatus'];
           ownerId: string;
-          processingStatus: string;
+          processingStatus: CreatedVideo['processingStatus'];
           publicId: string;
           tags: string[];
           title: string;
-          visibility: string;
+          visibility: CreatedVideo['visibility'];
         };
       }) => {
         if (remainingPublicIdCollisions > 0) {
@@ -111,8 +141,7 @@ const createDeps = ({
 
         calls.videoCreate.push(args);
 
-        return {
-          id: videoId,
+        return createVideoMetadata({
           publicId: args.data.publicId,
           ownerId: args.data.ownerId,
           title: args.data.title,
@@ -123,9 +152,17 @@ const createDeps = ({
           allowComments: args.data.allowComments,
           processingStatus: args.data.processingStatus,
           moderationStatus: args.data.moderationStatus,
-          createdAt: now,
-          updatedAt: now,
-        };
+        });
+      },
+      findMany: async (args: unknown) => {
+        calls.videoFindMany.push(args);
+
+        return listedVideos;
+      },
+      count: async (args: unknown) => {
+        calls.videoCount.push(args);
+
+        return totalVideos;
       },
       findFirst: async (args: unknown) => {
         calls.videoFindFirst.push(args);
@@ -136,6 +173,18 @@ const createDeps = ({
         calls.videoUpdate.push(args);
 
         return video;
+      },
+      updateMany: async (args: unknown) => {
+        calls.videoUpdateMany.push(args);
+
+        return { count: 1 };
+      },
+    },
+    videoTranscodeJob: {
+      createMany: async (args: unknown) => {
+        calls.transcodeJobCreateMany.push(args);
+
+        return { count: 1 };
       },
     },
     videoUploadSession: {
@@ -163,10 +212,18 @@ const createDeps = ({
         return createUploadSession(args.data);
       },
     },
-    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => {
+    $transaction: async (
+      input: ((tx: unknown) => Promise<unknown>) | Promise<unknown>[],
+    ): Promise<unknown> => {
+      if (Array.isArray(input)) {
+        calls.transaction.push('batch');
+
+        return Promise.all(input);
+      }
+
       calls.transaction.push('callback');
 
-      return callback(prisma);
+      return input(prisma);
     },
   };
   const objectStorage = {
@@ -283,6 +340,56 @@ describe('videos service multipart uploads', () => {
     expect(calls.videoCreate.at(-1)).toMatchObject({
       data: {
         publicId: 'GhIjKl456_',
+      },
+    });
+  });
+
+  test('lists owner videos with stable cursor pagination', async () => {
+    const firstVideo = createVideoMetadata({
+      processingStatus: 'uploading',
+    });
+    const secondVideo = createVideoMetadata({
+      id: '33333333-3333-4333-8333-333333333333',
+      publicId: 'GhIjKl456_',
+      processingStatus: 'queued',
+      createdAt: olderCreatedAt,
+      updatedAt: olderCreatedAt,
+    });
+    const { calls, deps } = createDeps({
+      listedVideos: [firstVideo, secondVideo],
+      totalVideos: 3,
+    });
+    const service = createVideosService(deps);
+
+    await expect(
+      service.listMyVideos({
+        userId,
+        limit: 1,
+        cursor: {
+          createdAt: now,
+          id: videoId,
+        },
+      }),
+    ).resolves.toEqual({
+      videos: [firstVideo],
+      total: 3,
+      nextCursor: {
+        createdAt: firstVideo.createdAt,
+        id: firstVideo.id,
+      },
+    });
+    expect(calls.videoFindMany.at(-1)).toEqual({
+      where: {
+        ownerId: userId,
+        OR: [{ createdAt: { lt: now } }, { createdAt: now, id: { lt: videoId } }],
+      },
+      select: expect.any(Object),
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 2,
+    });
+    expect(calls.videoCount.at(-1)).toEqual({
+      where: {
+        ownerId: userId,
       },
     });
   });
@@ -420,10 +527,78 @@ describe('videos service multipart uploads', () => {
         },
       },
     });
-    expect(calls.videoUpdate.at(-1)).toEqual({
-      where: { id: videoId },
-      data: { sourceObjectKey: `${userId}/${videoId}/original.mp4` },
+    expect(calls.videoUpdateMany).toEqual([
+      {
+        where: {
+          id: videoId,
+          ownerId: userId,
+        },
+        data: { sourceObjectKey: `${userId}/${videoId}/original.mp4` },
+      },
+      {
+        where: {
+          id: videoId,
+          ownerId: userId,
+          processingStatus: {
+            in: ['draft', 'uploading'],
+          },
+        },
+        data: { processingStatus: 'queued' },
+      },
+    ]);
+    expect(calls.transcodeJobCreateMany).toEqual([
+      {
+        data: [
+          {
+            videoId,
+            status: 'queued',
+            sourceObjectKey: `${userId}/${videoId}/original.mp4`,
+            nextAttemptAt: now,
+          },
+        ],
+        skipDuplicates: true,
+      },
+    ]);
+  });
+
+  test('keeps completed uploads idempotent and ensures a queued transcode job', async () => {
+    const { calls, deps } = createDeps({
+      session: createUploadSession({
+        status: 'completed',
+        partCount: 1,
+        completedAt: now,
+        parts: [{ partNumber: 1, etag: '"etag-1"', sizeBytes: null, createdAt: now }],
+      }),
     });
+    const service = createVideosService(deps);
+
+    await expect(
+      service.completeMultipartUpload({
+        userId,
+        videoId,
+        uploadSessionId,
+        parts: [{ partNumber: 1, etag: '"etag-1"' }],
+      }),
+    ).resolves.toMatchObject({
+      uploadSession: {
+        status: 'completed',
+        partCount: 1,
+      },
+    });
+    expect(calls.completeMultipartUpload).toEqual([]);
+    expect(calls.transcodeJobCreateMany).toEqual([
+      {
+        data: [
+          {
+            videoId,
+            status: 'queued',
+            sourceObjectKey: `${userId}/${videoId}/original.mp4`,
+            nextAttemptAt: now,
+          },
+        ],
+        skipDuplicates: true,
+      },
+    ]);
   });
 
   test('rejects invalid completed part lists before touching S3', async () => {

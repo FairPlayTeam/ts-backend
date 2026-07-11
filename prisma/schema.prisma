@@ -209,6 +209,7 @@ model VideoTranscodeJob {
 
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
+  @@unique([videoId, sourceObjectKey])
   @@index([status, nextAttemptAt, id])
   @@index([videoId, status])
   @@index([leaseExpiresAt])

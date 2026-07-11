@@ -11,6 +11,7 @@ import type {
   CreateVideoInput,
   GetVideoMultipartUploadSessionInput,
   InitVideoMultipartUploadInput,
+  ListMyVideosInput,
   SignVideoMultipartUploadPartsInput,
   VideosPorts,
 } from '../src/services/videos.types.js';
@@ -27,6 +28,7 @@ let receivedSignRequest: SignVideoMultipartUploadPartsInput | undefined;
 let receivedCompleteRequest: CompleteVideoMultipartUploadInput | undefined;
 let receivedAbortRequest: AbortVideoMultipartUploadInput | undefined;
 let receivedGetRequest: GetVideoMultipartUploadSessionInput | undefined;
+let receivedListRequest: ListMyVideosInput | undefined;
 let receivedSessionKey: string | undefined;
 
 const videoId = '0d4e55cb-c278-4d74-a192-bf7c10888c7a';
@@ -64,6 +66,11 @@ describe('videos routes multipart uploads', () => {
             receivedCreateRequest = input;
 
             return videosService.createVideo(input);
+          },
+          listMyVideos: async (input) => {
+            receivedListRequest = input;
+
+            return videosService.listMyVideos(input);
           },
           initMultipartUpload: async (input) => {
             receivedInitRequest = input;
@@ -190,6 +197,68 @@ describe('videos routes multipart uploads', () => {
     expect(await response.json()).toEqual({
       error: 'Unauthorized',
       message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+  });
+
+  test('lists current user videos with stable pagination input', async () => {
+    receivedListRequest = undefined;
+    receivedSessionKey = undefined;
+    const query = new URLSearchParams({
+      limit: '10',
+      cursorCreatedAt: '2026-01-01T00:00:00.000Z',
+      cursorId: videoId,
+    });
+
+    const response = await fetch(`${baseUrl}/videos/me?${query.toString()}`, {
+      headers: {
+        Authorization: 'Bearer route-session-key',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const observedSessionKey = receivedSessionKey as string | undefined;
+    const observedListRequest = receivedListRequest as ListMyVideosInput | undefined;
+    expect(observedSessionKey).toBe('route-session-key');
+    expect(observedListRequest).toEqual({
+      userId: authenticatedUserId,
+      limit: 10,
+      cursor: {
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        id: videoId,
+      },
+    });
+    expect(await response.json()).toMatchObject({
+      videos: [
+        {
+          ownerId: authenticatedUserId,
+          visibility: 'unlisted',
+          processingStatus: 'uploading',
+          moderationStatus: 'pending',
+        },
+      ],
+      total: 1,
+      nextCursor: null,
+    });
+  });
+
+  test('rejects malformed current user video pagination cursors', async () => {
+    receivedListRequest = undefined;
+
+    const response = await fetch(
+      `${baseUrl}/videos/me?cursorCreatedAt=${encodeURIComponent('2026-01-01T00:00:00.000Z')}`,
+      {
+        headers: {
+          Authorization: 'Bearer route-session-key',
+        },
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(receivedListRequest).toBeUndefined();
+    expect(await response.json()).toMatchObject({
+      error: 'ValidationError',
+      message: REQUEST_VALIDATION_FAILED_MESSAGE,
     });
   });
 

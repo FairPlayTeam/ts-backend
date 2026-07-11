@@ -2,6 +2,8 @@ import {
   completeVideoMultipartUploadBodySchema,
   createVideoBodySchema,
   createVideoResponseSchema,
+  myVideosQuerySchema,
+  myVideosResponseSchema,
   signedVideoUploadPartsResponseSchema,
   signVideoMultipartUploadPartsBodySchema,
   videoMultipartUploadSessionParamsSchema,
@@ -12,6 +14,13 @@ import { jsonRequest, jsonResponse } from './openapi.helpers.js';
 import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from './registry.js';
 
 const videoCreateResponses = {
+  400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+  401: jsonResponse('Authentication required', ApiErrorSchema),
+  429: jsonResponse('Too many requests', ApiErrorSchema),
+  500: jsonResponse('Internal server error', ApiErrorSchema),
+};
+
+const videoListResponses = {
   400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
   401: jsonResponse('Authentication required', ApiErrorSchema),
   429: jsonResponse('Too many requests', ApiErrorSchema),
@@ -39,6 +48,20 @@ export const routeDocs = [
     responses: {
       201: jsonResponse('Video metadata created', createVideoResponseSchema),
       ...videoCreateResponses,
+    },
+  },
+  {
+    method: 'get',
+    path: '/videos/me',
+    summary: 'List videos owned by the current user',
+    tags: ['Videos'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      query: myVideosQuerySchema,
+    },
+    responses: {
+      200: jsonResponse('Paginated owner video list', myVideosResponseSchema),
+      ...videoListResponses,
     },
   },
   {

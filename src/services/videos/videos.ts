@@ -16,6 +16,8 @@ import type {
   CompleteVideoMultipartUploadInput,
   GetVideoMultipartUploadSessionInput,
   InitVideoMultipartUploadInput,
+  ListMyVideosInput,
+  ListMyVideosResult,
   SignVideoMultipartUploadPartsInput,
   SignVideoMultipartUploadPartsResult,
   VideoUploadSession,
@@ -25,7 +27,10 @@ import type {
 
 const ACTIVE_UPLOAD_SESSION_STATUSES = ['initiated', 'uploading'] as const;
 const UPLOADABLE_VIDEO_PROCESSING_STATUSES = ['draft', 'uploading', 'failed'] as const;
+const PROCESSING_STATUSES_TO_QUEUE_ON_COMPLETE = ['draft', 'uploading'] as const;
 const VIDEO_SOURCE_CONTENT_TYPE = 'video/mp4';
+const DEFAULT_MY_VIDEOS_LIMIT = 20;
+const MAX_MY_VIDEOS_LIMIT = 100;
 const TRANSACTION_MAX_ATTEMPTS = 3;
 const PUBLIC_ID_MAX_CREATE_ATTEMPTS = 5;
 
@@ -89,6 +94,7 @@ type VideoRecord = {
 
 type TransactionClient = Parameters<Parameters<VideosDependencies['prisma']['$transaction']>[0]>[0];
 type UploadSessionStore = Pick<TransactionClient, 'video' | 'videoUploadSession'>;
+type CompletedUploadStore = Pick<TransactionClient, 'video' | 'videoTranscodeJob'>;
 
 const isActiveUploadSessionStatus = (
   status: string,
@@ -158,6 +164,14 @@ const toVideoUploadSessionResult = (session: UploadSessionRecord): VideoUploadSe
 const toCreateVideoResult = (video: VideoMetadataRecord): CreateVideoResult => ({
   video,
 });
+
+const normalizeMyVideosLimit = (limit: number | undefined): number => {
+  if (limit === undefined || !Number.isFinite(limit)) {
+    return DEFAULT_MY_VIDEOS_LIMIT;
+  }
+
+  return Math.min(Math.max(Math.trunc(limit), 1), MAX_MY_VIDEOS_LIMIT);
+};
 
 const normalizeOptionalDescription = (description: string | null | undefined): string | null => {
   const normalizedDescription = description?.trim();
@@ -332,6 +346,47 @@ const sortUploadParts = (
 ): CompleteVideoMultipartUploadInput['parts'] =>
   [...parts].sort((left, right) => left.partNumber - right.partNumber);
 
+const persistCompletedUploadSideEffects = async (
+  store: CompletedUploadStore,
+  session: UploadSessionRecord,
+  now: Date,
+): Promise<void> => {
+  await store.video.updateMany({
+    where: {
+      id: session.videoId,
+      ownerId: session.userId,
+    },
+    data: {
+      sourceObjectKey: session.objectKey,
+    },
+  });
+
+  await store.video.updateMany({
+    where: {
+      id: session.videoId,
+      ownerId: session.userId,
+      processingStatus: {
+        in: [...PROCESSING_STATUSES_TO_QUEUE_ON_COMPLETE],
+      },
+    },
+    data: {
+      processingStatus: 'queued',
+    },
+  });
+
+  await store.videoTranscodeJob.createMany({
+    data: [
+      {
+        videoId: session.videoId,
+        status: 'queued',
+        sourceObjectKey: session.objectKey,
+        nextAttemptAt: now,
+      },
+    ],
+    skipDuplicates: true,
+  });
+};
+
 export const createVideosService = (deps: VideosDependencies): VideosPorts => ({
   async createVideo({
     allowComments,
@@ -368,6 +423,48 @@ export const createVideosService = (deps: VideosDependencies): VideosPorts => ({
     }
 
     throw new Error('Video public id generation retry loop exhausted unexpectedly');
+  },
+
+  async listMyVideos({ cursor, limit, userId }: ListMyVideosInput): Promise<ListMyVideosResult> {
+    const pageSize = normalizeMyVideosLimit(limit);
+    const resultFilter = {
+      ownerId: userId,
+    } satisfies Prisma.VideoWhereInput;
+    const pageFilter = {
+      ...resultFilter,
+      ...(cursor
+        ? {
+            OR: [
+              { createdAt: { lt: cursor.createdAt } },
+              { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+            ],
+          }
+        : {}),
+    } satisfies Prisma.VideoWhereInput;
+
+    const [queriedVideos, total] = await deps.prisma.$transaction([
+      deps.prisma.video.findMany({
+        where: pageFilter,
+        select: videoSelect,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: pageSize + 1,
+      }),
+      deps.prisma.video.count({
+        where: resultFilter,
+      }),
+    ]);
+    const videos = queriedVideos.slice(0, pageSize);
+    const lastVideo = videos.at(-1);
+    const nextCursor =
+      queriedVideos.length > pageSize && lastVideo
+        ? { createdAt: lastVideo.createdAt, id: lastVideo.id }
+        : null;
+
+    return {
+      videos,
+      total,
+      nextCursor,
+    };
   },
 
   async initMultipartUpload({
@@ -481,6 +578,10 @@ export const createVideosService = (deps: VideosDependencies): VideosPorts => ({
     });
 
     if (existingSession.status === 'completed') {
+      await runSerializableTransaction(deps, async (tx) => {
+        await persistCompletedUploadSideEffects(tx, existingSession, deps.clock.now());
+      });
+
       return toVideoUploadSessionResult(existingSession);
     }
 
@@ -517,14 +618,7 @@ export const createVideosService = (deps: VideosDependencies): VideosPorts => ({
         select: uploadSessionSelect,
       });
 
-      await tx.video.update({
-        where: {
-          id: videoId,
-        },
-        data: {
-          sourceObjectKey: session.objectKey,
-        },
-      });
+      await persistCompletedUploadSideEffects(tx, updatedSession, now);
 
       return updatedSession;
     });

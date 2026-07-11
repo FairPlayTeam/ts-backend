@@ -164,6 +164,7 @@ describe('OpenAPI generation', () => {
       '/profiles/{username}',
       '/profiles/{username}/follow',
       '/videos',
+      '/videos/me',
       '/videos/{videoId}/upload/multipart/init',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}/abort',
@@ -473,6 +474,27 @@ describe('OpenAPI generation', () => {
     );
     expect(document.paths['/videos']?.post?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/videos']?.post?.responses?.[201]).toBeDefined();
+    expect(document.paths['/videos/me']?.get?.requestBody).toBeUndefined();
+    expect(document.paths['/videos/me']?.get?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths['/videos/me']?.get?.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'limit',
+          in: 'query',
+        }),
+        expect.objectContaining({
+          name: 'cursorCreatedAt',
+          in: 'query',
+        }),
+        expect.objectContaining({
+          name: 'cursorId',
+          in: 'query',
+        }),
+      ]),
+    );
+    expect(document.paths['/videos/me']?.get?.responses?.[200]).toBeDefined();
+    expect(document.paths['/videos/me']?.get?.responses?.[400]).toBeDefined();
+    expect(document.paths['/videos/me']?.get?.responses?.[401]).toBeDefined();
     expect(
       document.paths['/videos/{videoId}/upload/multipart/init']?.post?.requestBody,
     ).toBeUndefined();
@@ -523,6 +545,7 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.UnfollowPublicProfileResponse).toBeDefined();
     expect(document.components?.schemas?.CreateVideoRequest).toBeDefined();
     expect(document.components?.schemas?.CreateVideoResponse).toBeDefined();
+    expect(document.components?.schemas?.MyVideosResponse).toBeDefined();
     expect(document.components?.schemas?.VideoUploadSessionResponse).toBeDefined();
     expect(document.components?.schemas?.SignVideoMultipartUploadPartsRequest).toBeDefined();
     expect(document.components?.schemas?.SignedVideoUploadPartsResponse).toBeDefined();

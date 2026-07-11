@@ -33,6 +33,11 @@ export type CreatedVideo = {
   updatedAt: Date;
 };
 
+export type VideoPaginationCursor = {
+  createdAt: Date;
+  id: string;
+};
+
 export type VideoUploadPart = {
   partNumber: number;
   etag: string;
@@ -48,6 +53,12 @@ export type CreateVideoInput = {
   license: string;
   visibility: VideoVisibility;
   allowComments: boolean;
+};
+
+export type ListMyVideosInput = {
+  userId: string;
+  cursor?: VideoPaginationCursor;
+  limit?: number;
 };
 
 export type VideoUploadSession = {
@@ -110,6 +121,12 @@ export type CreateVideoResult = {
   video: CreatedVideo;
 };
 
+export type ListMyVideosResult = {
+  videos: CreatedVideo[];
+  total: number;
+  nextCursor: VideoPaginationCursor | null;
+};
+
 export type SignVideoMultipartUploadPartsResult = {
   uploadSessionId: string;
   parts: {
@@ -120,6 +137,7 @@ export type SignVideoMultipartUploadPartsResult = {
 
 export type VideosRoutePort = {
   createVideo(input: CreateVideoInput): Promise<CreateVideoResult>;
+  listMyVideos(input: ListMyVideosInput): Promise<ListMyVideosResult>;
   initMultipartUpload(input: InitVideoMultipartUploadInput): Promise<VideoUploadSessionResult>;
   signMultipartUploadParts(
     input: SignVideoMultipartUploadPartsInput,

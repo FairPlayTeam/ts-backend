@@ -3,7 +3,10 @@ import type { ObjectStorage } from '../../lib/objectStorage.js';
 import type { VideoUploadConfig } from '../../config/env.parsers.js';
 import type { VideoPublicIdGenerator } from './videoPublicId.js';
 
-type Prisma = Pick<PrismaClient, '$transaction' | 'video' | 'videoUploadSession'>;
+type Prisma = Pick<
+  PrismaClient,
+  '$transaction' | 'video' | 'videoTranscodeJob' | 'videoUploadSession'
+>;
 
 export type VideosDependencies = {
   prisma: Prisma;

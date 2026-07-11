@@ -1,16 +1,30 @@
 import { toIsoString, toNullableIsoString } from '../http.responses.js';
 import type {
   CreateVideoResult,
+  ListMyVideosResult,
   SignVideoMultipartUploadPartsResult,
   VideoUploadSessionResult,
 } from '../../services/videos.types.js';
 
+const toVideoResponse = (video: CreateVideoResult['video']) => ({
+  ...video,
+  createdAt: toIsoString(video.createdAt),
+  updatedAt: toIsoString(video.updatedAt),
+});
+
 export const toCreateVideoResponse = ({ video }: CreateVideoResult) => ({
-  video: {
-    ...video,
-    createdAt: toIsoString(video.createdAt),
-    updatedAt: toIsoString(video.updatedAt),
-  },
+  video: toVideoResponse(video),
+});
+
+export const toMyVideosResponse = ({ nextCursor, total, videos }: ListMyVideosResult) => ({
+  videos: videos.map((video) => toVideoResponse(video)),
+  total,
+  nextCursor: nextCursor
+    ? {
+        id: nextCursor.id,
+        createdAt: toIsoString(nextCursor.createdAt),
+      }
+    : null,
 });
 
 export const toVideoUploadSessionResponse = ({ uploadSession }: VideoUploadSessionResult) => ({

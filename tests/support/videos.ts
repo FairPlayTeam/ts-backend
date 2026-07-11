@@ -1,5 +1,6 @@
 import type {
   CreateVideoResult,
+  ListMyVideosResult,
   SignVideoMultipartUploadPartsResult,
   VideoUploadSessionResult,
   VideosPorts,
@@ -53,6 +54,16 @@ const createUploadSessionResult = (
   },
 });
 
+const listMyVideosResult = (): ListMyVideosResult => ({
+  videos: [
+    createVideoResult({
+      processingStatus: 'uploading',
+    }).video,
+  ],
+  total: 1,
+  nextCursor: null,
+});
+
 export const createStubVideosService = (): VideosPorts => ({
   createVideo: async (input) =>
     createVideoResult({
@@ -63,6 +74,7 @@ export const createStubVideosService = (): VideosPorts => ({
       license: input.license,
       allowComments: input.allowComments,
     }),
+  listMyVideos: async () => listMyVideosResult(),
   initMultipartUpload: async () => createUploadSessionResult(),
   signMultipartUploadParts: async (input): Promise<SignVideoMultipartUploadPartsResult> => ({
     uploadSessionId: input.uploadSessionId,

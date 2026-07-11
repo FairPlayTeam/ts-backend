@@ -5,6 +5,7 @@ import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import type {
   CompleteVideoMultipartUploadBody,
   CreateVideoBody,
+  ListMyVideosQuery,
   SignVideoMultipartUploadPartsBody,
   VideoMultipartUploadSessionParams,
   VideoParams,
@@ -12,6 +13,7 @@ import type {
 import type { VideosControllerDependencies } from './videos.controller.types.js';
 import {
   toCreateVideoResponse,
+  toMyVideosResponse,
   toSignedVideoUploadPartsResponse,
   toVideoUploadSessionResponse,
 } from './videos.responses.js';
@@ -29,6 +31,7 @@ type CompleteRequest = Request<
   CompleteVideoMultipartUploadBody
 >;
 type CreateVideoRequest = Request<unknown, unknown, CreateVideoBody>;
+type ListMyVideosRequest = Request<unknown, unknown, unknown, ListMyVideosQuery>;
 
 export const createVideosController = ({ videosService }: VideosControllerDependencies) => {
   const createVideo: RequestHandler = async (req, res, next) => {
@@ -46,6 +49,30 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
       });
 
       return sendNoStoreJson(res, 201, toCreateVideoResponse(result));
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const listMyVideos: RequestHandler = async (req, res, next) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const listReq = req as ListMyVideosRequest;
+      const { cursorCreatedAt, cursorId, limit } = listReq.query;
+      const result = await videosService.listMyVideos({
+        userId: authenticatedReq.user.id,
+        ...(limit !== undefined ? { limit } : {}),
+        ...(cursorCreatedAt !== undefined && cursorId !== undefined
+          ? {
+              cursor: {
+                createdAt: new Date(cursorCreatedAt),
+                id: cursorId,
+              },
+            }
+          : {}),
+      });
+
+      return sendNoStoreJson(res, 200, toMyVideosResponse(result));
     } catch (err) {
       next(toVideosHttpError(err));
     }
@@ -142,6 +169,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     createVideo,
     getMultipartUploadSession,
     initMultipartUpload,
+    listMyVideos,
     signMultipartUploadParts,
   };
 };

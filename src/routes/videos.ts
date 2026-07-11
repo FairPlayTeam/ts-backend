@@ -6,6 +6,7 @@ import {
   createVideoSchema,
   getVideoMultipartUploadSessionSchema,
   initVideoMultipartUploadSchema,
+  listMyVideosSchema,
   signVideoMultipartUploadPartsSchema,
 } from '../controllers/videos.schemas.js';
 import { createRouteProtector } from '../middleware/routeProtection.js';
@@ -28,6 +29,7 @@ export const createRouter = ({ authService, videosService }: VideosRouterDepende
     createVideo,
     getMultipartUploadSession,
     initMultipartUpload,
+    listMyVideos,
     signMultipartUploadParts,
   } = createVideosController({ videosService });
   const protect = createRouteProtector({ authService });
@@ -38,6 +40,7 @@ export const createRouter = ({ authService, videosService }: VideosRouterDepende
   ];
 
   router.post('/', ...protectedValidatedRoute(createVideoSchema, createVideo));
+  router.get('/me', ...protectedValidatedRoute(listMyVideosSchema, listMyVideos));
   router.post(
     '/:videoId/upload/multipart/init',
     ...protectedValidatedRoute(initVideoMultipartUploadSchema, initMultipartUpload),

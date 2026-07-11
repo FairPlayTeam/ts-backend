@@ -1,1 +1,1 @@
-export * from './videos/schemas/upload.schemas.js';
+export * from './videos/schemas/video.schemas.js';

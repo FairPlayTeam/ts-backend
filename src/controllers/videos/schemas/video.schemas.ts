@@ -6,6 +6,9 @@ const VIDEO_LICENSE_MAX_LENGTH = 64;
 const VIDEO_TAG_MAX_LENGTH = 40;
 const VIDEO_TAGS_MAX_COUNT = 20;
 
+export const MY_VIDEOS_CURSOR_PAIR_MESSAGE =
+  'cursorCreatedAt and cursorId must be provided together';
+
 export const videoParamsSchema = z
   .object({
     videoId: z.string().uuid('Video id must be a valid UUID').openapi({
@@ -80,6 +83,24 @@ export const createVideoBodySchema = z
   .strict()
   .openapi('CreateVideoRequest');
 
+export const myVideosQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).optional().openapi({ example: 20 }),
+    cursorCreatedAt: z.string().datetime().optional().openapi({
+      example: '2026-01-01T00:00:00.000Z',
+    }),
+    cursorId: z
+      .string()
+      .uuid('Cursor video id must be a valid UUID')
+      .optional()
+      .openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+  })
+  .strict()
+  .refine((query) => (query.cursorCreatedAt === undefined) === (query.cursorId === undefined), {
+    message: MY_VIDEOS_CURSOR_PAIR_MESSAGE,
+  })
+  .openapi('MyVideosQuery');
+
 export const signVideoMultipartUploadPartsBodySchema = z
   .object({
     partNumbers: z.array(partNumberSchema).min(1).max(100).refine(distinctPartNumbers, {
@@ -136,7 +157,7 @@ const videoUploadPartResponseSchema = z.object({
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
 
-const createdVideoResponseBodySchema = z.object({
+const videoResponseBodySchema = z.object({
   id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
   publicId: z.string().openapi({ example: 'AbCdEf123_' }),
   ownerId: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
@@ -158,9 +179,22 @@ const createdVideoResponseBodySchema = z.object({
 
 export const createVideoResponseSchema = z
   .object({
-    video: createdVideoResponseBodySchema,
+    video: videoResponseBodySchema,
   })
   .openapi('CreateVideoResponse');
+
+export const myVideosResponseSchema = z
+  .object({
+    videos: z.array(videoResponseBodySchema),
+    total: z.number().int().nonnegative().openapi({ example: 42 }),
+    nextCursor: z
+      .object({
+        createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
+        id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+      })
+      .nullable(),
+  })
+  .openapi('MyVideosResponse');
 
 const videoUploadSessionResponseBodySchema = z.object({
   id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
@@ -210,11 +244,16 @@ export const createVideoSchema = z.object({
   body: createVideoBodySchema,
 });
 
+export const listMyVideosSchema = z.object({
+  query: myVideosQuerySchema,
+});
+
 export type VideoParams = z.infer<typeof initVideoMultipartUploadSchema>['params'];
 export type VideoMultipartUploadSessionParams = z.infer<
   typeof getVideoMultipartUploadSessionSchema
 >['params'];
 export type CreateVideoBody = z.infer<typeof createVideoSchema>['body'];
+export type ListMyVideosQuery = z.infer<typeof listMyVideosSchema>['query'];
 export type SignVideoMultipartUploadPartsBody = z.infer<
   typeof signVideoMultipartUploadPartsSchema
 >['body'];

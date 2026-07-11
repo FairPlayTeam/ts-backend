@@ -1,3 +1,1 @@
-import { createVideosController as createMultipartVideosController } from './videos/videos.controller.js';
-
-export const createVideosController = createMultipartVideosController;
+export { createVideosController } from './videos/videos.controller.js';
