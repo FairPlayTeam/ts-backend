@@ -39,6 +39,11 @@ type ObjectStorageClient = {
   ): Promise<string>;
 };
 
+type ObjectStorageSigningClient = Pick<
+  ObjectStorageClient,
+  'abortActiveRequests' | 'presignedGetObject' | 'presignedUrl'
+>;
+
 export type ObjectStorage = {
   bucket: string;
   abortMultipartUpload(input: AbortMultipartUploadInput): Promise<void>;
@@ -170,22 +175,11 @@ const isNotFoundStorageError = (err: unknown): boolean => {
   return error.code === 'NoSuchKey' || error.code === 'NotFound' || error.statusCode === 404;
 };
 
-const rewriteSignedUrlOrigin = (signedUrl: string, publicUrl: string): string => {
-  const url = new URL(signedUrl);
-  const publicOrigin = new URL(publicUrl);
-
-  url.protocol = publicOrigin.protocol;
-  url.hostname = publicOrigin.hostname;
-  url.port = publicOrigin.port;
-
-  return url.toString();
-};
-
 const createUnsupportedMultipartError = (): ObjectStorageUnavailableError =>
   new ObjectStorageUnavailableError('Object storage client does not support multipart uploads');
 
-export const createMinioClient = (config: ObjectStorageConfig): Client => {
-  const endpoint = new URL(config.endpoint);
+const createMinioClientForEndpoint = (config: ObjectStorageConfig, endpointUrl: string): Client => {
+  const endpoint = new URL(endpointUrl);
   const transportAgent =
     endpoint.protocol === 'https:'
       ? new HttpsAgent({ timeout: config.operationTimeoutMs })
@@ -209,14 +203,24 @@ export const createMinioClient = (config: ObjectStorageConfig): Client => {
   });
 };
 
+export const createMinioClient = (config: ObjectStorageConfig): Client =>
+  createMinioClientForEndpoint(config, config.endpoint);
+
+export const createMinioSigningClient = (config: ObjectStorageConfig): Client =>
+  createMinioClientForEndpoint(config, config.publicUrl);
+
 export const createObjectStorage = (
   config: ObjectStorageConfig,
   client: ObjectStorageClient,
   logger: OperationLogger,
+  signingClient: ObjectStorageSigningClient = client,
 ): ObjectStorage => {
   let bucketReady: Promise<void> | null = null;
   const abortActiveRequests = client.abortActiveRequests
     ? (): void => client.abortActiveRequests?.()
+    : undefined;
+  const abortActiveSigningRequests = signingClient.abortActiveRequests
+    ? (): void => signingClient.abortActiveRequests?.()
     : undefined;
 
   const ensureBucket = async (): Promise<void> => {
@@ -365,11 +369,12 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.getSignedUrl',
         data: { objectKey, signedUrlTtlSeconds: config.signedUrlTtlSeconds },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
-        run: () => client.presignedGetObject(config.bucket, objectKey, config.signedUrlTtlSeconds),
+        ...(abortActiveSigningRequests ? { onAbort: abortActiveSigningRequests } : {}),
+        run: () =>
+          signingClient.presignedGetObject(config.bucket, objectKey, config.signedUrlTtlSeconds),
       });
 
-      return rewriteSignedUrlOrigin(signedUrl, config.publicUrl);
+      return signedUrl;
     },
 
     async signMultipartUploadPart({
@@ -383,20 +388,26 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.signMultipartUploadPart',
         data: { objectKey, partNumber },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
+        ...(abortActiveSigningRequests ? { onAbort: abortActiveSigningRequests } : {}),
         run: () => {
-          if (!client.presignedUrl) {
+          if (!signingClient.presignedUrl) {
             throw createUnsupportedMultipartError();
           }
 
-          return client.presignedUrl('PUT', config.bucket, objectKey, config.signedUrlTtlSeconds, {
-            partNumber: String(partNumber),
-            uploadId,
-          });
+          return signingClient.presignedUrl(
+            'PUT',
+            config.bucket,
+            objectKey,
+            config.signedUrlTtlSeconds,
+            {
+              partNumber: String(partNumber),
+              uploadId,
+            },
+          );
         },
       });
 
-      return rewriteSignedUrlOrigin(signedUrl, config.publicUrl);
+      return signedUrl;
     },
 
     async checkReady() {

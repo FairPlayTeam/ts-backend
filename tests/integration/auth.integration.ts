@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -25,6 +26,7 @@ import {
 } from '../../src/lib/crypto.js';
 import {
   createMinioClient,
+  createMinioSigningClient,
   createObjectStorage,
   type ObjectStorage,
 } from '../../src/lib/objectStorage.js';
@@ -146,10 +148,17 @@ const buildRedisUrl = (container: StartedTestContainer): string => {
 
 const buildObjectStorageConfig = (container: StartedTestContainer): ObjectStorageConfig => {
   const origin = `http://${container.getHost()}:${container.getMappedPort(MINIO_PORT)}`;
+  const publicOrigin = new URL(origin);
+
+  if (publicOrigin.hostname === 'localhost') {
+    publicOrigin.hostname = '127.0.0.1';
+  } else if (publicOrigin.hostname === '127.0.0.1') {
+    publicOrigin.hostname = 'localhost';
+  }
 
   return {
     endpoint: origin,
-    publicUrl: origin,
+    publicUrl: publicOrigin.origin,
     region: 'us-east-1',
     bucket: OBJECT_STORAGE_BUCKET,
     accessKey: OBJECT_STORAGE_ACCESS_KEY,
@@ -365,6 +374,7 @@ const startRuntime = async (): Promise<TestRuntime> => {
       objectStorageConfig,
       createMinioClient(objectStorageConfig),
       testLogger,
+      createMinioSigningClient(objectStorageConfig),
     );
     await connectRedisClient(redisClient);
 
@@ -784,6 +794,61 @@ describe('auth integration', () => {
         total: 0,
         nextCursor: null,
       });
+  });
+
+  test('serves signed GETs and accepts signed multipart PUTs through the public MinIO origin', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const getObjectKey = `integration/signed-get-${randomUUID()}.txt`;
+    const getBody = Buffer.from('signed GET through the public origin');
+    await runtime.objectStorage.putObject({
+      objectKey: getObjectKey,
+      body: getBody,
+      contentType: 'text/plain',
+    });
+
+    const getUrl = await runtime.objectStorage.getSignedUrl(getObjectKey);
+    expect(new URL(getUrl).origin).toBe(runtime.objectStorageConfig.publicUrl);
+    const getResponse = await fetch(getUrl);
+    expect(getResponse.status).toBe(200);
+    expect(Buffer.from(await getResponse.arrayBuffer())).toEqual(getBody);
+
+    const multipartObjectKey = `integration/signed-multipart-${randomUUID()}.bin`;
+    const multipartBody = Buffer.from('signed multipart PUT through the public origin');
+    const { uploadId } = await runtime.objectStorage.initiateMultipartUpload({
+      objectKey: multipartObjectKey,
+      contentType: 'application/octet-stream',
+    });
+    const putUrl = await runtime.objectStorage.signMultipartUploadPart({
+      objectKey: multipartObjectKey,
+      uploadId,
+      partNumber: 1,
+    });
+    expect(new URL(putUrl).origin).toBe(runtime.objectStorageConfig.publicUrl);
+
+    const putResponse = await fetch(putUrl, {
+      method: 'PUT',
+      body: multipartBody,
+    });
+    expect(putResponse.status).toBe(200);
+    const etag = putResponse.headers.get('etag');
+
+    if (!etag) {
+      throw new Error('MinIO multipart PUT response did not include an ETag');
+    }
+
+    await runtime.objectStorage.completeMultipartUpload({
+      objectKey: multipartObjectKey,
+      uploadId,
+      parts: [{ partNumber: 1, etag }],
+    });
+
+    const completedUrl = await runtime.objectStorage.getSignedUrl(multipartObjectKey);
+    const completedResponse = await fetch(completedUrl);
+    expect(completedResponse.status).toBe(200);
+    expect(Buffer.from(await completedResponse.arrayBuffer())).toEqual(multipartBody);
   });
 
   test('stores uploaded profile media in MinIO and serves it through signed profile URLs', async () => {

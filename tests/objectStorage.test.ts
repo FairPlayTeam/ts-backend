@@ -32,7 +32,7 @@ describe('object storage', () => {
     expect(client.transportAgent.options.timeout).toBe(2_500);
   });
 
-  test('ensures the bucket once before writes and rewrites signed URLs to the public origin', async () => {
+  test('ensures the bucket once before writes and signs GET URLs with the public client', async () => {
     const calls: unknown[] = [];
     const { logger, logs } = createOperationLogCollector();
     const client = {
@@ -63,7 +63,13 @@ describe('object storage', () => {
         return `http://minio:9000/${bucket}/${objectKey}?signature=test`;
       },
     };
-    const storage = createObjectStorage(createConfig(), client, logger);
+    const signingClient = {
+      presignedGetObject: async (bucket: string, objectKey: string, expires?: number) => {
+        calls.push(['signer.presignedGetObject', bucket, objectKey, expires]);
+        return `http://localhost:9000/${bucket}/${objectKey}?signature=test`;
+      },
+    };
+    const storage = createObjectStorage(createConfig(), client, logger, signingClient);
 
     await storage.putObject({
       objectKey: 'users/user-id/avatar/current-avatar.webp',
@@ -91,7 +97,7 @@ describe('object storage', () => {
         },
       ],
       [
-        'presignedGetObject',
+        'signer.presignedGetObject',
         'fairplay-user-media',
         'users/user-id/avatar/current-avatar.webp',
         900,
@@ -171,17 +177,6 @@ describe('object storage', () => {
 
         return 'upload-id';
       },
-      presignedUrl: async (
-        method: string,
-        bucket: string,
-        objectKey: string,
-        expires?: number,
-        reqParams?: Record<string, string>,
-      ) => {
-        calls.push(['presignedUrl', method, bucket, objectKey, expires, reqParams]);
-
-        return `http://minio:9000/${bucket}/${objectKey}?partNumber=${reqParams?.partNumber}&uploadId=${reqParams?.uploadId}`;
-      },
       completeMultipartUpload: async (
         bucket: string,
         objectKey: string,
@@ -194,10 +189,25 @@ describe('object storage', () => {
         calls.push(['abortMultipartUpload', bucket, objectKey, uploadId]);
       },
     };
+    const signingClient = {
+      presignedGetObject: async () => 'http://localhost:9000/test',
+      presignedUrl: async (
+        method: string,
+        bucket: string,
+        objectKey: string,
+        expires?: number,
+        reqParams?: Record<string, string>,
+      ) => {
+        calls.push(['presignedUrl', method, bucket, objectKey, expires, reqParams]);
+
+        return `http://localhost:9000/${bucket}/${objectKey}?partNumber=${reqParams?.partNumber}&uploadId=${reqParams?.uploadId}`;
+      },
+    };
     const storage = createObjectStorage(
       createConfig({ bucket: 'videos' }),
       client,
       createOperationLogCollector().logger,
+      signingClient,
     );
 
     await expect(
