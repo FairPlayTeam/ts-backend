@@ -5,6 +5,7 @@ import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import type {
   CompleteVideoMultipartUploadBody,
   CreateVideoBody,
+  InitVideoMultipartUploadBody,
   ListMyVideosQuery,
   SignVideoMultipartUploadPartsBody,
   VideoMultipartUploadSessionParams,
@@ -18,7 +19,7 @@ import {
   toVideoUploadSessionResponse,
 } from './videos.responses.js';
 
-type VideoRequest = Request<VideoParams>;
+type InitUploadRequest = Request<VideoParams, unknown, InitVideoMultipartUploadBody>;
 type VideoUploadSessionRequest = Request<VideoMultipartUploadSessionParams>;
 type SignPartsRequest = Request<
   VideoMultipartUploadSessionParams,
@@ -81,10 +82,11 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
   const initMultipartUpload: RequestHandler = async (req, res, next) => {
     try {
       const authenticatedReq = req as AuthenticatedRequest;
-      const videoReq = req as VideoRequest;
+      const videoReq = req as InitUploadRequest;
       const result = await videosService.initMultipartUpload({
         userId: authenticatedReq.user.id,
         videoId: videoReq.params.videoId,
+        sizeBytes: videoReq.body.sizeBytes,
       });
 
       return sendNoStoreJson(res, 201, toVideoUploadSessionResponse(result));

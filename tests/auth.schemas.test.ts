@@ -461,6 +461,7 @@ describe('deleteAccountResponseSchema', () => {
       deleteAccountResponseSchema.safeParse({
         message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
         mediaCleanupQueued: 0,
+        externalCleanupQueued: 0,
       }).success,
     ).toBe(true);
 
@@ -468,6 +469,13 @@ describe('deleteAccountResponseSchema', () => {
       deleteAccountResponseSchema.safeParse({
         message: DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
         mediaCleanupQueued: 2,
+        externalCleanupQueued: 2,
+      }).success,
+    ).toBe(true);
+    expect(
+      deleteAccountResponseSchema.safeParse({
+        message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+        mediaCleanupQueued: 0,
       }).success,
     ).toBe(true);
   });
@@ -477,6 +485,7 @@ describe('deleteAccountResponseSchema', () => {
       deleteAccountResponseSchema.safeParse({
         message: 'Account deleted',
         mediaCleanupQueued: 0,
+        externalCleanupQueued: 0,
       }).success,
     ).toBe(false);
 
@@ -484,6 +493,15 @@ describe('deleteAccountResponseSchema', () => {
       deleteAccountResponseSchema.safeParse({
         message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
         mediaCleanupQueued: -1,
+        externalCleanupQueued: 0,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      deleteAccountResponseSchema.safeParse({
+        message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+        mediaCleanupQueued: 0,
+        externalCleanupQueued: -1,
       }).success,
     ).toBe(false);
   });

@@ -1,16 +1,17 @@
 import type { PrismaClient } from '@prisma/client';
 import type { ObjectStorage } from '../../lib/objectStorage.js';
+import type { ExternalResourceReconciler } from '../externalResources.js';
 import type { UserMediaProcessor } from '../userMedia/userMedia.processor.js';
 
 type Prisma = Pick<
   PrismaClient,
   | '$transaction'
   | 'emailVerificationToken'
+  | 'externalResourceTarget'
   | 'passwordResetToken'
   | 'session'
   | 'user'
   | 'userMediaAsset'
-  | 'userMediaDeletionJob'
 >;
 
 export type AuthDependencies = {
@@ -30,7 +31,8 @@ export type AuthDependencies = {
     sendVerificationEmail(email: string, code: string): Promise<void>;
     sendPasswordResetEmail(email: string, code: string): Promise<void>;
   };
-  objectStorage: Pick<ObjectStorage, 'putObject' | 'deleteObject' | 'getSignedUrl'>;
+  objectStorage: Pick<ObjectStorage, 'bucket' | 'putObject' | 'getSignedUrl'>;
+  externalResources: Pick<ExternalResourceReconciler, 'reconcileDue' | 'reconcileTarget'>;
   userMediaProcessor: UserMediaProcessor;
   clock: {
     now(): Date;

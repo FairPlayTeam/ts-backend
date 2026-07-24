@@ -211,6 +211,7 @@ describe('profiles service', () => {
             },
           },
           select: {
+            bucket: true,
             kind: true,
             objectKey: true,
           },
@@ -312,6 +313,7 @@ describe('profiles service', () => {
                 kind: 'avatar',
               },
               select: {
+                bucket: true,
                 kind: true,
                 objectKey: true,
               },

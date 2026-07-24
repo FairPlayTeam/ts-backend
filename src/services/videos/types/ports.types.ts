@@ -1,8 +1,12 @@
 export type VideoUploadSessionStatus =
+  | 'initializing'
   | 'initiated'
   | 'uploading'
+  | 'completing'
   | 'completed'
+  | 'aborting'
   | 'aborted'
+  | 'expiring'
   | 'expired';
 
 export type VideoVisibility = 'public' | 'unlisted';
@@ -68,12 +72,14 @@ export type VideoUploadSession = {
   status: VideoUploadSessionStatus;
   bucket: string;
   objectKey: string;
-  uploadId: string;
+  uploadId: string | null;
   partSizeBytes: number;
+  expectedSizeBytes: number;
   partCount: number | null;
   expiresAt: Date;
   completedAt: Date | null;
   abortedAt: Date | null;
+  expiredAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   parts: VideoUploadPart[];
@@ -82,6 +88,7 @@ export type VideoUploadSession = {
 export type InitVideoMultipartUploadInput = {
   videoId: string;
   userId: string;
+  sizeBytes: number;
 };
 
 export type SignVideoMultipartUploadPartsInput = {
@@ -152,3 +159,20 @@ export type VideosRoutePort = {
 };
 
 export type VideosPorts = VideosRoutePort;
+
+export type VideoMaintenancePort = {
+  expireMultipartUploadSessions(input: { expiredBefore: Date }): Promise<{
+    uploadSessionsExpired: number;
+  }>;
+  scheduleAbandonedArtifactGenerations(input: { observedAt: Date }): Promise<{
+    artifactGenerationsScheduled: number;
+  }>;
+  reconcilePendingExternalResources(input?: { limit?: number }): Promise<{
+    claimed: number;
+    confirmed: number;
+    redirectedAbsent: number;
+    failed: number;
+  }>;
+};
+
+export type VideosService = VideosPorts & VideoMaintenancePort;

@@ -17,14 +17,19 @@ import {
   parseSessionCleanupInactiveRetentionMs,
   parseSessionCleanupIntervalMs,
   parseTrustProxy,
+  parseVideoTranscodeConfig,
   parseVideoUploadConfig,
   readRequiredEnv,
 } from '../src/config/env.parsers.js';
 import {
   DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET,
+  DEFAULT_VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS,
+  DEFAULT_VIDEO_TRANSCODE_THREADS_PER_JOB,
+  DEFAULT_VIDEO_UPLOAD_MAX_BYTES,
   DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
   DEFAULT_VIDEO_UPLOAD_PART_SIZE_BYTES,
   DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
+  DEFAULT_VIDEO_USER_STORAGE_QUOTA_BYTES,
   DEFAULT_OBJECT_STORAGE_TIMEOUT_MS,
   DEFAULT_SMTP_TIMEOUT_MS,
   SESSION_CLEANUP_INACTIVE_RETENTION_MS,
@@ -402,12 +407,16 @@ describe('env parsers', () => {
         objectStorageBucket: undefined,
         partSizeBytes: undefined,
         maxPartCount: undefined,
+        maxUploadBytes: undefined,
+        userStorageQuotaBytes: undefined,
         sessionTtlSeconds: undefined,
       }),
     ).toEqual({
       objectStorageBucket: DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET,
       partSizeBytes: DEFAULT_VIDEO_UPLOAD_PART_SIZE_BYTES,
       maxPartCount: DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
+      maxUploadBytes: DEFAULT_VIDEO_UPLOAD_MAX_BYTES,
+      userStorageQuotaBytes: DEFAULT_VIDEO_USER_STORAGE_QUOTA_BYTES,
       sessionTtlSeconds: DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
     });
 
@@ -416,12 +425,16 @@ describe('env parsers', () => {
         objectStorageBucket: 'fairplay-videos',
         partSizeBytes: String(95 * 1024 * 1024),
         maxPartCount: '5000',
+        maxUploadBytes: String(4 * 1024 * 1024 * 1024),
+        userStorageQuotaBytes: String(10 * 1024 * 1024 * 1024),
         sessionTtlSeconds: '3600',
       }),
     ).toEqual({
       objectStorageBucket: 'fairplay-videos',
       partSizeBytes: 95 * 1024 * 1024,
       maxPartCount: 5000,
+      maxUploadBytes: 4 * 1024 * 1024 * 1024,
+      userStorageQuotaBytes: 10 * 1024 * 1024 * 1024,
       sessionTtlSeconds: 3600,
     });
 
@@ -430,6 +443,8 @@ describe('env parsers', () => {
         objectStorageBucket: 'Invalid_Bucket',
         partSizeBytes: undefined,
         maxPartCount: undefined,
+        maxUploadBytes: undefined,
+        userStorageQuotaBytes: undefined,
         sessionTtlSeconds: undefined,
       }),
     ).toThrow(ServerConfigurationError);
@@ -438,6 +453,8 @@ describe('env parsers', () => {
         objectStorageBucket: undefined,
         partSizeBytes: String(100 * 1024 * 1024),
         maxPartCount: undefined,
+        maxUploadBytes: undefined,
+        userStorageQuotaBytes: undefined,
         sessionTtlSeconds: undefined,
       }),
     ).toThrow(ServerConfigurationError);
@@ -446,8 +463,59 @@ describe('env parsers', () => {
         objectStorageBucket: undefined,
         partSizeBytes: undefined,
         maxPartCount: '10001',
+        maxUploadBytes: undefined,
+        userStorageQuotaBytes: undefined,
         sessionTtlSeconds: undefined,
       }),
     ).toThrow(ServerConfigurationError);
+    expect(() =>
+      parseVideoUploadConfig({
+        objectStorageBucket: undefined,
+        partSizeBytes: undefined,
+        maxPartCount: undefined,
+        maxUploadBytes: '1024',
+        userStorageQuotaBytes: '512',
+        sessionTtlSeconds: undefined,
+      }),
+    ).toThrow(ServerConfigurationError);
+  });
+
+  test('parses strict per-process video transcode limits', () => {
+    expect(
+      parseVideoTranscodeConfig({
+        maxConcurrentJobs: undefined,
+        threadsPerJob: undefined,
+      }),
+    ).toEqual({
+      maxConcurrentJobs: DEFAULT_VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS,
+      threadsPerJob: DEFAULT_VIDEO_TRANSCODE_THREADS_PER_JOB,
+    });
+    expect(
+      parseVideoTranscodeConfig({
+        maxConcurrentJobs: '0',
+        threadsPerJob: '4',
+      }),
+    ).toEqual({
+      maxConcurrentJobs: 0,
+      threadsPerJob: 4,
+    });
+
+    for (const invalidValue of ['-1', '1.5', '1e2', '+1']) {
+      expect(() =>
+        parseVideoTranscodeConfig({
+          maxConcurrentJobs: invalidValue,
+          threadsPerJob: '2',
+        }),
+      ).toThrow(ServerConfigurationError);
+    }
+
+    for (const invalidValue of ['0', '-1', '1.5', '1e2', '+1']) {
+      expect(() =>
+        parseVideoTranscodeConfig({
+          maxConcurrentJobs: '1',
+          threadsPerJob: invalidValue,
+        }),
+      ).toThrow(ServerConfigurationError);
+    }
   });
 });

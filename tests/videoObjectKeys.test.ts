@@ -1,76 +1,77 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  VIDEO_OBJECT_KEY_QUALITIES,
-  hlsMasterKey,
-  hlsSegmentPrefix,
-  hlsVariantPlaylistKey,
-  isVideoObjectKeyQuality,
+  buildVideoArtifactManifest,
   videoOriginalKey,
-  videoThumbnailKey,
+  type VideoArtifactProfile,
 } from '../src/services/videos/videoObjectKeys.js';
 
+const userId = 'user-123';
+const videoId = 'video-456';
+
+const profiles: VideoArtifactProfile[] = [
+  {
+    quality: '480p',
+    width: 854,
+    height: 480,
+    bandwidth: 1_400_000,
+  },
+  {
+    quality: '720p',
+    width: 1280,
+    height: 720,
+    bandwidth: 2_800_000,
+  },
+];
+
 describe('video object keys', () => {
-  const userId = 'user-123';
-  const videoId = 'video-456';
-
-  test('generates the legacy v1 source video key without bucket prefix', () => {
-    expect(videoOriginalKey(userId, videoId)).toBe('user-123/video-456/original.mp4');
-  });
-
-  test('generates the legacy v1 HLS master playlist key', () => {
-    expect(hlsMasterKey(userId, videoId)).toBe('user-123/video-456/master.m3u8');
-  });
-
-  test('generates the legacy v1 HLS variant playlist keys', () => {
-    expect(
-      VIDEO_OBJECT_KEY_QUALITIES.map((quality) => hlsVariantPlaylistKey(userId, videoId, quality)),
-    ).toEqual([
-      'user-123/video-456/240p/index.m3u8',
-      'user-123/video-456/480p/index.m3u8',
-      'user-123/video-456/720p/index.m3u8',
-      'user-123/video-456/1080p/index.m3u8',
-    ]);
-  });
-
-  test('generates the legacy v1 HLS segment prefixes', () => {
-    expect(
-      VIDEO_OBJECT_KEY_QUALITIES.map((quality) => hlsSegmentPrefix(userId, videoId, quality)),
-    ).toEqual([
-      'user-123/video-456/240p/',
-      'user-123/video-456/480p/',
-      'user-123/video-456/720p/',
-      'user-123/video-456/1080p/',
-    ]);
-  });
-
-  test('generates the legacy v1 thumbnail key', () => {
-    expect(videoThumbnailKey(userId, videoId, 'poster.webp')).toBe(
-      'thumbnails/user-123/video-456/poster.webp',
+  test('generates an immutable source key scoped to the upload session', () => {
+    expect(videoOriginalKey(userId, videoId, 'upload-789')).toBe(
+      'user-123/video-456/sources/upload-789/original.mp4',
     );
   });
 
-  test('recognizes supported object-key qualities', () => {
-    expect(isVideoObjectKeyQuality('240p')).toBe(true);
-    expect(isVideoObjectKeyQuality('1080p')).toBe(true);
-    expect(isVideoObjectKeyQuality('p240')).toBe(false);
-    expect(isVideoObjectKeyQuality('4k')).toBe(false);
+  test('builds one immutable artifact manifest for a generation', () => {
+    expect(buildVideoArtifactManifest(userId, videoId, 'generation-789', profiles)).toEqual({
+      hlsPrefix: 'user-123/video-456/generations/generation-789/hls/',
+      master: {
+        objectKey: 'user-123/video-456/generations/generation-789/hls/master.m3u8',
+        relativePath: 'hls/master.m3u8',
+      },
+      thumbnailPrefix: 'user-123/video-456/generations/generation-789/thumbnail/',
+      thumbnail: {
+        objectKey: 'user-123/video-456/generations/generation-789/thumbnail/poster.webp',
+        relativePath: 'thumbnail/poster.webp',
+      },
+      renditions: [
+        {
+          quality: '480p',
+          width: 854,
+          height: 480,
+          bandwidth: 1_400_000,
+          playlistObjectKey: 'user-123/video-456/generations/generation-789/hls/480p/index.m3u8',
+          playlistRelativePath: 'hls/480p/index.m3u8',
+          segmentPrefix: 'user-123/video-456/generations/generation-789/hls/480p/segments/',
+          segmentRelativeDirectory: 'hls/480p/segments',
+        },
+        {
+          quality: '720p',
+          width: 1280,
+          height: 720,
+          bandwidth: 2_800_000,
+          playlistObjectKey: 'user-123/video-456/generations/generation-789/hls/720p/index.m3u8',
+          playlistRelativePath: 'hls/720p/index.m3u8',
+          segmentPrefix: 'user-123/video-456/generations/generation-789/hls/720p/segments/',
+          segmentRelativeDirectory: 'hls/720p/segments',
+        },
+      ],
+    });
   });
 
-  test('rejects path separators in dynamic key segments', () => {
-    expect(() => videoOriginalKey('users/user-123', videoId)).toThrow('userId');
-    expect(() => videoOriginalKey(userId, 'videos/video-456')).toThrow('videoId');
-    expect(() => videoThumbnailKey(userId, videoId, 'nested/poster.webp')).toThrow('filename');
-    expect(() => videoThumbnailKey(userId, videoId, 'nested\\poster.webp')).toThrow('filename');
-  });
-
-  test('rejects empty dynamic key segments', () => {
-    expect(() => videoOriginalKey(' ', videoId)).toThrow('userId');
-    expect(() => videoOriginalKey(userId, '')).toThrow('videoId');
-    expect(() => videoThumbnailKey(userId, videoId, ' ')).toThrow('filename');
-  });
-
-  test('rejects unsupported HLS object-key qualities at runtime', () => {
-    expect(() => hlsVariantPlaylistKey(userId, videoId, 'p240' as never)).toThrow('quality');
-    expect(() => hlsSegmentPrefix(userId, videoId, '4k' as never)).toThrow('quality');
+  test('rejects path separators and empty dynamic key segments', () => {
+    expect(() => videoOriginalKey(userId, videoId, 'nested/upload')).toThrow('uploadSessionId');
+    expect(() => buildVideoArtifactManifest(userId, videoId, 'nested\\generation', [])).toThrow(
+      'generationId',
+    );
+    expect(() => videoOriginalKey('', videoId, 'upload')).toThrow('userId');
   });
 });

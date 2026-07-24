@@ -20,6 +20,7 @@ This repository contains the FairPlay backend API built with:
 - PostgreSQL
 - Prisma
 - S3-compatible object storage, with MinIO as the local default
+- FFmpeg and ffprobe for in-process video transcoding
 - Bun
 - Pino
 
@@ -50,7 +51,8 @@ bun run dev
 
 The API runs on http://localhost:3000 and logs are pretty-printed by the development entrypoint.
 MinIO runs locally on http://localhost:9000 for object storage and http://localhost:9001 for its
-console.
+console. Host-based development also requires `ffmpeg` and `ffprobe` on `PATH`; the production
+runtime image installs both tools.
 
 ### Docker Compose stack
 
@@ -150,10 +152,57 @@ tests, Testcontainers-backed integration tests, dependency audit, and the produc
 The test scripts set `SHARP_CONCURRENCY=1` by default for reproducible image-processing tests; set
 `SHARP_CONCURRENCY` explicitly to a positive integer in the environment to override it.
 
+## Video source uploads
+
+Multipart video uploads declare their total size when initialized. PostgreSQL reserves that size
+and an immutable source key before S3 is contacted. Each session writes below
+`<user>/<video>/sources/<upload-session>/original.mp4`, so replacing a source cannot overwrite the
+previous object. Replaced or ambiguously written sources continue to count toward the per-user
+quota until object storage reconciliation confirms their absence.
+
+The same durable reconciliation engine owns profile-media cleanup and exact or prefix video
+resources. PostgreSQL records intent before an ambiguous S3 write, deletions wait a fixed hour,
+and workers claim due targets with expiring leases. Failures remain durable with capped
+exponential backoff. Account deletion removes the user and lets database cascades remove business
+rows while external-resource targets survive until S3 confirms every object or prefix absent.
+
+## Video transcoding
+
+Transcoding runs inside the backend process with direct, supervised `ffprobe` and `ffmpeg` child
+processes. PostgreSQL claims queued work with `FOR UPDATE SKIP LOCKED`; stale heartbeats make an
+abandoned job claimable again under a new `executionId`. The per-process concurrency setting covers
+the complete download, probe, encode, upload, verification, and publication cycle. Setting
+`VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=0` keeps a replica from claiming work.
+
+Every execution reserves a durable `writing` generation and its cleanup prefixes before creating
+or uploading artifacts. FFmpeg creates only the 480p, 720p, and 1080p H.264 renditions that fit
+within the source resolution, plus six-second HLS VOD segments, optional AAC audio, and a WebP
+thumbnail. All artifacts use an immutable generation namespace and are checked in object storage
+before publication.
+
+Publication is one PostgreSQL transaction fenced by the current job `executionId`, current source,
+and `writing` generation. It activates the new generation, exposes its master playlist and
+thumbnail, completes the job, and moves the previous generation to `retiring` with durable
+one-hour-delayed prefix cleanup. A late process from an execution taken over elsewhere therefore
+cannot publish.
+
+## Maintenance and runtime lifecycle
+
+The existing periodic auth cleanup is now the single general maintenance job. It sequentially and
+independently cleans expired sessions and tokens, reconciles user media, expires multipart
+sessions, schedules abandoned `writing` generations through the durable reconciliation engine,
+and reconciles video targets. A token-safe, renewable Redis lock excludes concurrent instances;
+loss of ownership stops the run before its next step.
+
+Maintenance and transcoding start only after the HTTP server is listening. Graceful shutdown stops
+maintenance, aborts and requeues owned transcodes while draining local slots, closes HTTP, and then
+disconnects Prisma and Redis. Each shutdown step is attempted even if an earlier one fails.
+
 ### Integration tests
 
 Integration tests run with Vitest and Testcontainers. They start real PostgreSQL and Redis
-containers, apply Prisma migrations, then exercise the HTTP API through the real Express app.
+containers plus MinIO, apply Prisma migrations, then exercise the runtime services and HTTP API
+against those real dependencies.
 
 Docker must be running locally before launching them:
 

@@ -10,8 +10,9 @@ The backend is organized around small composable factories and dependencies are 
 flowchart TD
 index["src/index.ts<br/>Bootstrap runtime"] --> app["createApp()"]
 index --> authInstance["auth.instance.ts"]
-index --> cleanup["createAuthCleanupJob()"]
+index --> cleanup["createMaintenanceCleanupJob()"]
 index --> readiness["Readiness checks"]
+index --> transcodeRunner["In-process transcode runner"]
 
 authInstance --> authService["createAuthService()"]
 authService --> prisma["Prisma"]
@@ -27,6 +28,9 @@ controller --> authService
 app --> middleware["Middleware<br/>CORS, Helmet, Logger, Rate Limit"]
 middleware --> redis["Redis optional, required in production"]
 cleanup --> redisLock["Redis distributed lock<br/>when Redis is configured"]
+index --> videoService["Video upload service"]
+videoService --> videoStorage["Video object storage bucket"]
+videoService --> externalTargets["Durable external resource targets"]
 ```
 
 ## Runtime modes
@@ -66,11 +70,11 @@ The backend instances are designed to be horizontally scalable as long as every 
 same PostgreSQL, Redis, and object storage services:
 
 - user data, sessions, verification tokens, and password reset tokens are stored in PostgreSQL
-- Redis stores distributed rate limit state, cooldown state, and the auth cleanup lock
-- user-uploaded profile media, currently avatars and banners, is stored in shared S3-compatible
-  object storage
-- the auth cleanup job can run in every process, but only the instance holding the Redis lock
-  removes expired sessions and tokens
+- Redis stores distributed rate limit state, cooldown state, and the renewable maintenance lock
+- user-uploaded profile media and immutable video sources are stored in shared S3-compatible
+  object storage, using independently configurable buckets
+- the maintenance job can run in every process, but only the instance holding the Redis lock runs
+  its ordered auth, media, multipart, generation, and reconciliation steps
 - migrations are not run by every backend instance; they are run once through the migrator image
   before the new runtime replicas are started
 
@@ -88,11 +92,11 @@ of PostgreSQL and Redis:
 - managed PostgreSQL is still the source of truth for users, sessions, verification tokens, and
   password reset tokens
 - managed Redis is still the shared distributed store for rate limits, email cooldowns, and the
-  auth cleanup lock
-- managed S3-compatible storage is still the shared store for user-uploaded profile media, currently
-  avatars and banners
+  renewable maintenance lock
+- managed S3-compatible storage is still the shared store for profile media, immutable video
+  sources, and generated video artifacts
 - every backend instance must point to the same PostgreSQL and Redis services
-- every backend instance must point to the same object storage bucket
+- every backend instance must point to the same user-media and video object storage buckets
 - migrations should use the provider's direct database connection when both pooled and direct
   PostgreSQL URLs are available
 - Redis provider URLs should use the provider's Redis-compatible endpoint, with TLS enabled when
@@ -173,7 +177,7 @@ file should use host-reachable addresses instead:
 The Dockerfile exposes two deployment targets:
 
 - `runtime`: production API image with compiled `dist`, production dependencies, Prisma client,
-  non-root `bun` user, and a `/health/ready` healthcheck
+  FFmpeg/ffprobe, non-root `bun` user, and a `/health/ready` healthcheck
 - `migrator`: one-shot image that runs `bun run prisma:migrate:deploy`
 
 The production release order is:
@@ -189,7 +193,7 @@ The health routes are:
 
 - `/health/live`: process liveness only
 - `/health/ready`: checks database connectivity, Redis connectivity when Redis is configured, and
-  object storage connectivity when object storage is configured
+  every configured object storage bucket
 - `/health`: lightweight process status
 
 Production orchestrators should use `/health/ready` before routing traffic to an instance.
@@ -203,13 +207,129 @@ The entry point is [`src/index.ts`](src/index.ts), it:
 - prepares readiness checks
 - assembles the Express app
 - starts the server
-- starts the periodic auth cleanup after the server is listening
-- and gracefully shuts down Prisma, Redis, and the HTTP server
+- starts the periodic maintenance job and in-process transcode runner only after the server is
+  listening
+- on shutdown, stops maintenance, drains and requeues owned transcodes, closes the HTTP server,
+  then disconnects Prisma and Redis
 
 In production, Redis and object storage are required. In development, Redis can be unavailable; the
 backend then falls back to in-memory rate limiting and skips distributed maintenance locks. Object
 storage-dependent routes return a service-level error when object storage is not configured or not
 ready.
+
+## Maintenance lifecycle
+
+A single non-overlapping maintenance job extends the existing auth cleanup. It runs these isolated
+steps in order: expired sessions, expired auth tokens, user-media targets, expired multipart
+sessions, abandoned artifact generations, and video targets. A failed step is reported in the
+aggregate summary without preventing later steps from running.
+
+When Redis is configured, a token-valued lock excludes other instances. The owner renews the TTL
+with a compare-and-expire script, releases it with compare-and-delete, and stops before the next
+step if ownership is lost. Without Redis, local overlap is still prevented but cross-process
+exclusion is unavailable.
+
+A `writing` artifact generation becomes abandoned only after the same heartbeat staleness window
+used for transcode takeover, and only when no live job with the same `executionId` owns it.
+Maintenance then changes its existing durable prefix targets from `present` to delayed `absent`;
+the canonical one-hour quiescence and reconciliation backoff rules perform the actual cleanup.
+
+Shutdown steps remain ordered even if one fails. Maintenance stops first, then transcode polling is
+stopped and locally owned work is aborted and requeued, followed by the HTTP server, Prisma, and
+Redis.
+
+## Durable video source reservation
+
+The database is authoritative for ownership and intent, while S3 holds the bytes. Multipart source
+initialization therefore follows this order:
+
+1. A serializable PostgreSQL transaction reserves the declared size, an upload session, and an
+   exact external-resource target.
+2. The session id is embedded in an immutable object key under
+   `<user>/<video>/sources/<session>/original.mp4`.
+3. Only after the transaction commits does the backend initiate S3 multipart upload and persist its
+   handle.
+
+An ambiguous S3 or PostgreSQL failure leaves a durable target that maintenance can reconcile.
+Quota is the sum of source targets not yet confirmed absent, so an in-flight upload or replaced
+source cannot disappear from accounting before its external bytes are known to be gone. External
+targets deliberately retain scalar user and video ids without cascading foreign keys; cleanup
+intent must survive deletion of the corresponding account or video.
+
+## External resource reconciliation
+
+`ExternalResourceTarget` is the canonical durable intent for video sources, generated prefixes,
+thumbnails, and profile media. An exact selector is never inferred from path formatting, and a
+prefix selector is deleted in bounded batches. Claims use unique expiring leases; final state and
+optional domain transitions commit together only while the lease is still owned. Failed work
+releases its lease, records a bounded error, and retries with exponential backoff capped at 24
+hours.
+
+Deletion requests move a target to `quiescing` no earlier than one hour after the request, and a
+later request can extend but never shorten that deadline. Exact cleanup aborts persisted and
+discoverable multipart uploads before deleting and confirming the object absent. Present
+reconciliation is exact-only, verifies the object with HEAD, and checks its reserved size when
+known.
+
+Two residual risks are accepted without adding a distributed owner fence: an external write that
+continues for more than the one-hour quiescence window could finish after cleanup, and transcode
+ownership assumes independently generated UUID `executionId` values do not collide. The latter is
+cryptographically negligible; a monotonic claim version would add coordination complexity without
+a proportionate benefit here.
+
+Profile-media uploads reserve a writing target before PUT. Persisting the asset and confirming its
+target happen in one serializable transaction; replacement schedules the previous exact target in
+that same transaction. Account deletion locks the user’s transcode jobs, schedules every retained
+target, deletes only the user row, and relies on PostgreSQL cascades for sessions, tokens, videos,
+and media rows. Temporary S3 failures therefore report deferred cleanup without rolling back the
+business deletion.
+
+## In-process video transcoding
+
+There is no separate transcode worker service or queue runtime. Each backend process may claim
+PostgreSQL jobs up to its local `VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS` limit, which is held for the
+entire source download, probe, FFmpeg execution, artifact upload, verification, and publication
+cycle. A value of `0` disables claims on that replica.
+
+```mermaid
+sequenceDiagram
+participant Runner
+participant DB as PostgreSQL
+participant S3 as Object storage
+participant FF as ffprobe / ffmpeg
+
+Runner ->> DB: claim queued or stale job (SKIP LOCKED)
+DB -->> Runner: processing + new executionId
+Runner ->> S3: download persisted current source
+Runner ->> DB: verify completed/current source and executionId
+Runner ->> DB: reserve writing generation + prefix targets
+Runner ->> FF: probe, then direct supervised encode
+Runner ->> S3: upload immutable generation artifacts
+Runner ->> S3: HEAD every required file and segment
+Runner ->> DB: publish in one fenced transaction
+DB -->> Runner: active generation + completed job
+```
+
+Heartbeats retain job ownership. A stale `processing` job can be reclaimed with a fresh
+`executionId`; losing the conditional heartbeat aborts the local execution and terminates FFmpeg.
+Shutdown stops polling, aborts local processes, requeues jobs still owned by the process, and waits
+for every local slot to drain.
+
+FFprobe metadata is validated before encoding. A single direct FFmpeg process emits H.264/CRF 24
+HLS VOD renditions at 480p, 720p, and 1080p without upscaling, with even dimensions, six-second
+segments, AAC 128k audio when the source has audio, and a WebP thumbnail. Encoder and filter
+threads are bounded by `VIDEO_TRANSCODE_THREADS_PER_JOB`; child output retained in memory is also
+bounded. Abort sends `SIGTERM`, followed by `SIGKILL` after five seconds if necessary.
+
+Each execution writes to a unique generation namespace. Its database generation and prefix cleanup
+targets are reserved before any potentially ambiguous artifact upload. The runner verifies the
+master playlist, thumbnail, every rendition playlist, and at least one real segment per rendition
+before attempting publication. Publication locks and checks the job, current source,
+`executionId`, and `writing` generation in one serializable transaction. The same transaction
+activates the new generation and renditions, completes the job, and moves the prior active
+generation to `retiring` with one-hour-delayed prefix cleanup. A late execution cannot publish
+after takeover; ambiguous upload failures leave a durable generation that can only be cleaned, not
+mistaken for active output.
 
 ## Factories
 

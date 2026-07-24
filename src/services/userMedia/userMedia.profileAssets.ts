@@ -11,6 +11,7 @@ export const profileMediaAssetWhere = {
 export const profileMediaAssetSelect = {
   kind: true,
   objectKey: true,
+  bucket: true,
 } satisfies Prisma.UserMediaAssetSelect;
 
 export type ProfileMediaAsset = Prisma.UserMediaAssetGetPayload<{
@@ -24,17 +25,17 @@ const getProfileMediaAsset = (
 
 export function toStoredUserMediaAssetUrl(
   objectStorage: Pick<ObjectStorage, 'getSignedUrl'>,
-  asset: { objectKey: string },
+  asset: { objectKey: string; bucket: string },
 ): Promise<string>;
 export function toStoredUserMediaAssetUrl(
   objectStorage: Pick<ObjectStorage, 'getSignedUrl'>,
-  asset: { objectKey: string } | null | undefined,
+  asset: { objectKey: string; bucket: string } | null | undefined,
 ): Promise<string | null>;
 export async function toStoredUserMediaAssetUrl(
   objectStorage: Pick<ObjectStorage, 'getSignedUrl'>,
-  asset: { objectKey: string } | null | undefined,
+  asset: { objectKey: string; bucket: string } | null | undefined,
 ): Promise<string | null> {
-  return asset ? objectStorage.getSignedUrl(asset.objectKey) : null;
+  return asset ? objectStorage.getSignedUrl(asset.objectKey, asset.bucket) : null;
 }
 
 export const toProfileMediaUrls = async (

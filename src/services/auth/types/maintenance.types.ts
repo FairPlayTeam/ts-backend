@@ -10,15 +10,14 @@ export type CleanupExpiredAuthTokensResult = {
   passwordResetTokensDeleted: number;
 };
 
-export type CleanupPendingUserMediaDeletionsInput = {
-  pendingBefore: Date;
+export type ReconcileUserMediaTargetsInput = {
   limit?: number;
 };
 
-export type CleanupPendingUserMediaDeletionsResult = {
+export type ReconcileUserMediaTargetsResult = {
   message: string;
-  mediaObjectsDeleted: number;
-  mediaObjectDeletionJobsFailed: number;
+  mediaTargetsConfirmed: number;
+  mediaTargetsFailed: number;
 };
 
 export type AuthMaintenancePort = {
@@ -26,7 +25,7 @@ export type AuthMaintenancePort = {
   cleanupExpiredAuthTokens: (
     input: CleanupExpiredAuthTokensInput,
   ) => Promise<CleanupExpiredAuthTokensResult>;
-  cleanupPendingUserMediaDeletions: (
-    input: CleanupPendingUserMediaDeletionsInput,
-  ) => Promise<CleanupPendingUserMediaDeletionsResult>;
+  reconcileUserMediaTargets: (
+    input: ReconcileUserMediaTargetsInput,
+  ) => Promise<ReconcileUserMediaTargetsResult>;
 };

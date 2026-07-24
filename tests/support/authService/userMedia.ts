@@ -1,38 +1,9 @@
-import type { AuthServiceTestCalls } from './context.js';
+import { fixedNow, type AuthServiceTestCalls } from './context.js';
 
-type UserMediaDeletionJobCalls = Pick<
+type UserMediaAssetDeletionCalls = Pick<
   AuthServiceTestCalls,
-  | 'userMediaDeletionJobCreateMany'
-  | 'userMediaDeletionJobDeleteMany'
-  | 'userMediaDeletionJobFindMany'
-  | 'userMediaDeletionJobUpdateMany'
+  'externalResourceTargetUpdate' | 'userMediaAssetDeleteMany' | 'userMediaAssetFindUnique'
 >;
-
-export const createUserMediaDeletionJobMock = (calls: UserMediaDeletionJobCalls) => ({
-  createMany: async (args: unknown) => {
-    calls.userMediaDeletionJobCreateMany = args;
-
-    const data = (args as { data?: unknown[] }).data;
-
-    return { count: data?.length ?? 1 };
-  },
-  deleteMany: async (args: unknown) => {
-    calls.userMediaDeletionJobDeleteMany = args;
-
-    return { count: 1 };
-  },
-  findMany: async (args: unknown) => {
-    calls.userMediaDeletionJobFindMany = args;
-
-    return [];
-  },
-  updateMany: async (args: unknown) => {
-    calls.userMediaDeletionJobUpdateMany = args;
-  },
-});
-
-type UserMediaAssetDeletionCalls = UserMediaDeletionJobCalls &
-  Pick<AuthServiceTestCalls, 'userMediaAssetDeleteMany' | 'userMediaAssetFindUnique'>;
 
 export const createUserMediaAssetDeletionTransaction = ({
   calls,
@@ -47,7 +18,11 @@ export const createUserMediaAssetDeletionTransaction = ({
     findUnique: async (args: unknown) => {
       calls.userMediaAssetFindUnique = args;
 
-      return { objectKey };
+      return {
+        id: 'asset-id',
+        objectKey,
+        externalResourceTargetId: 'target-id',
+      };
     },
     deleteMany: async (args: unknown) => {
       calls.userMediaAssetDeleteMany = args;
@@ -55,5 +30,15 @@ export const createUserMediaAssetDeletionTransaction = ({
       return deleteMany ? deleteMany(args) : { count: 1 };
     },
   },
-  userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
+  externalResourceTarget: {
+    findUnique: async () => ({
+      state: 'confirmed_present',
+      quiescenceNotBefore: null,
+      nextAttemptAt: fixedNow,
+    }),
+    update: async (args: unknown) => {
+      calls.externalResourceTargetUpdate = args;
+      return { id: 'target-id' };
+    },
+  },
 });

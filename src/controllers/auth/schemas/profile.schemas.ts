@@ -33,6 +33,10 @@ export const deleteAccountResponseSchema = z
       description: 'Number of stored media objects queued for asynchronous deletion.',
       example: 0,
     }),
+    externalCleanupQueued: z.number().int().nonnegative().optional().openapi({
+      description: 'Number of external resources queued for asynchronous reconciliation.',
+      example: 0,
+    }),
   })
   .openapi('DeleteAccountResponse');
 
@@ -51,6 +55,7 @@ const userDataExportMediaAssetSchema = z.object({
   objectKey: z.string().openapi({
     example: 'users/9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f/avatar/avatar-id.webp',
   }),
+  bucket: z.string().openapi({ example: 'fairplay-user-media' }),
   mimeType: z.literal('image/webp').openapi({ example: 'image/webp' }),
   sizeBytes: z.number().int().positive().openapi({ example: 18342 }),
   width: z.number().int().positive().openapi({ example: 512 }),

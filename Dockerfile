@@ -29,6 +29,12 @@ RUN bun install --frozen-lockfile --production
 FROM oven/bun:1.3.10-debian AS runtime
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && ffmpeg -version \
+    && ffprobe -version
+
 ENV NODE_ENV=production
 ENV PORT=3000
 

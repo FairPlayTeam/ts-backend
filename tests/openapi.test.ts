@@ -497,7 +497,10 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/videos/me']?.get?.responses?.[401]).toBeDefined();
     expect(
       document.paths['/videos/{videoId}/upload/multipart/init']?.post?.requestBody,
-    ).toBeUndefined();
+    ).toBeDefined();
+    expect(
+      document.paths['/videos/{videoId}/upload/multipart/init']?.post?.requestBody?.content,
+    ).toHaveProperty('application/json');
     expect(document.paths['/videos/{videoId}/upload/multipart/init']?.post?.security).toEqual([
       { bearerAuth: [] },
     ]);

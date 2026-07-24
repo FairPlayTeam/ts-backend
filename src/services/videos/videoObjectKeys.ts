@@ -1,22 +1,31 @@
-export const VIDEO_OBJECT_KEY_QUALITIES = ['240p', '480p', '720p', '1080p'] as const;
+type VideoObjectKeyQuality = '480p' | '720p' | '1080p';
 
-export type VideoObjectKeyQuality = (typeof VIDEO_OBJECT_KEY_QUALITIES)[number];
+export type VideoArtifactProfile = {
+  quality: VideoObjectKeyQuality;
+  width: number;
+  height: number;
+  bandwidth: number;
+};
 
-const VIDEO_ORIGINAL_FILENAME = 'original.mp4';
-const HLS_MASTER_FILENAME = 'master.m3u8';
-const HLS_VARIANT_PLAYLIST_FILENAME = 'index.m3u8';
-const THUMBNAIL_PREFIX = 'thumbnails';
-const VIDEO_OBJECT_KEY_QUALITY_SET: ReadonlySet<string> = new Set(VIDEO_OBJECT_KEY_QUALITIES);
-
-export const isVideoObjectKeyQuality = (quality: string): quality is VideoObjectKeyQuality =>
-  VIDEO_OBJECT_KEY_QUALITY_SET.has(quality);
-
-const assertVideoObjectKeyQuality: (quality: string) => asserts quality is VideoObjectKeyQuality = (
-  quality,
-) => {
-  if (!isVideoObjectKeyQuality(quality)) {
-    throw new Error('quality must be a supported video object-key quality');
-  }
+export type VideoArtifactManifest = {
+  hlsPrefix: string;
+  master: {
+    objectKey: string;
+    relativePath: string;
+  };
+  thumbnailPrefix: string;
+  thumbnail: {
+    objectKey: string;
+    relativePath: string;
+  };
+  renditions: Array<
+    VideoArtifactProfile & {
+      playlistObjectKey: string;
+      playlistRelativePath: string;
+      segmentPrefix: string;
+      segmentRelativeDirectory: string;
+    }
+  >;
 };
 
 const assertObjectKeySegment = (name: string, value: string): void => {
@@ -36,34 +45,48 @@ const videoBasePrefix = (userId: string, videoId: string): string => {
   return `${userId}/${videoId}`;
 };
 
-export const videoOriginalKey = (userId: string, videoId: string): string =>
-  `${videoBasePrefix(userId, videoId)}/${VIDEO_ORIGINAL_FILENAME}`;
-
-export const hlsMasterKey = (userId: string, videoId: string): string =>
-  `${videoBasePrefix(userId, videoId)}/${HLS_MASTER_FILENAME}`;
-
-export const hlsVariantPlaylistKey = (
+export const videoOriginalKey = (
   userId: string,
   videoId: string,
-  quality: VideoObjectKeyQuality,
+  uploadSessionId: string,
 ): string => {
-  assertVideoObjectKeyQuality(quality);
+  assertObjectKeySegment('uploadSessionId', uploadSessionId);
 
-  return `${videoBasePrefix(userId, videoId)}/${quality}/${HLS_VARIANT_PLAYLIST_FILENAME}`;
+  return `${videoBasePrefix(userId, videoId)}/sources/${uploadSessionId}/original.mp4`;
 };
 
-export const hlsSegmentPrefix = (
+export const buildVideoArtifactManifest = (
   userId: string,
   videoId: string,
-  quality: VideoObjectKeyQuality,
-): string => {
-  assertVideoObjectKeyQuality(quality);
+  generationId: string,
+  profiles: readonly VideoArtifactProfile[],
+): VideoArtifactManifest => {
+  assertObjectKeySegment('generationId', generationId);
+  const rootPrefix = `${videoBasePrefix(userId, videoId)}/generations/${generationId}/`;
+  const hlsPrefix = `${rootPrefix}hls/`;
+  const thumbnailPrefix = `${rootPrefix}thumbnail/`;
 
-  return `${videoBasePrefix(userId, videoId)}/${quality}/`;
-};
+  return {
+    hlsPrefix,
+    master: {
+      objectKey: `${hlsPrefix}master.m3u8`,
+      relativePath: 'hls/master.m3u8',
+    },
+    thumbnailPrefix,
+    thumbnail: {
+      objectKey: `${thumbnailPrefix}poster.webp`,
+      relativePath: 'thumbnail/poster.webp',
+    },
+    renditions: profiles.map((profile) => {
+      const renditionPrefix = `${hlsPrefix}${profile.quality}/`;
 
-export const videoThumbnailKey = (userId: string, videoId: string, filename: string): string => {
-  assertObjectKeySegment('filename', filename);
-
-  return `${THUMBNAIL_PREFIX}/${videoBasePrefix(userId, videoId)}/${filename}`;
+      return {
+        ...profile,
+        playlistObjectKey: `${renditionPrefix}index.m3u8`,
+        playlistRelativePath: `hls/${profile.quality}/index.m3u8`,
+        segmentPrefix: `${renditionPrefix}segments/`,
+        segmentRelativeDirectory: `hls/${profile.quality}/segments`,
+      };
+    }),
+  };
 };

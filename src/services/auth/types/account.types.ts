@@ -27,6 +27,7 @@ export type ExportUserDataResult = {
     id: string;
     kind: UserMediaKind;
     objectKey: string;
+    bucket: string;
     mimeType: string;
     sizeBytes: number;
     width: number;
@@ -67,6 +68,7 @@ export type DeleteAccountInput = {
 export type DeleteAccountResult = {
   message: string;
   mediaCleanupQueued: number;
+  externalCleanupQueued?: number;
 };
 
 export type AuthAccountPort = {

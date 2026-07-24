@@ -128,8 +128,21 @@ export const completeVideoMultipartUploadBodySchema = z
   .strict()
   .openapi('CompleteVideoMultipartUploadRequest');
 
+export const initVideoMultipartUploadBodySchema = z
+  .object({
+    sizeBytes: z
+      .number()
+      .int()
+      .positive()
+      .max(Number.MAX_SAFE_INTEGER)
+      .openapi({ example: 1_073_741_824 }),
+  })
+  .strict()
+  .openapi('InitVideoMultipartUploadRequest');
+
 export const initVideoMultipartUploadSchema = z.object({
   params: videoParamsSchema,
+  body: initVideoMultipartUploadBodySchema,
 });
 
 export const signVideoMultipartUploadPartsSchema = z.object({
@@ -199,19 +212,34 @@ export const myVideosResponseSchema = z
 const videoUploadSessionResponseBodySchema = z.object({
   id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
   videoId: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
-  status: z.enum(['initiated', 'uploading', 'completed', 'aborted', 'expired']).openapi({
-    example: 'initiated',
-  }),
+  status: z
+    .enum([
+      'initializing',
+      'initiated',
+      'uploading',
+      'completing',
+      'completed',
+      'aborting',
+      'aborted',
+      'expiring',
+      'expired',
+    ])
+    .openapi({
+      example: 'initiated',
+    }),
   bucket: z.string().openapi({ example: 'videos' }),
   objectKey: z.string().openapi({
-    example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f/video-uuid/original.mp4',
+    example:
+      '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f/video-uuid/sources/upload-session-uuid/original.mp4',
   }),
-  uploadId: z.string().openapi({ example: 'multipart-upload-id' }),
+  uploadId: z.string().nullable().openapi({ example: 'multipart-upload-id' }),
   partSizeBytes: z.number().int().positive().openapi({ example: 67_108_864 }),
+  expectedSizeBytes: z.number().int().positive().openapi({ example: 1_073_741_824 }),
   partCount: z.number().int().nonnegative().nullable().openapi({ example: null }),
   expiresAt: z.string().datetime().openapi({ example: '2026-01-02T00:00:00.000Z' }),
   completedAt: z.string().datetime().nullable().openapi({ example: null }),
   abortedAt: z.string().datetime().nullable().openapi({ example: null }),
+  expiredAt: z.string().datetime().nullable().openapi({ example: null }),
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
   updatedAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
   parts: z.array(videoUploadPartResponseSchema),
@@ -233,7 +261,7 @@ export const signedVideoUploadPartsResponseSchema = z
         partNumber: z.number().int().positive().openapi({ example: 1 }),
         url: z.string().url().openapi({
           example:
-            'http://localhost:9000/videos/user-id/video-id/original.mp4?partNumber=1&uploadId=...',
+            'http://localhost:9000/videos/user-id/video-id/sources/session-id/original.mp4?partNumber=1&uploadId=...',
         }),
       }),
     ),
@@ -249,6 +277,7 @@ export const listMyVideosSchema = z.object({
 });
 
 export type VideoParams = z.infer<typeof initVideoMultipartUploadSchema>['params'];
+export type InitVideoMultipartUploadBody = z.infer<typeof initVideoMultipartUploadSchema>['body'];
 export type VideoMultipartUploadSessionParams = z.infer<
   typeof getVideoMultipartUploadSessionSchema
 >['params'];

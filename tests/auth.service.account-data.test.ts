@@ -5,7 +5,7 @@ import {
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
 import { AuthenticatedUserNotFoundError } from '../src/services/auth.errors.js';
-import { createTestDeps, createUserMediaDeletionJobMock, fixedNow } from './support/authService.js';
+import { createTestDeps, fixedNow } from './support/authService.js';
 import type { AuthDeps } from './support/authService.js';
 
 describe('auth service account data', () => {
@@ -13,153 +13,39 @@ describe('auth service account data', () => {
     const { deps, calls } = createTestDeps();
     const service = createAuthService(deps);
 
-    await expect(
-      service.exportUserData({
-        userId: 'user-id',
-        currentSessionId: 'session-id',
-        currentPassword: 'Password1!',
-      }),
-    ).resolves.toEqual({
-      exportedAt: fixedNow,
-      user: {
-        id: 'user-id',
-        email: 'user@example.com',
-        username: 'fairplay_user',
-        displayName: 'Fairplay User',
-        bio: null,
-        role: 'user',
-        isVerified: true,
-        isBanned: false,
-        bannedAt: null,
-        createdAt: fixedNow,
-        updatedAt: fixedNow,
-        lastLogin: fixedNow,
-      },
-      mediaAssets: [
-        {
-          id: '11111111-1111-4111-8111-111111111111',
-          kind: 'avatar',
-          objectKey: 'users/user-id/avatar/current-avatar.webp',
-          mimeType: 'image/webp',
-          sizeBytes: 1234,
-          width: 512,
-          height: 512,
-          createdAt: fixedNow,
-          updatedAt: fixedNow,
-        },
-        {
-          id: '22222222-2222-4222-8222-222222222222',
-          kind: 'banner',
-          objectKey: 'users/user-id/banner/current-banner.webp',
-          mimeType: 'image/webp',
-          sizeBytes: 2345,
-          width: 1500,
-          height: 500,
-          createdAt: fixedNow,
-          updatedAt: fixedNow,
-        },
-      ],
-      sessions: [
-        {
-          id: 'session-id',
-          sessionKeySuffix: 'in-token',
-          ipAddress: '127.0.0.1',
-          userAgent: 'bun-test',
-          deviceInfo: 'bun-test',
-          isActive: true,
-          isCurrent: true,
-          createdAt: fixedNow,
-          updatedAt: fixedNow,
-          lastUsedAt: fixedNow,
-          expiresAt: new Date('2026-01-31T00:00:00.000Z'),
-        },
-        {
-          id: 'other-session-id',
-          sessionKeySuffix: null,
-          ipAddress: null,
-          userAgent: null,
-          deviceInfo: null,
-          isActive: false,
-          isCurrent: false,
-          createdAt: fixedNow,
-          updatedAt: fixedNow,
-          lastUsedAt: new Date('2026-01-01T00:00:01.000Z'),
-          expiresAt: new Date('2026-01-31T00:00:00.000Z'),
-        },
-      ],
-      emailVerificationToken: {
-        id: 'verification-token-id',
-        createdAt: fixedNow,
-        expiresAt: new Date('2026-01-08T00:00:00.000Z'),
-      },
-      passwordResetToken: {
-        id: 'password-reset-token-id',
-        createdAt: fixedNow,
-        expiresAt: new Date('2026-01-02T00:00:00.000Z'),
-      },
+    const result = await service.exportUserData({
+      userId: 'user-id',
+      currentSessionId: 'session-id',
+      currentPassword: 'Password1!',
     });
+
+    expect(result.exportedAt).toEqual(fixedNow);
+    expect(result.mediaAssets).toEqual([
+      expect.objectContaining({
+        kind: 'avatar',
+        bucket: 'fairplay-user-media',
+      }),
+      expect.objectContaining({
+        kind: 'banner',
+        bucket: 'fairplay-user-media',
+      }),
+    ]);
+    expect(result.sessions.map(({ id, isCurrent }) => ({ id, isCurrent }))).toEqual([
+      { id: 'session-id', isCurrent: true },
+      { id: 'other-session-id', isCurrent: false },
+    ]);
 
     expect(calls.userFindUnique).toEqual({
       where: { id: 'user-id' },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        displayName: true,
-        bio: true,
-        role: true,
-        isVerified: true,
-        isBanned: true,
-        bannedAt: true,
-        createdAt: true,
-        updatedAt: true,
-        lastLogin: true,
+      select: expect.objectContaining({
         mediaAssets: {
-          select: {
-            id: true,
-            kind: true,
+          select: expect.objectContaining({
             objectKey: true,
-            mimeType: true,
-            sizeBytes: true,
-            width: true,
-            height: true,
-            createdAt: true,
-            updatedAt: true,
-          },
+            bucket: true,
+          }),
           orderBy: [{ kind: 'asc' }, { id: 'asc' }],
         },
-        sessions: {
-          select: {
-            id: true,
-            sessionKeySuffix: true,
-            ipAddress: true,
-            userAgent: true,
-            deviceInfo: true,
-            isActive: true,
-            createdAt: true,
-            updatedAt: true,
-            lastUsedAt: true,
-            expiresAt: true,
-          },
-          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        },
-        emailVerificationTokens: {
-          select: {
-            id: true,
-            createdAt: true,
-            expiresAt: true,
-          },
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          take: 1,
-        },
-        passwordResetToken: {
-          select: {
-            id: true,
-            createdAt: true,
-            expiresAt: true,
-          },
-        },
-      },
+      }),
     });
     expect(calls.comparedPassword).toEqual({
       password: 'Password1!',
@@ -202,7 +88,7 @@ describe('auth service account data', () => {
     ).rejects.toBeInstanceOf(AuthenticatedUserNotFoundError);
   });
 
-  test('deletes user personal data for account deletion', async () => {
+  test('deletes only the user row and relies on database cascades for account data', async () => {
     const { deps, calls } = createTestDeps();
     const service = createAuthService(deps);
 
@@ -214,167 +100,39 @@ describe('auth service account data', () => {
     ).resolves.toEqual({
       message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
       mediaCleanupQueued: 0,
-    });
-    expect(calls.comparedPassword).toEqual({
-      password: 'Password1!',
-      hash: 'hashed-password',
+      externalCleanupQueued: 0,
     });
 
-    expect(calls.sessionDeleteMany).toEqual({
-      where: { userId: 'user-id' },
-    });
-    expect(calls.tokenDeleteMany).toEqual({
-      where: { userId: 'user-id' },
-    });
-    expect(calls.passwordResetTokenDeleteMany).toEqual({
-      where: { userId: 'user-id' },
-    });
     expect(calls.userDeleteMany).toEqual({
       where: { id: 'user-id' },
     });
+    expect(calls.sessionDeleteMany).toBeUndefined();
+    expect(calls.tokenDeleteMany).toBeUndefined();
+    expect(calls.passwordResetTokenDeleteMany).toBeUndefined();
   });
 
-  test('deletes stored media objects after deleting an account', async () => {
-    const events: string[] = [];
-    const { deps, calls } = createTestDeps({
-      prisma: {
-        $transaction: async (callback: (transaction: unknown) => Promise<unknown>) => {
-          events.push('transaction');
-
-          return callback({
-            userMediaAsset: {
-              findMany: async (args: unknown) => {
-                calls.userMediaAssetFindMany = args;
-
-                return [
-                  { objectKey: 'users/user-id/avatar/current-avatar.webp' },
-                  { objectKey: 'users/user-id/banner/current-banner.webp' },
-                ];
-              },
-            },
-            session: {
-              deleteMany: async (args: unknown) => {
-                calls.sessionDeleteMany = args;
-              },
-            },
-            emailVerificationToken: {
-              deleteMany: async (args: unknown) => {
-                calls.tokenDeleteMany = args;
-              },
-            },
-            passwordResetToken: {
-              deleteMany: async (args: unknown) => {
-                calls.passwordResetTokenDeleteMany = args;
-              },
-            },
-            user: {
-              deleteMany: async (args: unknown) => {
-                calls.userDeleteMany = args;
-              },
-            },
-            userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
-          });
-        },
-      } as unknown as AuthDeps['prisma'],
-      objectStorage: {
-        putObject: async () => undefined,
-        deleteObject: async (objectKey: string) => {
-          events.push('deleteObject');
-          calls.deleteObjects = [
-            ...((calls.deleteObjects as string[] | undefined) ?? []),
-            objectKey,
-          ];
-        },
-        getSignedUrl: async (objectKey: string) =>
-          `http://localhost:9000/fairplay-user-media/${objectKey}`,
-      },
-    });
-    const service = createAuthService(deps);
-
-    await expect(
-      service.deleteAccount({
-        userId: 'user-id',
-        currentPassword: 'Password1!',
-      }),
-    ).resolves.toEqual({
-      message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
-      mediaCleanupQueued: 0,
-    });
-
-    expect(calls.userMediaAssetFindMany).toEqual({
-      where: { userId: 'user-id' },
-      select: {
-        objectKey: true,
-      },
-    });
-    expect(calls.userMediaDeletionJobCreateMany).toEqual({
-      data: [
-        { objectKey: 'users/user-id/avatar/current-avatar.webp' },
-        { objectKey: 'users/user-id/banner/current-banner.webp' },
-      ],
-      skipDuplicates: true,
-    });
-    expect(calls.deleteObjects).toEqual([
-      'users/user-id/avatar/current-avatar.webp',
-      'users/user-id/banner/current-banner.webp',
-    ]);
-    expect(events).toEqual(['transaction', 'deleteObject', 'deleteObject']);
-    expect(calls.userDeleteMany).toEqual({
-      where: { id: 'user-id' },
-    });
-  });
-
-  test('keeps account deletion successful when media object cleanup fails', async () => {
-    const cleanupError = new Error('object storage unavailable');
-    const objectKeys = [
-      'users/user-id/avatar/current-avatar.webp',
-      'users/user-id/banner/current-banner.webp',
+  test('schedules every external resource before deleting the account', async () => {
+    const targets = [
+      { id: 'source-target', role: 'source' as const },
+      { id: 'media-target', role: 'user_media' as const },
     ];
+    const targetIds = targets.map(({ id }) => id);
+    const reconciledTargetIds: string[] = [];
     const { deps, calls } = createTestDeps({
-      prisma: {
-        $transaction: async (callback: (transaction: unknown) => Promise<unknown>) =>
-          callback({
-            userMediaAsset: {
-              findMany: async () => objectKeys.map((objectKey) => ({ objectKey })),
-            },
-            session: {
-              deleteMany: async (args: unknown) => {
-                calls.sessionDeleteMany = args;
-              },
-            },
-            emailVerificationToken: {
-              deleteMany: async (args: unknown) => {
-                calls.tokenDeleteMany = args;
-              },
-            },
-            passwordResetToken: {
-              deleteMany: async (args: unknown) => {
-                calls.passwordResetTokenDeleteMany = args;
-              },
-            },
-            user: {
-              deleteMany: async (args: unknown) => {
-                calls.userDeleteMany = args;
-              },
-            },
-            userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
-          }),
-      } as unknown as AuthDeps['prisma'],
-      objectStorage: {
-        putObject: async (input: unknown) => {
-          calls.putObject = input;
+      externalResources: {
+        reconcileDue: async () => ({
+          claimed: 0,
+          confirmed: 0,
+          redirectedAbsent: 0,
+          failed: 0,
+        }),
+        reconcileTarget: async ({ targetId }: { targetId: string }) => {
+          reconciledTargetIds.push(targetId);
+          return 'skipped';
         },
-        deleteObject: async (objectKey: string) => {
-          calls.deleteObjects = [
-            ...((calls.deleteObjects as string[] | undefined) ?? []),
-            objectKey,
-          ];
-          throw cleanupError;
-        },
-        getSignedUrl: async (objectKey: string) =>
-          `http://localhost:9000/fairplay-user-media/${objectKey}`,
       },
     });
+    calls.externalResourceTargets = targets;
     const service = createAuthService(deps);
 
     await expect(
@@ -384,22 +142,71 @@ describe('auth service account data', () => {
       }),
     ).resolves.toEqual({
       message: DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
-      mediaCleanupQueued: objectKeys.length,
+      mediaCleanupQueued: 1,
+      externalCleanupQueued: 2,
     });
 
-    expect(calls.deleteObjects).toEqual(objectKeys);
-    expect(calls.userMediaDeletionJobCreateMany).toEqual({
-      data: objectKeys.map((objectKey) => ({ objectKey })),
-      skipDuplicates: true,
+    expect(calls.externalResourceTargetFindMany).toEqual({
+      where: {
+        userId: 'user-id',
+        state: { not: 'confirmed_absent' },
+      },
+      select: { id: true, role: true },
     });
-    expect(calls.userMediaDeletionJobDeleteMany).toBeUndefined();
-    expect(calls.userDeleteMany).toEqual({
-      where: { id: 'user-id' },
+    expect(calls.externalResourceTargetUpdates).toHaveLength(2);
+    expect(calls.externalResourceTargetUpdates).toEqual(
+      expect.arrayContaining(
+        targetIds.map((id) =>
+          expect.objectContaining({
+            where: { id },
+            data: expect.objectContaining({
+              goal: 'absent',
+              state: 'quiescing',
+              quiescenceNotBefore: new Date('2026-01-01T01:00:00.000Z'),
+            }),
+          }),
+        ),
+      ),
+    );
+    expect(calls.userDeleteMany).toEqual({ where: { id: 'user-id' } });
+    expect(reconciledTargetIds).toEqual(targetIds);
+  });
+
+  test('keeps account deletion successful when immediate reconciliation fails', async () => {
+    const cleanupError = new Error('object storage unavailable');
+    const { deps, calls } = createTestDeps({
+      externalResources: {
+        reconcileDue: async () => ({
+          claimed: 0,
+          confirmed: 0,
+          redirectedAbsent: 0,
+          failed: 0,
+        }),
+        reconcileTarget: async () => {
+          throw cleanupError;
+        },
+      },
+    });
+    calls.externalResourceTargets = [{ id: 'media-target', role: 'user_media' }];
+    const service = createAuthService(deps);
+
+    await expect(
+      service.deleteAccount({
+        userId: 'user-id',
+        currentPassword: 'Password1!',
+      }),
+    ).resolves.toEqual({
+      message: DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
+      mediaCleanupQueued: 1,
+      externalCleanupQueued: 1,
     });
     expect(calls.warning).toEqual({
-      data: { err: cleanupError, userId: 'user-id', objectKey: objectKeys[1] },
-      message:
-        'Stored user media object cleanup failed after account deletion; cleanup remains queued',
+      data: {
+        err: cleanupError,
+        targetId: 'media-target',
+        userId: 'user-id',
+      },
+      message: 'Immediate external resource reconciliation failed after account deletion',
     });
   });
 });

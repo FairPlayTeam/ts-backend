@@ -1,6 +1,5 @@
 import type { AuthDeps, AuthServiceTestCalls } from './context.js';
 import { fixedNow } from './context.js';
-import { createUserMediaDeletionJobMock } from './userMedia.js';
 
 const createUserMediaAssetStore = (calls: AuthServiceTestCalls) => ({
   deleteMany: async (args: unknown) => {
@@ -16,13 +15,16 @@ const createUserMediaAssetStore = (calls: AuthServiceTestCalls) => ({
   findUnique: async (args: unknown) => {
     calls.userMediaAssetFindUnique = args;
 
-    return null;
+    return calls.previousUserMediaTargetId
+      ? { externalResourceTargetId: calls.previousUserMediaTargetId }
+      : null;
   },
   upsert: async (args: unknown) => {
     calls.userMediaAssetUpsert = args;
     const upsertArgs = args as {
       update?: {
         objectKey?: string;
+        bucket?: string;
         mimeType?: string;
         sizeBytes?: number;
         width?: number;
@@ -30,6 +32,7 @@ const createUserMediaAssetStore = (calls: AuthServiceTestCalls) => ({
       };
       create?: {
         objectKey?: string;
+        bucket?: string;
         mimeType?: string;
         sizeBytes?: number;
         width?: number;
@@ -40,6 +43,7 @@ const createUserMediaAssetStore = (calls: AuthServiceTestCalls) => ({
 
     return {
       objectKey: data?.objectKey ?? 'users/user-id/avatar/test-avatar.webp',
+      bucket: data?.bucket ?? 'fairplay-user-media',
       mimeType: data?.mimeType ?? 'image/webp',
       sizeBytes: data?.sizeBytes ?? 6,
       width: data?.width ?? 512,
@@ -50,6 +54,7 @@ const createUserMediaAssetStore = (calls: AuthServiceTestCalls) => ({
 });
 
 const createAuthTransaction = (calls: AuthServiceTestCalls) => ({
+  $queryRaw: async () => [],
   user: {
     findUnique: async (args: unknown) => {
       calls.userFindUnique = args;
@@ -94,7 +99,30 @@ const createAuthTransaction = (calls: AuthServiceTestCalls) => ({
     },
   },
   userMediaAsset: createUserMediaAssetStore(calls),
-  userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
+  externalResourceTarget: {
+    create: async (args: unknown) => {
+      calls.externalResourceTargetCreate = args;
+      return { id: 'target-id' };
+    },
+    findMany: async (args: unknown) => {
+      calls.externalResourceTargetFindMany = args;
+      return calls.externalResourceTargets;
+    },
+    findUnique: async () => ({
+      state: 'confirmed_present',
+      quiescenceNotBefore: null,
+      nextAttemptAt: fixedNow,
+    }),
+    update: async (args: unknown) => {
+      calls.externalResourceTargetUpdate = args;
+      calls.externalResourceTargetUpdates.push(args);
+      return { id: 'target-id' };
+    },
+    updateMany: async (args: unknown) => {
+      calls.externalResourceTargetUpdateMany = args;
+      return { count: 1 };
+    },
+  },
   emailVerificationToken: {
     create: async (args: unknown) => {
       calls.tokenCreate = args;
@@ -153,6 +181,7 @@ const createExportableUser = () => ({
       id: '11111111-1111-4111-8111-111111111111',
       kind: 'avatar',
       objectKey: 'users/user-id/avatar/current-avatar.webp',
+      bucket: 'fairplay-user-media',
       mimeType: 'image/webp',
       sizeBytes: 1234,
       width: 512,
@@ -164,6 +193,7 @@ const createExportableUser = () => ({
       id: '22222222-2222-4222-8222-222222222222',
       kind: 'banner',
       objectKey: 'users/user-id/banner/current-banner.webp',
+      bucket: 'fairplay-user-media',
       mimeType: 'image/webp',
       sizeBytes: 2345,
       width: 1500,
@@ -279,7 +309,22 @@ export const createBaseAuthPrisma = (calls: AuthServiceTestCalls): AuthDeps['pri
       },
     },
     userMediaAsset: createUserMediaAssetStore(calls),
-    userMediaDeletionJob: createUserMediaDeletionJobMock(calls),
+    externalResourceTarget: {
+      findUnique: async () => ({
+        state: 'confirmed_present',
+        quiescenceNotBefore: null,
+        nextAttemptAt: fixedNow,
+      }),
+      update: async (args: unknown) => {
+        calls.externalResourceTargetUpdate = args;
+        calls.externalResourceTargetUpdates.push(args);
+        return { id: 'target-id' };
+      },
+      updateMany: async (args: unknown) => {
+        calls.externalResourceTargetUpdateMany = args;
+        return { count: 1 };
+      },
+    },
     emailVerificationToken: {
       findUnique: async (args: unknown) => {
         calls.tokenFindUnique = args;

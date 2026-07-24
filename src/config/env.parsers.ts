@@ -8,9 +8,13 @@ import {
   DEFAULT_PROFILE_MEDIA_MAX_UPLOAD_BYTES,
   DEFAULT_SMTP_TIMEOUT_MS,
   DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET,
+  DEFAULT_VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS,
+  DEFAULT_VIDEO_TRANSCODE_THREADS_PER_JOB,
+  DEFAULT_VIDEO_UPLOAD_MAX_BYTES,
   DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
   DEFAULT_VIDEO_UPLOAD_PART_SIZE_BYTES,
   DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
+  DEFAULT_VIDEO_USER_STORAGE_QUOTA_BYTES,
   MAX_EXTERNAL_OPERATION_TIMEOUT_MS,
   MINUTE_MS,
   SESSION_CLEANUP_INACTIVE_RETENTION_DAYS,
@@ -46,7 +50,14 @@ export type VideoUploadConfig = {
   objectStorageBucket: string;
   partSizeBytes: number;
   maxPartCount: number;
+  maxUploadBytes: number;
+  userStorageQuotaBytes: number;
   sessionTtlSeconds: number;
+};
+
+type VideoTranscodeConfig = {
+  maxConcurrentJobs: number;
+  threadsPerJob: number;
 };
 
 export class ServerConfigurationError extends Error {
@@ -238,7 +249,11 @@ const parsePositiveInteger = (
 
   const parsed = Number(value);
 
-  if (!Number.isInteger(parsed) || parsed <= 0 || (max !== undefined && parsed > max)) {
+  if (
+    !/^[1-9]\d*$/u.test(value) ||
+    !Number.isSafeInteger(parsed) ||
+    (max !== undefined && parsed > max)
+  ) {
     const range = max === undefined ? 'positive' : `between 1 and ${max}`;
 
     throw new ServerConfigurationError(
@@ -429,7 +444,8 @@ const parseVideoUploadPartSizeBytes = (rawValue: string | undefined): number => 
   const parsed = Number(value);
 
   if (
-    !Number.isInteger(parsed) ||
+    !/^[1-9]\d*$/u.test(value) ||
+    !Number.isSafeInteger(parsed) ||
     parsed < MIN_VIDEO_UPLOAD_PART_SIZE_BYTES ||
     parsed > MAX_VIDEO_UPLOAD_PART_SIZE_BYTES
   ) {
@@ -456,7 +472,14 @@ type RawVideoUploadConfig = {
   objectStorageBucket: string | undefined;
   partSizeBytes: string | undefined;
   maxPartCount: string | undefined;
+  maxUploadBytes: string | undefined;
+  userStorageQuotaBytes: string | undefined;
   sessionTtlSeconds: string | undefined;
+};
+
+type RawVideoTranscodeConfig = {
+  maxConcurrentJobs: string | undefined;
+  threadsPerJob: string | undefined;
 };
 
 const objectStorageRequiredEnvNames = {
@@ -509,25 +532,91 @@ export const parseOptionalObjectStorageConfig = (
   };
 };
 
-export const parseVideoUploadConfig = (rawConfig: RawVideoUploadConfig): VideoUploadConfig => ({
-  objectStorageBucket: parseObjectStorageBucket(
-    rawConfig.objectStorageBucket,
-    'VIDEO_OBJECT_STORAGE_BUCKET',
-    DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET,
+export const parseVideoUploadConfig = (rawConfig: RawVideoUploadConfig): VideoUploadConfig => {
+  const config = {
+    objectStorageBucket: parseObjectStorageBucket(
+      rawConfig.objectStorageBucket,
+      'VIDEO_OBJECT_STORAGE_BUCKET',
+      DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET,
+    ),
+    partSizeBytes: parseVideoUploadPartSizeBytes(rawConfig.partSizeBytes),
+    maxPartCount: parsePositiveInteger(
+      rawConfig.maxPartCount,
+      DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
+      'VIDEO_UPLOAD_MAX_PARTS',
+      'parts',
+      MAX_VIDEO_UPLOAD_PARTS,
+    ),
+    maxUploadBytes: parsePositiveInteger(
+      rawConfig.maxUploadBytes,
+      DEFAULT_VIDEO_UPLOAD_MAX_BYTES,
+      'VIDEO_UPLOAD_MAX_BYTES',
+      'bytes',
+      Number.MAX_SAFE_INTEGER,
+    ),
+    userStorageQuotaBytes: parsePositiveInteger(
+      rawConfig.userStorageQuotaBytes,
+      DEFAULT_VIDEO_USER_STORAGE_QUOTA_BYTES,
+      'VIDEO_USER_STORAGE_QUOTA_BYTES',
+      'bytes',
+      Number.MAX_SAFE_INTEGER,
+    ),
+    sessionTtlSeconds: parsePositiveInteger(
+      rawConfig.sessionTtlSeconds,
+      DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
+      'VIDEO_UPLOAD_SESSION_TTL_SECONDS',
+      'seconds',
+    ),
+  };
+
+  if (config.maxUploadBytes > config.partSizeBytes * config.maxPartCount) {
+    throw new ServerConfigurationError(
+      'VIDEO_UPLOAD_MAX_BYTES exceeds the configured multipart part size and part count capacity',
+    );
+  }
+
+  if (config.userStorageQuotaBytes < config.maxUploadBytes) {
+    throw new ServerConfigurationError(
+      'VIDEO_USER_STORAGE_QUOTA_BYTES must be greater than or equal to VIDEO_UPLOAD_MAX_BYTES',
+    );
+  }
+
+  return config;
+};
+
+const parseNonNegativeInteger = (
+  rawValue: string | undefined,
+  fallback: number,
+  envName: string,
+): number => {
+  const value = rawValue?.trim();
+
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+
+  if (!/^(0|[1-9]\d*)$/u.test(value) || !Number.isSafeInteger(parsed)) {
+    throw new ServerConfigurationError(`${envName} must be a non-negative integer, got: ${value}`);
+  }
+
+  return parsed;
+};
+
+export const parseVideoTranscodeConfig = (
+  rawConfig: RawVideoTranscodeConfig,
+): VideoTranscodeConfig => ({
+  maxConcurrentJobs: parseNonNegativeInteger(
+    rawConfig.maxConcurrentJobs,
+    DEFAULT_VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS,
+    'VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS',
   ),
-  partSizeBytes: parseVideoUploadPartSizeBytes(rawConfig.partSizeBytes),
-  maxPartCount: parsePositiveInteger(
-    rawConfig.maxPartCount,
-    DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
-    'VIDEO_UPLOAD_MAX_PARTS',
-    'parts',
-    MAX_VIDEO_UPLOAD_PARTS,
-  ),
-  sessionTtlSeconds: parsePositiveInteger(
-    rawConfig.sessionTtlSeconds,
-    DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
-    'VIDEO_UPLOAD_SESSION_TTL_SECONDS',
-    'seconds',
+  threadsPerJob: parsePositiveInteger(
+    rawConfig.threadsPerJob,
+    DEFAULT_VIDEO_TRANSCODE_THREADS_PER_JOB,
+    'VIDEO_TRANSCODE_THREADS_PER_JOB',
+    'threads',
   ),
 });
 

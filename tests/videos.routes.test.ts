@@ -293,7 +293,9 @@ describe('videos routes multipart uploads', () => {
       method: 'POST',
       headers: {
         Authorization: 'Bearer route-session-key',
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ sizeBytes: 67_108_864 }),
     });
 
     expect(response.status).toBe(201);
@@ -304,6 +306,7 @@ describe('videos routes multipart uploads', () => {
     expect(observedInitRequest).toEqual({
       userId: authenticatedUserId,
       videoId,
+      sizeBytes: 67_108_864,
     });
     expect(await response.json()).toMatchObject({
       uploadSession: {
@@ -329,6 +332,26 @@ describe('videos routes multipart uploads', () => {
     expect(await response.json()).toEqual({
       error: 'Unauthorized',
       message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+  });
+
+  test('rejects invalid declared upload sizes before calling the service', async () => {
+    receivedInitRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/videos/${videoId}/upload/multipart/init`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer route-session-key',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sizeBytes: 0 }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(receivedInitRequest).toBeUndefined();
+    expect(await response.json()).toMatchObject({
+      error: 'ValidationError',
+      message: REQUEST_VALIDATION_FAILED_MESSAGE,
     });
   });
 
@@ -364,7 +387,7 @@ describe('videos routes multipart uploads', () => {
       parts: [
         {
           partNumber: 1,
-          url: 'http://localhost:9000/videos/user-id/video-id/original.mp4?partNumber=1&uploadId=test-upload-id',
+          url: `http://localhost:9000/videos/user-id/video-id/sources/${uploadSessionId}/original.mp4?partNumber=1&uploadId=test-upload-id`,
         },
       ],
     });
@@ -440,7 +463,9 @@ describe('videos routes multipart uploads', () => {
         method: 'POST',
         headers: {
           Authorization: 'Bearer route-session-key',
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ sizeBytes: 67_108_864 }),
       },
     );
     const getResponse = await fetch(
@@ -477,7 +502,9 @@ describe('videos routes multipart uploads', () => {
         method: 'POST',
         headers: {
           Authorization: 'Bearer route-session-key',
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ sizeBytes: 67_108_864 }),
       },
     );
 

@@ -36,10 +36,12 @@ export const toVideoUploadSessionResponse = ({ uploadSession }: VideoUploadSessi
     objectKey: uploadSession.objectKey,
     uploadId: uploadSession.uploadId,
     partSizeBytes: uploadSession.partSizeBytes,
+    expectedSizeBytes: uploadSession.expectedSizeBytes,
     partCount: uploadSession.partCount,
     expiresAt: toIsoString(uploadSession.expiresAt),
     completedAt: toNullableIsoString(uploadSession.completedAt),
     abortedAt: toNullableIsoString(uploadSession.abortedAt),
+    expiredAt: toNullableIsoString(uploadSession.expiredAt),
     createdAt: toIsoString(uploadSession.createdAt),
     updatedAt: toIsoString(uploadSession.updatedAt),
     parts: uploadSession.parts.map((part) => ({

@@ -6,14 +6,20 @@ import { adminService } from './admin.instance.js';
 import { authService } from './auth.instance.js';
 import { profilesService } from './profiles.instance.js';
 import { videosService } from './videos.instance.js';
-import { objectStorage } from './objectStorage.instance.js';
+import { objectStorage, videoObjectStorage } from './objectStorage.instance.js';
 import { logger } from './lib/logger.js';
+import type { ObjectStorage } from './lib/objectStorage.js';
 import { prisma } from './lib/prisma.js';
 import { closeRedisClient, createRedisClient, connectRedisClient } from './lib/redis.js';
-import { createRedisAuthCleanupLock, createAuthCleanupJob } from './maintenance/authCleanup.js';
-import { AUTH_CLEANUP_LOCK_TTL_MS } from './config/constants.js';
+import {
+  createMaintenanceCleanupJob,
+  createRedisMaintenanceCleanupLock,
+} from './maintenance/cleanup.js';
+import { MAINTENANCE_CLEANUP_LOCK_TTL_MS } from './config/constants.js';
+import { createVideoTranscodeRunner } from './services/videos/videoTranscodeRunner.js';
+import { runRuntimeShutdownSteps } from './runtimeShutdown.js';
 
-const SHUTDOWN_TIMEOUT_MS = 10_000;
+const SHUTDOWN_TIMEOUT_MS = 30_000;
 
 let redisClient = config.redisUrl ? createRedisClient(config.redisUrl, logger) : null;
 
@@ -32,13 +38,9 @@ if (redisClient && config.redisUrl) {
   }
 }
 
-type ConfiguredObjectStorage = NonNullable<typeof objectStorage>;
-
-const createObjectStorageReadinessCheck = (storage: ConfiguredObjectStorage) => ({
-  objectStorage: async (): Promise<void> => {
-    await storage.checkReady();
-  },
-});
+const configuredObjectStorages = [objectStorage, videoObjectStorage].filter(
+  (storage): storage is ObjectStorage => storage !== null,
+);
 
 const readinessChecks = {
   database: async (): Promise<void> => {
@@ -49,7 +51,13 @@ const readinessChecks = {
       await redisClient.ping();
     },
   }),
-  ...(objectStorage ? createObjectStorageReadinessCheck(objectStorage) : {}),
+  ...(configuredObjectStorages.length > 0
+    ? {
+        objectStorage: async (): Promise<void> => {
+          await Promise.all(configuredObjectStorages.map((storage) => storage.checkReady()));
+        },
+      }
+    : {}),
 };
 
 const app = await createApp(config, {
@@ -60,8 +68,9 @@ const app = await createApp(config, {
   redisClient,
   readinessChecks,
 });
-const authCleanupJob = createAuthCleanupJob({
+const maintenanceCleanupJob = createMaintenanceCleanupJob({
   authService,
+  videosService,
   clock: {
     now: () => new Date(),
   },
@@ -70,19 +79,34 @@ const authCleanupJob = createAuthCleanupJob({
     inactiveRetentionMs: config.sessionCleanupInactiveRetentionMs,
   },
   lock: redisClient
-    ? createRedisAuthCleanupLock({
+    ? createRedisMaintenanceCleanupLock({
         redisClient,
-        ttlMs: AUTH_CLEANUP_LOCK_TTL_MS,
+        ttlMs: MAINTENANCE_CLEANUP_LOCK_TTL_MS,
       })
     : null,
   logger,
 });
+const videoTranscodeRunner = videoObjectStorage
+  ? createVideoTranscodeRunner({
+      prisma,
+      objectStorage: videoObjectStorage,
+      clock: {
+        now: () => new Date(),
+      },
+      config: config.videoTranscode,
+      logger,
+    })
+  : null;
 
 let isShuttingDown = false;
 let server: Server | null = null;
 
-const closeServer = (server: Server): Promise<void> =>
-  new Promise((resolve, reject) => {
+const closeServerIfListening = async (server: Server | null): Promise<void> => {
+  if (!server?.listening) {
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => {
       if (error) {
         reject(error);
@@ -94,13 +118,6 @@ const closeServer = (server: Server): Promise<void> =>
 
     server.closeIdleConnections?.();
   });
-
-const closeServerIfListening = async (server: Server | null): Promise<void> => {
-  if (!server?.listening) {
-    return;
-  }
-
-  await closeServer(server);
 };
 
 const shutdown = async (reason: NodeJS.Signals | 'server_error', exitCode = 0): Promise<void> => {
@@ -117,14 +134,41 @@ const shutdown = async (reason: NodeJS.Signals | 'server_error', exitCode = 0): 
   }, SHUTDOWN_TIMEOUT_MS);
 
   try {
-    await authCleanupJob.stop();
-    await closeServerIfListening(server);
-    await prisma.$disconnect();
-    await closeRedisClient(redisClient, logger);
+    const failedSteps = await runRuntimeShutdownSteps(
+      [
+        {
+          name: 'maintenance',
+          run: () => maintenanceCleanupJob.stop(),
+        },
+        {
+          name: 'transcodes',
+          run: () => videoTranscodeRunner?.stop() ?? Promise.resolve(),
+        },
+        {
+          name: 'httpServer',
+          run: () => closeServerIfListening(server),
+        },
+        {
+          name: 'prisma',
+          run: () => prisma.$disconnect(),
+        },
+        {
+          name: 'redis',
+          run: () => closeRedisClient(redisClient, logger),
+        },
+      ],
+      logger,
+    );
 
     clearTimeout(timeout);
-    logger.info('Graceful shutdown completed');
-    process.exitCode = exitCode;
+    if (failedSteps.length > 0) {
+      logger.fatal({ failedSteps }, 'Graceful shutdown completed with failures');
+      process.stderr.write('Graceful shutdown completed with failures\n');
+      process.exitCode = 1;
+    } else {
+      logger.info('Graceful shutdown completed');
+      process.exitCode = exitCode;
+    }
   } catch (error) {
     clearTimeout(timeout);
     logger.fatal({ err: error }, 'Graceful shutdown failed');
@@ -141,7 +185,8 @@ server = app.listen(config.port);
 
 server.once('listening', () => {
   logger.info({ port: config.port }, 'Server started');
-  authCleanupJob.start();
+  maintenanceCleanupJob.start();
+  videoTranscodeRunner?.start();
 });
 
 server.on('error', (error) => {

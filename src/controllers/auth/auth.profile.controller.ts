@@ -71,6 +71,9 @@ export const createAuthProfileController = (deps: AuthControllerDependencies) =>
       return sendNoStoreJson(res, 200, {
         message: result.message,
         mediaCleanupQueued: result.mediaCleanupQueued,
+        ...(result.externalCleanupQueued === undefined
+          ? {}
+          : { externalCleanupQueued: result.externalCleanupQueued }),
       });
     } catch (err) {
       next(toAuthHttpError(err));

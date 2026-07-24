@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Prisma } from '@prisma/client';
+import {
+  EXTERNAL_RESOURCE_QUIESCENCE_MS,
+  ExternalResourceNotDesiredError,
+  requestExternalResourceAbsence,
+  type ExternalResourceReconciliationHandler,
+} from '../externalResources.js';
+import { runSerializableTransaction } from '../../lib/prismaTransactions.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import { isPrismaForeignKeyConstraintError } from './auth.prismaErrors.js';
 import type { ProcessedUserMedia, UserMediaKind } from '../userMedia/userMedia.types.js';
@@ -8,10 +14,10 @@ import type { UserMediaAssetResult } from './types/profileMedia.types.js';
 import { AuthenticatedUserNotFoundError } from '../auth.errors.js';
 
 const USER_MEDIA_CACHE_CONTROL = 'private, max-age=900';
-const USER_MEDIA_TRANSACTION_MAX_ATTEMPTS = 3;
 
 type StoredUserMediaAsset = {
   objectKey: string;
+  bucket: string;
   mimeType: string;
   sizeBytes: number;
   width: number;
@@ -24,117 +30,141 @@ type UserMediaFileInput = {
   size: number;
 };
 
-type UserMediaDeletionJobStore = Pick<AuthDependencies['prisma'], 'userMediaDeletionJob'>;
-
-const createUserMediaObjectKey = (userId: string, kind: UserMediaKind): string =>
-  `users/${userId}/${kind}/${randomUUID()}.webp`;
-
-const uniqueObjectKeys = (objectKeys: readonly string[]): string[] => [...new Set(objectKeys)];
-
-export const queueUserMediaObjectDeletions = async (
-  store: UserMediaDeletionJobStore,
-  objectKeys: readonly string[],
-): Promise<number> => {
-  const uniqueKeys = uniqueObjectKeys(objectKeys);
-
-  if (uniqueKeys.length === 0) {
-    return 0;
-  }
-
-  const result = await store.userMediaDeletionJob.createMany({
-    data: uniqueKeys.map((objectKey) => ({ objectKey })),
-    skipDuplicates: true,
-  });
-
-  return result.count;
-};
+const createUserMediaObjectKey = (
+  userId: string,
+  kind: UserMediaKind,
+  generation: string,
+): string => `users/${userId}/${kind}/${generation}.webp`;
 
 type UpsertStoredUserMediaAssetInput = {
   userId: string;
   kind: UserMediaKind;
   objectKey: string;
+  targetId: string;
   media: Omit<ProcessedUserMedia, 'buffer'>;
 };
 
-const isTransactionConflictError = (err: unknown): boolean =>
-  err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034';
+const scheduleUserMediaTargetAbsence = async (
+  deps: AuthDependencies,
+  targetId: string,
+): Promise<void> => {
+  const requestedAt = deps.clock.now();
+
+  await runSerializableTransaction(deps.prisma, async (tx) => {
+    await requestExternalResourceAbsence(tx, targetId, requestedAt);
+  });
+};
+
+const tryImmediateUserMediaReconciliation = async (
+  deps: AuthDependencies,
+  targetId: string,
+  warningMessage: string,
+): Promise<void> => {
+  await deps.externalResources
+    .reconcileTarget({
+      targetId,
+      roles: ['user_media'],
+      handlers: {
+        user_media: createUserMediaReconciliationHandler(deps),
+      },
+    })
+    .catch((err: unknown) => {
+      deps.logger.warn({ err, targetId }, warningMessage);
+    });
+};
 
 const upsertStoredUserMediaAsset = async (
   deps: AuthDependencies,
-  { userId, kind, objectKey, media }: UpsertStoredUserMediaAssetInput,
-): Promise<{ asset: StoredUserMediaAsset; previousObjectKey: string | null }> => {
-  for (let attempt = 1; attempt <= USER_MEDIA_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
-    try {
-      return await deps.prisma.$transaction(
-        async (tx) => {
-          const previousAsset = await tx.userMediaAsset.findUnique({
-            where: {
-              userId_kind: {
-                userId,
-                kind,
-              },
-            },
-            select: {
-              objectKey: true,
-            },
-          });
+  { userId, kind, objectKey, targetId, media }: UpsertStoredUserMediaAssetInput,
+): Promise<{
+  asset: StoredUserMediaAsset;
+  previousTargetId: string | null;
+}> => {
+  const now = deps.clock.now();
 
-          const asset = await tx.userMediaAsset.upsert({
-            where: {
-              userId_kind: {
-                userId,
-                kind,
-              },
-            },
-            update: {
-              objectKey,
-              mimeType: media.mimeType,
-              sizeBytes: media.sizeBytes,
-              width: media.width,
-              height: media.height,
-            },
-            create: {
-              userId,
-              kind,
-              objectKey,
-              mimeType: media.mimeType,
-              sizeBytes: media.sizeBytes,
-              width: media.width,
-              height: media.height,
-            },
-            select: {
-              objectKey: true,
-              mimeType: true,
-              sizeBytes: true,
-              width: true,
-              height: true,
-              updatedAt: true,
-            },
-          });
-
-          const previousObjectKey = previousAsset?.objectKey ?? null;
-
-          if (previousObjectKey && previousObjectKey !== objectKey) {
-            await queueUserMediaObjectDeletions(tx, [previousObjectKey]);
-          }
-
-          return {
-            asset,
-            previousObjectKey,
-          };
+  return runSerializableTransaction(deps.prisma, async (tx) => {
+    const previousAsset = await tx.userMediaAsset.findUnique({
+      where: {
+        userId_kind: {
+          userId,
+          kind,
         },
-        {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        },
-      );
-    } catch (err) {
-      if (!isTransactionConflictError(err) || attempt === USER_MEDIA_TRANSACTION_MAX_ATTEMPTS) {
-        throw err;
-      }
+      },
+      select: {
+        externalResourceTargetId: true,
+      },
+    });
+    const targetConfirmed = await tx.externalResourceTarget.updateMany({
+      where: {
+        id: targetId,
+        userId,
+        videoId: null,
+        role: 'user_media',
+        selectorKind: 'exact',
+        selector: objectKey,
+        goal: 'present',
+        state: 'writing',
+      },
+      data: {
+        state: 'confirmed_present',
+        attempts: 0,
+        lastError: null,
+        nextAttemptAt: now,
+      },
+    });
+
+    if (targetConfirmed.count === 0) {
+      throw new Error('User media reservation is no longer writable');
     }
-  }
 
-  throw new Error('User media transaction retry loop exhausted unexpectedly');
+    const asset = await tx.userMediaAsset.upsert({
+      where: {
+        userId_kind: {
+          userId,
+          kind,
+        },
+      },
+      update: {
+        objectKey,
+        bucket: deps.objectStorage.bucket,
+        externalResourceTargetId: targetId,
+        mimeType: media.mimeType,
+        sizeBytes: media.sizeBytes,
+        width: media.width,
+        height: media.height,
+      },
+      create: {
+        userId,
+        kind,
+        objectKey,
+        bucket: deps.objectStorage.bucket,
+        externalResourceTargetId: targetId,
+        mimeType: media.mimeType,
+        sizeBytes: media.sizeBytes,
+        width: media.width,
+        height: media.height,
+      },
+      select: {
+        objectKey: true,
+        bucket: true,
+        mimeType: true,
+        sizeBytes: true,
+        width: true,
+        height: true,
+        updatedAt: true,
+      },
+    });
+    const previousTargetId = previousAsset?.externalResourceTargetId ?? null;
+
+    if (previousTargetId && previousTargetId !== targetId) {
+      await requestExternalResourceAbsence(tx, previousTargetId, now);
+    }
+
+    return {
+      asset,
+      previousTargetId: previousTargetId && previousTargetId !== targetId ? previousTargetId : null,
+    };
+  });
 };
 
 type UploadUserMediaAssetInput = {
@@ -143,40 +173,27 @@ type UploadUserMediaAssetInput = {
   file: UserMediaFileInput;
 };
 
-const cleanupUploadedUserMediaAfterFailure = async (
+export const createUserMediaReconciliationHandler = (
   deps: AuthDependencies,
-  kind: UserMediaKind,
-  objectKey: string,
-): Promise<void> => {
-  await deps.objectStorage.deleteObject(objectKey).catch((err: unknown) => {
-    deps.logger.warn(
-      { err, kind, objectKey },
-      'Uploaded user media cleanup failed after persistence error',
-    );
-  });
-};
-
-const cleanupUserMediaObjectAfterStateChange = async (
-  deps: AuthDependencies,
-  userId: string,
-  objectKey: string,
-  warningMessage: string,
-): Promise<boolean> => {
-  try {
-    await deps.objectStorage.deleteObject(objectKey);
-    await deps.prisma.userMediaDeletionJob.deleteMany({
+): ExternalResourceReconciliationHandler => ({
+  async preparePresent(target) {
+    const asset = await deps.prisma.userMediaAsset.findFirst({
       where: {
-        objectKey,
+        userId: target.userId,
+        bucket: target.bucket,
+        objectKey: target.selector,
+        externalResourceTargetId: target.id,
+      },
+      select: {
+        id: true,
       },
     });
 
-    return true;
-  } catch (err) {
-    deps.logger.warn({ err, userId, objectKey }, warningMessage);
-
-    return false;
-  }
-};
+    if (!asset) {
+      throw new ExternalResourceNotDesiredError('User media reservation has no persisted asset');
+    }
+  },
+});
 
 export const uploadUserMediaAsset = async (
   deps: AuthDependencies,
@@ -186,19 +203,67 @@ export const uploadUserMediaAsset = async (
     kind,
     file,
   });
-  const objectKey = createUserMediaObjectKey(userId, kind);
+  const generation = randomUUID();
+  const objectKey = createUserMediaObjectKey(userId, kind, generation);
+  const reservedAt = deps.clock.now();
+  const target = await runSerializableTransaction(deps.prisma, async (tx) => {
+    const user = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
 
-  await deps.objectStorage.putObject({
-    objectKey,
-    body: processedMedia.buffer,
-    contentType: processedMedia.mimeType,
-    cacheControl: USER_MEDIA_CACHE_CONTROL,
+    if (!user) {
+      throw new AuthenticatedUserNotFoundError();
+    }
+
+    return tx.externalResourceTarget.create({
+      data: {
+        userId,
+        videoId: null,
+        bucket: deps.objectStorage.bucket,
+        selector: objectKey,
+        selectorKind: 'exact',
+        role: 'user_media',
+        generation,
+        expectedSizeBytes: BigInt(processedMedia.sizeBytes),
+        mayHaveMultipartUpload: false,
+        goal: 'present',
+        state: 'writing',
+        nextAttemptAt: new Date(reservedAt.getTime() + EXTERNAL_RESOURCE_QUIESCENCE_MS),
+      },
+      select: {
+        id: true,
+      },
+    });
   });
 
-  const { asset, previousObjectKey } = await upsertStoredUserMediaAsset(deps, {
+  try {
+    await deps.objectStorage.putObject({
+      objectKey,
+      body: processedMedia.buffer,
+      contentType: processedMedia.mimeType,
+      cacheControl: USER_MEDIA_CACHE_CONTROL,
+    });
+  } catch (err) {
+    await scheduleUserMediaTargetAbsence(deps, target.id).catch((cleanupError: unknown) => {
+      deps.logger.warn(
+        { err: cleanupError, kind, objectKey, targetId: target.id },
+        'Failed to schedule user media cleanup after PUT failure',
+      );
+    });
+    await tryImmediateUserMediaReconciliation(
+      deps,
+      target.id,
+      'Immediate user media reconciliation failed after PUT failure',
+    );
+    throw err;
+  }
+
+  const { asset, previousTargetId } = await upsertStoredUserMediaAsset(deps, {
     userId,
     kind,
     objectKey,
+    targetId: target.id,
     media: {
       mimeType: processedMedia.mimeType,
       sizeBytes: processedMedia.sizeBytes,
@@ -206,21 +271,29 @@ export const uploadUserMediaAsset = async (
       height: processedMedia.height,
     },
   }).catch(async (err: unknown) => {
-    await cleanupUploadedUserMediaAfterFailure(deps, kind, objectKey);
-
     if (isPrismaForeignKeyConstraintError(err)) {
+      await scheduleUserMediaTargetAbsence(deps, target.id).catch((cleanupError: unknown) => {
+        deps.logger.warn(
+          { err: cleanupError, kind, objectKey, targetId: target.id },
+          'Failed to schedule uploaded user media after user deletion race',
+        );
+      });
+      await tryImmediateUserMediaReconciliation(
+        deps,
+        target.id,
+        'Immediate uploaded user media reconciliation failed after user deletion race',
+      );
       throw new AuthenticatedUserNotFoundError(err);
     }
 
     throw err;
   });
 
-  if (previousObjectKey && previousObjectKey !== objectKey) {
-    await cleanupUserMediaObjectAfterStateChange(
+  if (previousTargetId) {
+    await tryImmediateUserMediaReconciliation(
       deps,
-      userId,
-      previousObjectKey,
-      'Previous user media object cleanup failed after replacement; cleanup remains queued',
+      previousTargetId,
+      'Immediate previous user media reconciliation failed after replacement',
     );
   }
 
@@ -232,7 +305,8 @@ export const deleteUserMediaAsset = async (
   userId: string,
   kind: UserMediaKind,
 ): Promise<void> => {
-  const deletedObjectKey = await deps.prisma.$transaction(async (tx) => {
+  const requestedAt = deps.clock.now();
+  const targetId = await runSerializableTransaction(deps.prisma, async (tx) => {
     const asset = await tx.userMediaAsset.findUnique({
       where: {
         userId_kind: {
@@ -241,7 +315,8 @@ export const deleteUserMediaAsset = async (
         },
       },
       select: {
-        objectKey: true,
+        id: true,
+        externalResourceTargetId: true,
       },
     });
 
@@ -249,46 +324,42 @@ export const deleteUserMediaAsset = async (
       return null;
     }
 
-    const deletedRecord = await tx.userMediaAsset.deleteMany({
+    const deleted = await tx.userMediaAsset.deleteMany({
       where: {
+        id: asset.id,
         userId,
-        kind,
-        objectKey: asset.objectKey,
       },
     });
 
-    if (deletedRecord.count === 0) {
+    if (deleted.count === 0) {
       return null;
     }
 
-    await queueUserMediaObjectDeletions(tx, [asset.objectKey]);
+    await requestExternalResourceAbsence(tx, asset.externalResourceTargetId, requestedAt);
 
-    return asset.objectKey;
+    return asset.externalResourceTargetId;
   });
 
-  if (!deletedObjectKey) {
-    return;
+  if (targetId) {
+    await tryImmediateUserMediaReconciliation(
+      deps,
+      targetId,
+      'Immediate user media reconciliation failed after record deletion',
+    );
   }
-
-  await cleanupUserMediaObjectAfterStateChange(
-    deps,
-    userId,
-    deletedObjectKey,
-    'User media object cleanup failed after record deletion; cleanup remains queued',
-  );
 };
 
 export function toUserMediaAssetUrl(
   deps: AuthDependencies,
-  asset: { objectKey: string },
+  asset: { objectKey: string; bucket: string },
 ): Promise<string>;
 export function toUserMediaAssetUrl(
   deps: AuthDependencies,
-  asset: { objectKey: string } | null | undefined,
+  asset: { objectKey: string; bucket: string } | null | undefined,
 ): Promise<string | null>;
 export async function toUserMediaAssetUrl(
   deps: AuthDependencies,
-  asset: { objectKey: string } | null | undefined,
+  asset: { objectKey: string; bucket: string } | null | undefined,
 ): Promise<string | null> {
   return toStoredUserMediaAssetUrl(deps.objectStorage, asset);
 }
@@ -304,32 +375,3 @@ export const toUserMediaAssetResult = async (
   height: asset.height,
   updatedAt: asset.updatedAt,
 });
-
-export const deleteStoredUserMediaObjectsAfterStateChange = async (
-  deps: AuthDependencies,
-  userId: string,
-  objectKeys: readonly string[],
-): Promise<{ deletedCount: number; queuedCount: number }> => {
-  const uniqueKeys = uniqueObjectKeys(objectKeys);
-
-  if (uniqueKeys.length === 0) {
-    return { deletedCount: 0, queuedCount: 0 };
-  }
-
-  const results = await Promise.all(
-    uniqueKeys.map((objectKey) =>
-      cleanupUserMediaObjectAfterStateChange(
-        deps,
-        userId,
-        objectKey,
-        'Stored user media object cleanup failed after account deletion; cleanup remains queued',
-      ),
-    ),
-  );
-  const deletedCount = results.filter(Boolean).length;
-
-  return {
-    deletedCount,
-    queuedCount: uniqueKeys.length - deletedCount,
-  };
-};

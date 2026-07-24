@@ -19,10 +19,18 @@ export type AuthServiceTestCalls = {
   userMediaAssetFindMany: unknown;
   userMediaAssetFindUnique: unknown;
   userMediaAssetUpsert: unknown;
-  userMediaDeletionJobCreateMany: unknown;
-  userMediaDeletionJobDeleteMany: unknown;
-  userMediaDeletionJobFindMany: unknown;
-  userMediaDeletionJobUpdateMany: unknown;
+  previousUserMediaTargetId: string | null;
+  externalResourceTargetCreate: unknown;
+  externalResourceTargetFindMany: unknown;
+  externalResourceTargetUpdate: unknown;
+  externalResourceTargetUpdates: unknown[];
+  externalResourceTargetUpdateMany: unknown;
+  externalResourceTargets: Array<{
+    id: string;
+    role: 'source' | 'hls_artifacts' | 'thumbnail_prefix' | 'user_media';
+  }>;
+  reconcileDue: unknown;
+  reconcileTarget: unknown;
   tokenCreate: unknown;
   tokenDeleteMany: unknown;
   tokenFindUnique: unknown;
@@ -40,8 +48,6 @@ export type AuthServiceTestCalls = {
   sessionUpdateMany: unknown;
   sessionDeleteMany: unknown;
   putObject: unknown;
-  deleteObject: unknown;
-  deleteObjects: unknown;
   signedUrlObjectKey: unknown;
   signedUrlObjectKeys: string[];
   processedMedia: unknown;
@@ -61,10 +67,15 @@ export const createAuthServiceTestCalls = (): AuthServiceTestCalls => ({
   userMediaAssetFindMany: undefined,
   userMediaAssetFindUnique: undefined,
   userMediaAssetUpsert: undefined,
-  userMediaDeletionJobCreateMany: undefined,
-  userMediaDeletionJobDeleteMany: undefined,
-  userMediaDeletionJobFindMany: undefined,
-  userMediaDeletionJobUpdateMany: undefined,
+  previousUserMediaTargetId: null,
+  externalResourceTargetCreate: undefined,
+  externalResourceTargetFindMany: undefined,
+  externalResourceTargetUpdate: undefined,
+  externalResourceTargetUpdates: [],
+  externalResourceTargetUpdateMany: undefined,
+  externalResourceTargets: [],
+  reconcileDue: undefined,
+  reconcileTarget: undefined,
   tokenCreate: undefined,
   tokenDeleteMany: undefined,
   tokenFindUnique: undefined,
@@ -82,8 +93,6 @@ export const createAuthServiceTestCalls = (): AuthServiceTestCalls => ({
   sessionUpdateMany: undefined,
   sessionDeleteMany: undefined,
   putObject: undefined,
-  deleteObject: undefined,
-  deleteObjects: undefined,
   signedUrlObjectKey: undefined,
   signedUrlObjectKeys: [],
   processedMedia: undefined,

@@ -1,19 +1,36 @@
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
+import { HOUR_MS } from '../../config/constants.js';
+import { ObjectStorageUnavailableError } from '../../lib/objectStorage.js';
+import { runSerializableTransaction } from '../../lib/prismaTransactions.js';
 import { videoOriginalKey } from './videoObjectKeys.js';
+import {
+  createVideoArtifactReconciliationHandler,
+  scheduleAbandonedVideoArtifactGenerations,
+} from './videoTranscodeRunner.js';
 import type { VideosDependencies } from './videos.dependencies.js';
+import {
+  ExternalResourceNotDesiredError,
+  ExternalResourceSizeMismatchError,
+  requestExternalResourceAbsence,
+  VIDEO_EXTERNAL_RESOURCE_ROLES,
+  type ExternalResourceReconciliationHandler,
+} from '../externalResources.js';
 import {
   ActiveVideoUploadSessionExistsError,
   InvalidVideoUploadSessionStateError,
-  InvalidVideoUploadStateError,
   VideoNotFoundError,
+  VideoStorageQuotaExceededError,
   VideoUploadSessionExpiredError,
   VideoUploadSessionNotFoundError,
+  VideoUploadSizeExceededError,
+  VideoUploadSizeMismatchError,
 } from '../videos.errors.js';
 import type {
   AbortVideoMultipartUploadInput,
+  CompleteVideoMultipartUploadInput,
   CreateVideoInput,
   CreateVideoResult,
-  CompleteVideoMultipartUploadInput,
   GetVideoMultipartUploadSessionInput,
   InitVideoMultipartUploadInput,
   ListMyVideosInput,
@@ -22,16 +39,34 @@ import type {
   SignVideoMultipartUploadPartsResult,
   VideoUploadSession,
   VideoUploadSessionResult,
-  VideosPorts,
+  VideosService,
 } from './types/ports.types.js';
 
-const ACTIVE_UPLOAD_SESSION_STATUSES = ['initiated', 'uploading'] as const;
-const UPLOADABLE_VIDEO_PROCESSING_STATUSES = ['draft', 'uploading', 'failed'] as const;
-const PROCESSING_STATUSES_TO_QUEUE_ON_COMPLETE = ['draft', 'uploading'] as const;
+const ACTIVE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
+  'initializing',
+  'initiated',
+  'uploading',
+  'completing',
+];
+const EXPIRABLE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
+  'initializing',
+  'initiated',
+  'uploading',
+];
+const SIGNABLE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
+  'initiated',
+  'uploading',
+];
+const ABORTABLE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
+  'initializing',
+  'initiated',
+  'uploading',
+  'completing',
+];
 const VIDEO_SOURCE_CONTENT_TYPE = 'video/mp4';
 const DEFAULT_MY_VIDEOS_LIMIT = 20;
 const MAX_MY_VIDEOS_LIMIT = 100;
-const TRANSACTION_MAX_ATTEMPTS = 3;
+const MULTIPART_MAINTENANCE_BATCH_SIZE = 100;
 const PUBLIC_ID_MAX_CREATE_ATTEMPTS = 5;
 
 const videoSelect = {
@@ -57,14 +92,21 @@ const uploadSessionSelect = {
   status: true,
   bucket: true,
   objectKey: true,
-  uploadId: true,
   partSizeBytes: true,
+  expectedSizeBytes: true,
   partCount: true,
   expiresAt: true,
   completedAt: true,
   abortedAt: true,
+  expiredAt: true,
+  externalResourceTargetId: true,
   createdAt: true,
   updatedAt: true,
+  multipartHandle: {
+    select: {
+      uploadId: true,
+    },
+  },
   parts: {
     select: {
       partNumber: true,
@@ -78,65 +120,95 @@ const uploadSessionSelect = {
   },
 } satisfies Prisma.VideoUploadSessionSelect;
 
+const reconciliationUploadSessionSelect = {
+  id: true,
+  videoId: true,
+  userId: true,
+  status: true,
+  bucket: true,
+  objectKey: true,
+  externalResourceTargetId: true,
+  multipartHandle: {
+    select: {
+      uploadId: true,
+    },
+  },
+  parts: {
+    select: {
+      partNumber: true,
+      etag: true,
+    },
+    orderBy: {
+      partNumber: 'asc',
+    },
+  },
+} satisfies Prisma.VideoUploadSessionSelect;
+
 type UploadSessionRecord = Prisma.VideoUploadSessionGetPayload<{
   select: typeof uploadSessionSelect;
+}>;
+
+type ReconciliationUploadSessionRecord = Prisma.VideoUploadSessionGetPayload<{
+  select: typeof reconciliationUploadSessionSelect;
 }>;
 
 type VideoMetadataRecord = Prisma.VideoGetPayload<{
   select: typeof videoSelect;
 }>;
 
-type VideoRecord = {
-  id: string;
-  ownerId: string;
-  processingStatus: string;
-};
+type TransactionClient = Prisma.TransactionClient;
 
-type TransactionClient = Parameters<Parameters<VideosDependencies['prisma']['$transaction']>[0]>[0];
-type UploadSessionStore = Pick<TransactionClient, 'video' | 'videoUploadSession'>;
-type CompletedUploadStore = Pick<TransactionClient, 'video' | 'videoTranscodeJob'>;
+const isUniqueConstraintError = (err: unknown): err is Prisma.PrismaClientKnownRequestError =>
+  err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 
-const isActiveUploadSessionStatus = (
-  status: string,
-): status is (typeof ACTIVE_UPLOAD_SESSION_STATUSES)[number] =>
-  ACTIVE_UPLOAD_SESSION_STATUSES.includes(
-    status as (typeof ACTIVE_UPLOAD_SESSION_STATUSES)[number],
-  );
+const constraintContains = (
+  value: unknown,
+  matches: (candidate: string) => boolean,
+  depth = 3,
+): boolean => {
+  if (typeof value === 'string') {
+    return matches(value);
+  }
 
-const isTransactionConflictError = (err: unknown): boolean =>
-  err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034';
-
-const isPublicIdUniqueConstraintError = (err: unknown): boolean => {
-  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') {
+  if (depth === 0 || typeof value !== 'object' || value === null) {
     return false;
   }
 
-  const target = err.meta?.target;
-
-  if (Array.isArray(target)) {
-    return target.includes('publicId') || target.includes('public_id');
+  if (Array.isArray(value)) {
+    return value.some((item) => constraintContains(item, matches, depth - 1));
   }
 
-  return typeof target === 'string' && target.includes('public');
+  return Object.entries(value).some(
+    ([key, nested]) =>
+      constraintContains(key, matches, depth - 1) || constraintContains(nested, matches, depth - 1),
+  );
 };
 
-const runSerializableTransaction = async <T>(
-  deps: VideosDependencies,
-  callback: (tx: TransactionClient) => Promise<T>,
-): Promise<T> => {
-  for (let attempt = 1; attempt <= TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
-    try {
-      return await deps.prisma.$transaction(callback, {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      });
-    } catch (err) {
-      if (!isTransactionConflictError(err) || attempt === TRANSACTION_MAX_ATTEMPTS) {
-        throw err;
-      }
-    }
+const isPublicIdUniqueConstraintError = (err: unknown): boolean =>
+  isUniqueConstraintError(err) &&
+  constraintContains(
+    err.meta,
+    (candidate) =>
+      candidate === 'publicId' || candidate === 'public_id' || candidate.includes('public_id'),
+  );
+
+const isActiveUploadSessionUniqueConstraintError = (err: unknown): boolean =>
+  isUniqueConstraintError(err) &&
+  constraintContains(
+    err.meta,
+    (candidate) =>
+      candidate === 'video_id' ||
+      candidate.includes('video_upload_sessions_one_active_per_video_key'),
+  );
+
+const bigintToSafeNumber = (value: bigint): number => {
+  const numberValue = Number(value);
+
+  if (!Number.isSafeInteger(numberValue)) {
+    throw new Error('Persisted video size exceeds the supported JSON integer range');
   }
 
-  throw new Error('Video upload transaction retry loop exhausted unexpectedly');
+  return numberValue;
 };
 
 const toVideoUploadSession = (session: UploadSessionRecord): VideoUploadSession => ({
@@ -146,12 +218,14 @@ const toVideoUploadSession = (session: UploadSessionRecord): VideoUploadSession 
   status: session.status,
   bucket: session.bucket,
   objectKey: session.objectKey,
-  uploadId: session.uploadId,
+  uploadId: session.multipartHandle?.uploadId ?? null,
   partSizeBytes: session.partSizeBytes,
+  expectedSizeBytes: bigintToSafeNumber(session.expectedSizeBytes),
   partCount: session.partCount,
   expiresAt: session.expiresAt,
   completedAt: session.completedAt,
   abortedAt: session.abortedAt,
+  expiredAt: session.expiredAt,
   createdAt: session.createdAt,
   updatedAt: session.updatedAt,
   parts: session.parts,
@@ -179,82 +253,8 @@ const normalizeOptionalDescription = (description: string | null | undefined): s
   return normalizedDescription ? normalizedDescription : null;
 };
 
-const assertUploadableVideo = (video: VideoRecord): void => {
-  if (
-    !UPLOADABLE_VIDEO_PROCESSING_STATUSES.includes(
-      video.processingStatus as (typeof UPLOADABLE_VIDEO_PROCESSING_STATUSES)[number],
-    )
-  ) {
-    throw new InvalidVideoUploadStateError();
-  }
-};
-
-const findOwnedVideo = async (
-  store: Pick<VideosDependencies['prisma'], 'video'>,
-  userId: string,
-  videoId: string,
-): Promise<VideoRecord> => {
-  const video = await store.video.findFirst({
-    where: {
-      id: videoId,
-      ownerId: userId,
-    },
-    select: {
-      id: true,
-      ownerId: true,
-      processingStatus: true,
-    },
-  });
-
-  if (!video) {
-    throw new VideoNotFoundError();
-  }
-
-  return video;
-};
-
-const expireStaleUploadSessions = (
-  store: Pick<UploadSessionStore, 'videoUploadSession'>,
-  now: Date,
-  videoId: string,
-): Promise<unknown> =>
-  store.videoUploadSession.updateMany({
-    where: {
-      videoId,
-      status: {
-        in: [...ACTIVE_UPLOAD_SESSION_STATUSES],
-      },
-      expiresAt: {
-        lte: now,
-      },
-    },
-    data: {
-      status: 'expired',
-    },
-  });
-
-const findActiveUploadSession = (
-  store: Pick<UploadSessionStore, 'videoUploadSession'>,
-  now: Date,
-  videoId: string,
-): Promise<{ id: string } | null> =>
-  store.videoUploadSession.findFirst({
-    where: {
-      videoId,
-      status: {
-        in: [...ACTIVE_UPLOAD_SESSION_STATUSES],
-      },
-      expiresAt: {
-        gt: now,
-      },
-    },
-    select: {
-      id: true,
-    },
-  });
-
 const findOwnedUploadSession = async (
-  store: Pick<VideosDependencies['prisma'], 'videoUploadSession'>,
+  store: Pick<TransactionClient, 'videoUploadSession'>,
   input: GetVideoMultipartUploadSessionInput,
 ): Promise<UploadSessionRecord> => {
   const session = await store.videoUploadSession.findFirst({
@@ -273,70 +273,166 @@ const findOwnedUploadSession = async (
   return session;
 };
 
+const findActiveUploadSession = (
+  store: Pick<TransactionClient, 'videoUploadSession'>,
+  videoId: string,
+): Promise<{ id: string } | null> =>
+  store.videoUploadSession.findFirst({
+    where: {
+      videoId,
+      status: {
+        in: [...ACTIVE_UPLOAD_SESSION_STATUSES],
+      },
+    },
+    select: {
+      id: true,
+    },
+  });
+
+const resetVideoWithoutSourceAfterUploadEnds = async (
+  store: Pick<TransactionClient, 'video' | 'videoUploadSession'>,
+  videoId: string,
+): Promise<void> => {
+  if (await findActiveUploadSession(store, videoId)) {
+    return;
+  }
+
+  await store.video.updateMany({
+    where: {
+      id: videoId,
+      sourceObjectKey: null,
+      processingStatus: 'uploading',
+    },
+    data: {
+      processingStatus: 'draft',
+    },
+  });
+};
+
+const expireStaleUploadSessions = async (
+  store: Pick<TransactionClient, 'externalResourceTarget' | 'video' | 'videoUploadSession'>,
+  now: Date,
+  {
+    limit,
+    videoId,
+  }: {
+    limit?: number;
+    videoId?: string;
+  } = {},
+): Promise<number> => {
+  const staleSessions = await store.videoUploadSession.findMany({
+    where: {
+      ...(videoId ? { videoId } : {}),
+      status: {
+        in: [...EXPIRABLE_UPLOAD_SESSION_STATUSES],
+      },
+      expiresAt: {
+        lte: now,
+      },
+    },
+    select: {
+      id: true,
+      videoId: true,
+      externalResourceTargetId: true,
+    },
+    orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }],
+    ...(limit === undefined ? {} : { take: limit }),
+  });
+  const affectedVideoIds = new Set<string>();
+  let uploadSessionsExpired = 0;
+
+  for (const session of staleSessions) {
+    const result = await store.videoUploadSession.updateMany({
+      where: {
+        id: session.id,
+        status: {
+          in: [...EXPIRABLE_UPLOAD_SESSION_STATUSES],
+        },
+        expiresAt: {
+          lte: now,
+        },
+      },
+      data: {
+        status: 'expiring',
+      },
+    });
+
+    if (result.count > 0) {
+      await requestExternalResourceAbsence(store, session.externalResourceTargetId, now);
+      affectedVideoIds.add(session.videoId);
+      uploadSessionsExpired += 1;
+    }
+  }
+
+  for (const affectedVideoId of affectedVideoIds) {
+    await resetVideoWithoutSourceAfterUploadEnds(store, affectedVideoId);
+  }
+
+  return uploadSessionsExpired;
+};
+
 const expireSessionIfNeeded = async (
   deps: VideosDependencies,
   session: UploadSessionRecord,
   now: Date,
 ): Promise<UploadSessionRecord> => {
-  if (!isActiveUploadSessionStatus(session.status) || session.expiresAt > now) {
+  if (!EXPIRABLE_UPLOAD_SESSION_STATUSES.includes(session.status) || session.expiresAt > now) {
     return session;
   }
 
-  return deps.prisma.videoUploadSession.update({
-    where: {
-      id: session.id,
-    },
-    data: {
-      status: 'expired',
-    },
-    select: uploadSessionSelect,
+  return runSerializableTransaction(deps.prisma, async (tx) => {
+    await expireStaleUploadSessions(tx, now, {
+      videoId: session.videoId,
+    });
+
+    return findOwnedUploadSession(tx, {
+      uploadSessionId: session.id,
+      userId: session.userId,
+      videoId: session.videoId,
+    });
   });
 };
 
-const getActiveUploadSession = async (
+const getSignableUploadSession = async (
   deps: VideosDependencies,
   input: GetVideoMultipartUploadSessionInput,
-): Promise<UploadSessionRecord> => {
-  const now = deps.clock.now();
+): Promise<UploadSessionRecord & { multipartHandle: { uploadId: string } }> => {
   const session = await expireSessionIfNeeded(
     deps,
     await findOwnedUploadSession(deps.prisma, input),
-    now,
+    deps.clock.now(),
   );
 
-  if (session.status === 'expired') {
+  if (session.status === 'expiring' || session.status === 'expired') {
     throw new VideoUploadSessionExpiredError();
   }
 
-  if (!isActiveUploadSessionStatus(session.status)) {
+  if (!SIGNABLE_UPLOAD_SESSION_STATUSES.includes(session.status) || !session.multipartHandle) {
     throw new InvalidVideoUploadSessionStateError();
   }
 
-  return session;
+  return {
+    ...session,
+    multipartHandle: session.multipartHandle,
+  };
 };
 
-const assertValidPartNumbers = (partNumbers: readonly number[], maxPartCount: number): void => {
+const expectedPartCount = (
+  session: Pick<UploadSessionRecord, 'expectedSizeBytes' | 'partSizeBytes'>,
+) => Math.ceil(bigintToSafeNumber(session.expectedSizeBytes) / session.partSizeBytes);
+
+const assertValidPartNumbers = (
+  partNumbers: readonly number[],
+  session: Pick<UploadSessionRecord, 'expectedSizeBytes' | 'partSizeBytes'>,
+): void => {
+  const maxPartNumber = expectedPartCount(session);
   const uniquePartNumbers = new Set(partNumbers);
 
   if (
     partNumbers.length === 0 ||
     uniquePartNumbers.size !== partNumbers.length ||
-    partNumbers.some((partNumber) => partNumber < 1 || partNumber > maxPartCount)
+    partNumbers.some((partNumber) => partNumber < 1 || partNumber > maxPartNumber)
   ) {
-    throw new InvalidVideoUploadSessionStateError();
-  }
-};
-
-const assertValidCompletedParts = (
-  parts: readonly CompleteVideoMultipartUploadInput['parts'][number][],
-  maxPartCount: number,
-): void => {
-  assertValidPartNumbers(
-    parts.map((part) => part.partNumber),
-    maxPartCount,
-  );
-
-  if (parts.some((part) => part.etag.trim() === '')) {
     throw new InvalidVideoUploadSessionStateError();
   }
 };
@@ -346,35 +442,275 @@ const sortUploadParts = (
 ): CompleteVideoMultipartUploadInput['parts'] =>
   [...parts].sort((left, right) => left.partNumber - right.partNumber);
 
-const persistCompletedUploadSideEffects = async (
-  store: CompletedUploadStore,
-  session: UploadSessionRecord,
-  now: Date,
-): Promise<void> => {
-  await store.video.updateMany({
-    where: {
-      id: session.videoId,
-      ownerId: session.userId,
-    },
-    data: {
-      sourceObjectKey: session.objectKey,
-    },
-  });
+const assertValidCompletedParts = (
+  parts: readonly CompleteVideoMultipartUploadInput['parts'][number][],
+  session: Pick<UploadSessionRecord, 'expectedSizeBytes' | 'partSizeBytes'>,
+): CompleteVideoMultipartUploadInput['parts'] => {
+  const sortedParts = sortUploadParts(parts);
+  const requiredPartCount = expectedPartCount(session);
 
-  await store.video.updateMany({
+  if (
+    sortedParts.length !== requiredPartCount ||
+    sortedParts.some(
+      (part, index) => part.partNumber !== index + 1 || part.etag.trim().length === 0,
+    )
+  ) {
+    throw new InvalidVideoUploadSessionStateError();
+  }
+
+  return sortedParts;
+};
+
+const partsMatch = (
+  persisted: readonly { partNumber: number; etag: string }[],
+  requested: readonly { partNumber: number; etag: string }[],
+): boolean =>
+  persisted.length === requested.length &&
+  persisted.every(
+    (part, index) =>
+      part.partNumber === requested[index]?.partNumber && part.etag === requested[index]?.etag,
+  );
+
+const assertUploadSizeAndQuota = async (
+  store: Pick<TransactionClient, 'externalResourceTarget'>,
+  userId: string,
+  sizeBytes: number,
+  config: Pick<VideosDependencies['config'], 'maxUploadBytes' | 'userStorageQuotaBytes'>,
+): Promise<void> => {
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0 || sizeBytes > config.maxUploadBytes) {
+    throw new VideoUploadSizeExceededError();
+  }
+
+  const usage = await store.externalResourceTarget.aggregate({
     where: {
-      id: session.videoId,
-      ownerId: session.userId,
-      processingStatus: {
-        in: [...PROCESSING_STATUSES_TO_QUEUE_ON_COMPLETE],
+      userId,
+      role: 'source',
+      state: {
+        not: 'confirmed_absent',
       },
     },
-    data: {
-      processingStatus: 'queued',
+    _sum: {
+      expectedSizeBytes: true,
+    },
+  });
+  const reservedBytes = usage._sum.expectedSizeBytes ?? 0n;
+
+  if (reservedBytes + BigInt(sizeBytes) > BigInt(config.userStorageQuotaBytes)) {
+    throw new VideoStorageQuotaExceededError();
+  }
+};
+
+const scheduleFailedInitialization = async (
+  deps: VideosDependencies,
+  {
+    sessionId,
+    targetId,
+    uploadId,
+  }: {
+    sessionId: string;
+    targetId: string;
+    uploadId: string | null;
+  },
+): Promise<void> => {
+  const now = deps.clock.now();
+
+  await runSerializableTransaction(deps.prisma, async (tx) => {
+    const result = await tx.videoUploadSession.updateMany({
+      where: {
+        id: sessionId,
+        status: 'initializing',
+      },
+      data: {
+        status: 'aborting',
+      },
+    });
+
+    if (result.count === 0) {
+      return;
+    }
+
+    if (uploadId) {
+      await tx.externalMultipartHandle.create({
+        data: {
+          targetId,
+          uploadSessionId: sessionId,
+          uploadId,
+        },
+      });
+    }
+
+    await requestExternalResourceAbsence(tx, targetId, now);
+    const session = await tx.videoUploadSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      select: { videoId: true },
+    });
+    await resetVideoWithoutSourceAfterUploadEnds(tx, session.videoId);
+  });
+};
+
+const prepareCompletion = async (
+  deps: VideosDependencies,
+  session: UploadSessionRecord,
+  parts: readonly CompleteVideoMultipartUploadInput['parts'][number][],
+): Promise<UploadSessionRecord> => {
+  const sortedParts = assertValidCompletedParts(parts, session);
+
+  if (session.status === 'completed') {
+    if (!partsMatch(session.parts, sortedParts)) {
+      throw new InvalidVideoUploadSessionStateError();
+    }
+
+    return session;
+  }
+
+  if (session.status === 'completing') {
+    if (!session.multipartHandle || !partsMatch(session.parts, sortedParts)) {
+      throw new InvalidVideoUploadSessionStateError();
+    }
+
+    return session;
+  }
+
+  if (!SIGNABLE_UPLOAD_SESSION_STATUSES.includes(session.status) || !session.multipartHandle) {
+    throw new InvalidVideoUploadSessionStateError();
+  }
+
+  return deps.prisma.$transaction(async (tx) => {
+    const updated = await tx.videoUploadSession.updateMany({
+      where: {
+        id: session.id,
+        status: {
+          in: [...SIGNABLE_UPLOAD_SESSION_STATUSES],
+        },
+      },
+      data: {
+        status: 'completing',
+      },
+    });
+
+    if (updated.count === 0) {
+      throw new InvalidVideoUploadSessionStateError();
+    }
+
+    await tx.videoUploadPart.createMany({
+      data: sortedParts.map((part) => ({
+        uploadSessionId: session.id,
+        partNumber: part.partNumber,
+        etag: part.etag,
+      })),
+      skipDuplicates: true,
+    });
+    await tx.externalResourceTarget.updateMany({
+      where: {
+        id: session.externalResourceTargetId,
+        goal: 'present',
+        state: 'writing',
+      },
+      data: {
+        nextAttemptAt: deps.clock.now(),
+      },
+    });
+
+    return findOwnedUploadSession(tx, {
+      uploadSessionId: session.id,
+      userId: session.userId,
+      videoId: session.videoId,
+    });
+  });
+};
+
+const scheduleSizeMismatchCleanup = async (
+  deps: VideosDependencies,
+  session: UploadSessionRecord,
+): Promise<void> => {
+  const now = deps.clock.now();
+
+  await runSerializableTransaction(deps.prisma, async (tx) => {
+    const updated = await tx.videoUploadSession.updateMany({
+      where: {
+        id: session.id,
+        status: 'completing',
+      },
+      data: {
+        status: 'aborting',
+      },
+    });
+
+    if (updated.count === 0) {
+      return;
+    }
+
+    await requestExternalResourceAbsence(tx, session.externalResourceTargetId, now);
+    await resetVideoWithoutSourceAfterUploadEnds(tx, session.videoId);
+  });
+};
+
+const publishCompletedSourceInTransaction = async (
+  tx: TransactionClient,
+  session: Pick<
+    ReconciliationUploadSessionRecord,
+    'externalResourceTargetId' | 'id' | 'objectKey' | 'userId' | 'videoId'
+  >,
+  sizeBytes: number,
+  now: Date,
+): Promise<void> => {
+  const currentSession = await findOwnedUploadSession(tx, {
+    uploadSessionId: session.id,
+    userId: session.userId,
+    videoId: session.videoId,
+  });
+
+  if (currentSession.status === 'completed') {
+    return;
+  }
+
+  if (currentSession.status !== 'completing') {
+    throw new InvalidVideoUploadSessionStateError();
+  }
+
+  const video = await tx.video.findFirst({
+    where: {
+      id: session.videoId,
+      ownerId: session.userId,
+    },
+    select: {
+      sourceUploadSession: {
+        select: {
+          externalResourceTargetId: true,
+        },
+      },
     },
   });
 
-  await store.videoTranscodeJob.createMany({
+  if (!video) {
+    throw new VideoNotFoundError();
+  }
+
+  const previousTargetId = video.sourceUploadSession?.externalResourceTargetId ?? null;
+
+  await tx.videoUploadSession.update({
+    where: {
+      id: session.id,
+    },
+    data: {
+      status: 'completed',
+      partCount: currentSession.parts.length,
+      completedAt: now,
+    },
+  });
+  await tx.video.update({
+    where: {
+      id: session.videoId,
+    },
+    data: {
+      sourceUploadSessionId: session.id,
+      sourceObjectKey: session.objectKey,
+      sourceSizeBytes: BigInt(sizeBytes),
+      processingStatus: 'queued',
+      transcodeError: null,
+    },
+  });
+  await tx.videoTranscodeJob.createMany({
     data: [
       {
         videoId: session.videoId,
@@ -385,9 +721,148 @@ const persistCompletedUploadSideEffects = async (
     ],
     skipDuplicates: true,
   });
+
+  if (previousTargetId && previousTargetId !== session.externalResourceTargetId) {
+    await requestExternalResourceAbsence(tx, previousTargetId, now);
+  }
 };
 
-export const createVideosService = (deps: VideosDependencies): VideosPorts => ({
+const createVideoReconciliationHandler = (
+  deps: VideosDependencies,
+): ExternalResourceReconciliationHandler => ({
+  async preparePresent(target) {
+    const session = await deps.prisma.videoUploadSession.findFirst({
+      where: {
+        externalResourceTargetId: target.id,
+      },
+      select: reconciliationUploadSessionSelect,
+    });
+
+    if (!session) {
+      throw new ExternalResourceNotDesiredError('Video source reservation has no upload session');
+    }
+
+    if (
+      session.status === 'initializing' ||
+      session.status === 'aborting' ||
+      session.status === 'aborted' ||
+      session.status === 'expiring' ||
+      session.status === 'expired'
+    ) {
+      throw new ExternalResourceNotDesiredError('Video source upload is being discarded');
+    }
+
+    if (session.status === 'completed') {
+      return;
+    }
+
+    if (session.status !== 'completing' || !session.multipartHandle) {
+      throw new Error('Video source upload is not ready for reconciliation');
+    }
+
+    try {
+      await deps.objectStorage.completeMultipartUpload({
+        bucket: session.bucket,
+        objectKey: session.objectKey,
+        uploadId: session.multipartHandle.uploadId,
+        parts: session.parts,
+      });
+    } catch (err) {
+      const object = await deps.objectStorage.headObject({
+        bucket: session.bucket,
+        objectKey: session.objectKey,
+      });
+
+      if (!object) {
+        throw err;
+      }
+    }
+  },
+
+  async handlePresentSizeMismatch(tx, target) {
+    const session = await tx.videoUploadSession.findFirst({
+      where: {
+        externalResourceTargetId: target.id,
+        status: 'completing',
+      },
+      select: {
+        id: true,
+        videoId: true,
+      },
+    });
+
+    if (!session) {
+      return;
+    }
+
+    const updated = await tx.videoUploadSession.updateMany({
+      where: {
+        id: session.id,
+        status: 'completing',
+      },
+      data: {
+        status: 'aborting',
+      },
+    });
+
+    if (updated.count > 0) {
+      await resetVideoWithoutSourceAfterUploadEnds(tx, session.videoId);
+    }
+  },
+
+  async finalize(tx, target, verifiedObject) {
+    const session = await tx.videoUploadSession.findFirst({
+      where: {
+        externalResourceTargetId: target.id,
+      },
+      select: reconciliationUploadSessionSelect,
+    });
+
+    if (!session) {
+      return;
+    }
+
+    if (target.goal === 'present') {
+      if (!verifiedObject) {
+        throw new Error('Verified video source metadata is missing');
+      }
+
+      await publishCompletedSourceInTransaction(
+        tx,
+        session,
+        verifiedObject.sizeBytes,
+        deps.clock.now(),
+      );
+      return;
+    }
+
+    if (session.status === 'initializing' || session.status === 'aborting') {
+      const resetUnfinishedVideo = session.status === 'initializing';
+
+      await tx.videoUploadSession.update({
+        where: { id: session.id },
+        data: {
+          status: 'aborted',
+          abortedAt: deps.clock.now(),
+        },
+      });
+
+      if (resetUnfinishedVideo) {
+        await resetVideoWithoutSourceAfterUploadEnds(tx, session.videoId);
+      }
+    } else if (session.status === 'expiring') {
+      await tx.videoUploadSession.update({
+        where: { id: session.id },
+        data: {
+          status: 'expired',
+          expiredAt: deps.clock.now(),
+        },
+      });
+    }
+  },
+});
+
+export const createVideosService = (deps: VideosDependencies): VideosService => ({
   async createVideo({
     allowComments,
     description,
@@ -468,61 +943,156 @@ export const createVideosService = (deps: VideosDependencies): VideosPorts => ({
   },
 
   async initMultipartUpload({
+    sizeBytes,
     userId,
     videoId,
   }: InitVideoMultipartUploadInput): Promise<VideoUploadSessionResult> {
-    const now = deps.clock.now();
-    const video = await findOwnedVideo(deps.prisma, userId, videoId);
-    assertUploadableVideo(video);
-    await expireStaleUploadSessions(deps.prisma, now, videoId);
-
-    if (await findActiveUploadSession(deps.prisma, now, videoId)) {
-      throw new ActiveVideoUploadSessionExistsError();
+    if (
+      !Number.isSafeInteger(sizeBytes) ||
+      sizeBytes <= 0 ||
+      sizeBytes > deps.config.maxUploadBytes
+    ) {
+      throw new VideoUploadSizeExceededError();
     }
 
-    const objectKey = videoOriginalKey(userId, videoId);
-    const { uploadId } = await deps.objectStorage.initiateMultipartUpload({
-      objectKey,
-      contentType: VIDEO_SOURCE_CONTENT_TYPE,
-    });
+    const now = deps.clock.now();
+    const uploadSessionId = randomUUID();
+    const objectKey = videoOriginalKey(userId, videoId, uploadSessionId);
     const expiresAt = new Date(now.getTime() + deps.config.sessionTtlSeconds * 1000);
+    let reservedSession: UploadSessionRecord;
 
     try {
-      const session = await runSerializableTransaction(deps, async (tx) => {
-        await expireStaleUploadSessions(tx, now, videoId);
-        assertUploadableVideo(await findOwnedVideo(tx, userId, videoId));
+      reservedSession = await runSerializableTransaction(deps.prisma, async (tx) => {
+        const video = await tx.video.findFirst({
+          where: {
+            id: videoId,
+            ownerId: userId,
+          },
+          select: {
+            id: true,
+          },
+        });
 
-        if (await findActiveUploadSession(tx, now, videoId)) {
+        if (!video) {
+          throw new VideoNotFoundError();
+        }
+
+        await expireStaleUploadSessions(tx, now, { videoId });
+
+        if (await findActiveUploadSession(tx, videoId)) {
           throw new ActiveVideoUploadSessionExistsError();
         }
 
-        await tx.video.update({
+        await assertUploadSizeAndQuota(tx, userId, sizeBytes, deps.config);
+
+        const target = await tx.externalResourceTarget.create({
+          data: {
+            userId,
+            videoId,
+            bucket: deps.objectStorage.bucket,
+            selector: objectKey,
+            selectorKind: 'exact',
+            role: 'source',
+            generation: uploadSessionId,
+            expectedSizeBytes: BigInt(sizeBytes),
+            mayHaveMultipartUpload: true,
+            goal: 'present',
+            state: 'writing',
+            nextAttemptAt: new Date(now.getTime() + HOUR_MS),
+          },
+          select: {
+            id: true,
+          },
+        });
+        const session = await tx.videoUploadSession.create({
+          data: {
+            id: uploadSessionId,
+            videoId,
+            userId,
+            status: 'initializing',
+            bucket: deps.objectStorage.bucket,
+            objectKey,
+            partSizeBytes: deps.config.partSizeBytes,
+            expectedSizeBytes: BigInt(sizeBytes),
+            expiresAt,
+            externalResourceTargetId: target.id,
+          },
+          select: uploadSessionSelect,
+        });
+
+        await tx.video.updateMany({
           where: {
             id: videoId,
+            ownerId: userId,
+            sourceObjectKey: null,
           },
           data: {
             processingStatus: 'uploading',
           },
         });
 
-        return tx.videoUploadSession.create({
-          data: {
-            videoId,
-            userId,
-            status: 'initiated',
-            bucket: deps.objectStorage.bucket,
-            objectKey,
-            uploadId,
-            partSizeBytes: deps.config.partSizeBytes,
-            expiresAt,
+        return session;
+      });
+    } catch (err) {
+      if (isActiveUploadSessionUniqueConstraintError(err)) {
+        throw new ActiveVideoUploadSessionExistsError();
+      }
+
+      throw err;
+    }
+
+    let uploadId: string | null = null;
+
+    try {
+      const multipart = await deps.objectStorage.initiateMultipartUpload({
+        objectKey,
+        contentType: VIDEO_SOURCE_CONTENT_TYPE,
+      });
+      uploadId = multipart.uploadId;
+
+      const initiatedSession = await deps.prisma.$transaction(async (tx) => {
+        const updated = await tx.videoUploadSession.updateMany({
+          where: {
+            id: uploadSessionId,
+            status: 'initializing',
           },
-          select: uploadSessionSelect,
+          data: {
+            status: 'initiated',
+          },
+        });
+
+        if (updated.count === 0) {
+          throw new InvalidVideoUploadSessionStateError();
+        }
+
+        await tx.externalMultipartHandle.create({
+          data: {
+            targetId: reservedSession.externalResourceTargetId,
+            uploadSessionId,
+            uploadId: multipart.uploadId,
+          },
+        });
+
+        return findOwnedUploadSession(tx, {
+          uploadSessionId,
+          userId,
+          videoId,
         });
       });
 
-      return toVideoUploadSessionResult(session);
+      return toVideoUploadSessionResult(initiatedSession);
     } catch (err) {
-      await deps.objectStorage.abortMultipartUpload({ objectKey, uploadId }).catch(() => undefined);
+      await scheduleFailedInitialization(deps, {
+        sessionId: uploadSessionId,
+        targetId: reservedSession.externalResourceTargetId,
+        uploadId,
+      }).catch((cleanupError: unknown) => {
+        deps.logger.warn(
+          { err: cleanupError, uploadSessionId },
+          'Failed to schedule cleanup after multipart initialization failure',
+        );
+      });
+
       throw err;
     }
   },
@@ -533,19 +1103,21 @@ export const createVideosService = (deps: VideosDependencies): VideosPorts => ({
     userId,
     videoId,
   }: SignVideoMultipartUploadPartsInput): Promise<SignVideoMultipartUploadPartsResult> {
-    assertValidPartNumbers(partNumbers, deps.config.maxPartCount);
-    const session = await getActiveUploadSession(deps, { uploadSessionId, userId, videoId });
+    const session = await getSignableUploadSession(deps, {
+      uploadSessionId,
+      userId,
+      videoId,
+    });
+    assertValidPartNumbers(partNumbers, session);
 
     if (session.status === 'initiated') {
-      await deps.prisma.videoUploadSession.update({
+      await deps.prisma.videoUploadSession.updateMany({
         where: {
           id: session.id,
+          status: 'initiated',
         },
         data: {
           status: 'uploading',
-        },
-        select: {
-          id: true,
         },
       });
     }
@@ -556,8 +1128,9 @@ export const createVideosService = (deps: VideosDependencies): VideosPorts => ({
         partNumbers.map(async (partNumber) => ({
           partNumber,
           url: await deps.objectStorage.signMultipartUploadPart({
+            bucket: session.bucket,
             objectKey: session.objectKey,
-            uploadId: session.uploadId,
+            uploadId: session.multipartHandle.uploadId,
             partNumber,
           }),
         })),
@@ -571,59 +1144,65 @@ export const createVideosService = (deps: VideosDependencies): VideosPorts => ({
     userId,
     videoId,
   }: CompleteVideoMultipartUploadInput): Promise<VideoUploadSessionResult> {
-    const existingSession = await findOwnedUploadSession(deps.prisma, {
+    const now = deps.clock.now();
+    const existingSession = await expireSessionIfNeeded(
+      deps,
+      await findOwnedUploadSession(deps.prisma, {
+        uploadSessionId,
+        userId,
+        videoId,
+      }),
+      now,
+    );
+
+    if (existingSession.status === 'expiring' || existingSession.status === 'expired') {
+      throw new VideoUploadSessionExpiredError();
+    }
+
+    const prepared = await prepareCompletion(deps, existingSession, parts);
+
+    if (prepared.status === 'completed') {
+      return toVideoUploadSessionResult(prepared);
+    }
+
+    if (!prepared.multipartHandle) {
+      throw new InvalidVideoUploadSessionStateError();
+    }
+
+    try {
+      await deps.externalResources.reconcileTarget({
+        targetId: prepared.externalResourceTargetId,
+        roles: ['source'],
+        handlers: {
+          source: createVideoReconciliationHandler(deps),
+        },
+      });
+    } catch (err) {
+      if (err instanceof ExternalResourceSizeMismatchError) {
+        await scheduleSizeMismatchCleanup(deps, prepared);
+        throw new VideoUploadSizeMismatchError();
+      }
+
+      if (err instanceof ObjectStorageUnavailableError) {
+        throw err;
+      }
+
+      throw new ObjectStorageUnavailableError('Completed video source could not be reconciled', {
+        cause: err,
+      });
+    }
+
+    const reconciledSession = await findOwnedUploadSession(deps.prisma, {
       uploadSessionId,
       userId,
       videoId,
     });
 
-    if (existingSession.status === 'completed') {
-      await runSerializableTransaction(deps, async (tx) => {
-        await persistCompletedUploadSideEffects(tx, existingSession, deps.clock.now());
-      });
-
-      return toVideoUploadSessionResult(existingSession);
+    if (reconciledSession.status !== 'completed') {
+      throw new ObjectStorageUnavailableError('Completed video source reconciliation is deferred');
     }
 
-    assertValidCompletedParts(parts, deps.config.maxPartCount);
-    const session = await getActiveUploadSession(deps, { uploadSessionId, userId, videoId });
-    const sortedParts = sortUploadParts(parts);
-
-    await deps.objectStorage.completeMultipartUpload({
-      objectKey: session.objectKey,
-      uploadId: session.uploadId,
-      parts: sortedParts,
-    });
-
-    const now = deps.clock.now();
-    const completedSession = await runSerializableTransaction(deps, async (tx) => {
-      const updatedSession = await tx.videoUploadSession.update({
-        where: {
-          id: session.id,
-        },
-        data: {
-          status: 'completed',
-          partCount: sortedParts.length,
-          completedAt: now,
-          parts: {
-            createMany: {
-              data: sortedParts.map((part) => ({
-                partNumber: part.partNumber,
-                etag: part.etag,
-              })),
-              skipDuplicates: true,
-            },
-          },
-        },
-        select: uploadSessionSelect,
-      });
-
-      await persistCompletedUploadSideEffects(tx, updatedSession, now);
-
-      return updatedSession;
-    });
-
-    return toVideoUploadSessionResult(completedSession);
+    return toVideoUploadSessionResult(reconciledSession);
   },
 
   async abortMultipartUpload({
@@ -631,55 +1210,47 @@ export const createVideosService = (deps: VideosDependencies): VideosPorts => ({
     userId,
     videoId,
   }: AbortVideoMultipartUploadInput): Promise<VideoUploadSessionResult> {
-    const session = await findOwnedUploadSession(deps.prisma, {
-      uploadSessionId,
-      userId,
-      videoId,
-    });
-
-    if (session.status === 'aborted') {
-      return toVideoUploadSessionResult(session);
-    }
-
-    if (session.status === 'completed') {
-      throw new InvalidVideoUploadSessionStateError();
-    }
-
-    await deps.objectStorage.abortMultipartUpload({
-      objectKey: session.objectKey,
-      uploadId: session.uploadId,
-    });
-
     const now = deps.clock.now();
-    const abortedSession = await runSerializableTransaction(deps, async (tx) => {
-      const updatedSession = await tx.videoUploadSession.update({
-        where: {
-          id: session.id,
-        },
-        data: {
-          status: 'aborted',
-          abortedAt: now,
-        },
-        select: uploadSessionSelect,
-      });
-      const activeSession = await findActiveUploadSession(tx, now, videoId);
-      const video = await findOwnedVideo(tx, userId, videoId);
 
-      if (!activeSession && video.processingStatus === 'uploading') {
-        await tx.video.update({
-          where: {
-            id: videoId,
-          },
-          data: {
-            processingStatus: 'draft',
-          },
-        });
+    const session = await runSerializableTransaction(deps.prisma, async (tx) => {
+      const currentSession = await findOwnedUploadSession(tx, {
+        uploadSessionId,
+        userId,
+        videoId,
+      });
+
+      if (
+        currentSession.status === 'aborting' ||
+        currentSession.status === 'aborted' ||
+        currentSession.status === 'expiring' ||
+        currentSession.status === 'expired'
+      ) {
+        return currentSession;
       }
 
-      return updatedSession;
+      if (!ABORTABLE_UPLOAD_SESSION_STATUSES.includes(currentSession.status)) {
+        throw new InvalidVideoUploadSessionStateError();
+      }
+
+      await tx.videoUploadSession.update({
+        where: {
+          id: currentSession.id,
+        },
+        data: {
+          status: 'aborting',
+        },
+      });
+      await requestExternalResourceAbsence(tx, currentSession.externalResourceTargetId, now);
+      await resetVideoWithoutSourceAfterUploadEnds(tx, videoId);
+
+      return findOwnedUploadSession(tx, {
+        uploadSessionId,
+        userId,
+        videoId,
+      });
     });
 
-    return toVideoUploadSessionResult(abortedSession);
+    return toVideoUploadSessionResult(session);
   },
 
   async getMultipartUploadSession(
@@ -692,5 +1263,39 @@ export const createVideosService = (deps: VideosDependencies): VideosPorts => ({
     );
 
     return toVideoUploadSessionResult(session);
+  },
+
+  async expireMultipartUploadSessions({ expiredBefore }) {
+    const uploadSessionsExpired = await runSerializableTransaction(deps.prisma, (tx) =>
+      expireStaleUploadSessions(tx, expiredBefore, {
+        limit: MULTIPART_MAINTENANCE_BATCH_SIZE,
+      }),
+    );
+
+    return { uploadSessionsExpired };
+  },
+
+  async scheduleAbandonedArtifactGenerations({ observedAt }) {
+    return scheduleAbandonedVideoArtifactGenerations(
+      {
+        prisma: deps.prisma,
+        clock: deps.clock,
+      },
+      { observedAt },
+    );
+  },
+
+  async reconcilePendingExternalResources(input = {}) {
+    const artifactHandler = createVideoArtifactReconciliationHandler(deps.clock);
+
+    return deps.externalResources.reconcileDue({
+      roles: VIDEO_EXTERNAL_RESOURCE_ROLES,
+      ...(input.limit === undefined ? {} : { limit: input.limit }),
+      handlers: {
+        source: createVideoReconciliationHandler(deps),
+        hls_artifacts: artifactHandler,
+        thumbnail_prefix: artifactHandler,
+      },
+    });
   },
 });

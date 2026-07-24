@@ -4,7 +4,10 @@ import {
   ActiveVideoUploadSessionExistsError,
   InvalidVideoUploadSessionStateError,
   InvalidVideoUploadStateError,
+  VideoStorageQuotaExceededError,
   VideoNotFoundError,
+  VideoUploadSizeExceededError,
+  VideoUploadSizeMismatchError,
   VideoUploadSessionExpiredError,
   VideoUploadSessionNotFoundError,
 } from '../services/videos.errors.js';
@@ -18,10 +21,16 @@ export function toVideosHttpError(err: unknown): Error {
     return new HttpError(409, 'Conflict', err.message, { cause: err });
   }
 
+  if (err instanceof VideoUploadSizeExceededError) {
+    return new HttpError(413, 'PayloadTooLarge', err.message, { cause: err });
+  }
+
   if (
     err instanceof InvalidVideoUploadSessionStateError ||
     err instanceof InvalidVideoUploadStateError ||
-    err instanceof VideoUploadSessionExpiredError
+    err instanceof VideoUploadSessionExpiredError ||
+    err instanceof VideoStorageQuotaExceededError ||
+    err instanceof VideoUploadSizeMismatchError
   ) {
     return new HttpError(409, 'Conflict', err.message, { cause: err });
   }

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { Readable } from 'node:stream';
 import type { ObjectStorageConfig } from '../src/config/env.parsers.js';
 import {
   ObjectStorageUnavailableError,
@@ -270,6 +271,91 @@ describe('object storage', () => {
     ]);
   });
 
+  test('downloads, heads, and lists only bounded resources in an explicit bucket', async () => {
+    const calls: unknown[] = [];
+    const client = {
+      bucketExists: async (bucket: string) => {
+        calls.push(['bucketExists', bucket]);
+        return true;
+      },
+      makeBucket: async () => undefined,
+      putObject: async () => undefined,
+      removeObject: async () => undefined,
+      statObject: async (bucket: string, objectKey: string) => {
+        calls.push(['statObject', bucket, objectKey]);
+
+        if (objectKey === 'missing') {
+          const err = new Error('missing') as Error & { code: string };
+          err.code = 'NoSuchKey';
+          throw err;
+        }
+
+        return { size: 12 };
+      },
+      presignedGetObject: async () => 'http://minio:9000/test',
+      fGetObject: async (bucket: string, objectKey: string, destinationPath: string) => {
+        calls.push(['fGetObject', bucket, objectKey, destinationPath]);
+      },
+      listObjectsV2: (bucket: string, prefix: string, recursive: boolean) => {
+        calls.push(['listObjectsV2', bucket, prefix, recursive]);
+
+        return Readable.from([
+          { name: `${prefix}a`, size: 1 },
+          { name: `${prefix}b`, size: 2 },
+          { name: `${prefix}c`, size: 3 },
+        ]);
+      },
+      listIncompleteUploads: (bucket: string, prefix: string, recursive: boolean) => {
+        calls.push(['listIncompleteUploads', bucket, prefix, recursive]);
+
+        return Readable.from([
+          { key: `${prefix}a`, uploadId: 'upload-a', size: 1 },
+          { key: `${prefix}b`, uploadId: 'upload-b', size: 2 },
+        ]);
+      },
+    };
+    const storage = createObjectStorage(
+      createConfig(),
+      client,
+      createOperationLogCollector().logger,
+    );
+
+    await expect(
+      storage.downloadObject({
+        bucket: 'videos',
+        objectKey: 'source.mp4',
+        destinationPath: 'C:\\tmp\\source.mp4',
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      storage.headObject({ bucket: 'videos', objectKey: 'source.mp4' }),
+    ).resolves.toEqual({
+      objectKey: 'source.mp4',
+      sizeBytes: 12,
+    });
+    await expect(
+      storage.headObject({ bucket: 'videos', objectKey: 'missing' }),
+    ).resolves.toBeNull();
+    await expect(
+      storage.listObjects({ bucket: 'videos', prefix: 'generation/', limit: 2 }),
+    ).resolves.toEqual({
+      objects: [
+        { objectKey: 'generation/a', sizeBytes: 1 },
+        { objectKey: 'generation/b', sizeBytes: 2 },
+      ],
+      truncated: true,
+    });
+    await expect(
+      storage.listMultipartUploads({ bucket: 'videos', prefix: 'source', limit: 1 }),
+    ).resolves.toEqual({
+      uploads: [{ objectKey: 'sourcea', uploadId: 'upload-a' }],
+      truncated: true,
+    });
+
+    expect(calls).toContainEqual(['bucketExists', 'videos']);
+    expect(calls).toContainEqual(['fGetObject', 'videos', 'source.mp4', 'C:\\tmp\\source.mp4']);
+  });
+
   test('readiness accepts a missing sentinel object after bucket creation succeeds', async () => {
     const calls: unknown[] = [];
     const client = {
@@ -282,7 +368,8 @@ describe('object storage', () => {
       removeObject: async () => undefined,
       statObject: async (_bucket: string, objectKey: string) => {
         calls.push(['statObject', objectKey]);
-        const err = new Error('missing') as Error & { statusCode: number };
+        const err = new Error('missing') as Error & { code: string; statusCode: number };
+        err.code = 'NoSuchKey';
         err.statusCode = 404;
         throw err;
       },
@@ -296,6 +383,37 @@ describe('object storage', () => {
 
     await expect(storage.checkReady()).resolves.toBeUndefined();
     expect(calls).toEqual(['bucketExists', ['statObject', '.readiness']]);
+  });
+
+  test('keeps an unrecognized proxy 404 retryable instead of treating it as absence', async () => {
+    const client = {
+      bucketExists: async () => true,
+      makeBucket: async () => undefined,
+      putObject: async () => undefined,
+      removeObject: async () => undefined,
+      statObject: async () => {
+        const err = new Error('proxy route missing') as Error & {
+          code: string;
+          statusCode: number;
+        };
+        err.code = 'ProxyRouteNotFound';
+        err.statusCode = 404;
+        throw err;
+      },
+      presignedGetObject: async () => 'http://minio:9000/test',
+    };
+    const storage = createObjectStorage(
+      createConfig(),
+      client,
+      createOperationLogCollector().logger,
+    );
+
+    await expect(
+      storage.headObject({
+        bucket: 'videos',
+        objectKey: 'source.mp4',
+      }),
+    ).rejects.toBeInstanceOf(ObjectStorageUnavailableError);
   });
 
   test('wraps runtime storage client failures as unavailable service errors', async () => {

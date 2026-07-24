@@ -15,7 +15,8 @@ git checkout -b feat/my-feature
 
 ### Setup the environment
 
-Node.js, Bun (1.3.10), and Docker are required.
+Node.js, Bun (1.3.10), Docker, `ffmpeg`, and `ffprobe` are required for the host development flow.
+The Docker runtime image already contains the FFmpeg tools.
 
 The recommended development setup runs the API with Bun on the host and runs the local dependency
 services with Docker Compose: PostgreSQL, Redis, and MinIO for S3-compatible object storage.
@@ -114,6 +115,8 @@ In production:
 - set `REDIS_URL` to the shared Redis instance
 - set `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_ACCESS_KEY`, and `OBJECT_STORAGE_SECRET_KEY` to
   the shared S3-compatible object storage instance
+- set `VIDEO_OBJECT_STORAGE_BUCKET` to the shared private bucket used for video sources and
+  generated artifacts
 - configure SMTP with `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS_MODE`, `SMTP_USER`, `SMTP_PASS`, and
   `SMTP_FROM`
 - configure `BASE_URL`, `CORS_ORIGINS`, and `TRUST_PROXY` for the public reverse proxy or load
@@ -130,17 +133,24 @@ Docker env files should not wrap values in quotes. Use `BASE_URL=https://api.exa
 
 Managed providers can be used for the shared production database, Redis store, and object storage.
 For example, Neon can be used as PostgreSQL, Upstash can be used as Redis, and any S3-compatible
-provider can be used for profile media.
+provider can be used for profile media, video sources, and generated artifacts.
 
 Operational requirements:
 
 - every backend instance must use the same `DATABASE_URL`
 - every backend instance must use the same `REDIS_URL`
-- every backend instance must use the same object storage bucket and credentials
+- every backend instance must use the same user-media and video object storage buckets and
+  credentials
 - every backend instance must use the same `RATE_LIMIT_KEY_SECRET`
 - every backend instance must use the same `AUTH_CODE_PEPPER`
 - credentials must stay in `.env.production`, deployment secrets, or a secret manager
 - credentials must not be committed to Git
+- maintenance replicas must share PostgreSQL and the same buckets because reconciliation leases
+  and cleanup intent live in PostgreSQL while the bytes live in object storage
+- keep Redis shared so the token-safe maintenance lock can be renewed by its owner and exclude
+  concurrent cleanup runs on other replicas
+- do not manually remove external-resource targets when deleting users or videos; those rows are
+  intentionally retained until exact objects or prefixes are confirmed absent
 
 For Neon PostgreSQL:
 
@@ -215,6 +225,8 @@ The full Swagger UI documentation will be available at /docs.
 - `BCRYPT_ROUNDS` bcrypt cost factor, for example `12`.
 - `JSON_BODY_LIMIT_BYTES` maximum accepted JSON body size in bytes.
 - `SESSION_CLEANUP_INTERVAL_MINUTES` how often expired auth data is cleaned up.
+  The same interval drives the sequential general maintenance pass for auth data, media targets,
+  multipart sessions, abandoned artifact generations, and video targets.
 - `SESSION_CLEANUP_INACTIVE_RETENTION_DAYS` how long inactive sessions are retained before deletion.
 - `TRUST_PROXY` Express proxy trust setting. Use `false`, `loopback`, a hop count such as `1`, or
   an explicit proxy list. Do not use `true`. For Cloudflare Tunnel forwarding to
@@ -240,6 +252,19 @@ The full Swagger UI documentation will be available at /docs.
   cannot exceed `120000`.
 - `PROFILE_MEDIA_MAX_UPLOAD_BYTES` maximum accepted raw profile media upload size in bytes,
   currently for avatar and banner uploads. Defaults to `3145728`.
+- `VIDEO_OBJECT_STORAGE_BUCKET` bucket for video sources and generated artifacts. Defaults to
+  `videos`.
+- `VIDEO_UPLOAD_PART_SIZE_BYTES` target multipart part size. Defaults to `67108864`.
+- `VIDEO_UPLOAD_MAX_PARTS` maximum number of parts in a video upload. Defaults to `10000`.
+- `VIDEO_UPLOAD_MAX_BYTES` maximum declared source size. Defaults to `3221225472`.
+- `VIDEO_USER_STORAGE_QUOTA_BYTES` per-user source quota. Upload reservations and old sources
+  awaiting confirmed deletion count toward it. Defaults to `107374182400`.
+- `VIDEO_UPLOAD_SESSION_TTL_SECONDS` lifetime of an upload session before durable expiration
+  cleanup is scheduled. Defaults to `86400`.
+- `VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS` maximum concurrent transcodes in one backend process.
+  `0` disables claiming transcode work on that replica. Defaults to `1`.
+- `VIDEO_TRANSCODE_THREADS_PER_JOB` FFmpeg encoder and filter thread limit for each job. Defaults
+  to `2`.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS_MODE`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` configure
   email delivery. Use `SMTP_TLS_MODE=implicit` for implicit TLS, `starttls` for mandatory STARTTLS,
   or `none` only for trusted local SMTP servers without TLS. `none` is rejected in production.

@@ -40,13 +40,15 @@ const createUploadSessionResult = (
     status: 'initiated',
     bucket: 'videos',
     objectKey:
-      '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f/9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f/original.mp4',
+      '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f/9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f/sources/0d4e55cb-c278-4d74-a192-bf7c10888c7a/original.mp4',
     uploadId: 'test-upload-id',
     partSizeBytes: 67_108_864,
+    expectedSizeBytes: 67_108_864,
     partCount: null,
     expiresAt: fixedExpiresAt,
     completedAt: null,
     abortedAt: null,
+    expiredAt: null,
     createdAt: fixedNow,
     updatedAt: fixedNow,
     parts: [],
@@ -80,7 +82,7 @@ export const createStubVideosService = (): VideosPorts => ({
     uploadSessionId: input.uploadSessionId,
     parts: input.partNumbers.map((partNumber) => ({
       partNumber,
-      url: `http://localhost:9000/videos/user-id/video-id/original.mp4?partNumber=${partNumber}&uploadId=test-upload-id`,
+      url: `http://localhost:9000/videos/user-id/video-id/sources/${input.uploadSessionId}/original.mp4?partNumber=${partNumber}&uploadId=test-upload-id`,
     })),
   }),
   completeMultipartUpload: async () =>
@@ -99,8 +101,7 @@ export const createStubVideosService = (): VideosPorts => ({
     }),
   abortMultipartUpload: async () =>
     createUploadSessionResult({
-      status: 'aborted',
-      abortedAt: fixedNow,
+      status: 'aborting',
     }),
   getMultipartUploadSession: async () => createUploadSessionResult(),
 });

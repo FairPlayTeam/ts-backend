@@ -5,6 +5,9 @@ export const ACTIVE_VIDEO_UPLOAD_SESSION_EXISTS_MESSAGE =
 export const VIDEO_UPLOAD_SESSION_EXPIRED_MESSAGE = 'Video upload session expired';
 export const VIDEO_UPLOAD_SESSION_STATE_MESSAGE = 'Video upload session is not in a valid state';
 export const VIDEO_UPLOAD_STATE_MESSAGE = 'Video is not in a valid upload state';
+const VIDEO_UPLOAD_SIZE_EXCEEDED_MESSAGE = 'Declared video size exceeds the upload limit';
+const VIDEO_STORAGE_QUOTA_EXCEEDED_MESSAGE = 'Video storage quota exceeded';
+const VIDEO_UPLOAD_SIZE_MISMATCH_MESSAGE = 'Uploaded video size does not match the declared size';
 
 export class VideoNotFoundError extends Error {
   constructor() {
@@ -45,5 +48,26 @@ export class InvalidVideoUploadStateError extends Error {
   constructor() {
     super(VIDEO_UPLOAD_STATE_MESSAGE);
     this.name = 'InvalidVideoUploadStateError';
+  }
+}
+
+export class VideoUploadSizeExceededError extends Error {
+  constructor() {
+    super(VIDEO_UPLOAD_SIZE_EXCEEDED_MESSAGE);
+    this.name = 'VideoUploadSizeExceededError';
+  }
+}
+
+export class VideoStorageQuotaExceededError extends Error {
+  constructor() {
+    super(VIDEO_STORAGE_QUOTA_EXCEEDED_MESSAGE);
+    this.name = 'VideoStorageQuotaExceededError';
+  }
+}
+
+export class VideoUploadSizeMismatchError extends Error {
+  constructor() {
+    super(VIDEO_UPLOAD_SIZE_MISMATCH_MESSAGE);
+    this.name = 'VideoUploadSizeMismatchError';
   }
 }

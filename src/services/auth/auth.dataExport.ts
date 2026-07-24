@@ -31,6 +31,7 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
             id: true,
             kind: true,
             objectKey: true,
+            bucket: true,
             mimeType: true,
             sizeBytes: true,
             width: true,

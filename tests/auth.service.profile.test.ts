@@ -79,6 +79,7 @@ describe('auth service profile', () => {
             },
           },
           select: {
+            bucket: true,
             kind: true,
             objectKey: true,
           },

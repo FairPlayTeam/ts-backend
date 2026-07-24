@@ -38,10 +38,14 @@ enum VideoProcessingStatus {
 }
 
 enum VideoUploadSessionStatus {
+  initializing
   initiated
   uploading
+  completing
   completed
+  aborting
   aborted
+  expiring
   expired
 }
 
@@ -52,11 +56,42 @@ enum VideoTranscodeJobStatus {
   failed
 }
 
+enum VideoArtifactGenerationState {
+  writing
+  active
+  retiring
+  retired
+}
+
 enum VideoRenditionQuality {
-  p240  @map("240p")
   p480  @map("480p")
   p720  @map("720p")
   p1080 @map("1080p")
+}
+
+enum ExternalResourceSelectorKind {
+  exact
+  prefix
+}
+
+enum ExternalResourceGoal {
+  present
+  absent
+}
+
+enum ExternalResourceState {
+  writing
+  quiescing
+  reconciling
+  confirmed_present
+  confirmed_absent
+}
+
+enum ExternalResourceRole {
+  source
+  hls_artifacts
+  thumbnail_prefix
+  user_media
 }
 
 model User {
@@ -103,68 +138,61 @@ model UserFollow {
 }
 
 model UserMediaAsset {
-  id        String        @id @default(uuid()) @db.Uuid
-  userId    String        @map("user_id") @db.Uuid
-  kind      UserMediaKind
-  objectKey String        @unique @map("object_key") @db.VarChar(512)
-  mimeType  String        @map("mime_type") @db.VarChar(100)
-  sizeBytes Int           @map("size_bytes")
-  width     Int
-  height    Int
-  createdAt DateTime      @default(now()) @map("created_at")
-  updatedAt DateTime      @updatedAt @map("updated_at")
+  id                       String        @id @default(uuid()) @db.Uuid
+  userId                   String        @map("user_id") @db.Uuid
+  kind                     UserMediaKind
+  objectKey                String        @unique @map("object_key") @db.VarChar(512)
+  bucket                   String        @db.VarChar(128)
+  externalResourceTargetId String        @unique @map("external_resource_target_id") @db.Uuid
+  mimeType                 String        @map("mime_type") @db.VarChar(100)
+  sizeBytes                Int           @map("size_bytes")
+  width                    Int
+  height                   Int
+  createdAt                DateTime      @default(now()) @map("created_at")
+  updatedAt                DateTime      @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                   User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  externalResourceTarget ExternalResourceTarget @relation(fields: [externalResourceTargetId], references: [id])
 
   @@unique([userId, kind])
   @@map("user_media_assets")
 }
 
-model UserMediaDeletionJob {
-  id            String   @id @default(cuid())
-  objectKey     String   @unique @map("object_key") @db.VarChar(512)
-  attempts      Int      @default(0)
-  lastError     String?  @map("last_error") @db.VarChar(1000)
-  nextAttemptAt DateTime @default(now()) @map("next_attempt_at")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  @@index([nextAttemptAt, id])
-  @@map("user_media_deletion_jobs")
-}
-
 model Video {
-  id                 String                @id @default(uuid()) @db.Uuid
-  publicId           String                @unique @map("public_id") @db.VarChar(64)
-  ownerId            String                @map("owner_id") @db.Uuid
-  title              String                @db.VarChar(120)
-  description        String?               @db.VarChar(5000)
-  tags               String[]              @default([])
-  license            String                @default("all_rights_reserved") @db.VarChar(64)
-  visibility         VideoVisibility       @default(unlisted)
-  allowComments      Boolean               @default(true) @map("allow_comments")
-  processingStatus   VideoProcessingStatus @default(draft) @map("processing_status")
-  moderationStatus   VideoModerationStatus @default(pending) @map("moderation_status")
-  sourceObjectKey    String?               @unique @map("source_object_key") @db.VarChar(512)
-  hlsMasterObjectKey String?               @unique @map("hls_master_object_key") @db.VarChar(512)
-  thumbnailObjectKey String?               @unique @map("thumbnail_object_key") @db.VarChar(512)
-  durationSeconds    Int?                  @map("duration_seconds")
-  width              Int?
-  height             Int?
-  viewCount          Int                   @default(0) @map("view_count")
-  ratingAverage      Float                 @default(0) @map("rating_average")
-  ratingCount        Int                   @default(0) @map("rating_count")
-  transcodeError     String?               @map("transcode_error") @db.VarChar(1000)
-  legacyStoragePath  String?               @map("legacy_storage_path") @db.VarChar(512)
-  legacyQualities    String[]              @default([]) @map("legacy_qualities")
-  publishedAt        DateTime?             @map("published_at")
-  createdAt          DateTime              @default(now()) @map("created_at")
-  updatedAt          DateTime              @updatedAt @map("updated_at")
+  id                         String                @id @default(uuid()) @db.Uuid
+  publicId                   String                @unique @map("public_id") @db.VarChar(64)
+  ownerId                    String                @map("owner_id") @db.Uuid
+  title                      String                @db.VarChar(120)
+  description                String?               @db.VarChar(5000)
+  tags                       String[]              @default([])
+  license                    String                @default("all_rights_reserved") @db.VarChar(64)
+  visibility                 VideoVisibility       @default(unlisted)
+  allowComments              Boolean               @default(true) @map("allow_comments")
+  processingStatus           VideoProcessingStatus @default(draft) @map("processing_status")
+  moderationStatus           VideoModerationStatus @default(pending) @map("moderation_status")
+  sourceUploadSessionId      String?               @unique @map("source_upload_session_id") @db.Uuid
+  sourceObjectKey            String?               @unique @map("source_object_key") @db.VarChar(512)
+  sourceSizeBytes            BigInt?               @map("source_size_bytes")
+  activeArtifactGenerationId String?               @unique @map("active_artifact_generation_id") @db.Uuid
+  hlsMasterObjectKey         String?               @unique @map("hls_master_object_key") @db.VarChar(512)
+  thumbnailObjectKey         String?               @unique @map("thumbnail_object_key") @db.VarChar(512)
+  durationSeconds            Int?                  @map("duration_seconds")
+  width                      Int?
+  height                     Int?
+  viewCount                  Int                   @default(0) @map("view_count")
+  ratingAverage              Float                 @default(0) @map("rating_average")
+  ratingCount                Int                   @default(0) @map("rating_count")
+  transcodeError             String?               @map("transcode_error") @db.VarChar(1000)
+  publishedAt                DateTime?             @map("published_at")
+  createdAt                  DateTime              @default(now()) @map("created_at")
+  updatedAt                  DateTime              @updatedAt @map("updated_at")
 
-  owner          User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  renditions     VideoRendition[]
-  transcodeJobs  VideoTranscodeJob[]
-  uploadSessions VideoUploadSession[]
+  owner                    User                      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  sourceUploadSession      VideoUploadSession?       @relation("CurrentVideoSource", fields: [sourceUploadSessionId], references: [id], onDelete: SetNull)
+  activeArtifactGeneration VideoArtifactGeneration?  @relation("ActiveArtifactGeneration", fields: [activeArtifactGenerationId], references: [id], onDelete: SetNull)
+  artifactGenerations      VideoArtifactGeneration[] @relation("VideoArtifactGenerations")
+  transcodeJobs            VideoTranscodeJob[]
+  uploadSessions           VideoUploadSession[]      @relation("VideoUploadSessions")
 
   @@index([ownerId, createdAt, id])
   @@index([visibility, moderationStatus, processingStatus, createdAt, id])
@@ -172,21 +200,21 @@ model Video {
 }
 
 model VideoRendition {
-  id                String                @id @default(uuid()) @db.Uuid
-  videoId           String                @map("video_id") @db.Uuid
-  quality           VideoRenditionQuality
-  width             Int
-  height            Int
-  bitrate           Int
-  playlistObjectKey String                @unique @map("playlist_object_key") @db.VarChar(512)
-  segmentPrefix     String                @map("segment_prefix") @db.VarChar(512)
-  codec             String                @db.VarChar(50)
-  container         String                @db.VarChar(50)
-  createdAt         DateTime              @default(now()) @map("created_at")
+  id                   String                @id @default(uuid()) @db.Uuid
+  artifactGenerationId String                @map("artifact_generation_id") @db.Uuid
+  quality              VideoRenditionQuality
+  width                Int
+  height               Int
+  bitrate              Int
+  playlistObjectKey    String                @unique @map("playlist_object_key") @db.VarChar(512)
+  segmentPrefix        String                @map("segment_prefix") @db.VarChar(512)
+  codec                String                @db.VarChar(50)
+  container            String                @db.VarChar(50)
+  createdAt            DateTime              @default(now()) @map("created_at")
 
-  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  artifactGeneration VideoArtifactGeneration @relation(fields: [artifactGenerationId], references: [id], onDelete: Cascade)
 
-  @@unique([videoId, quality])
+  @@unique([artifactGenerationId, quality])
   @@map("video_renditions")
 }
 
@@ -199,44 +227,127 @@ model VideoTranscodeJob {
   maxAttempts     Int                     @default(5) @map("max_attempts")
   lastError       String?                 @map("last_error") @db.VarChar(1000)
   nextAttemptAt   DateTime                @default(now()) @map("next_attempt_at")
-  leasedBy        String?                 @map("leased_by") @db.VarChar(128)
-  leaseExpiresAt  DateTime?               @map("lease_expires_at")
+  executionId     String?                 @unique @map("execution_id") @db.Uuid
+  heartbeatAt     DateTime?               @map("heartbeat_at")
   startedAt       DateTime?               @map("started_at")
   completedAt     DateTime?               @map("completed_at")
   failedAt        DateTime?               @map("failed_at")
   createdAt       DateTime                @default(now()) @map("created_at")
   updatedAt       DateTime                @updatedAt @map("updated_at")
 
-  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  video                    Video                     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  videoArtifactGenerations VideoArtifactGeneration[]
 
   @@unique([videoId, sourceObjectKey])
   @@index([status, nextAttemptAt, id])
   @@index([videoId, status])
-  @@index([leaseExpiresAt])
+  @@index([heartbeatAt])
   @@map("video_transcode_jobs")
 }
 
+model VideoArtifactGeneration {
+  id                    String                       @id @default(uuid()) @db.Uuid
+  videoId               String                       @map("video_id") @db.Uuid
+  sourceUploadSessionId String                       @map("source_upload_session_id") @db.Uuid
+  transcodeJobId        String                       @map("transcode_job_id") @db.Uuid
+  executionId           String                       @unique @map("execution_id") @db.Uuid
+  bucket                String                       @db.VarChar(128)
+  state                 VideoArtifactGenerationState @default(writing)
+  hlsMasterObjectKey    String?                      @unique @map("hls_master_object_key") @db.VarChar(512)
+  thumbnailObjectKey    String?                      @unique @map("thumbnail_object_key") @db.VarChar(512)
+  activatedAt           DateTime?                    @map("activated_at")
+  retiredAt             DateTime?                    @map("retired_at")
+  createdAt             DateTime                     @default(now()) @map("created_at")
+  updatedAt             DateTime                     @updatedAt @map("updated_at")
+
+  video               Video              @relation("VideoArtifactGenerations", fields: [videoId], references: [id], onDelete: Cascade)
+  sourceUploadSession VideoUploadSession @relation(fields: [sourceUploadSessionId], references: [id], onDelete: Cascade)
+  transcodeJob        VideoTranscodeJob  @relation(fields: [transcodeJobId], references: [id], onDelete: Cascade)
+  activeForVideo      Video?             @relation("ActiveArtifactGeneration")
+  renditions          VideoRendition[]
+
+  @@index([videoId, state])
+  @@index([state, updatedAt, id])
+  @@index([sourceUploadSessionId])
+  @@index([transcodeJobId])
+  @@map("video_artifact_generations")
+}
+
+model ExternalResourceTarget {
+  id                           String                       @id @default(uuid()) @db.Uuid
+  userId                       String                       @map("user_id") @db.Uuid
+  videoId                      String?                      @map("video_id") @db.Uuid
+  bucket                       String                       @db.VarChar(128)
+  selector                     String                       @db.VarChar(512)
+  selectorKind                 ExternalResourceSelectorKind @map("selector_kind")
+  role                         ExternalResourceRole
+  generation                   String                       @db.VarChar(128)
+  expectedSizeBytes            BigInt?                      @map("expected_size_bytes")
+  mayHaveMultipartUpload       Boolean                      @default(false) @map("may_have_multipart_upload")
+  goal                         ExternalResourceGoal         @default(present)
+  state                        ExternalResourceState        @default(writing)
+  quiescenceNotBefore          DateTime?                    @map("quiescence_not_before")
+  attempts                     Int                          @default(0)
+  lastError                    String?                      @map("last_error") @db.VarChar(1000)
+  nextAttemptAt                DateTime                     @default(now()) @map("next_attempt_at")
+  reconciliationLeaseId        String?                      @map("reconciliation_lease_id") @db.Uuid
+  reconciliationLeaseExpiresAt DateTime?                    @map("reconciliation_lease_expires_at")
+  createdAt                    DateTime                     @default(now()) @map("created_at")
+  updatedAt                    DateTime                     @updatedAt @map("updated_at")
+
+  uploadSessions   VideoUploadSession[]
+  multipartHandles ExternalMultipartHandle[]
+  userMediaAssets  UserMediaAsset[]
+
+  @@unique([bucket, selectorKind, selector])
+  @@index([role, state, nextAttemptAt, id])
+  @@index([reconciliationLeaseExpiresAt])
+  @@index([userId, role, state])
+  @@index([videoId, role, state])
+  @@map("external_resource_targets")
+}
+
+model ExternalMultipartHandle {
+  id              String   @id @default(uuid()) @db.Uuid
+  targetId        String   @map("target_id") @db.Uuid
+  uploadSessionId String?  @unique @map("upload_session_id") @db.Uuid
+  uploadId        String   @map("upload_id") @db.VarChar(1024)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  target        ExternalResourceTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  uploadSession VideoUploadSession?    @relation(fields: [uploadSessionId], references: [id], onDelete: SetNull)
+
+  @@unique([targetId, uploadId])
+  @@map("external_multipart_handles")
+}
+
 model VideoUploadSession {
-  id            String                   @id @default(uuid()) @db.Uuid
-  videoId       String                   @map("video_id") @db.Uuid
-  userId        String                   @map("user_id") @db.Uuid
-  status        VideoUploadSessionStatus @default(initiated)
-  bucket        String                   @db.VarChar(128)
-  objectKey     String                   @map("object_key") @db.VarChar(512)
-  uploadId      String                   @map("upload_id") @db.VarChar(1024)
-  partSizeBytes Int                      @map("part_size_bytes")
-  partCount     Int?                     @map("part_count")
-  expiresAt     DateTime                 @map("expires_at")
-  completedAt   DateTime?                @map("completed_at")
-  abortedAt     DateTime?                @map("aborted_at")
-  createdAt     DateTime                 @default(now()) @map("created_at")
-  updatedAt     DateTime                 @updatedAt @map("updated_at")
+  id                       String                   @id @default(uuid()) @db.Uuid
+  videoId                  String                   @map("video_id") @db.Uuid
+  userId                   String                   @map("user_id") @db.Uuid
+  status                   VideoUploadSessionStatus @default(initializing)
+  bucket                   String                   @db.VarChar(128)
+  objectKey                String                   @map("object_key") @db.VarChar(512)
+  partSizeBytes            Int                      @map("part_size_bytes")
+  expectedSizeBytes        BigInt                   @map("expected_size_bytes")
+  partCount                Int?                     @map("part_count")
+  expiresAt                DateTime                 @map("expires_at")
+  completedAt              DateTime?                @map("completed_at")
+  abortedAt                DateTime?                @map("aborted_at")
+  expiredAt                DateTime?                @map("expired_at")
+  externalResourceTargetId String                   @unique @map("external_resource_target_id") @db.Uuid
+  createdAt                DateTime                 @default(now()) @map("created_at")
+  updatedAt                DateTime                 @updatedAt @map("updated_at")
 
-  video Video             @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  user  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parts VideoUploadPart[]
+  video                  Video                     @relation("VideoUploadSessions", fields: [videoId], references: [id], onDelete: Cascade)
+  user                   User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentForVideo        Video?                    @relation("CurrentVideoSource")
+  externalResourceTarget ExternalResourceTarget    @relation(fields: [externalResourceTargetId], references: [id])
+  multipartHandle        ExternalMultipartHandle?
+  artifactGenerations    VideoArtifactGeneration[]
+  parts                  VideoUploadPart[]
 
-  @@unique([bucket, objectKey, uploadId])
+  @@unique([bucket, objectKey])
   @@index([videoId, status])
   @@index([userId, createdAt, id])
   @@index([expiresAt])

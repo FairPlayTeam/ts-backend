@@ -41,6 +41,7 @@ const adminAccountSelect = {
     },
     select: {
       objectKey: true,
+      bucket: true,
     },
     take: 1,
   },
@@ -113,7 +114,7 @@ const getAvatarUrl = async (
 ): Promise<string | null> => {
   const avatar = mediaAssets[0];
 
-  return avatar ? deps.objectStorage.getSignedUrl(avatar.objectKey) : null;
+  return avatar ? deps.objectStorage.getSignedUrl(avatar.objectKey, avatar.bucket) : null;
 };
 
 const toAdminAccountSummary = async (

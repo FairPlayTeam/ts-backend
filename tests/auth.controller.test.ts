@@ -131,6 +131,7 @@ const userDataExportResult = {
       id: '11111111-1111-4111-8111-111111111111',
       kind: 'avatar' as const,
       objectKey: 'users/user-id/avatar/current-avatar.webp',
+      bucket: 'fairplay-user-media',
       mimeType: 'image/webp',
       sizeBytes: 1234,
       width: 512,
@@ -142,6 +143,7 @@ const userDataExportResult = {
       id: '22222222-2222-4222-8222-222222222222',
       kind: 'banner' as const,
       objectKey: 'users/user-id/banner/current-banner.webp',
+      bucket: 'fairplay-user-media',
       mimeType: 'image/webp',
       sizeBytes: 2345,
       width: 1500,
@@ -240,7 +242,11 @@ const createControllerAuthService = (
     sessionsLoggedOut: 1,
   }),
   exportUserData: async () => userDataExportResult,
-  deleteAccount: async () => ({ message: DELETE_ACCOUNT_SUCCESS_MESSAGE, mediaCleanupQueued: 0 }),
+  deleteAccount: async () => ({
+    message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+    mediaCleanupQueued: 0,
+    externalCleanupQueued: 0,
+  }),
   ...overrides,
 });
 
@@ -634,6 +640,7 @@ describe('auth controller', () => {
           id: '11111111-1111-4111-8111-111111111111',
           kind: 'avatar',
           objectKey: 'users/user-id/avatar/current-avatar.webp',
+          bucket: 'fairplay-user-media',
           mimeType: 'image/webp',
           sizeBytes: 1234,
           width: 512,
@@ -645,6 +652,7 @@ describe('auth controller', () => {
           id: '22222222-2222-4222-8222-222222222222',
           kind: 'banner',
           objectKey: 'users/user-id/banner/current-banner.webp',
+          bucket: 'fairplay-user-media',
           mimeType: 'image/webp',
           sizeBytes: 2345,
           width: 1500,
@@ -689,7 +697,11 @@ describe('auth controller', () => {
       deleteAccount: async (input) => {
         receivedInput = input;
 
-        return { message: DELETE_ACCOUNT_SUCCESS_MESSAGE, mediaCleanupQueued: 0 };
+        return {
+          message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
+          mediaCleanupQueued: 0,
+          externalCleanupQueued: 0,
+        };
       },
     });
 
@@ -714,6 +726,7 @@ describe('auth controller', () => {
     expect(state.body).toEqual({
       message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
       mediaCleanupQueued: 0,
+      externalCleanupQueued: 0,
     });
     expectNoStore(state);
   });

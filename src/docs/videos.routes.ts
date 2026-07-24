@@ -2,6 +2,7 @@ import {
   completeVideoMultipartUploadBodySchema,
   createVideoBodySchema,
   createVideoResponseSchema,
+  initVideoMultipartUploadBodySchema,
   myVideosQuerySchema,
   myVideosResponseSchema,
   signedVideoUploadPartsResponseSchema,
@@ -32,6 +33,7 @@ const videoUploadResponses = {
   401: jsonResponse('Authentication required', ApiErrorSchema),
   404: jsonResponse('Video or upload session not found', ApiErrorSchema),
   409: jsonResponse('Upload session conflict', ApiErrorSchema),
+  413: jsonResponse('Declared upload is too large', ApiErrorSchema),
   429: jsonResponse('Too many requests', ApiErrorSchema),
   500: jsonResponse('Internal server error', ApiErrorSchema),
   503: jsonResponse('Object storage unavailable', ApiErrorSchema),
@@ -72,6 +74,7 @@ export const routeDocs = [
     security: [{ bearerAuth: [] }],
     request: {
       params: videoParamsSchema,
+      ...jsonRequest(initVideoMultipartUploadBodySchema),
     },
     responses: {
       201: jsonResponse('Multipart upload session initialized', videoUploadSessionResponseSchema),
@@ -111,14 +114,14 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/videos/{videoId}/upload/multipart/{uploadSessionId}/abort',
-    summary: 'Abort a multipart video upload',
+    summary: 'Schedule a multipart video upload for durable abort',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
     request: {
       params: videoMultipartUploadSessionParamsSchema,
     },
     responses: {
-      200: jsonResponse('Multipart upload session aborted', videoUploadSessionResponseSchema),
+      200: jsonResponse('Multipart upload abort scheduled', videoUploadSessionResponseSchema),
       ...videoUploadResponses,
     },
   },

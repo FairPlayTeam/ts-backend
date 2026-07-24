@@ -6,7 +6,4 @@ export {
   createPasswordResetTestDeps,
 } from './authService/passwordReset.js';
 export type { PasswordResetTestUser } from './authService/passwordReset.js';
-export {
-  createUserMediaAssetDeletionTransaction,
-  createUserMediaDeletionJobMock,
-} from './authService/userMedia.js';
+export { createUserMediaAssetDeletionTransaction } from './authService/userMedia.js';

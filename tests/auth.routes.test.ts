@@ -268,6 +268,7 @@ describe('auth routes', () => {
           id: '11111111-1111-4111-8111-111111111111',
           kind: 'avatar',
           objectKey: 'users/user-id/avatar/current-avatar.webp',
+          bucket: 'fairplay-user-media',
           mimeType: 'image/webp',
           sizeBytes: 1234,
           width: 512,
@@ -279,6 +280,7 @@ describe('auth routes', () => {
           id: '22222222-2222-4222-8222-222222222222',
           kind: 'banner',
           objectKey: 'users/user-id/banner/current-banner.webp',
+          bucket: 'fairplay-user-media',
           mimeType: 'image/webp',
           sizeBytes: 2345,
           width: 1500,
@@ -339,6 +341,7 @@ describe('auth routes', () => {
     expect(await response.json()).toEqual({
       message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
       mediaCleanupQueued: 0,
+      externalCleanupQueued: 0,
     });
   });
 

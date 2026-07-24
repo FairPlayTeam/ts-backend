@@ -2,7 +2,15 @@ import type { AuthDeps } from './context.js';
 import { createAuthServiceTestCalls, fixedNow } from './context.js';
 import { createBaseAuthPrisma } from './prisma.js';
 
-export function createTestDeps(overrides: Partial<AuthDeps> = {}) {
+type AuthPrismaOverride = Omit<Partial<AuthDeps['prisma']>, '$transaction'> & {
+  $transaction?: (callback: (transaction: unknown) => Promise<unknown>) => Promise<unknown>;
+};
+
+type AuthDepsOverrides = Omit<Partial<AuthDeps>, 'prisma'> & {
+  prisma?: AuthPrismaOverride;
+};
+
+export function createTestDeps(overrides: AuthDepsOverrides = {}) {
   const calls = createAuthServiceTestCalls();
   const basePrisma = createBaseAuthPrisma(calls);
   const { prisma: prismaOverride, ...dependencyOverrides } = overrides;
@@ -35,17 +43,30 @@ export function createTestDeps(overrides: Partial<AuthDeps> = {}) {
       },
     },
     objectStorage: {
+      bucket: 'fairplay-user-media',
       putObject: async (input: unknown) => {
         calls.putObject = input;
-      },
-      deleteObject: async (objectKey: string) => {
-        calls.deleteObject = objectKey;
       },
       getSignedUrl: async (objectKey: string) => {
         calls.signedUrlObjectKey = objectKey;
         calls.signedUrlObjectKeys.push(objectKey);
 
         return `http://localhost:9000/fairplay-user-media/${objectKey}`;
+      },
+    },
+    externalResources: {
+      reconcileTarget: async (input: unknown) => {
+        calls.reconcileTarget = input;
+        return 'skipped' as const;
+      },
+      reconcileDue: async (input: unknown) => {
+        calls.reconcileDue = input;
+        return {
+          claimed: 0,
+          confirmed: 0,
+          redirectedAbsent: 0,
+          failed: 0,
+        };
       },
     },
     userMediaProcessor: {

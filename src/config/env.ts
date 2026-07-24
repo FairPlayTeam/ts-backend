@@ -15,6 +15,7 @@ import {
   parseSessionCleanupInactiveRetentionMs,
   parseSessionCleanupIntervalMs,
   parseTrustProxy,
+  parseVideoTranscodeConfig,
   parseVideoUploadConfig,
   readRequiredEnv,
   ServerConfigurationError,
@@ -47,7 +48,14 @@ const videoUpload = parseVideoUploadConfig({
   objectStorageBucket: process.env.VIDEO_OBJECT_STORAGE_BUCKET,
   partSizeBytes: process.env.VIDEO_UPLOAD_PART_SIZE_BYTES,
   maxPartCount: process.env.VIDEO_UPLOAD_MAX_PARTS,
+  maxUploadBytes: process.env.VIDEO_UPLOAD_MAX_BYTES,
+  userStorageQuotaBytes: process.env.VIDEO_USER_STORAGE_QUOTA_BYTES,
   sessionTtlSeconds: process.env.VIDEO_UPLOAD_SESSION_TTL_SECONDS,
+});
+
+const videoTranscode = parseVideoTranscodeConfig({
+  maxConcurrentJobs: process.env.VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS,
+  threadsPerJob: process.env.VIDEO_TRANSCODE_THREADS_PER_JOB,
 });
 
 const config = {
@@ -65,6 +73,7 @@ const config = {
   redisUrl: parseOptionalRedisUrl(process.env.REDIS_URL, 'REDIS_URL'),
   objectStorage,
   videoUpload,
+  videoTranscode,
   authCodePepper: parseAuthCodePepper(process.env.AUTH_CODE_PEPPER, isProduction),
   rateLimitKeySecret: parseRateLimitKeySecret(process.env.RATE_LIMIT_KEY_SECRET, isProduction),
   sessionCleanupIntervalMs: parseSessionCleanupIntervalMs(

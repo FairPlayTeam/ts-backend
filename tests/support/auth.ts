@@ -1,7 +1,7 @@
 import type { AuthPorts } from '../../src/services/auth.types.js';
 import {
   CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
-  CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
+  RECONCILE_USER_MEDIA_TARGETS_SUCCESS_MESSAGE,
   CLEANUP_SESSION_SUCCESS_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
   LOGIN_SUCCESS_MESSAGE,
@@ -74,6 +74,7 @@ const userDataExportResult = {
       id: '11111111-1111-4111-8111-111111111111',
       kind: 'avatar' as const,
       objectKey: 'users/user-id/avatar/current-avatar.webp',
+      bucket: 'fairplay-user-media',
       mimeType: 'image/webp',
       sizeBytes: 1234,
       width: 512,
@@ -85,6 +86,7 @@ const userDataExportResult = {
       id: '22222222-2222-4222-8222-222222222222',
       kind: 'banner' as const,
       objectKey: 'users/user-id/banner/current-banner.webp',
+      bucket: 'fairplay-user-media',
       mimeType: 'image/webp',
       sizeBytes: 2345,
       width: 1500,
@@ -148,6 +150,7 @@ export const createStubAuthService = (): AuthPorts => ({
   deleteAccount: async () => ({
     message: DELETE_ACCOUNT_SUCCESS_MESSAGE,
     mediaCleanupQueued: 0,
+    externalCleanupQueued: 0,
   }),
   getUserSessions: async () => userSessionsResult,
   logoutAllSessions: async () => ({
@@ -210,9 +213,9 @@ export const createStubAuthService = (): AuthPorts => ({
     emailVerificationTokensDeleted: 0,
     passwordResetTokensDeleted: 0,
   }),
-  cleanupPendingUserMediaDeletions: async () => ({
-    message: CLEANUP_PENDING_USER_MEDIA_DELETIONS_SUCCESS_MESSAGE,
-    mediaObjectsDeleted: 0,
-    mediaObjectDeletionJobsFailed: 0,
+  reconcileUserMediaTargets: async () => ({
+    message: RECONCILE_USER_MEDIA_TARGETS_SUCCESS_MESSAGE,
+    mediaTargetsConfirmed: 0,
+    mediaTargetsFailed: 0,
   }),
 });

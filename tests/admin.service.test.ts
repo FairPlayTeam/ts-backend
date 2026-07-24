@@ -338,6 +338,7 @@ describe('admin service accounts', () => {
             kind: 'avatar',
           },
           select: {
+            bucket: true,
             objectKey: true,
           },
           take: 1,
