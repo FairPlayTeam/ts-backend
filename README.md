@@ -186,6 +186,21 @@ thumbnail, completes the job, and moves the previous generation to `retiring` wi
 one-hour-delayed prefix cleanup. A late process from an execution taken over elsewhere therefore
 cannot publish.
 
+## Public HLS playback
+
+The public master URL is
+`GET /videos/:publicId/hls/master.m3u8`; it resolves the current active generation and needs no
+authentication. Rendition playlists and segments use generation-qualified immutable URLs. The API
+rewrites playlist URI lines, but segment bodies are never proxied: their route returns a temporary
+redirect to a freshly signed object-storage URL.
+
+Because the browser follows that redirect to a different origin, configure CORS on the video
+bucket in MinIO/S3 as well as on the API. Allow each player origin to issue `GET` and `HEAD`, allow
+the `Range` header (or all request headers if required by the provider), and expose
+`Accept-Ranges`, `Content-Length`, `Content-Range`, and `ETag`. The bucket remains private and the
+signed URL supplies authorization. `CORS_ORIGINS` configures Express only; it does not cover the
+redirected MinIO/S3 request.
+
 ## Maintenance and runtime lifecycle
 
 The existing periodic auth cleanup is now the single general maintenance job. It sequentially and

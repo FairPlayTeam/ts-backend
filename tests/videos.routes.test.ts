@@ -9,6 +9,9 @@ import type {
   AbortVideoMultipartUploadInput,
   CompleteVideoMultipartUploadInput,
   CreateVideoInput,
+  GetVideoHlsMasterInput,
+  GetVideoHlsRenditionInput,
+  GetVideoHlsSegmentInput,
   GetVideoMultipartUploadSessionInput,
   InitVideoMultipartUploadInput,
   ListMyVideosInput,
@@ -29,11 +32,16 @@ let receivedCompleteRequest: CompleteVideoMultipartUploadInput | undefined;
 let receivedAbortRequest: AbortVideoMultipartUploadInput | undefined;
 let receivedGetRequest: GetVideoMultipartUploadSessionInput | undefined;
 let receivedListRequest: ListMyVideosInput | undefined;
+let receivedHlsMasterRequest: GetVideoHlsMasterInput | undefined;
+let receivedHlsRenditionRequest: GetVideoHlsRenditionInput | undefined;
+let receivedHlsSegmentRequest: GetVideoHlsSegmentInput | undefined;
 let receivedSessionKey: string | undefined;
 
 const videoId = '0d4e55cb-c278-4d74-a192-bf7c10888c7a';
 const uploadSessionId = '22222222-2222-4222-8222-222222222222';
 const authenticatedUserId = '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f';
+const publicId = 'AbCdEf123_';
+const generationId = '33333333-3333-4333-8333-333333333333';
 
 describe('videos routes multipart uploads', () => {
   beforeAll(async () => {
@@ -71,6 +79,23 @@ describe('videos routes multipart uploads', () => {
             receivedListRequest = input;
 
             return videosService.listMyVideos(input);
+          },
+          getHlsMaster: async (input) => {
+            receivedHlsMasterRequest = input;
+
+            return {
+              playlist: `#EXTM3U\n/videos/${input.publicId}/hls/${generationId}/480p/index.m3u8\n`,
+            };
+          },
+          getHlsRendition: async (input) => {
+            receivedHlsRenditionRequest = input;
+
+            return videosService.getHlsRendition(input);
+          },
+          getHlsSegment: async (input) => {
+            receivedHlsSegmentRequest = input;
+
+            return videosService.getHlsSegment(input);
           },
           initMultipartUpload: async (input) => {
             receivedInitRequest = input;
@@ -283,6 +308,61 @@ describe('videos routes multipart uploads', () => {
       error: 'ValidationError',
       message: REQUEST_VALIDATION_FAILED_MESSAGE,
     });
+  });
+
+  test('serves public HLS playlists and segment redirects without authentication', async () => {
+    receivedHlsMasterRequest = undefined;
+    receivedHlsRenditionRequest = undefined;
+    receivedHlsSegmentRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const masterResponse = await fetch(`${baseUrl}/videos/${publicId}/hls/master.m3u8`);
+
+    expect(masterResponse.status).toBe(200);
+    expect(masterResponse.headers.get('cache-control')).toBe('no-cache');
+    expect(masterResponse.headers.get('content-type')).toContain('application/vnd.apple.mpegurl');
+    const observedMasterRequest = receivedHlsMasterRequest as GetVideoHlsMasterInput | undefined;
+    expect(observedMasterRequest).toEqual({ publicId });
+    expect(await masterResponse.text()).toContain(`/${generationId}/480p/index.m3u8`);
+
+    const renditionResponse = await fetch(
+      `${baseUrl}/videos/${publicId}/hls/${generationId}/480p/index.m3u8`,
+    );
+
+    expect(renditionResponse.status).toBe(200);
+    expect(renditionResponse.headers.get('cache-control')).toBe('no-cache');
+    expect(renditionResponse.headers.get('content-type')).toContain(
+      'application/vnd.apple.mpegurl',
+    );
+    const observedRenditionRequest = receivedHlsRenditionRequest as
+      | GetVideoHlsRenditionInput
+      | undefined;
+    expect(observedRenditionRequest).toEqual({
+      publicId,
+      generationId,
+      quality: '480p',
+    });
+
+    const segmentResponse = await fetch(
+      `${baseUrl}/videos/${publicId}/hls/${generationId}/480p/segments/segment-00000.ts`,
+      {
+        redirect: 'manual',
+      },
+    );
+
+    expect(segmentResponse.status).toBe(307);
+    expect(segmentResponse.headers.get('cache-control')).toBe('no-store');
+    expect(segmentResponse.headers.get('location')).toBe(
+      'http://localhost:9000/videos/segment-00000.ts?signature=test',
+    );
+    const observedSegmentRequest = receivedHlsSegmentRequest as GetVideoHlsSegmentInput | undefined;
+    expect(observedSegmentRequest).toEqual({
+      publicId,
+      generationId,
+      quality: '480p',
+      segment: 'segment-00000.ts',
+    });
+    expect(receivedSessionKey).toBeUndefined();
   });
 
   test('initializes a multipart upload with an authenticated session', async () => {

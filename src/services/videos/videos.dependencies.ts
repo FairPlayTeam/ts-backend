@@ -4,7 +4,10 @@ import type { VideoUploadConfig } from '../../config/env.parsers.js';
 import type { ExternalResourceReconciler } from '../externalResources.js';
 import type { VideoPublicIdGenerator } from './videoPublicId.js';
 
-type Prisma = Pick<PrismaClient, '$queryRaw' | '$transaction' | 'video' | 'videoUploadSession'>;
+type Prisma = Pick<
+  PrismaClient,
+  '$queryRaw' | '$transaction' | 'video' | 'videoArtifactGeneration' | 'videoUploadSession'
+>;
 
 export type VideosDependencies = {
   prisma: Prisma;
@@ -14,6 +17,8 @@ export type VideosDependencies = {
     | 'completeMultipartUpload'
     | 'headObject'
     | 'initiateMultipartUpload'
+    | 'getSignedUrl'
+    | 'readObject'
     | 'signMultipartUploadPart'
   >;
   externalResources: Pick<ExternalResourceReconciler, 'reconcileDue' | 'reconcileTarget'>;

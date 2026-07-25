@@ -3,7 +3,23 @@ import { Prisma } from '@prisma/client';
 import { HOUR_MS } from '../../config/constants.js';
 import { ObjectStorageUnavailableError } from '../../lib/objectStorage.js';
 import { runSerializableTransaction } from '../../lib/prismaTransactions.js';
-import { videoOriginalKey } from './videoObjectKeys.js';
+import {
+  buildVideoArtifactManifest,
+  videoHlsSegmentObjectKey,
+  videoOriginalKey,
+  type VideoObjectKeyQuality,
+} from './videoObjectKeys.js';
+import {
+  isVideoHlsGenerationId,
+  parseVideoHlsQuality,
+  parseVideoHlsSegmentName,
+  rewriteVideoHlsMasterPlaylist,
+  rewriteVideoHlsRenditionPlaylist,
+  toVideoObjectKeyQuality,
+  toVideoRenditionQuality,
+  VIDEO_HLS_PLAYLIST_MAX_BYTES,
+} from './videoHls.js';
+import { VIDEO_PUBLIC_ID_PATTERN } from './videoPublicId.js';
 import {
   createVideoArtifactReconciliationHandler,
   scheduleAbandonedVideoArtifactGenerations,
@@ -31,12 +47,17 @@ import type {
   CompleteVideoMultipartUploadInput,
   CreateVideoInput,
   CreateVideoResult,
+  GetVideoHlsMasterInput,
+  GetVideoHlsRenditionInput,
+  GetVideoHlsSegmentInput,
   GetVideoMultipartUploadSessionInput,
   InitVideoMultipartUploadInput,
   ListMyVideosInput,
   ListMyVideosResult,
   SignVideoMultipartUploadPartsInput,
   SignVideoMultipartUploadPartsResult,
+  VideoHlsPlaylistResult,
+  VideoHlsSegmentResult,
   VideoUploadSession,
   VideoUploadSessionResult,
   VideosService,
@@ -862,6 +883,109 @@ const createVideoReconciliationHandler = (
   },
 });
 
+const assertValidPublicHlsVideoId = (publicId: string): void => {
+  if (!VIDEO_PUBLIC_ID_PATTERN.test(publicId)) {
+    throw new VideoNotFoundError();
+  }
+};
+
+const findPublicHlsRendition = async (
+  deps: VideosDependencies,
+  {
+    generationId,
+    publicId,
+    quality,
+  }: {
+    generationId: string;
+    publicId: string;
+    quality: VideoObjectKeyQuality;
+  },
+) => {
+  assertValidPublicHlsVideoId(publicId);
+
+  if (!isVideoHlsGenerationId(generationId)) {
+    throw new VideoNotFoundError();
+  }
+
+  const persistedQuality = toVideoRenditionQuality(quality);
+  const generation = await deps.prisma.videoArtifactGeneration.findFirst({
+    where: {
+      id: generationId,
+      state: {
+        in: ['active', 'retiring'],
+      },
+      video: {
+        is: {
+          publicId,
+          processingStatus: 'ready',
+          moderationStatus: {
+            not: 'rejected',
+          },
+          visibility: {
+            in: ['public', 'unlisted'],
+          },
+        },
+      },
+      renditions: {
+        some: {
+          quality: persistedQuality,
+        },
+      },
+    },
+    select: {
+      id: true,
+      bucket: true,
+      video: {
+        select: {
+          id: true,
+          ownerId: true,
+        },
+      },
+      renditions: {
+        where: {
+          quality: persistedQuality,
+        },
+        select: {
+          quality: true,
+          width: true,
+          height: true,
+          bitrate: true,
+        },
+        take: 1,
+      },
+    },
+  });
+  const persistedRendition = generation?.renditions[0];
+
+  if (!generation || !persistedRendition) {
+    throw new VideoNotFoundError();
+  }
+
+  const manifest = buildVideoArtifactManifest(
+    generation.video.ownerId,
+    generation.video.id,
+    generation.id,
+    [
+      {
+        quality: toVideoObjectKeyQuality(persistedRendition.quality),
+        width: persistedRendition.width,
+        height: persistedRendition.height,
+        bandwidth: persistedRendition.bitrate,
+      },
+    ],
+  );
+  const rendition = manifest.renditions[0];
+
+  if (!rendition) {
+    throw new VideoNotFoundError();
+  }
+
+  return {
+    bucket: generation.bucket,
+    rendition,
+  };
+};
+
 export const createVideosService = (deps: VideosDependencies): VideosService => ({
   async createVideo({
     allowComments,
@@ -939,6 +1063,144 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
       videos,
       total,
       nextCursor,
+    };
+  },
+
+  async getHlsMaster({ publicId }: GetVideoHlsMasterInput): Promise<VideoHlsPlaylistResult> {
+    assertValidPublicHlsVideoId(publicId);
+
+    const video = await deps.prisma.video.findFirst({
+      where: {
+        publicId,
+        processingStatus: 'ready',
+        moderationStatus: {
+          not: 'rejected',
+        },
+        visibility: {
+          in: ['public', 'unlisted'],
+        },
+        activeArtifactGeneration: {
+          is: {
+            state: 'active',
+          },
+        },
+      },
+      select: {
+        id: true,
+        ownerId: true,
+        activeArtifactGeneration: {
+          select: {
+            id: true,
+            bucket: true,
+            renditions: {
+              select: {
+                quality: true,
+                width: true,
+                height: true,
+                bitrate: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    const generation = video?.activeArtifactGeneration;
+
+    if (!video || !generation || generation.renditions.length === 0) {
+      throw new VideoNotFoundError();
+    }
+
+    const profiles = generation.renditions.map((rendition) => ({
+      quality: toVideoObjectKeyQuality(rendition.quality),
+      width: rendition.width,
+      height: rendition.height,
+      bandwidth: rendition.bitrate,
+    }));
+    const manifest = buildVideoArtifactManifest(video.ownerId, video.id, generation.id, profiles);
+    const storedPlaylist = await deps.objectStorage.readObject({
+      bucket: generation.bucket,
+      objectKey: manifest.master.objectKey,
+      maxBytes: VIDEO_HLS_PLAYLIST_MAX_BYTES,
+    });
+
+    if (!storedPlaylist) {
+      throw new VideoNotFoundError();
+    }
+
+    return {
+      playlist: rewriteVideoHlsMasterPlaylist(storedPlaylist.toString('utf8'), {
+        publicId,
+        generationId: generation.id,
+        qualities: profiles.map(({ quality }) => quality),
+      }),
+    };
+  },
+
+  async getHlsRendition({
+    generationId,
+    publicId,
+    quality: rawQuality,
+  }: GetVideoHlsRenditionInput): Promise<VideoHlsPlaylistResult> {
+    const quality = parseVideoHlsQuality(rawQuality);
+
+    if (!quality) {
+      throw new VideoNotFoundError();
+    }
+
+    const { bucket, rendition } = await findPublicHlsRendition(deps, {
+      generationId,
+      publicId,
+      quality,
+    });
+    const storedPlaylist = await deps.objectStorage.readObject({
+      bucket,
+      objectKey: rendition.playlistObjectKey,
+      maxBytes: VIDEO_HLS_PLAYLIST_MAX_BYTES,
+    });
+
+    if (!storedPlaylist) {
+      throw new VideoNotFoundError();
+    }
+
+    return {
+      playlist: rewriteVideoHlsRenditionPlaylist(storedPlaylist.toString('utf8'), {
+        publicId,
+        generationId,
+        quality,
+      }),
+    };
+  },
+
+  async getHlsSegment({
+    generationId,
+    publicId,
+    quality: rawQuality,
+    segment: rawSegment,
+  }: GetVideoHlsSegmentInput): Promise<VideoHlsSegmentResult> {
+    const quality = parseVideoHlsQuality(rawQuality);
+    const segment = parseVideoHlsSegmentName(rawSegment);
+
+    if (!quality || !segment) {
+      throw new VideoNotFoundError();
+    }
+
+    const { bucket, rendition } = await findPublicHlsRendition(deps, {
+      generationId,
+      publicId,
+      quality,
+    });
+    const objectKey = videoHlsSegmentObjectKey(rendition, segment);
+    const storedSegment = await deps.objectStorage.headObject({
+      bucket,
+      objectKey,
+    });
+
+    if (!storedSegment) {
+      throw new VideoNotFoundError();
+    }
+
+    return {
+      url: await deps.objectStorage.getSignedUrl(objectKey, bucket),
     };
   },
 

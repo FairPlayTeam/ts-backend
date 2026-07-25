@@ -296,6 +296,17 @@ describe('object storage', () => {
       fGetObject: async (bucket: string, objectKey: string, destinationPath: string) => {
         calls.push(['fGetObject', bucket, objectKey, destinationPath]);
       },
+      getObject: async (bucket: string, objectKey: string) => {
+        calls.push(['getObject', bucket, objectKey]);
+
+        if (objectKey === 'missing') {
+          const err = new Error('missing') as Error & { code: string };
+          err.code = 'NoSuchKey';
+          throw err;
+        }
+
+        return Readable.from([Buffer.from('bounded object')]);
+      },
       listObjectsV2: (bucket: string, prefix: string, recursive: boolean) => {
         calls.push(['listObjectsV2', bucket, prefix, recursive]);
 
@@ -328,6 +339,27 @@ describe('object storage', () => {
       }),
     ).resolves.toBeUndefined();
     await expect(
+      storage.readObject({
+        bucket: 'videos',
+        objectKey: 'playlist.m3u8',
+        maxBytes: 128,
+      }),
+    ).resolves.toEqual(Buffer.from('bounded object'));
+    await expect(
+      storage.readObject({
+        bucket: 'videos',
+        objectKey: 'missing',
+        maxBytes: 128,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      storage.readObject({
+        bucket: 'videos',
+        objectKey: 'playlist.m3u8',
+        maxBytes: 4,
+      }),
+    ).rejects.toBeInstanceOf(ObjectStorageUnavailableError);
+    await expect(
       storage.headObject({ bucket: 'videos', objectKey: 'source.mp4' }),
     ).resolves.toEqual({
       objectKey: 'source.mp4',
@@ -354,6 +386,7 @@ describe('object storage', () => {
 
     expect(calls).toContainEqual(['bucketExists', 'videos']);
     expect(calls).toContainEqual(['fGetObject', 'videos', 'source.mp4', 'C:\\tmp\\source.mp4']);
+    expect(calls).toContainEqual(['getObject', 'videos', 'playlist.m3u8']);
   });
 
   test('readiness accepts a missing sentinel object after bucket creation succeeds', async () => {

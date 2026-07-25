@@ -271,11 +271,17 @@ discoverable multipart uploads before deleting and confirming the object absent.
 reconciliation is exact-only, verifies the object with HEAD, and checks its reserved size when
 known.
 
-Two residual risks are accepted without adding a distributed owner fence: an external write that
-continues for more than the one-hour quiescence window could finish after cleanup, and transcode
-ownership assumes independently generated UUID `executionId` values do not collide. The latter is
-cryptographically negligible; a monotonic claim version would add coordination complexity without
-a proportionate benefit here.
+Three residual risks are accepted without adding more distributed coordination. An external write
+that continues for more than the one-hour quiescence window could finish after cleanup. Transcode
+ownership assumes independently generated UUID `executionId` values do not collide; this is
+cryptographically negligible, while a monotonic claim version would add coordination complexity
+without a proportionate benefit here. Finally, playback resumed after a pause longer than one hour
+while its generation is being replaced can receive a 404 for an old segment: the quiescence window
+may expire and reconciliation may confirm the old generation absent during that pause. Cleanup
+removes the whole generation prefix, not one isolated segment, so every retry and rendition can
+fail together and hls.js may surface a fatal playback error instead of skipping one missing
+segment. This is the accepted consequence of the same cleanup window and is not extended by
+readers; coordinating reconciliation with reader leases would add disproportionate complexity.
 
 Profile-media uploads reserve a writing target before PUT. Persisting the asset and confirming its
 target happen in one serializable transaction; replacement schedules the previous exact target in
@@ -330,6 +336,29 @@ activates the new generation and renditions, completes the job, and moves the pr
 generation to `retiring` with one-hour-delayed prefix cleanup. A late execution cannot publish
 after takeover; ambiguous upload failures leave a durable generation that can only be cleaned, not
 mistaken for active output.
+
+## Public HLS reads
+
+Public HLS routes use the unguessable `publicId` as the shareable link and require no session. A
+request is served only while the video is `ready`, not moderation-rejected, and its generation is
+`active` or `retiring`. All unavailable, cross-video, cross-generation, and cross-rendition cases
+return the same 404. The master resolves only the current active generation; generation-qualified
+rendition and segment URLs remain usable while that generation is retiring.
+
+Playlist reads are capped at 512 KiB. URI lines are rewritten to API routes while all FFmpeg HLS
+tags remain untouched. Every object key is rebuilt from `buildVideoArtifactManifest`; rendition
+existence and generation ownership are checked in PostgreSQL first. Segment names must match the
+generated `segment-NNNNN.ts` shape, the reconstructed object is checked with HEAD, and the API then
+returns a temporary redirect to a fresh signed GET instead of proxying bytes. Master and rendition
+playlists are `no-cache`; segment redirects are `no-store` because their signed destination is
+short-lived even though generation object keys are immutable.
+
+Segment bytes come from the MinIO/S3 origin after the redirect, so the bucket itself must allow
+cross-origin browser reads from every deployed player origin. Configure bucket CORS with `GET` and
+`HEAD`, allow the `Range` request header (or the provider's equivalent wildcard), and expose at
+least `Accept-Ranges`, `Content-Length`, `Content-Range`, and `ETag`. Keep the bucket private:
+authorization still comes from the signed URL. Express `CORS_ORIGINS` applies only to API
+responses and cannot authorize the browser's subsequent request to the object-storage origin.
 
 ## Factories
 

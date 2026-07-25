@@ -142,9 +142,34 @@ export type SignVideoMultipartUploadPartsResult = {
   }[];
 };
 
+export type GetVideoHlsMasterInput = {
+  publicId: string;
+};
+
+export type GetVideoHlsRenditionInput = {
+  publicId: string;
+  generationId: string;
+  quality: string;
+};
+
+export type GetVideoHlsSegmentInput = GetVideoHlsRenditionInput & {
+  segment: string;
+};
+
+export type VideoHlsPlaylistResult = {
+  playlist: string;
+};
+
+export type VideoHlsSegmentResult = {
+  url: string;
+};
+
 export type VideosRoutePort = {
   createVideo(input: CreateVideoInput): Promise<CreateVideoResult>;
   listMyVideos(input: ListMyVideosInput): Promise<ListMyVideosResult>;
+  getHlsMaster(input: GetVideoHlsMasterInput): Promise<VideoHlsPlaylistResult>;
+  getHlsRendition(input: GetVideoHlsRenditionInput): Promise<VideoHlsPlaylistResult>;
+  getHlsSegment(input: GetVideoHlsSegmentInput): Promise<VideoHlsSegmentResult>;
   initMultipartUpload(input: InitVideoMultipartUploadInput): Promise<VideoUploadSessionResult>;
   signMultipartUploadParts(
     input: SignVideoMultipartUploadPartsInput,

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { Prisma, type PrismaClient, type VideoRenditionQuality } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { HOUR_MS, MINUTE_MS } from '../../config/constants.js';
 import type { ObjectStorage } from '../../lib/objectStorage.js';
 import { runSerializableTransaction } from '../../lib/prismaTransactions.js';
@@ -10,11 +10,8 @@ import {
   requestExternalResourceAbsence,
   type ExternalResourceReconciliationHandler,
 } from '../externalResources.js';
-import {
-  buildVideoArtifactManifest,
-  type VideoArtifactManifest,
-  type VideoArtifactProfile,
-} from './videoObjectKeys.js';
+import { buildVideoArtifactManifest, type VideoArtifactManifest } from './videoObjectKeys.js';
+import { toVideoRenditionQuality } from './videoHls.js';
 import {
   probeVideo,
   selectVideoTranscodeProfiles,
@@ -384,19 +381,6 @@ const reserveArtifactGeneration = async (
   };
 };
 
-const toPrismaRenditionQuality = (
-  quality: VideoArtifactProfile['quality'],
-): VideoRenditionQuality => {
-  switch (quality) {
-    case '480p':
-      return 'p480';
-    case '720p':
-      return 'p720';
-    case '1080p':
-      return 'p1080';
-  }
-};
-
 export const publishVideoArtifactGeneration = async (
   deps: Pick<VideoTranscodeRunnerDependencies, 'clock' | 'prisma'>,
   {
@@ -506,7 +490,7 @@ export const publishVideoArtifactGeneration = async (
     await tx.videoRendition.createMany({
       data: manifest.renditions.map((rendition) => ({
         artifactGenerationId: generation.id,
-        quality: toPrismaRenditionQuality(rendition.quality),
+        quality: toVideoRenditionQuality(rendition.quality),
         width: rendition.width,
         height: rendition.height,
         bitrate: rendition.bandwidth,

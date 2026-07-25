@@ -7,12 +7,16 @@ import {
   myVideosResponseSchema,
   signedVideoUploadPartsResponseSchema,
   signVideoMultipartUploadPartsBodySchema,
+  videoHlsMasterParamsSchema,
+  videoHlsRenditionParamsSchema,
+  videoHlsSegmentParamsSchema,
   videoMultipartUploadSessionParamsSchema,
   videoParamsSchema,
   videoUploadSessionResponseSchema,
 } from '../controllers/videos.schemas.js';
 import { jsonRequest, jsonResponse } from './openapi.helpers.js';
 import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from './registry.js';
+import { z } from './zod.js';
 
 const videoCreateResponses = {
   400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
@@ -39,7 +43,67 @@ const videoUploadResponses = {
   503: jsonResponse('Object storage unavailable', ApiErrorSchema),
 };
 
+const hlsPlaylistResponse = (description: string) => ({
+  description,
+  content: {
+    'application/vnd.apple.mpegurl': {
+      schema: z.string(),
+    },
+  },
+});
+
+const videoHlsResponses = {
+  404: jsonResponse('Public HLS resource not found', ApiErrorSchema),
+  429: jsonResponse('Too many requests', ApiErrorSchema),
+  500: jsonResponse('Internal server error', ApiErrorSchema),
+  503: jsonResponse('Object storage unavailable', ApiErrorSchema),
+};
+
 export const routeDocs = [
+  {
+    method: 'get',
+    path: '/videos/{publicId}/hls/master.m3u8',
+    summary: 'Get the public HLS master playlist',
+    tags: ['Videos'],
+    security: [],
+    request: {
+      params: videoHlsMasterParamsSchema,
+    },
+    responses: {
+      200: hlsPlaylistResponse('Rewritten HLS master playlist'),
+      ...videoHlsResponses,
+    },
+  },
+  {
+    method: 'get',
+    path: '/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8',
+    summary: 'Get an immutable public HLS rendition playlist',
+    tags: ['Videos'],
+    security: [],
+    request: {
+      params: videoHlsRenditionParamsSchema,
+    },
+    responses: {
+      200: hlsPlaylistResponse('Rewritten HLS rendition playlist'),
+      ...videoHlsResponses,
+    },
+  },
+  {
+    method: 'get',
+    path: '/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}',
+    summary: 'Redirect to a signed immutable HLS segment',
+    tags: ['Videos'],
+    security: [],
+    request: {
+      params: videoHlsSegmentParamsSchema,
+    },
+    responses: {
+      307: {
+        description: 'Temporary redirect to a fresh signed object-storage URL',
+      },
+      ...videoHlsResponses,
+    },
+  },
   {
     method: 'post',
     path: '/videos',

@@ -21,6 +21,7 @@ type ObjectStorageClient = {
     headers: Record<string, string>,
   ): Promise<string>;
   fGetObject?(bucketName: string, objectName: string, destinationPath: string): Promise<void>;
+  getObject?(bucketName: string, objectName: string): Promise<Readable>;
   listIncompleteUploads?(bucketName: string, prefix: string, recursive: boolean): Readable;
   listObjectsV2?(bucketName: string, prefix: string, recursive: boolean): Readable;
   makeBucket(bucketName: string, region?: string): Promise<void>;
@@ -53,6 +54,7 @@ export type ObjectStorage = {
   abortMultipartUpload(input: AbortMultipartUploadInput): Promise<void>;
   completeMultipartUpload(input: CompleteMultipartUploadInput): Promise<void>;
   downloadObject(input: DownloadObjectInput): Promise<void>;
+  readObject(input: ReadObjectInput): Promise<Buffer | null>;
   ensureBucket(bucket?: string): Promise<void>;
   initiateMultipartUpload(input: InitiateMultipartUploadInput): Promise<MultipartUpload>;
   putObject(input: PutObjectInput): Promise<void>;
@@ -96,6 +98,10 @@ type ObjectStorageSelector = {
 
 type DownloadObjectInput = ObjectStorageSelector & {
   destinationPath: string;
+};
+
+type ReadObjectInput = ObjectStorageSelector & {
+  maxBytes: number;
 };
 
 export type ObjectStorageObject = {
@@ -207,6 +213,7 @@ export const createUnavailableObjectStorage = (): ObjectStorage => ({
   abortMultipartUpload: () => rejectUnavailableObjectStorage<void>(),
   completeMultipartUpload: () => rejectUnavailableObjectStorage<void>(),
   downloadObject: () => rejectUnavailableObjectStorage<void>(),
+  readObject: () => rejectUnavailableObjectStorage<Buffer | null>(),
   ensureBucket: () => rejectUnavailableObjectStorage<void>(),
   initiateMultipartUpload: () => rejectUnavailableObjectStorage<MultipartUpload>(),
   putObject: () => rejectUnavailableObjectStorage<void>(),
@@ -317,6 +324,60 @@ const collectStreamItems = <T>(
 const assertListLimit = (limit: number): void => {
   if (!Number.isSafeInteger(limit) || limit <= 0) {
     throw new TypeError('Object storage list limit must be a positive integer');
+  }
+};
+
+const readBoundedStream = (stream: Readable, maxBytes: number): Promise<Buffer> =>
+  new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let sizeBytes = 0;
+    let settled = false;
+
+    stream.on('data', (value: unknown) => {
+      if (settled) {
+        return;
+      }
+
+      if (!Buffer.isBuffer(value) && !(value instanceof Uint8Array) && typeof value !== 'string') {
+        settled = true;
+        stream.destroy();
+        reject(new Error('Object storage returned an invalid object chunk'));
+        return;
+      }
+
+      const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+
+      if (sizeBytes + chunk.length > maxBytes) {
+        settled = true;
+        stream.destroy();
+        reject(new Error(`Object exceeds the ${maxBytes}-byte read limit`));
+        return;
+      }
+
+      chunks.push(chunk);
+      sizeBytes += chunk.length;
+    });
+    stream.on('end', () => {
+      if (!settled) {
+        settled = true;
+        resolve(Buffer.concat(chunks, sizeBytes));
+      }
+    });
+    stream.on('error', (err: unknown) => {
+      if (!settled) {
+        settled = true;
+        reject(
+          err instanceof Error
+            ? err
+            : new Error('Object storage read stream failed', { cause: err }),
+        );
+      }
+    });
+  });
+
+const assertReadLimit = (maxBytes: number): void => {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+    throw new TypeError('Object storage read limit must be a positive integer');
   }
 };
 
@@ -483,6 +544,34 @@ export const createObjectStorage = (
           }
 
           return client.fGetObject(bucket, objectKey, destinationPath);
+        },
+      });
+    },
+
+    async readObject({ bucket = config.bucket, maxBytes, objectKey }) {
+      assertReadLimit(maxBytes);
+      await ensureBucket(bucket);
+
+      return runObjectStorageOperation({
+        config,
+        logger,
+        operation: 'objectStorage.readObject',
+        data: { bucket, maxBytes, objectKey },
+        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
+        run: async () => {
+          if (!client.getObject) {
+            throw createUnsupportedObjectStorageOperationError('bounded object reads');
+          }
+
+          try {
+            return await readBoundedStream(await client.getObject(bucket, objectKey), maxBytes);
+          } catch (err) {
+            if (isNotFoundStorageError(err)) {
+              return null;
+            }
+
+            throw err;
+          }
         },
       });
     },

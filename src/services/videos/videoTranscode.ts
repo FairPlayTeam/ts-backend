@@ -1,7 +1,12 @@
 import { spawn } from 'node:child_process';
 import { basename, dirname, resolve } from 'node:path';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
-import type { VideoArtifactManifest, VideoArtifactProfile } from './videoObjectKeys.js';
+import {
+  VIDEO_HLS_SEGMENT_NAME_PATTERN,
+  videoHlsSegmentObjectKey,
+  type VideoArtifactManifest,
+  type VideoArtifactProfile,
+} from './videoObjectKeys.js';
 
 const PROCESS_OUTPUT_LIMIT_BYTES = 256 * 1024;
 const PROCESS_ABORT_KILL_DELAY_MS = 5_000;
@@ -498,7 +503,7 @@ export const transcodeVideoArtifacts = async ({
     });
     const segmentDirectory = localArtifactPath(outputDirectory, rendition.segmentRelativeDirectory);
     const segmentNames = (await readdir(segmentDirectory))
-      .filter((name) => /^segment-\d+\.ts$/u.test(name))
+      .filter((name) => VIDEO_HLS_SEGMENT_NAME_PATTERN.test(name))
       .sort();
 
     if (segmentNames.length === 0) {
@@ -509,7 +514,7 @@ export const transcodeVideoArtifacts = async ({
       segmentNames.map((name) =>
         describeGeneratedFile({
           contentType: 'video/mp2t',
-          objectKey: `${rendition.segmentPrefix}${name}`,
+          objectKey: videoHlsSegmentObjectKey(rendition, name),
           outputDirectory,
           relativePath: `${rendition.segmentRelativeDirectory}/${name}`,
         }),

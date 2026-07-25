@@ -8,6 +8,9 @@ import type {
   InitVideoMultipartUploadBody,
   ListMyVideosQuery,
   SignVideoMultipartUploadPartsBody,
+  VideoHlsMasterParams,
+  VideoHlsRenditionParams,
+  VideoHlsSegmentParams,
   VideoMultipartUploadSessionParams,
   VideoParams,
 } from '../videos.schemas.js';
@@ -18,6 +21,12 @@ import {
   toSignedVideoUploadPartsResponse,
   toVideoUploadSessionResponse,
 } from './videos.responses.js';
+import {
+  VIDEO_HLS_CONTENT_TYPE,
+  VIDEO_HLS_MASTER_CACHE_CONTROL,
+  VIDEO_HLS_RENDITION_CACHE_CONTROL,
+  VIDEO_HLS_SEGMENT_REDIRECT_CACHE_CONTROL,
+} from '../../services/videos/videoHls.js';
 
 type InitUploadRequest = Request<VideoParams, unknown, InitVideoMultipartUploadBody>;
 type VideoUploadSessionRequest = Request<VideoMultipartUploadSessionParams>;
@@ -33,6 +42,9 @@ type CompleteRequest = Request<
 >;
 type CreateVideoRequest = Request<unknown, unknown, CreateVideoBody>;
 type ListMyVideosRequest = Request<unknown, unknown, unknown, ListMyVideosQuery>;
+type HlsMasterRequest = Request<VideoHlsMasterParams>;
+type HlsRenditionRequest = Request<VideoHlsRenditionParams>;
+type HlsSegmentRequest = Request<VideoHlsSegmentParams>;
 
 export const createVideosController = ({ videosService }: VideosControllerDependencies) => {
   const createVideo: RequestHandler = async (req, res, next) => {
@@ -165,10 +177,67 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     }
   };
 
+  const getHlsMaster: RequestHandler = async (req, res, next) => {
+    try {
+      const hlsReq = req as HlsMasterRequest;
+      const result = await videosService.getHlsMaster({
+        publicId: hlsReq.params.publicId,
+      });
+
+      return res
+        .status(200)
+        .set('Cache-Control', VIDEO_HLS_MASTER_CACHE_CONTROL)
+        .set('Content-Type', VIDEO_HLS_CONTENT_TYPE)
+        .send(result.playlist);
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const getHlsRendition: RequestHandler = async (req, res, next) => {
+    try {
+      const hlsReq = req as HlsRenditionRequest;
+      const result = await videosService.getHlsRendition({
+        publicId: hlsReq.params.publicId,
+        generationId: hlsReq.params.generationId,
+        quality: hlsReq.params.quality,
+      });
+
+      return res
+        .status(200)
+        .set('Cache-Control', VIDEO_HLS_RENDITION_CACHE_CONTROL)
+        .set('Content-Type', VIDEO_HLS_CONTENT_TYPE)
+        .send(result.playlist);
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const getHlsSegment: RequestHandler = async (req, res, next) => {
+    try {
+      const hlsReq = req as HlsSegmentRequest;
+      const result = await videosService.getHlsSegment({
+        publicId: hlsReq.params.publicId,
+        generationId: hlsReq.params.generationId,
+        quality: hlsReq.params.quality,
+        segment: hlsReq.params.segment,
+      });
+
+      return res
+        .set('Cache-Control', VIDEO_HLS_SEGMENT_REDIRECT_CACHE_CONTROL)
+        .redirect(307, result.url);
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
   return {
     abortMultipartUpload,
     completeMultipartUpload,
     createVideo,
+    getHlsMaster,
+    getHlsRendition,
+    getHlsSegment,
     getMultipartUploadSession,
     initMultipartUpload,
     listMyVideos,

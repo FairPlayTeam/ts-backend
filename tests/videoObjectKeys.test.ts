@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildVideoArtifactManifest,
+  videoHlsSegmentObjectKey,
   videoOriginalKey,
   type VideoArtifactProfile,
 } from '../src/services/videos/videoObjectKeys.js';
@@ -73,5 +74,19 @@ describe('video object keys', () => {
       'generationId',
     );
     expect(() => videoOriginalKey('', videoId, 'upload')).toThrow('userId');
+  });
+
+  test('builds segment keys only from a manifest rendition and an exact generated name', () => {
+    const rendition = buildVideoArtifactManifest(userId, videoId, 'generation-789', profiles)
+      .renditions[0];
+
+    expect(rendition).toBeDefined();
+    expect(videoHlsSegmentObjectKey(rendition!, 'segment-00042.ts')).toBe(
+      'user-123/video-456/generations/generation-789/hls/480p/segments/segment-00042.ts',
+    );
+    expect(() => videoHlsSegmentObjectKey(rendition!, '../segment-00042.ts')).toThrow(
+      'segmentName',
+    );
+    expect(() => videoHlsSegmentObjectKey(rendition!, 'segment-42.ts')).toThrow('segmentName');
   });
 });

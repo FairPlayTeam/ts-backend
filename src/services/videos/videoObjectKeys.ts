@@ -1,4 +1,6 @@
-type VideoObjectKeyQuality = '480p' | '720p' | '1080p';
+export type VideoObjectKeyQuality = '480p' | '720p' | '1080p';
+
+export const VIDEO_HLS_SEGMENT_NAME_PATTERN = /^segment-\d{5}\.ts$/u;
 
 export type VideoArtifactProfile = {
   quality: VideoObjectKeyQuality;
@@ -89,4 +91,17 @@ export const buildVideoArtifactManifest = (
       };
     }),
   };
+};
+
+export const videoHlsSegmentObjectKey = (
+  rendition: VideoArtifactManifest['renditions'][number],
+  segmentName: string,
+): string => {
+  assertObjectKeySegment('segmentName', segmentName);
+
+  if (!VIDEO_HLS_SEGMENT_NAME_PATTERN.test(segmentName)) {
+    throw new Error('segmentName must use the generated HLS segment format');
+  }
+
+  return `${rendition.segmentPrefix}${segmentName}`;
 };

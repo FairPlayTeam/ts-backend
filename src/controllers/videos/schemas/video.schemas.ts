@@ -1,4 +1,6 @@
 import { z } from '../../../docs/zod.js';
+import { VIDEO_HLS_SEGMENT_NAME_PATTERN } from '../../../services/videos/videoObjectKeys.js';
+import { VIDEO_PUBLIC_ID_PATTERN } from '../../../services/videos/videoPublicId.js';
 
 const VIDEO_TITLE_MAX_LENGTH = 120;
 const VIDEO_DESCRIPTION_MAX_LENGTH = 5_000;
@@ -25,6 +27,31 @@ export const videoMultipartUploadSessionParamsSchema = videoParamsSchema
     }),
   })
   .openapi('VideoMultipartUploadSessionParams');
+
+export const videoHlsMasterParamsSchema = z
+  .object({
+    publicId: z.string().regex(VIDEO_PUBLIC_ID_PATTERN).openapi({ example: 'AbCdEf123_' }),
+  })
+  .strict()
+  .openapi('VideoHlsMasterParams');
+
+export const videoHlsRenditionParamsSchema = videoHlsMasterParamsSchema
+  .extend({
+    generationId: z.string().uuid().openapi({
+      example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+    }),
+    quality: z.enum(['480p', '720p', '1080p']).openapi({ example: '720p' }),
+  })
+  .openapi('VideoHlsRenditionParams');
+
+export const videoHlsSegmentParamsSchema = videoHlsRenditionParamsSchema
+  .extend({
+    segment: z
+      .string()
+      .regex(VIDEO_HLS_SEGMENT_NAME_PATTERN)
+      .openapi({ example: 'segment-00001.ts' }),
+  })
+  .openapi('VideoHlsSegmentParams');
 
 const partNumberSchema = z.number().int().min(1).max(10_000).openapi({ example: 1 });
 
@@ -277,6 +304,9 @@ export const listMyVideosSchema = z.object({
 });
 
 export type VideoParams = z.infer<typeof initVideoMultipartUploadSchema>['params'];
+export type VideoHlsMasterParams = z.infer<typeof videoHlsMasterParamsSchema>;
+export type VideoHlsRenditionParams = z.infer<typeof videoHlsRenditionParamsSchema>;
+export type VideoHlsSegmentParams = z.infer<typeof videoHlsSegmentParamsSchema>;
 export type InitVideoMultipartUploadBody = z.infer<typeof initVideoMultipartUploadSchema>['body'];
 export type VideoMultipartUploadSessionParams = z.infer<
   typeof getVideoMultipartUploadSessionSchema

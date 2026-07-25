@@ -27,6 +27,9 @@ export const createRouter = ({ authService, videosService }: VideosRouterDepende
     abortMultipartUpload,
     completeMultipartUpload,
     createVideo,
+    getHlsMaster,
+    getHlsRendition,
+    getHlsSegment,
     getMultipartUploadSession,
     initMultipartUpload,
     listMyVideos,
@@ -41,6 +44,9 @@ export const createRouter = ({ authService, videosService }: VideosRouterDepende
 
   router.post('/', ...protectedValidatedRoute(createVideoSchema, createVideo));
   router.get('/me', ...protectedValidatedRoute(listMyVideosSchema, listMyVideos));
+  router.get('/:publicId/hls/master.m3u8', getHlsMaster);
+  router.get('/:publicId/hls/:generationId/:quality/index.m3u8', getHlsRendition);
+  router.get('/:publicId/hls/:generationId/:quality/segments/:segment', getHlsSegment);
   router.post(
     '/:videoId/upload/multipart/init',
     ...protectedValidatedRoute(initVideoMultipartUploadSchema, initMultipartUpload),

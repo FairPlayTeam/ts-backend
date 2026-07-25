@@ -165,12 +165,25 @@ describe('OpenAPI generation', () => {
       '/profiles/{username}/follow',
       '/videos',
       '/videos/me',
+      '/videos/{publicId}/hls/master.m3u8',
+      '/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8',
+      '/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}',
       '/videos/{videoId}/upload/multipart/init',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}/abort',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}/complete',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}/parts/sign',
     ]);
+    expect(document.paths['/videos/{publicId}/hls/master.m3u8']?.get?.security).toEqual([]);
+    expect(
+      document.paths['/videos/{publicId}/hls/master.m3u8']?.get?.responses?.[200]?.content?.[
+        'application/vnd.apple.mpegurl'
+      ],
+    ).toBeDefined();
+    expect(
+      document.paths['/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}']?.get
+        ?.responses?.[307],
+    ).toBeDefined();
     expect(document.paths['/auth/login']?.post?.requestBody).toBeDefined();
     expect(document.paths['/admin/users']?.get?.requestBody).toBeUndefined();
     expect(document.paths['/admin/users']?.get?.parameters).toEqual(
