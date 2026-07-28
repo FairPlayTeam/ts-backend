@@ -4,6 +4,8 @@ import {
   AVATAR_IMAGE_SIZE_PX,
   BANNER_IMAGE_HEIGHT_PX,
   BANNER_IMAGE_WIDTH_PX,
+  VIDEO_SOURCE_THUMBNAIL_HEIGHT_PX,
+  VIDEO_SOURCE_THUMBNAIL_WIDTH_PX,
 } from '../../config/constants.js';
 import {
   UserMediaFileRequiredError,
@@ -21,7 +23,6 @@ const ACCEPTED_INPUT_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/web
 const AVATAR_MAX_INPUT_PIXELS = 16_000_000;
 
 type UserMediaPolicy = {
-  kind: UserMediaKind;
   width: number;
   height: number;
   fit: 'cover';
@@ -32,6 +33,7 @@ type UserMediaPolicy = {
 
 export type UserMediaProcessor = {
   process(input: UserMediaProcessingInput): Promise<ProcessedUserMedia>;
+  processVideoThumbnail(file: UserMediaProcessingInput['file']): Promise<ProcessedUserMedia>;
 };
 
 export type UserMediaProcessorConfig = {
@@ -42,7 +44,6 @@ const createUserMediaPolicies = ({
   profileMediaMaxUploadBytes,
 }: UserMediaProcessorConfig): Record<UserMediaKind, UserMediaPolicy> => ({
   avatar: {
-    kind: 'avatar',
     width: AVATAR_IMAGE_SIZE_PX,
     height: AVATAR_IMAGE_SIZE_PX,
     fit: 'cover',
@@ -51,7 +52,6 @@ const createUserMediaPolicies = ({
     webpQuality: 82,
   },
   banner: {
-    kind: 'banner',
     width: BANNER_IMAGE_WIDTH_PX,
     height: BANNER_IMAGE_HEIGHT_PX,
     fit: 'cover',
@@ -59,6 +59,17 @@ const createUserMediaPolicies = ({
     maxInputPixels: 24_000_000,
     webpQuality: 82,
   },
+});
+
+const createVideoThumbnailPolicy = ({
+  profileMediaMaxUploadBytes,
+}: UserMediaProcessorConfig): UserMediaPolicy => ({
+  width: VIDEO_SOURCE_THUMBNAIL_WIDTH_PX,
+  height: VIDEO_SOURCE_THUMBNAIL_HEIGHT_PX,
+  fit: 'cover',
+  maxUploadBytes: profileMediaMaxUploadBytes,
+  maxInputPixels: AVATAR_MAX_INPUT_PIXELS,
+  webpQuality: 82,
 });
 
 const assertProcessableFile = async (
@@ -95,6 +106,8 @@ const processImage = async (
         height: policy.height,
         fit: policy.fit,
         position: 'centre',
+        // Every normalized media kind keeps its configured fixed output dimensions.
+        withoutEnlargement: false,
       })
       .webp({
         quality: policy.webpQuality,
@@ -116,6 +129,7 @@ const processImage = async (
 
 export const createUserMediaProcessor = (config: UserMediaProcessorConfig): UserMediaProcessor => {
   const policies = createUserMediaPolicies(config);
+  const videoThumbnailPolicy = createVideoThumbnailPolicy(config);
 
   return {
     async process(input: UserMediaProcessingInput) {
@@ -123,6 +137,11 @@ export const createUserMediaProcessor = (config: UserMediaProcessorConfig): User
       await assertProcessableFile(input.file, policy);
 
       return processImage(input.file, policy);
+    },
+    async processVideoThumbnail(file) {
+      await assertProcessableFile(file, videoThumbnailPolicy);
+
+      return processImage(file, videoThumbnailPolicy);
     },
   };
 };

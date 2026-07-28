@@ -3,6 +3,7 @@ import {
   buildVideoArtifactManifest,
   videoHlsSegmentObjectKey,
   videoOriginalKey,
+  videoSourceThumbnailKey,
   type VideoArtifactProfile,
 } from '../src/services/videos/videoObjectKeys.js';
 
@@ -28,6 +29,15 @@ describe('video object keys', () => {
   test('generates an immutable source key scoped to the upload session', () => {
     expect(videoOriginalKey(userId, videoId, 'upload-789')).toBe(
       'user-123/video-456/sources/upload-789/original.mp4',
+    );
+  });
+
+  test('generates an immutable source thumbnail key scoped to the upload session', () => {
+    expect(videoSourceThumbnailKey(userId, videoId, 'upload-123', 'thumbnail-456')).toBe(
+      'user-123/video-456/sources/upload-123/thumbnails/thumbnail-456.webp',
+    );
+    expect(() => videoSourceThumbnailKey(userId, videoId, 'upload-123', '../thumbnail')).toThrow(
+      'thumbnailId',
     );
   });
 

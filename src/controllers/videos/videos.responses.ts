@@ -3,6 +3,7 @@ import type {
   CreateVideoResult,
   ListMyVideosResult,
   SignVideoMultipartUploadPartsResult,
+  UploadVideoSourceThumbnailResult,
   VideoUploadSessionResult,
 } from '../../services/videos.types.js';
 
@@ -56,4 +57,14 @@ export const toVideoUploadSessionResponse = ({ uploadSession }: VideoUploadSessi
 export const toSignedVideoUploadPartsResponse = (result: SignVideoMultipartUploadPartsResult) => ({
   uploadSessionId: result.uploadSessionId,
   parts: result.parts,
+});
+
+export const toUploadVideoSourceThumbnailResponse = ({
+  thumbnail,
+}: UploadVideoSourceThumbnailResult) => ({
+  thumbnail: {
+    ...thumbnail,
+    createdAt: toIsoString(thumbnail.createdAt),
+    updatedAt: toIsoString(thumbnail.updatedAt),
+  },
 });

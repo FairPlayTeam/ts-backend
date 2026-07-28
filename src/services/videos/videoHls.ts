@@ -5,6 +5,7 @@ export const VIDEO_HLS_PLAYLIST_MAX_BYTES = 512 * 1024;
 export const VIDEO_HLS_MASTER_CACHE_CONTROL = 'no-cache';
 export const VIDEO_HLS_RENDITION_CACHE_CONTROL = 'no-cache';
 export const VIDEO_HLS_SEGMENT_REDIRECT_CACHE_CONTROL = 'no-store';
+export const VIDEO_THUMBNAIL_REDIRECT_CACHE_CONTROL = 'no-store';
 export const VIDEO_HLS_CONTENT_TYPE = 'application/vnd.apple.mpegurl';
 
 const VIDEO_HLS_QUALITY_PATTERN = /^(?:480p|720p|1080p)$/u;

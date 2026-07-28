@@ -7,6 +7,8 @@ import {
   myVideosResponseSchema,
   signedVideoUploadPartsResponseSchema,
   signVideoMultipartUploadPartsBodySchema,
+  uploadVideoSourceThumbnailBodySchema,
+  uploadVideoSourceThumbnailResponseSchema,
   videoHlsMasterParamsSchema,
   videoHlsRenditionParamsSchema,
   videoHlsSegmentParamsSchema,
@@ -14,7 +16,7 @@ import {
   videoParamsSchema,
   videoUploadSessionResponseSchema,
 } from '../controllers/videos.schemas.js';
-import { jsonRequest, jsonResponse } from './openapi.helpers.js';
+import { jsonRequest, jsonResponse, multipartFormDataRequest } from './openapi.helpers.js';
 import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from './registry.js';
 import { z } from './zod.js';
 
@@ -60,6 +62,22 @@ const videoHlsResponses = {
 };
 
 export const routeDocs = [
+  {
+    method: 'get',
+    path: '/videos/{publicId}/thumbnail',
+    summary: 'Redirect to the active public video thumbnail',
+    tags: ['Videos'],
+    security: [],
+    request: {
+      params: videoHlsMasterParamsSchema,
+    },
+    responses: {
+      307: {
+        description: 'Temporary redirect to a fresh signed object-storage URL',
+      },
+      ...videoHlsResponses,
+    },
+  },
   {
     method: 'get',
     path: '/videos/{publicId}/hls/master.m3u8',
@@ -157,6 +175,24 @@ export const routeDocs = [
     },
     responses: {
       200: jsonResponse('Signed multipart upload part URLs', signedVideoUploadPartsResponseSchema),
+      ...videoUploadResponses,
+    },
+  },
+  {
+    method: 'put',
+    path: '/videos/{videoId}/upload/multipart/{uploadSessionId}/thumbnail',
+    summary: 'Upload or replace a source-bound video thumbnail',
+    tags: ['Videos'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      params: videoMultipartUploadSessionParamsSchema,
+      ...multipartFormDataRequest(uploadVideoSourceThumbnailBodySchema),
+    },
+    responses: {
+      200: jsonResponse(
+        'Normalized source thumbnail confirmed',
+        uploadVideoSourceThumbnailResponseSchema,
+      ),
       ...videoUploadResponses,
     },
   },

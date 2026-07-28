@@ -13,9 +13,11 @@ import type {
   GetVideoHlsRenditionInput,
   GetVideoHlsSegmentInput,
   GetVideoMultipartUploadSessionInput,
+  GetVideoThumbnailInput,
   InitVideoMultipartUploadInput,
   ListMyVideosInput,
   SignVideoMultipartUploadPartsInput,
+  UploadVideoSourceThumbnailInput,
   VideosPorts,
 } from '../src/services/videos.types.js';
 import { createStubAdminService } from './support/admin.js';
@@ -28,6 +30,7 @@ let baseUrl: string;
 let receivedInitRequest: InitVideoMultipartUploadInput | undefined;
 let receivedCreateRequest: CreateVideoInput | undefined;
 let receivedSignRequest: SignVideoMultipartUploadPartsInput | undefined;
+let receivedThumbnailRequest: UploadVideoSourceThumbnailInput | undefined;
 let receivedCompleteRequest: CompleteVideoMultipartUploadInput | undefined;
 let receivedAbortRequest: AbortVideoMultipartUploadInput | undefined;
 let receivedGetRequest: GetVideoMultipartUploadSessionInput | undefined;
@@ -35,6 +38,7 @@ let receivedListRequest: ListMyVideosInput | undefined;
 let receivedHlsMasterRequest: GetVideoHlsMasterInput | undefined;
 let receivedHlsRenditionRequest: GetVideoHlsRenditionInput | undefined;
 let receivedHlsSegmentRequest: GetVideoHlsSegmentInput | undefined;
+let receivedThumbnailReadRequest: GetVideoThumbnailInput | undefined;
 let receivedSessionKey: string | undefined;
 
 const videoId = '0d4e55cb-c278-4d74-a192-bf7c10888c7a';
@@ -97,6 +101,11 @@ describe('videos routes multipart uploads', () => {
 
             return videosService.getHlsSegment(input);
           },
+          getThumbnail: async (input) => {
+            receivedThumbnailReadRequest = input;
+
+            return videosService.getThumbnail(input);
+          },
           initMultipartUpload: async (input) => {
             receivedInitRequest = input;
 
@@ -110,6 +119,11 @@ describe('videos routes multipart uploads', () => {
             receivedSignRequest = input;
 
             return videosService.signMultipartUploadParts(input);
+          },
+          uploadSourceThumbnail: async (input) => {
+            receivedThumbnailRequest = input;
+
+            return videosService.uploadSourceThumbnail(input);
           },
           completeMultipartUpload: async (input) => {
             receivedCompleteRequest = input;
@@ -365,6 +379,26 @@ describe('videos routes multipart uploads', () => {
     expect(receivedSessionKey).toBeUndefined();
   });
 
+  test('redirects public thumbnail reads without authentication or response caching', async () => {
+    receivedThumbnailReadRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const response = await fetch(`${baseUrl}/videos/${publicId}/thumbnail`, {
+      redirect: 'manual',
+    });
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('location')).toBe(
+      'http://localhost:9000/videos/thumbnail/poster.webp?signature=test',
+    );
+    const observedThumbnailReadRequest = receivedThumbnailReadRequest as
+      | GetVideoThumbnailInput
+      | undefined;
+    expect(observedThumbnailReadRequest).toEqual({ publicId });
+    expect(receivedSessionKey).toBeUndefined();
+  });
+
   test('initializes a multipart upload with an authenticated session', async () => {
     receivedInitRequest = undefined;
     receivedSessionKey = undefined;
@@ -470,6 +504,51 @@ describe('videos routes multipart uploads', () => {
           url: `http://localhost:9000/videos/user-id/video-id/sources/${uploadSessionId}/original.mp4?partNumber=1&uploadId=test-upload-id`,
         },
       ],
+    });
+  });
+
+  test('uploads a source thumbnail through the authenticated bounded multipart route', async () => {
+    receivedThumbnailRequest = undefined;
+    receivedSessionKey = undefined;
+    const thumbnailBytes = new Uint8Array([1, 2, 3, 4]);
+    const body = new FormData();
+    body.set('thumbnail', new Blob([thumbnailBytes], { type: 'image/png' }), 'thumbnail.png');
+
+    const response = await fetch(
+      `${baseUrl}/videos/${videoId}/upload/multipart/${uploadSessionId}/thumbnail`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: 'Bearer route-session-key',
+        },
+        body,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const observedSessionKey = receivedSessionKey as string | undefined;
+    const observedThumbnailRequest = receivedThumbnailRequest as
+      | UploadVideoSourceThumbnailInput
+      | undefined;
+    expect(observedSessionKey).toBe('route-session-key');
+    expect(observedThumbnailRequest).toMatchObject({
+      userId: authenticatedUserId,
+      videoId,
+      uploadSessionId,
+      file: {
+        size: thumbnailBytes.length,
+      },
+    });
+    expect(observedThumbnailRequest?.file.buffer).toEqual(Buffer.from(thumbnailBytes));
+    expect(await response.json()).toMatchObject({
+      thumbnail: {
+        uploadSessionId,
+        mimeType: 'image/webp',
+        sizeBytes: thumbnailBytes.length,
+        width: 1280,
+        height: 720,
+      },
     });
   });
 

@@ -1,12 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
-import { HOUR_MS } from '../../config/constants.js';
+import {
+  HOUR_MS,
+  VIDEO_SOURCE_THUMBNAIL_HEIGHT_PX,
+  VIDEO_SOURCE_THUMBNAIL_WIDTH_PX,
+} from '../../config/constants.js';
 import { ObjectStorageUnavailableError } from '../../lib/objectStorage.js';
 import { runSerializableTransaction } from '../../lib/prismaTransactions.js';
 import {
   buildVideoArtifactManifest,
   videoHlsSegmentObjectKey,
   videoOriginalKey,
+  videoSourceThumbnailKey,
   type VideoObjectKeyQuality,
 } from './videoObjectKeys.js';
 import {
@@ -27,6 +32,7 @@ import {
 import type { VideosDependencies } from './videos.dependencies.js';
 import {
   ExternalResourceNotDesiredError,
+  EXTERNAL_RESOURCE_QUIESCENCE_MS,
   ExternalResourceSizeMismatchError,
   requestExternalResourceAbsence,
   VIDEO_EXTERNAL_RESOURCE_ROLES,
@@ -51,13 +57,17 @@ import type {
   GetVideoHlsRenditionInput,
   GetVideoHlsSegmentInput,
   GetVideoMultipartUploadSessionInput,
+  GetVideoThumbnailInput,
   InitVideoMultipartUploadInput,
   ListMyVideosInput,
   ListMyVideosResult,
   SignVideoMultipartUploadPartsInput,
   SignVideoMultipartUploadPartsResult,
+  UploadVideoSourceThumbnailInput,
+  UploadVideoSourceThumbnailResult,
   VideoHlsPlaylistResult,
   VideoHlsSegmentResult,
+  VideoThumbnailResult,
   VideoUploadSession,
   VideoUploadSessionResult,
   VideosService,
@@ -78,6 +88,10 @@ const SIGNABLE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] 
   'initiated',
   'uploading',
 ];
+const SOURCE_THUMBNAIL_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
+  'initiated',
+  'uploading',
+];
 const ABORTABLE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
   'initializing',
   'initiated',
@@ -85,6 +99,8 @@ const ABORTABLE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][]
   'completing',
 ];
 const VIDEO_SOURCE_CONTENT_TYPE = 'video/mp4';
+const VIDEO_SOURCE_THUMBNAIL_CONTENT_TYPE = 'image/webp';
+const VIDEO_SOURCE_THUMBNAIL_CACHE_CONTROL = 'private, no-store';
 const DEFAULT_MY_VIDEOS_LIMIT = 20;
 const MAX_MY_VIDEOS_LIMIT = 100;
 const MULTIPART_MAINTENANCE_BATCH_SIZE = 100;
@@ -102,6 +118,7 @@ const videoSelect = {
   allowComments: true,
   processingStatus: true,
   moderationStatus: true,
+  thumbnailObjectKey: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.VideoSelect;
@@ -128,6 +145,31 @@ const uploadSessionSelect = {
       uploadId: true,
     },
   },
+  sourceThumbnail: {
+    select: {
+      bucket: true,
+      externalResourceTargetId: true,
+      mimeType: true,
+      objectKey: true,
+      sizeBytes: true,
+      width: true,
+      height: true,
+      externalResourceTarget: {
+        select: {
+          bucket: true,
+          expectedSizeBytes: true,
+          generation: true,
+          goal: true,
+          role: true,
+          selector: true,
+          selectorKind: true,
+          state: true,
+          userId: true,
+          videoId: true,
+        },
+      },
+    },
+  },
   parts: {
     select: {
       partNumber: true,
@@ -137,6 +179,30 @@ const uploadSessionSelect = {
     },
     orderBy: {
       partNumber: 'asc',
+    },
+  },
+} satisfies Prisma.VideoUploadSessionSelect;
+
+const sourceThumbnailSelect = {
+  id: true,
+  uploadSessionId: true,
+  mimeType: true,
+  sizeBytes: true,
+  width: true,
+  height: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.VideoSourceThumbnailSelect;
+
+const completedSourceSessionSelect = {
+  id: true,
+  userId: true,
+  videoId: true,
+  status: true,
+  sourceThumbnail: uploadSessionSelect.sourceThumbnail,
+  _count: {
+    select: {
+      parts: true,
     },
   },
 } satisfies Prisma.VideoUploadSessionSelect;
@@ -256,6 +322,14 @@ const toVideoUploadSessionResult = (session: UploadSessionRecord): VideoUploadSe
   uploadSession: toVideoUploadSession(session),
 });
 
+const toUploadVideoSourceThumbnailResult = (
+  thumbnail: Prisma.VideoSourceThumbnailGetPayload<{
+    select: typeof sourceThumbnailSelect;
+  }>,
+): UploadVideoSourceThumbnailResult => ({
+  thumbnail,
+});
+
 const toCreateVideoResult = (video: VideoMetadataRecord): CreateVideoResult => ({
   video,
 });
@@ -355,6 +429,11 @@ const expireStaleUploadSessions = async (
       id: true,
       videoId: true,
       externalResourceTargetId: true,
+      sourceThumbnail: {
+        select: {
+          externalResourceTargetId: true,
+        },
+      },
     },
     orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }],
     ...(limit === undefined ? {} : { take: limit }),
@@ -380,6 +459,13 @@ const expireStaleUploadSessions = async (
 
     if (result.count > 0) {
       await requestExternalResourceAbsence(store, session.externalResourceTargetId, now);
+      if (session.sourceThumbnail) {
+        await requestExternalResourceAbsence(
+          store,
+          session.sourceThumbnail.externalResourceTargetId,
+          now,
+        );
+      }
       affectedVideoIds.add(session.videoId);
       uploadSessionsExpired += 1;
     }
@@ -401,16 +487,16 @@ const expireSessionIfNeeded = async (
     return session;
   }
 
-  return runSerializableTransaction(deps.prisma, async (tx) => {
+  await runSerializableTransaction(deps.prisma, async (tx) => {
     await expireStaleUploadSessions(tx, now, {
       videoId: session.videoId,
     });
+  });
 
-    return findOwnedUploadSession(tx, {
-      uploadSessionId: session.id,
-      userId: session.userId,
-      videoId: session.videoId,
-    });
+  return findOwnedUploadSession(deps.prisma, {
+    uploadSessionId: session.id,
+    userId: session.userId,
+    videoId: session.videoId,
   });
 };
 
@@ -492,20 +578,18 @@ const partsMatch = (
       part.partNumber === requested[index]?.partNumber && part.etag === requested[index]?.etag,
   );
 
-const assertUploadSizeAndQuota = async (
+const assertUserStorageQuota = async (
   store: Pick<TransactionClient, 'externalResourceTarget'>,
   userId: string,
   sizeBytes: number,
-  config: Pick<VideosDependencies['config'], 'maxUploadBytes' | 'userStorageQuotaBytes'>,
+  userStorageQuotaBytes: number,
 ): Promise<void> => {
-  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0 || sizeBytes > config.maxUploadBytes) {
-    throw new VideoUploadSizeExceededError();
-  }
-
   const usage = await store.externalResourceTarget.aggregate({
     where: {
       userId,
-      role: 'source',
+      role: {
+        in: ['source', 'source_thumbnail'],
+      },
       state: {
         not: 'confirmed_absent',
       },
@@ -516,7 +600,7 @@ const assertUploadSizeAndQuota = async (
   });
   const reservedBytes = usage._sum.expectedSizeBytes ?? 0n;
 
-  if (reservedBytes + BigInt(sizeBytes) > BigInt(config.userStorageQuotaBytes)) {
+  if (reservedBytes + BigInt(sizeBytes) > BigInt(userStorageQuotaBytes)) {
     throw new VideoStorageQuotaExceededError();
   }
 };
@@ -596,7 +680,7 @@ const prepareCompletion = async (
     throw new InvalidVideoUploadSessionStateError();
   }
 
-  return deps.prisma.$transaction(async (tx) => {
+  await deps.prisma.$transaction(async (tx) => {
     const updated = await tx.videoUploadSession.updateMany({
       where: {
         id: session.id,
@@ -631,12 +715,12 @@ const prepareCompletion = async (
         nextAttemptAt: deps.clock.now(),
       },
     });
+  });
 
-    return findOwnedUploadSession(tx, {
-      uploadSessionId: session.id,
-      userId: session.userId,
-      videoId: session.videoId,
-    });
+  return findOwnedUploadSession(deps.prisma, {
+    uploadSessionId: session.id,
+    userId: session.userId,
+    videoId: session.videoId,
   });
 };
 
@@ -662,6 +746,13 @@ const scheduleSizeMismatchCleanup = async (
     }
 
     await requestExternalResourceAbsence(tx, session.externalResourceTargetId, now);
+    if (session.sourceThumbnail) {
+      await requestExternalResourceAbsence(
+        tx,
+        session.sourceThumbnail.externalResourceTargetId,
+        now,
+      );
+    }
     await resetVideoWithoutSourceAfterUploadEnds(tx, session.videoId);
   });
 };
@@ -675,17 +766,46 @@ const publishCompletedSourceInTransaction = async (
   sizeBytes: number,
   now: Date,
 ): Promise<void> => {
-  const currentSession = await findOwnedUploadSession(tx, {
-    uploadSessionId: session.id,
-    userId: session.userId,
-    videoId: session.videoId,
+  const currentSession = await tx.videoUploadSession.findFirst({
+    where: {
+      id: session.id,
+      userId: session.userId,
+      videoId: session.videoId,
+    },
+    select: completedSourceSessionSelect,
   });
+
+  if (!currentSession) {
+    throw new VideoUploadSessionNotFoundError();
+  }
 
   if (currentSession.status === 'completed') {
     return;
   }
 
   if (currentSession.status !== 'completing') {
+    throw new InvalidVideoUploadSessionStateError();
+  }
+
+  const sourceThumbnail = currentSession.sourceThumbnail;
+
+  if (
+    sourceThumbnail &&
+    (sourceThumbnail.bucket !== sourceThumbnail.externalResourceTarget.bucket ||
+      sourceThumbnail.objectKey !== sourceThumbnail.externalResourceTarget.selector ||
+      sourceThumbnail.mimeType !== VIDEO_SOURCE_THUMBNAIL_CONTENT_TYPE ||
+      sourceThumbnail.width !== VIDEO_SOURCE_THUMBNAIL_WIDTH_PX ||
+      sourceThumbnail.height !== VIDEO_SOURCE_THUMBNAIL_HEIGHT_PX ||
+      sourceThumbnail.externalResourceTarget.userId !== currentSession.userId ||
+      sourceThumbnail.externalResourceTarget.videoId !== currentSession.videoId ||
+      sourceThumbnail.externalResourceTarget.generation !== currentSession.id ||
+      sourceThumbnail.externalResourceTarget.role !== 'source_thumbnail' ||
+      sourceThumbnail.externalResourceTarget.goal !== 'present' ||
+      sourceThumbnail.externalResourceTarget.state !== 'confirmed_present' ||
+      sourceThumbnail.externalResourceTarget.selectorKind !== 'exact' ||
+      sourceThumbnail.externalResourceTarget.expectedSizeBytes !==
+        BigInt(sourceThumbnail.sizeBytes))
+  ) {
     throw new InvalidVideoUploadSessionStateError();
   }
 
@@ -698,6 +818,11 @@ const publishCompletedSourceInTransaction = async (
       sourceUploadSession: {
         select: {
           externalResourceTargetId: true,
+          sourceThumbnail: {
+            select: {
+              externalResourceTargetId: true,
+            },
+          },
         },
       },
     },
@@ -708,6 +833,8 @@ const publishCompletedSourceInTransaction = async (
   }
 
   const previousTargetId = video.sourceUploadSession?.externalResourceTargetId ?? null;
+  const previousThumbnailTargetId =
+    video.sourceUploadSession?.sourceThumbnail?.externalResourceTargetId ?? null;
 
   await tx.videoUploadSession.update({
     where: {
@@ -715,7 +842,7 @@ const publishCompletedSourceInTransaction = async (
     },
     data: {
       status: 'completed',
-      partCount: currentSession.parts.length,
+      partCount: currentSession._count.parts,
       completedAt: now,
     },
   });
@@ -745,6 +872,9 @@ const publishCompletedSourceInTransaction = async (
 
   if (previousTargetId && previousTargetId !== session.externalResourceTargetId) {
     await requestExternalResourceAbsence(tx, previousTargetId, now);
+    if (previousThumbnailTargetId) {
+      await requestExternalResourceAbsence(tx, previousThumbnailTargetId, now);
+    }
   }
 };
 
@@ -879,6 +1009,134 @@ const createVideoReconciliationHandler = (
           expiredAt: deps.clock.now(),
         },
       });
+    }
+  },
+});
+
+const scheduleVideoSourceThumbnailAbsence = async (
+  deps: VideosDependencies,
+  targetId: string,
+): Promise<void> => {
+  const requestedAt = deps.clock.now();
+
+  await runSerializableTransaction(deps.prisma, async (tx) => {
+    await requestExternalResourceAbsence(tx, targetId, requestedAt);
+  });
+};
+
+const createVideoSourceThumbnailReconciliationHandler = (
+  deps: VideosDependencies,
+): ExternalResourceReconciliationHandler => ({
+  async preparePresent(target) {
+    if (!target.videoId) {
+      throw new ExternalResourceNotDesiredError(
+        'Video source thumbnail reservation has no video scope',
+      );
+    }
+
+    const session = await deps.prisma.videoUploadSession.findFirst({
+      where: {
+        id: target.generation,
+        userId: target.userId,
+        videoId: target.videoId,
+        status: {
+          in: [...SOURCE_THUMBNAIL_UPLOAD_SESSION_STATUSES],
+        },
+        expiresAt: {
+          gt: deps.clock.now(),
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!session) {
+      throw new ExternalResourceNotDesiredError(
+        'Video source thumbnail upload session no longer accepts thumbnails',
+      );
+    }
+  },
+
+  async finalize(tx, target, verifiedObject) {
+    if (target.goal === 'absent') {
+      await tx.videoSourceThumbnail.deleteMany({
+        where: {
+          externalResourceTargetId: target.id,
+        },
+      });
+      return;
+    }
+
+    if (!target.videoId || !verifiedObject) {
+      throw new ExternalResourceNotDesiredError(
+        'Video source thumbnail reservation cannot be published',
+      );
+    }
+
+    const session = await tx.videoUploadSession.findFirst({
+      where: {
+        id: target.generation,
+        userId: target.userId,
+        videoId: target.videoId,
+        status: {
+          in: [...SOURCE_THUMBNAIL_UPLOAD_SESSION_STATUSES],
+        },
+        expiresAt: {
+          gt: deps.clock.now(),
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!session) {
+      throw new ExternalResourceNotDesiredError(
+        'Video source thumbnail arrived after the upload session closed',
+      );
+    }
+
+    const previousThumbnail = await tx.videoSourceThumbnail.findUnique({
+      where: {
+        uploadSessionId: session.id,
+      },
+      select: {
+        externalResourceTargetId: true,
+      },
+    });
+
+    await tx.videoSourceThumbnail.upsert({
+      where: {
+        uploadSessionId: session.id,
+      },
+      update: {
+        externalResourceTargetId: target.id,
+        bucket: target.bucket,
+        objectKey: target.selector,
+        mimeType: VIDEO_SOURCE_THUMBNAIL_CONTENT_TYPE,
+        sizeBytes: verifiedObject.sizeBytes,
+        width: VIDEO_SOURCE_THUMBNAIL_WIDTH_PX,
+        height: VIDEO_SOURCE_THUMBNAIL_HEIGHT_PX,
+      },
+      create: {
+        uploadSessionId: session.id,
+        externalResourceTargetId: target.id,
+        bucket: target.bucket,
+        objectKey: target.selector,
+        mimeType: VIDEO_SOURCE_THUMBNAIL_CONTENT_TYPE,
+        sizeBytes: verifiedObject.sizeBytes,
+        width: VIDEO_SOURCE_THUMBNAIL_WIDTH_PX,
+        height: VIDEO_SOURCE_THUMBNAIL_HEIGHT_PX,
+      },
+    });
+
+    if (previousThumbnail && previousThumbnail.externalResourceTargetId !== target.id) {
+      await requestExternalResourceAbsence(
+        tx,
+        previousThumbnail.externalResourceTargetId,
+        deps.clock.now(),
+      );
     }
   },
 });
@@ -1066,6 +1324,60 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     };
   },
 
+  async getThumbnail({ publicId }: GetVideoThumbnailInput): Promise<VideoThumbnailResult> {
+    assertValidPublicHlsVideoId(publicId);
+
+    const video = await deps.prisma.video.findFirst({
+      where: {
+        publicId,
+        processingStatus: 'ready',
+        moderationStatus: {
+          not: 'rejected',
+        },
+        visibility: {
+          in: ['public', 'unlisted'],
+        },
+        activeArtifactGeneration: {
+          is: {
+            state: 'active',
+          },
+        },
+      },
+      select: {
+        id: true,
+        ownerId: true,
+        thumbnailObjectKey: true,
+        activeArtifactGeneration: {
+          select: {
+            id: true,
+            bucket: true,
+            thumbnailObjectKey: true,
+          },
+        },
+      },
+    });
+    const generation = video?.activeArtifactGeneration;
+
+    if (!video || !generation) {
+      throw new VideoNotFoundError();
+    }
+
+    const objectKey = buildVideoArtifactManifest(video.ownerId, video.id, generation.id, [])
+      .thumbnail.objectKey;
+
+    if (
+      video.thumbnailObjectKey !== objectKey ||
+      generation.thumbnailObjectKey !== objectKey ||
+      !(await deps.objectStorage.headObject({ bucket: generation.bucket, objectKey }))
+    ) {
+      throw new VideoNotFoundError();
+    }
+
+    return {
+      url: await deps.objectStorage.getSignedUrl(objectKey, generation.bucket),
+    };
+  },
+
   async getHlsMaster({ publicId }: GetVideoHlsMasterInput): Promise<VideoHlsPlaylistResult> {
     assertValidPublicHlsVideoId(publicId);
 
@@ -1221,7 +1533,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     const uploadSessionId = randomUUID();
     const objectKey = videoOriginalKey(userId, videoId, uploadSessionId);
     const expiresAt = new Date(now.getTime() + deps.config.sessionTtlSeconds * 1000);
-    let reservedSession: UploadSessionRecord;
+    let reservedSession: { externalResourceTargetId: string };
 
     try {
       reservedSession = await runSerializableTransaction(deps.prisma, async (tx) => {
@@ -1245,7 +1557,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
           throw new ActiveVideoUploadSessionExistsError();
         }
 
-        await assertUploadSizeAndQuota(tx, userId, sizeBytes, deps.config);
+        await assertUserStorageQuota(tx, userId, sizeBytes, deps.config.userStorageQuotaBytes);
 
         const target = await tx.externalResourceTarget.create({
           data: {
@@ -1279,7 +1591,9 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
             expiresAt,
             externalResourceTargetId: target.id,
           },
-          select: uploadSessionSelect,
+          select: {
+            externalResourceTargetId: true,
+          },
         });
 
         await tx.video.updateMany({
@@ -1312,7 +1626,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
       });
       uploadId = multipart.uploadId;
 
-      const initiatedSession = await deps.prisma.$transaction(async (tx) => {
+      await deps.prisma.$transaction(async (tx) => {
         const updated = await tx.videoUploadSession.updateMany({
           where: {
             id: uploadSessionId,
@@ -1334,12 +1648,11 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
             uploadId: multipart.uploadId,
           },
         });
-
-        return findOwnedUploadSession(tx, {
-          uploadSessionId,
-          userId,
-          videoId,
-        });
+      });
+      const initiatedSession = await findOwnedUploadSession(deps.prisma, {
+        uploadSessionId,
+        userId,
+        videoId,
       });
 
       return toVideoUploadSessionResult(initiatedSession);
@@ -1357,6 +1670,165 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
 
       throw err;
     }
+  },
+
+  async uploadSourceThumbnail({
+    file,
+    uploadSessionId,
+    userId,
+    videoId,
+  }: UploadVideoSourceThumbnailInput): Promise<UploadVideoSourceThumbnailResult> {
+    const existingSession = await expireSessionIfNeeded(
+      deps,
+      await findOwnedUploadSession(deps.prisma, {
+        uploadSessionId,
+        userId,
+        videoId,
+      }),
+      deps.clock.now(),
+    );
+
+    if (existingSession.status === 'expiring' || existingSession.status === 'expired') {
+      throw new VideoUploadSessionExpiredError();
+    }
+
+    if (!SOURCE_THUMBNAIL_UPLOAD_SESSION_STATUSES.includes(existingSession.status)) {
+      throw new InvalidVideoUploadSessionStateError();
+    }
+
+    const processedThumbnail = await deps.imageProcessor.processVideoThumbnail(file);
+    const thumbnailId = randomUUID();
+    const objectKey = videoSourceThumbnailKey(userId, videoId, uploadSessionId, thumbnailId);
+    const reservedAt = deps.clock.now();
+    const target = await runSerializableTransaction(deps.prisma, async (tx) => {
+      const currentSession = await tx.videoUploadSession.findFirst({
+        where: {
+          id: uploadSessionId,
+          userId,
+          videoId,
+        },
+        select: {
+          expiresAt: true,
+          status: true,
+        },
+      });
+
+      if (!currentSession) {
+        throw new VideoUploadSessionNotFoundError();
+      }
+
+      if (
+        currentSession.expiresAt <= reservedAt ||
+        !SOURCE_THUMBNAIL_UPLOAD_SESSION_STATUSES.includes(currentSession.status)
+      ) {
+        throw new InvalidVideoUploadSessionStateError();
+      }
+
+      await assertUserStorageQuota(
+        tx,
+        userId,
+        processedThumbnail.sizeBytes,
+        deps.config.userStorageQuotaBytes,
+      );
+
+      return tx.externalResourceTarget.create({
+        data: {
+          userId,
+          videoId,
+          bucket: deps.objectStorage.bucket,
+          selector: objectKey,
+          selectorKind: 'exact',
+          role: 'source_thumbnail',
+          generation: uploadSessionId,
+          expectedSizeBytes: BigInt(processedThumbnail.sizeBytes),
+          mayHaveMultipartUpload: false,
+          goal: 'present',
+          state: 'writing',
+          nextAttemptAt: new Date(reservedAt.getTime() + EXTERNAL_RESOURCE_QUIESCENCE_MS),
+        },
+        select: {
+          id: true,
+        },
+      });
+    });
+
+    try {
+      await deps.objectStorage.putObject({
+        bucket: deps.objectStorage.bucket,
+        objectKey,
+        body: processedThumbnail.buffer,
+        contentType: processedThumbnail.mimeType,
+        cacheControl: VIDEO_SOURCE_THUMBNAIL_CACHE_CONTROL,
+      });
+    } catch (err) {
+      await scheduleVideoSourceThumbnailAbsence(deps, target.id).catch((cleanupError: unknown) => {
+        deps.logger.warn(
+          { err: cleanupError, objectKey, targetId: target.id, uploadSessionId },
+          'Failed to schedule video source thumbnail cleanup after PUT failure',
+        );
+      });
+      throw err;
+    }
+
+    const madeImmediatelyReconcilable = await deps.prisma.externalResourceTarget.updateMany({
+      where: {
+        id: target.id,
+        goal: 'present',
+        state: 'writing',
+      },
+      data: {
+        nextAttemptAt: deps.clock.now(),
+      },
+    });
+
+    if (madeImmediatelyReconcilable.count !== 1) {
+      await scheduleVideoSourceThumbnailAbsence(deps, target.id);
+      throw new InvalidVideoUploadSessionStateError();
+    }
+
+    let reconciliationResult: Awaited<
+      ReturnType<VideosDependencies['externalResources']['reconcileTarget']>
+    >;
+
+    try {
+      reconciliationResult = await deps.externalResources.reconcileTarget({
+        targetId: target.id,
+        roles: ['source_thumbnail'],
+        handlers: {
+          source_thumbnail: createVideoSourceThumbnailReconciliationHandler(deps),
+        },
+      });
+    } catch (err) {
+      if (err instanceof ObjectStorageUnavailableError) {
+        throw err;
+      }
+
+      throw new ObjectStorageUnavailableError('Video source thumbnail could not be reconciled', {
+        cause: err,
+      });
+    }
+
+    if (reconciliationResult === 'redirected_absent') {
+      throw new InvalidVideoUploadSessionStateError();
+    }
+
+    if (reconciliationResult !== 'confirmed') {
+      throw new ObjectStorageUnavailableError('Video source thumbnail reconciliation is deferred');
+    }
+
+    const thumbnail = await deps.prisma.videoSourceThumbnail.findFirst({
+      where: {
+        uploadSessionId,
+        externalResourceTargetId: target.id,
+      },
+      select: sourceThumbnailSelect,
+    });
+
+    if (!thumbnail) {
+      throw new InvalidVideoUploadSessionStateError();
+    }
+
+    return toUploadVideoSourceThumbnailResult(thumbnail);
   },
 
   async signMultipartUploadParts({
@@ -1474,12 +1946,29 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
   }: AbortVideoMultipartUploadInput): Promise<VideoUploadSessionResult> {
     const now = deps.clock.now();
 
-    const session = await runSerializableTransaction(deps.prisma, async (tx) => {
-      const currentSession = await findOwnedUploadSession(tx, {
-        uploadSessionId,
-        userId,
-        videoId,
+    await runSerializableTransaction(deps.prisma, async (tx) => {
+      const currentSession = await tx.videoUploadSession.findFirst({
+        where: {
+          id: uploadSessionId,
+          userId,
+          videoId,
+        },
+        select: {
+          externalResourceTargetId: true,
+          id: true,
+          sourceThumbnail: {
+            select: {
+              externalResourceTargetId: true,
+            },
+          },
+          status: true,
+          videoId: true,
+        },
       });
+
+      if (!currentSession) {
+        throw new VideoUploadSessionNotFoundError();
+      }
 
       if (
         currentSession.status === 'aborting' ||
@@ -1503,13 +1992,19 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
         },
       });
       await requestExternalResourceAbsence(tx, currentSession.externalResourceTargetId, now);
+      if (currentSession.sourceThumbnail) {
+        await requestExternalResourceAbsence(
+          tx,
+          currentSession.sourceThumbnail.externalResourceTargetId,
+          now,
+        );
+      }
       await resetVideoWithoutSourceAfterUploadEnds(tx, videoId);
-
-      return findOwnedUploadSession(tx, {
-        uploadSessionId,
-        userId,
-        videoId,
-      });
+    });
+    const session = await findOwnedUploadSession(deps.prisma, {
+      uploadSessionId,
+      userId,
+      videoId,
     });
 
     return toVideoUploadSessionResult(session);
@@ -1555,6 +2050,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
       ...(input.limit === undefined ? {} : { limit: input.limit }),
       handlers: {
         source: createVideoReconciliationHandler(deps),
+        source_thumbnail: createVideoSourceThumbnailReconciliationHandler(deps),
         hls_artifacts: artifactHandler,
         thumbnail_prefix: artifactHandler,
       },

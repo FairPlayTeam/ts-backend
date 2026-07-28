@@ -147,6 +147,34 @@ describe('video transcode profiles', () => {
     expect(args).not.toContain('-c:a');
     expect(args).not.toContain('128k');
   });
+
+  test('does not ask ffmpeg for a poster when a normalized source thumbnail is provided', () => {
+    const probe = {
+      width: 640,
+      height: 480,
+      durationSeconds: 10,
+      hasAudio: false,
+    };
+    const manifest = buildVideoArtifactManifest(
+      'user-id',
+      'video-id',
+      'generation-id',
+      selectVideoTranscodeProfiles(probe),
+    );
+    const args = buildVideoFfmpegArguments({
+      generateThumbnail: false,
+      inputPath: 'C:\\temp\\source.mp4',
+      manifest,
+      outputDirectory: 'C:\\temp\\artifacts',
+      probe,
+      threads: 1,
+    });
+
+    expect(args).not.toContain('libwebp');
+    expect(args).not.toContain('[thumbnail]');
+    expect(args.join(' ')).not.toContain('[thumbnailin]');
+    expect(args.join(' ')).toContain('[0:v:0]null[rendition0in]');
+  });
 });
 
 describe('video transcode runner limits', () => {

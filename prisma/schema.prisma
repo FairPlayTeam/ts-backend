@@ -89,6 +89,7 @@ enum ExternalResourceState {
 
 enum ExternalResourceRole {
   source
+  source_thumbnail
   hls_artifacts
   thumbnail_prefix
   user_media
@@ -297,6 +298,7 @@ model ExternalResourceTarget {
 
   uploadSessions   VideoUploadSession[]
   multipartHandles ExternalMultipartHandle[]
+  sourceThumbnails VideoSourceThumbnail[]
   userMediaAssets  UserMediaAsset[]
 
   @@unique([bucket, selectorKind, selector])
@@ -344,6 +346,7 @@ model VideoUploadSession {
   currentForVideo        Video?                    @relation("CurrentVideoSource")
   externalResourceTarget ExternalResourceTarget    @relation(fields: [externalResourceTargetId], references: [id])
   multipartHandle        ExternalMultipartHandle?
+  sourceThumbnail        VideoSourceThumbnail?
   artifactGenerations    VideoArtifactGeneration[]
   parts                  VideoUploadPart[]
 
@@ -352,6 +355,25 @@ model VideoUploadSession {
   @@index([userId, createdAt, id])
   @@index([expiresAt])
   @@map("video_upload_sessions")
+}
+
+model VideoSourceThumbnail {
+  id                       String   @id @default(uuid()) @db.Uuid
+  uploadSessionId          String   @unique @map("upload_session_id") @db.Uuid
+  externalResourceTargetId String   @unique @map("external_resource_target_id") @db.Uuid
+  bucket                   String   @db.VarChar(128)
+  objectKey                String   @unique @map("object_key") @db.VarChar(512)
+  mimeType                 String   @map("mime_type") @db.VarChar(100)
+  sizeBytes                Int      @map("size_bytes")
+  width                    Int
+  height                   Int
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  uploadSession          VideoUploadSession     @relation(fields: [uploadSessionId], references: [id], onDelete: Cascade)
+  externalResourceTarget ExternalResourceTarget @relation(fields: [externalResourceTargetId], references: [id])
+
+  @@map("video_source_thumbnails")
 }
 
 model VideoUploadPart {

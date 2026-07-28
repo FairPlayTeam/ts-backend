@@ -11,6 +11,12 @@ import {
   VideoUploadSessionExpiredError,
   VideoUploadSessionNotFoundError,
 } from '../services/videos.errors.js';
+import {
+  UserMediaFileRequiredError,
+  UserMediaFileTooLargeError,
+  UserMediaInvalidImageError,
+  UserMediaUnsupportedTypeError,
+} from '../services/userMedia/userMedia.errors.js';
 
 export function toVideosHttpError(err: unknown): Error {
   if (err instanceof VideoNotFoundError || err instanceof VideoUploadSessionNotFoundError) {
@@ -23,6 +29,18 @@ export function toVideosHttpError(err: unknown): Error {
 
   if (err instanceof VideoUploadSizeExceededError) {
     return new HttpError(413, 'PayloadTooLarge', err.message, { cause: err });
+  }
+
+  if (err instanceof UserMediaFileTooLargeError) {
+    return new HttpError(413, 'PayloadTooLarge', err.message, { cause: err });
+  }
+
+  if (
+    err instanceof UserMediaFileRequiredError ||
+    err instanceof UserMediaUnsupportedTypeError ||
+    err instanceof UserMediaInvalidImageError
+  ) {
+    return new HttpError(400, 'BadRequest', err.message, { cause: err });
   }
 
   if (

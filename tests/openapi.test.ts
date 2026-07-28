@@ -168,13 +168,17 @@ describe('OpenAPI generation', () => {
       '/videos/{publicId}/hls/master.m3u8',
       '/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8',
       '/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}',
+      '/videos/{publicId}/thumbnail',
       '/videos/{videoId}/upload/multipart/init',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}/abort',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}/complete',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}/parts/sign',
+      '/videos/{videoId}/upload/multipart/{uploadSessionId}/thumbnail',
     ]);
     expect(document.paths['/videos/{publicId}/hls/master.m3u8']?.get?.security).toEqual([]);
+    expect(document.paths['/videos/{publicId}/thumbnail']?.get?.security).toEqual([]);
+    expect(document.paths['/videos/{publicId}/thumbnail']?.get?.responses?.[307]).toBeDefined();
     expect(
       document.paths['/videos/{publicId}/hls/master.m3u8']?.get?.responses?.[200]?.content?.[
         'application/vnd.apple.mpegurl'
@@ -183,6 +187,10 @@ describe('OpenAPI generation', () => {
     expect(
       document.paths['/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}']?.get
         ?.responses?.[307],
+    ).toBeDefined();
+    expect(
+      document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}/thumbnail']?.put
+        ?.requestBody?.content?.['multipart/form-data'],
     ).toBeDefined();
     expect(document.paths['/auth/login']?.post?.requestBody).toBeDefined();
     expect(document.paths['/admin/users']?.get?.requestBody).toBeUndefined();

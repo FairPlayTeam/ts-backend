@@ -57,6 +57,18 @@ export const videoOriginalKey = (
   return `${videoBasePrefix(userId, videoId)}/sources/${uploadSessionId}/original.mp4`;
 };
 
+export const videoSourceThumbnailKey = (
+  userId: string,
+  videoId: string,
+  uploadSessionId: string,
+  thumbnailId: string,
+): string => {
+  assertObjectKeySegment('uploadSessionId', uploadSessionId);
+  assertObjectKeySegment('thumbnailId', thumbnailId);
+
+  return `${videoBasePrefix(userId, videoId)}/sources/${uploadSessionId}/thumbnails/${thumbnailId}.webp`;
+};
+
 export const buildVideoArtifactManifest = (
   userId: string,
   videoId: string,

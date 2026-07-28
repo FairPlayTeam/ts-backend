@@ -33,6 +33,7 @@ export type CreatedVideo = {
   allowComments: boolean;
   processingStatus: VideoProcessingStatus;
   moderationStatus: VideoModerationStatus;
+  thumbnailObjectKey: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -120,6 +121,28 @@ export type GetVideoMultipartUploadSessionInput = {
   uploadSessionId: string;
 };
 
+export type UploadVideoSourceThumbnailInput = GetVideoMultipartUploadSessionInput & {
+  file: {
+    buffer: Buffer;
+    size: number;
+  };
+};
+
+export type VideoSourceThumbnail = {
+  id: string;
+  uploadSessionId: string;
+  mimeType: string;
+  sizeBytes: number;
+  width: number;
+  height: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type UploadVideoSourceThumbnailResult = {
+  thumbnail: VideoSourceThumbnail;
+};
+
 export type VideoUploadSessionResult = {
   uploadSession: VideoUploadSession;
 };
@@ -146,6 +169,10 @@ export type GetVideoHlsMasterInput = {
   publicId: string;
 };
 
+export type GetVideoThumbnailInput = {
+  publicId: string;
+};
+
 export type GetVideoHlsRenditionInput = {
   publicId: string;
   generationId: string;
@@ -164,13 +191,21 @@ export type VideoHlsSegmentResult = {
   url: string;
 };
 
+export type VideoThumbnailResult = {
+  url: string;
+};
+
 export type VideosRoutePort = {
   createVideo(input: CreateVideoInput): Promise<CreateVideoResult>;
   listMyVideos(input: ListMyVideosInput): Promise<ListMyVideosResult>;
+  getThumbnail(input: GetVideoThumbnailInput): Promise<VideoThumbnailResult>;
   getHlsMaster(input: GetVideoHlsMasterInput): Promise<VideoHlsPlaylistResult>;
   getHlsRendition(input: GetVideoHlsRenditionInput): Promise<VideoHlsPlaylistResult>;
   getHlsSegment(input: GetVideoHlsSegmentInput): Promise<VideoHlsSegmentResult>;
   initMultipartUpload(input: InitVideoMultipartUploadInput): Promise<VideoUploadSessionResult>;
+  uploadSourceThumbnail(
+    input: UploadVideoSourceThumbnailInput,
+  ): Promise<UploadVideoSourceThumbnailResult>;
   signMultipartUploadParts(
     input: SignVideoMultipartUploadPartsInput,
   ): Promise<SignVideoMultipartUploadPartsResult>;

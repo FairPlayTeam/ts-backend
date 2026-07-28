@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { basename, dirname, resolve } from 'node:path';
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import {
   VIDEO_HLS_SEGMENT_NAME_PATTERN,
   videoHlsSegmentObjectKey,
@@ -270,12 +270,14 @@ const thumbnailDimensions = ({
 };
 
 export const buildVideoFfmpegArguments = ({
+  generateThumbnail = true,
   inputPath,
   manifest,
   outputDirectory,
   probe,
   threads,
 }: {
+  generateThumbnail?: boolean;
   inputPath: string;
   manifest: VideoArtifactManifest;
   outputDirectory: string;
@@ -287,18 +289,22 @@ export const buildVideoFfmpegArguments = ({
   }
 
   const inputLabels = manifest.renditions.map((_, index) => `[rendition${index}in]`);
-  const splitLabels = [...inputLabels, '[thumbnailin]'].join('');
+  const splitOutputLabels = [...inputLabels, ...(generateThumbnail ? ['[thumbnailin]'] : [])];
   const filters = [
-    `[0:v:0]split=${inputLabels.length + 1}${splitLabels}`,
+    splitOutputLabels.length === 1
+      ? `[0:v:0]null${splitOutputLabels[0]}`
+      : `[0:v:0]split=${splitOutputLabels.length}${splitOutputLabels.join('')}`,
     ...manifest.renditions.map(
       (rendition, index) =>
         `${inputLabels[index]}scale=w=${rendition.width}:h=${rendition.height}:flags=lanczos[${rendition.quality}]`,
     ),
   ];
-  const thumbnail = thumbnailDimensions(probe);
-  filters.push(
-    `[thumbnailin]thumbnail,scale=w=${thumbnail.width}:h=${thumbnail.height}:flags=lanczos[thumbnail]`,
-  );
+  if (generateThumbnail) {
+    const thumbnail = thumbnailDimensions(probe);
+    filters.push(
+      `[thumbnailin]thumbnail,scale=w=${thumbnail.width}:h=${thumbnail.height}:flags=lanczos[thumbnail]`,
+    );
+  }
 
   const args = [
     '-y',
@@ -355,19 +361,21 @@ export const buildVideoFfmpegArguments = ({
     );
   }
 
-  args.push(
-    '-map',
-    '[thumbnail]',
-    '-frames:v',
-    '1',
-    '-c:v',
-    'libwebp',
-    '-threads',
-    String(threads),
-    '-compression_level',
-    '6',
-    localArtifactPath(outputDirectory, manifest.thumbnail.relativePath),
-  );
+  if (generateThumbnail) {
+    args.push(
+      '-map',
+      '[thumbnail]',
+      '-frames:v',
+      '1',
+      '-c:v',
+      'libwebp',
+      '-threads',
+      String(threads),
+      '-compression_level',
+      '6',
+      localArtifactPath(outputDirectory, manifest.thumbnail.relativePath),
+    );
+  }
 
   return args;
 };
@@ -435,6 +443,7 @@ export const transcodeVideoArtifacts = async ({
   outputDirectory,
   probe,
   signal,
+  sourceThumbnailPath,
   threads,
 }: {
   ffmpegPath?: string;
@@ -443,6 +452,7 @@ export const transcodeVideoArtifacts = async ({
   outputDirectory: string;
   probe: VideoProbe;
   signal: AbortSignal;
+  sourceThumbnailPath?: string;
   threads: number;
 }): Promise<GeneratedVideoArtifacts> => {
   await Promise.all([
@@ -459,6 +469,7 @@ export const transcodeVideoArtifacts = async ({
   await runProcess({
     command: ffmpegPath,
     args: buildVideoFfmpegArguments({
+      generateThumbnail: !sourceThumbnailPath,
       inputPath,
       manifest,
       outputDirectory,
@@ -467,6 +478,13 @@ export const transcodeVideoArtifacts = async ({
     }),
     signal,
   });
+
+  if (sourceThumbnailPath) {
+    await copyFile(
+      sourceThumbnailPath,
+      localArtifactPath(outputDirectory, manifest.thumbnail.relativePath),
+    );
+  }
 
   for (const rendition of manifest.renditions) {
     await normalizeRenditionPlaylist(

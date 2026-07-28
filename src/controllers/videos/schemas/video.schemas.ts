@@ -190,6 +190,20 @@ export const getVideoMultipartUploadSessionSchema = z.object({
   params: videoMultipartUploadSessionParamsSchema,
 });
 
+export const uploadVideoSourceThumbnailSchema = z.object({
+  params: videoMultipartUploadSessionParamsSchema,
+});
+
+export const uploadVideoSourceThumbnailBodySchema = z
+  .object({
+    thumbnail: z.string().openapi({
+      type: 'string',
+      format: 'binary',
+      description: 'JPEG, PNG, or WebP image normalized to a 1280x720 WebP.',
+    }),
+  })
+  .openapi('UploadVideoSourceThumbnailRequest');
+
 const videoUploadPartResponseSchema = z.object({
   partNumber: z.number().int().positive().openapi({ example: 1 }),
   etag: z.string().openapi({ example: '"abc123"' }),
@@ -213,6 +227,10 @@ const videoResponseBodySchema = z.object({
       example: 'draft',
     }),
   moderationStatus: z.enum(['pending', 'approved', 'rejected']).openapi({ example: 'pending' }),
+  thumbnailObjectKey: z
+    .string()
+    .nullable()
+    .openapi({ example: 'user-id/video-id/generations/generation-id/thumbnail/poster.webp' }),
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
   updatedAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
@@ -295,6 +313,21 @@ export const signedVideoUploadPartsResponseSchema = z
   })
   .openapi('SignedVideoUploadPartsResponse');
 
+export const uploadVideoSourceThumbnailResponseSchema = z
+  .object({
+    thumbnail: z.object({
+      id: z.string().uuid(),
+      uploadSessionId: z.string().uuid(),
+      mimeType: z.literal('image/webp'),
+      sizeBytes: z.number().int().positive(),
+      width: z.literal(1280),
+      height: z.literal(720),
+      createdAt: z.string().datetime(),
+      updatedAt: z.string().datetime(),
+    }),
+  })
+  .openapi('UploadVideoSourceThumbnailResponse');
+
 export const createVideoSchema = z.object({
   body: createVideoBodySchema,
 });
@@ -305,6 +338,7 @@ export const listMyVideosSchema = z.object({
 
 export type VideoParams = z.infer<typeof initVideoMultipartUploadSchema>['params'];
 export type VideoHlsMasterParams = z.infer<typeof videoHlsMasterParamsSchema>;
+export type VideoThumbnailParams = VideoHlsMasterParams;
 export type VideoHlsRenditionParams = z.infer<typeof videoHlsRenditionParamsSchema>;
 export type VideoHlsSegmentParams = z.infer<typeof videoHlsSegmentParamsSchema>;
 export type InitVideoMultipartUploadBody = z.infer<typeof initVideoMultipartUploadSchema>['body'];

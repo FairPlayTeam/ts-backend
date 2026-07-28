@@ -37,6 +37,7 @@ type RunnerPrisma = Pick<
   | 'video'
   | 'videoArtifactGeneration'
   | 'videoRendition'
+  | 'videoSourceThumbnail'
   | 'videoTranscodeJob'
   | 'videoUploadSession'
 >;
@@ -249,10 +250,47 @@ const findCompletedSource = async (
       userId: true,
       bucket: true,
       objectKey: true,
+      sourceThumbnail: {
+        select: {
+          bucket: true,
+          externalResourceTargetId: true,
+          objectKey: true,
+          externalResourceTarget: {
+            select: {
+              bucket: true,
+              generation: true,
+              goal: true,
+              role: true,
+              selector: true,
+              selectorKind: true,
+              state: true,
+              userId: true,
+              videoId: true,
+            },
+          },
+        },
+      },
     },
   });
 
   if (!source) {
+    throw new VideoTranscodeSourceNotCurrentError();
+  }
+
+  const sourceThumbnail = source.sourceThumbnail;
+
+  if (
+    sourceThumbnail &&
+    (sourceThumbnail.bucket !== sourceThumbnail.externalResourceTarget.bucket ||
+      sourceThumbnail.objectKey !== sourceThumbnail.externalResourceTarget.selector ||
+      sourceThumbnail.externalResourceTarget.userId !== source.userId ||
+      sourceThumbnail.externalResourceTarget.videoId !== job.videoId ||
+      sourceThumbnail.externalResourceTarget.generation !== source.id ||
+      sourceThumbnail.externalResourceTarget.role !== 'source_thumbnail' ||
+      sourceThumbnail.externalResourceTarget.goal !== 'present' ||
+      sourceThumbnail.externalResourceTarget.state !== 'confirmed_present' ||
+      sourceThumbnail.externalResourceTarget.selectorKind !== 'exact')
+  ) {
     throw new VideoTranscodeSourceNotCurrentError();
   }
 
@@ -388,11 +426,13 @@ export const publishVideoArtifactGeneration = async (
     job,
     manifest,
     probe,
+    sourceThumbnailTargetId,
   }: {
     generation: ReservedArtifactGeneration;
     job: ClaimedVideoTranscodeJob;
     manifest: VideoArtifactManifest;
     probe: VideoProbe;
+    sourceThumbnailTargetId?: string;
   },
 ): Promise<void> => {
   const now = deps.clock.now();
@@ -450,6 +490,33 @@ export const publishVideoArtifactGeneration = async (
 
     if (!writableGeneration) {
       throw new Error('Artifact generation is no longer writable');
+    }
+
+    if (sourceThumbnailTargetId) {
+      const sourceThumbnail = await tx.videoSourceThumbnail.findFirst({
+        where: {
+          uploadSessionId: generation.sourceUploadSessionId,
+          externalResourceTargetId: sourceThumbnailTargetId,
+          externalResourceTarget: {
+            is: {
+              userId: generation.userId,
+              videoId: job.videoId,
+              generation: generation.sourceUploadSessionId,
+              role: 'source_thumbnail',
+              goal: 'present',
+              state: 'confirmed_present',
+              selectorKind: 'exact',
+            },
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!sourceThumbnail) {
+        throw new VideoTranscodeSourceNotCurrentError();
+      }
     }
 
     const hlsTargetUpdated = await tx.externalResourceTarget.updateMany({
@@ -600,6 +667,10 @@ export const publishVideoArtifactGeneration = async (
 
     if (videoUpdated.count !== 1 || jobUpdated.count !== 1) {
       throw new VideoTranscodeOwnershipLostError();
+    }
+
+    if (sourceThumbnailTargetId) {
+      await requestExternalResourceAbsence(tx, sourceThumbnailTargetId, now);
     }
   });
 };
@@ -920,6 +991,7 @@ const processClaimedJob = async (
     heartbeatTimer.unref?.();
     temporaryDirectory = await mkdtemp(resolve(tmpdir(), 'fairplay-transcode-'));
     const inputPath = resolve(temporaryDirectory, 'source.mp4');
+    const sourceThumbnailPath = resolve(temporaryDirectory, 'source-thumbnail.webp');
     const outputDirectory = resolve(temporaryDirectory, 'artifacts');
     const source = await findCompletedSource(deps, job);
     await deps.objectStorage.downloadObject({
@@ -927,6 +999,13 @@ const processClaimedJob = async (
       objectKey: source.objectKey,
       destinationPath: inputPath,
     });
+    if (source.sourceThumbnail) {
+      await deps.objectStorage.downloadObject({
+        bucket: source.sourceThumbnail.bucket,
+        objectKey: source.sourceThumbnail.objectKey,
+        destinationPath: sourceThumbnailPath,
+      });
+    }
     controller.signal.throwIfAborted();
     await heartbeat();
     await assertCurrentSourceAndOwnership(deps, job, source.id);
@@ -950,6 +1029,7 @@ const processClaimedJob = async (
       outputDirectory,
       probe,
       signal: controller.signal,
+      ...(source.sourceThumbnail ? { sourceThumbnailPath } : {}),
       threads: deps.config.threadsPerJob,
     });
     await heartbeat();
@@ -965,6 +1045,9 @@ const processClaimedJob = async (
       job,
       manifest,
       probe,
+      ...(source.sourceThumbnail
+        ? { sourceThumbnailTargetId: source.sourceThumbnail.externalResourceTargetId }
+        : {}),
     });
   } catch (error) {
     await scheduleArtifactGenerationCleanup(deps, generation?.id ?? null).catch(

@@ -160,6 +160,13 @@ and an immutable source key before S3 is contacted. Each session writes below
 previous object. Replaced or ambiguously written sources continue to count toward the per-user
 quota until object storage reconciliation confirms their absence.
 
+Before completing a multipart source session, a client may upload or replace an optional thumbnail
+with `PUT /videos/:videoId/upload/multipart/:uploadSessionId/thumbnail` using the multipart field
+`thumbnail`. JPEG, PNG, and WebP inputs are signature-validated and normalized to a center-cropped
+1280x720 WebP. Only a thumbnail already confirmed when `complete` freezes the source is used; an
+in-flight thumbnail is discarded through reconciliation and transcoding falls back to the
+FFmpeg-generated frame.
+
 The same durable reconciliation engine owns profile-media cleanup and exact or prefix video
 resources. PostgreSQL records intent before an ambiguous S3 write, deletions wait a fixed hour,
 and workers claim due targets with expiring leases. Failures remain durable with capped
@@ -180,6 +187,10 @@ within the source resolution, plus six-second HLS VOD segments, optional AAC aud
 thumbnail. All artifacts use an immutable generation namespace and are checked in object storage
 before publication.
 
+A confirmed custom thumbnail replaces the local FFmpeg poster before upload, so the final bytes
+are copied into each generation's own immutable thumbnail key. Its temporary source object becomes
+eligible for delayed reconciliation cleanup only after that generation is published.
+
 Publication is one PostgreSQL transaction fenced by the current job `executionId`, current source,
 and `writing` generation. It activates the new generation, exposes its master playlist and
 thumbnail, completes the job, and moves the previous generation to `retiring` with durable
@@ -193,6 +204,10 @@ The public master URL is
 authentication. Rendition playlists and segments use generation-qualified immutable URLs. The API
 rewrites playlist URI lines, but segment bodies are never proxied: their route returns a temporary
 redirect to a freshly signed object-storage URL.
+
+`GET /videos/:publicId/thumbnail` uses the same public/unlisted, readiness, and moderation policy
+and returns a temporary signed redirect to the active generation poster. Thumbnail and segment
+redirect responses use `Cache-Control: no-store` because the embedded signature expires.
 
 Because the browser follows that redirect to a different origin, configure CORS on the video
 bucket in MinIO/S3 as well as on the API. Allow each player origin to issue `GET` and `HEAD`, allow

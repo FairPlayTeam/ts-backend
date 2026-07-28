@@ -20,6 +20,7 @@ const MAX_RETRY_DELAY_MS = 24 * HOUR_MS;
 export const EXTERNAL_RESOURCE_QUIESCENCE_MS = HOUR_MS;
 export const VIDEO_EXTERNAL_RESOURCE_ROLES = [
   'source',
+  'source_thumbnail',
   'hls_artifacts',
   'thumbnail_prefix',
 ] as const satisfies readonly ExternalResourceRole[];

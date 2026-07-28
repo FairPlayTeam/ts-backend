@@ -256,6 +256,20 @@ source cannot disappear from accounting before its external bytes are known to b
 targets deliberately retain scalar user and video ids without cascading foreign keys; cleanup
 intent must survive deletion of the corresponding account or video.
 
+An optional source thumbnail follows the existing profile-media write protocol. The authenticated
+multipart route validates the real JPEG/PNG/WebP signature, then Sharp applies EXIF rotation,
+center-crops to 16:9, and writes a 1280x720 WebP. PostgreSQL reserves a dedicated
+`source_thumbnail` exact target before the PUT; HEAD verification and creation of the
+`VideoSourceThumbnail` row are finalized together. Replacing it schedules the previous target for
+delayed cleanup instead of deleting it inline.
+
+`complete` freezes only a confirmed `VideoSourceThumbnail` scoped to the same user, video, and
+upload session. A thumbnail target still `writing` at that point is deliberately ignored so a
+thumbnail failure cannot block the video: the session changes to `completing`, the late thumbnail
+reconciliation redirects that target to `absent`, and transcoding uses the FFmpeg fallback.
+Uploads attempted after the session closes return a conflict and cannot create an untracked
+object.
+
 ## External resource reconciliation
 
 `ExternalResourceTarget` is the canonical durable intent for video sources, generated prefixes,
@@ -307,6 +321,7 @@ participant FF as ffprobe / ffmpeg
 Runner ->> DB: claim queued or stale job (SKIP LOCKED)
 DB -->> Runner: processing + new executionId
 Runner ->> S3: download persisted current source
+Runner ->> S3: download confirmed source thumbnail, when present
 Runner ->> DB: verify completed/current source and executionId
 Runner ->> DB: reserve writing generation + prefix targets
 Runner ->> FF: probe, then direct supervised encode
@@ -323,9 +338,14 @@ for every local slot to drain.
 
 FFprobe metadata is validated before encoding. A single direct FFmpeg process emits H.264/CRF 24
 HLS VOD renditions at 480p, 720p, and 1080p without upscaling, with even dimensions, six-second
-segments, AAC 128k audio when the source has audio, and a WebP thumbnail. Encoder and filter
-threads are bounded by `VIDEO_TRANSCODE_THREADS_PER_JOB`; child output retained in memory is also
-bounded. Abort sends `SIGTERM`, followed by `SIGKILL` after five seconds if necessary.
+segments, AAC 128k audio when the source has audio, and a WebP fallback thumbnail. When the
+completed source session has a confirmed custom thumbnail, the runner replaces that local
+fallback before artifact enumeration and uploads the bytes to the generation's own immutable
+`thumbnail/poster.webp` key. Different generations never reference the shared source object.
+Publication schedules the consumed source thumbnail for reconciliation cleanup in the same
+transaction that activates the generation. Encoder and filter threads are bounded by
+`VIDEO_TRANSCODE_THREADS_PER_JOB`; child output retained in memory is also bounded. Abort sends
+`SIGTERM`, followed by `SIGKILL` after five seconds if necessary.
 
 Each execution writes to a unique generation namespace. Its database generation and prefix cleanup
 targets are reserved before any potentially ambiguous artifact upload. The runner verifies the
@@ -344,6 +364,11 @@ request is served only while the video is `ready`, not moderation-rejected, and 
 `active` or `retiring`. All unavailable, cross-video, cross-generation, and cross-rendition cases
 return the same 404. The master resolves only the current active generation; generation-qualified
 rendition and segment URLs remain usable while that generation is retiring.
+
+`GET /videos/:publicId/thumbnail` applies the same shareability, moderation, readiness, and active
+generation checks. It rebuilds the generation thumbnail key from `buildVideoArtifactManifest`,
+checks the object with HEAD, and returns a non-cacheable temporary redirect to a freshly signed
+object-storage URL; Express never proxies the image bytes.
 
 Playlist reads are capped at 512 KiB. URI lines are rewritten to API routes while all FFmpeg HLS
 tags remain untouched. Every object key is rebuilt from `buildVideoArtifactManifest`; rendition

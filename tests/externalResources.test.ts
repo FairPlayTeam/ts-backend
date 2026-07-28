@@ -255,7 +255,12 @@ describe('external resource reconciliation', () => {
   });
 
   test('keeps video cleanup role scope separate from user media', () => {
-    expect(VIDEO_EXTERNAL_RESOURCE_ROLES).toEqual(['source', 'hls_artifacts', 'thumbnail_prefix']);
+    expect(VIDEO_EXTERNAL_RESOURCE_ROLES).toEqual([
+      'source',
+      'source_thumbnail',
+      'hls_artifacts',
+      'thumbnail_prefix',
+    ]);
     expect(VIDEO_EXTERNAL_RESOURCE_ROLES).not.toContain('user_media');
   });
 });

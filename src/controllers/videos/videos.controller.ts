@@ -13,12 +13,14 @@ import type {
   VideoHlsSegmentParams,
   VideoMultipartUploadSessionParams,
   VideoParams,
+  VideoThumbnailParams,
 } from '../videos.schemas.js';
 import type { VideosControllerDependencies } from './videos.controller.types.js';
 import {
   toCreateVideoResponse,
   toMyVideosResponse,
   toSignedVideoUploadPartsResponse,
+  toUploadVideoSourceThumbnailResponse,
   toVideoUploadSessionResponse,
 } from './videos.responses.js';
 import {
@@ -26,6 +28,7 @@ import {
   VIDEO_HLS_MASTER_CACHE_CONTROL,
   VIDEO_HLS_RENDITION_CACHE_CONTROL,
   VIDEO_HLS_SEGMENT_REDIRECT_CACHE_CONTROL,
+  VIDEO_THUMBNAIL_REDIRECT_CACHE_CONTROL,
 } from '../../services/videos/videoHls.js';
 
 type InitUploadRequest = Request<VideoParams, unknown, InitVideoMultipartUploadBody>;
@@ -45,6 +48,7 @@ type ListMyVideosRequest = Request<unknown, unknown, unknown, ListMyVideosQuery>
 type HlsMasterRequest = Request<VideoHlsMasterParams>;
 type HlsRenditionRequest = Request<VideoHlsRenditionParams>;
 type HlsSegmentRequest = Request<VideoHlsSegmentParams>;
+type ThumbnailRequest = Request<VideoThumbnailParams>;
 
 export const createVideosController = ({ videosService }: VideosControllerDependencies) => {
   const createVideo: RequestHandler = async (req, res, next) => {
@@ -119,6 +123,31 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
       });
 
       return sendNoStoreJson(res, 200, toSignedVideoUploadPartsResponse(result));
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const uploadSourceThumbnail: RequestHandler = async (req, res, next) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const thumbnailReq = req as VideoUploadSessionRequest;
+      const result = await videosService.uploadSourceThumbnail({
+        userId: authenticatedReq.user.id,
+        videoId: thumbnailReq.params.videoId,
+        uploadSessionId: thumbnailReq.params.uploadSessionId,
+        file: req.file
+          ? {
+              buffer: req.file.buffer,
+              size: req.file.size,
+            }
+          : {
+              buffer: Buffer.alloc(0),
+              size: 0,
+            },
+      });
+
+      return sendNoStoreJson(res, 200, toUploadVideoSourceThumbnailResponse(result));
     } catch (err) {
       next(toVideosHttpError(err));
     }
@@ -231,6 +260,21 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     }
   };
 
+  const getThumbnail: RequestHandler = async (req, res, next) => {
+    try {
+      const thumbnailReq = req as ThumbnailRequest;
+      const result = await videosService.getThumbnail({
+        publicId: thumbnailReq.params.publicId,
+      });
+
+      return res
+        .set('Cache-Control', VIDEO_THUMBNAIL_REDIRECT_CACHE_CONTROL)
+        .redirect(307, result.url);
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
   return {
     abortMultipartUpload,
     completeMultipartUpload,
@@ -239,8 +283,10 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     getHlsRendition,
     getHlsSegment,
     getMultipartUploadSession,
+    getThumbnail,
     initMultipartUpload,
     listMyVideos,
     signMultipartUploadParts,
+    uploadSourceThumbnail,
   };
 };

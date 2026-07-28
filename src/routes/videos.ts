@@ -8,7 +8,9 @@ import {
   initVideoMultipartUploadSchema,
   listMyVideosSchema,
   signVideoMultipartUploadPartsSchema,
+  uploadVideoSourceThumbnailSchema,
 } from '../controllers/videos.schemas.js';
+import { createSingleFileUpload } from '../middleware/upload.js';
 import { createRouteProtector } from '../middleware/routeProtection.js';
 import { validate } from '../middleware/validation.js';
 import type { AuthSessionValidationPort } from '../services/auth.types.js';
@@ -17,11 +19,18 @@ import type { VideosRoutePort } from '../services/videos.types.js';
 type VideosRouterDependencies = {
   authService: AuthSessionValidationPort;
   videosService: VideosRoutePort;
+  profileMediaMaxUploadBytes: number;
+  profileMediaUploadLimiter: RequestHandler;
 };
 
 type ValidationSchema = Parameters<typeof validate>[0];
 
-export const createRouter = ({ authService, videosService }: VideosRouterDependencies) => {
+export const createRouter = ({
+  authService,
+  profileMediaMaxUploadBytes,
+  profileMediaUploadLimiter,
+  videosService,
+}: VideosRouterDependencies) => {
   const router = Router();
   const {
     abortMultipartUpload,
@@ -31,11 +40,17 @@ export const createRouter = ({ authService, videosService }: VideosRouterDepende
     getHlsRendition,
     getHlsSegment,
     getMultipartUploadSession,
+    getThumbnail,
     initMultipartUpload,
     listMyVideos,
     signMultipartUploadParts,
+    uploadSourceThumbnail,
   } = createVideosController({ videosService });
   const protect = createRouteProtector({ authService });
+  const uploadThumbnailFile = createSingleFileUpload({
+    fieldName: 'thumbnail',
+    maxFileSizeBytes: profileMediaMaxUploadBytes,
+  });
   const protectedValidatedRoute = (schema: ValidationSchema, ...handlers: RequestHandler[]) => [
     ...protect(),
     validate(schema),
@@ -44,6 +59,7 @@ export const createRouter = ({ authService, videosService }: VideosRouterDepende
 
   router.post('/', ...protectedValidatedRoute(createVideoSchema, createVideo));
   router.get('/me', ...protectedValidatedRoute(listMyVideosSchema, listMyVideos));
+  router.get('/:publicId/thumbnail', getThumbnail);
   router.get('/:publicId/hls/master.m3u8', getHlsMaster);
   router.get('/:publicId/hls/:generationId/:quality/index.m3u8', getHlsRendition);
   router.get('/:publicId/hls/:generationId/:quality/segments/:segment', getHlsSegment);
@@ -54,6 +70,15 @@ export const createRouter = ({ authService, videosService }: VideosRouterDepende
   router.post(
     '/:videoId/upload/multipart/:uploadSessionId/parts/sign',
     ...protectedValidatedRoute(signVideoMultipartUploadPartsSchema, signMultipartUploadParts),
+  );
+  router.put(
+    '/:videoId/upload/multipart/:uploadSessionId/thumbnail',
+    ...protectedValidatedRoute(
+      uploadVideoSourceThumbnailSchema,
+      profileMediaUploadLimiter,
+      uploadThumbnailFile,
+      uploadSourceThumbnail,
+    ),
   );
   router.post(
     '/:videoId/upload/multipart/:uploadSessionId/complete',

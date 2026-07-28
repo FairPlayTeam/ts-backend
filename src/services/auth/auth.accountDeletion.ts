@@ -13,6 +13,7 @@ type AccountDeletionService = Pick<AuthAccountPort, 'deleteAccount'>;
 
 const ALL_EXTERNAL_RESOURCE_ROLES = [
   'source',
+  'source_thumbnail',
   'hls_artifacts',
   'thumbnail_prefix',
   'user_media',

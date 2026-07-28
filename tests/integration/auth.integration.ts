@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -24,6 +24,7 @@ import { createApp } from '../../src/app.js';
 import { createAdminService } from '../../src/services/admin.service.js';
 import { createAuthService } from '../../src/services/auth.service.js';
 import { createProfilesService } from '../../src/services/profiles.service.js';
+import { createUserMediaProcessor } from '../../src/services/userMedia/userMedia.processor.js';
 import { createVideosService } from '../../src/services/videos.service.js';
 import { createVideoPublicId } from '../../src/services/videos/videoPublicId.js';
 import {
@@ -39,7 +40,6 @@ import {
   VideoTranscodeOwnershipLostError,
   type ClaimedVideoTranscodeJob,
 } from '../../src/services/videos/videoTranscodeRunner.js';
-import { createUserMediaProcessor } from '../../src/services/userMedia/userMedia.processor.js';
 import {
   generateSixDigitCode,
   generateToken,
@@ -86,6 +86,7 @@ import {
   ActiveVideoUploadSessionExistsError,
   InvalidVideoUploadSessionStateError,
   VideoStorageQuotaExceededError,
+  VideoUploadSessionNotFoundError,
   VideoUploadSizeMismatchError,
 } from '../../src/services/videos.errors.js';
 import {
@@ -172,6 +173,36 @@ const runPrismaMigrations = async (databaseUrl: string): Promise<void> => {
     timeout: 120_000,
   });
 };
+
+const runPostgresContainerCommand = async (
+  container: StartedTestContainer,
+  command: readonly string[],
+): Promise<string> => {
+  const result = await container.exec([...command]);
+
+  if (result.exitCode !== 0) {
+    throw new Error(`PostgreSQL container command failed: ${result.output}`);
+  }
+
+  return result.output;
+};
+
+const runPostgresSql = async (
+  container: StartedTestContainer,
+  database: string,
+  sql: string,
+): Promise<string> =>
+  runPostgresContainerCommand(container, [
+    'psql',
+    '-v',
+    'ON_ERROR_STOP=1',
+    '-U',
+    'user',
+    '-d',
+    database,
+    '-c',
+    sql,
+  ]);
 
 const buildDatabaseUrl = (container: StartedTestContainer): string => {
   const host = container.getHost();
@@ -274,7 +305,13 @@ const readStoredObject = async (
   storage: ObjectStorage,
   bucket: string,
   objectKey: string,
-): Promise<string> => {
+): Promise<string> => (await readStoredObjectBuffer(storage, bucket, objectKey)).toString('utf8');
+
+const readStoredObjectBuffer = async (
+  storage: ObjectStorage,
+  bucket: string,
+  objectKey: string,
+): Promise<Buffer> => {
   const directory = await mkdtemp(resolve(tmpdir(), 'fairplay-integration-object-'));
   const destinationPath = resolve(directory, 'object');
 
@@ -285,7 +322,7 @@ const readStoredObject = async (
       destinationPath,
     });
 
-    return await readFile(destinationPath, 'utf8');
+    return await readFile(destinationPath);
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
@@ -398,6 +435,9 @@ const createIntegrationVideosService = (
     prisma,
     objectStorage,
     externalResources,
+    imageProcessor: createUserMediaProcessor({
+      profileMediaMaxUploadBytes: PROFILE_MEDIA_MAX_UPLOAD_BYTES,
+    }),
     clock: {
       now: config.now ?? (() => new Date()),
     },
@@ -631,10 +671,12 @@ const uploadVideoSource = async (
     body,
     userId,
     videoId,
+    thumbnails = [],
   }: {
     body: Buffer;
     userId: string;
     videoId: string;
+    thumbnails?: readonly Buffer[];
   },
 ) => {
   const initialized = await service.initMultipartUpload({
@@ -646,6 +688,18 @@ const uploadVideoSource = async (
 
   if (!uploadId) {
     throw new Error('Initialized multipart upload did not expose its upload id');
+  }
+
+  for (const thumbnail of thumbnails) {
+    await service.uploadSourceThumbnail({
+      userId,
+      videoId,
+      uploadSessionId: initialized.uploadSession.id,
+      file: {
+        buffer: thumbnail,
+        size: thumbnail.length,
+      },
+    });
   }
 
   const signed = await service.signMultipartUploadParts({
@@ -804,6 +858,12 @@ const seedHlsGeneration = async (
       objectKey: videoHlsSegmentObjectKey(rendition, segmentName),
       body: segmentBody,
       contentType: 'video/mp2t',
+    }),
+    runtime.videoObjectStorage.putObject({
+      bucket: VIDEO_OBJECT_STORAGE_BUCKET,
+      objectKey: manifest.thumbnail.objectKey,
+      body: Buffer.from('test thumbnail bytes'),
+      contentType: 'image/webp',
     }),
   ]);
 
@@ -1002,6 +1062,33 @@ const waitForTranscodeJob = async (
   throw new Error('Timed out waiting for the transcode job to finish');
 };
 
+const createOneShotBarrier = (participants: number, timeoutMs = 10_000): (() => Promise<void>) => {
+  const outcome = Promise.withResolvers<void>();
+  let arrivals = 0;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+
+  return async () => {
+    if (arrivals >= participants) {
+      return;
+    }
+
+    arrivals += 1;
+    if (arrivals === 1) {
+      timeout = setTimeout(() => {
+        outcome.reject(new Error(`Barrier timed out waiting for ${participants} participants`));
+      }, timeoutMs);
+      timeout.unref?.();
+    }
+    if (arrivals === participants) {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      outcome.resolve();
+    }
+    await outcome.promise;
+  };
+};
+
 describe('auth integration', () => {
   let runtime: TestRuntime | null = null;
 
@@ -1020,6 +1107,194 @@ describe('auth integration', () => {
   afterAll(async () => {
     await stopRuntime(runtime);
   });
+
+  test('migrates a populated pre-thumbnail upload session and keeps it usable', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const migrationName = '20260727120000_add_video_source_thumbnails';
+    const databaseName = `thumbnail_migration_${randomUUID().replaceAll('-', '')}`;
+    const userId = '11111111-1111-4111-8111-111111111111';
+    const videoId = '22222222-2222-4222-8222-222222222222';
+    const uploadSessionId = '33333333-3333-4333-8333-333333333333';
+    const sourceTargetId = '44444444-4444-4444-8444-444444444444';
+    let migrationPrisma: PrismaClient | null = null;
+    let thumbnailObjectKey: string | null = null;
+
+    await runPostgresContainerCommand(runtime.postgresContainer, [
+      'createdb',
+      '-U',
+      'user',
+      databaseName,
+    ]);
+
+    try {
+      const migrationsDirectory = resolve(projectRoot, 'prisma', 'migrations');
+      const migrationDirectories = (await readdir(migrationsDirectory, { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory() && entry.name < migrationName)
+        .map((entry) => entry.name)
+        .sort();
+
+      for (const directory of migrationDirectories) {
+        const sql = await readFile(
+          resolve(migrationsDirectory, directory, 'migration.sql'),
+          'utf8',
+        );
+        await runPostgresSql(runtime.postgresContainer, databaseName, sql);
+      }
+
+      await runPostgresSql(
+        runtime.postgresContainer,
+        databaseName,
+        `
+            INSERT INTO "users" (
+              "id", "email", "username", "password_hash", "is_verified",
+              "created_at", "updated_at"
+            ) VALUES (
+              '${userId}', 'preexisting-thumbnail@example.com', 'preexisting_thumb',
+              'unused-password-hash', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            );
+            INSERT INTO "videos" (
+              "id", "public_id", "owner_id", "title", "created_at", "updated_at"
+            ) VALUES (
+              '${videoId}', 'PreMigration1', '${userId}', 'Pre-migration video',
+              CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            );
+            INSERT INTO "external_resource_targets" (
+              "id", "user_id", "video_id", "bucket", "selector", "selector_kind",
+              "role", "generation", "expected_size_bytes", "may_have_multipart_upload",
+              "goal", "state", "created_at", "updated_at"
+            ) VALUES (
+              '${sourceTargetId}', '${userId}', '${videoId}',
+              '${VIDEO_OBJECT_STORAGE_BUCKET}',
+              '${userId}/${videoId}/sources/${uploadSessionId}/original.mp4',
+              'exact', 'source', '${uploadSessionId}', 1, true,
+              'present', 'writing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            );
+            INSERT INTO "video_upload_sessions" (
+              "id", "video_id", "user_id", "status", "bucket", "object_key",
+              "part_size_bytes", "expected_size_bytes", "expires_at",
+              "external_resource_target_id", "created_at", "updated_at"
+            ) VALUES (
+              '${uploadSessionId}', '${videoId}', '${userId}', 'initiated',
+              '${VIDEO_OBJECT_STORAGE_BUCKET}',
+              '${userId}/${videoId}/sources/${uploadSessionId}/original.mp4',
+              67108864, 1, '2099-01-01T00:00:00.000Z',
+              '${sourceTargetId}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            );
+          `,
+      );
+
+      const thumbnailMigration = await readFile(
+        resolve(migrationsDirectory, migrationName, 'migration.sql'),
+        'utf8',
+      );
+      const enumStatementEnd = thumbnailMigration.indexOf(';') + 1;
+
+      if (enumStatementEnd <= 0) {
+        throw new Error('Thumbnail migration enum statement was not found');
+      }
+
+      await runPostgresSql(
+        runtime.postgresContainer,
+        databaseName,
+        thumbnailMigration.slice(0, enumStatementEnd),
+      );
+      await runPostgresSql(
+        runtime.postgresContainer,
+        databaseName,
+        thumbnailMigration.slice(enumStatementEnd),
+      );
+
+      const migratedDatabaseUrl = new URL(runtime.databaseUrl);
+      migratedDatabaseUrl.pathname = `/${databaseName}`;
+      migrationPrisma = createPrismaClient(migratedDatabaseUrl.toString());
+      const migrationExternalResources = createExternalResourceReconciler({
+        prisma: migrationPrisma,
+        objectStorage: runtime.videoObjectStorage,
+        clock: {
+          now: () => new Date(),
+        },
+        logger: testLogger,
+      });
+      const migrationVideosService = createIntegrationVideosService(
+        migrationPrisma,
+        runtime.videoObjectStorage,
+        migrationExternalResources,
+      );
+      const preexistingSession = await migrationPrisma.videoUploadSession.findUniqueOrThrow({
+        where: {
+          id: uploadSessionId,
+        },
+        include: {
+          sourceThumbnail: true,
+        },
+      });
+
+      expect(preexistingSession).toMatchObject({
+        id: uploadSessionId,
+        status: 'initiated',
+        sourceThumbnail: null,
+      });
+      await expect(
+        migrationVideosService.getMultipartUploadSession({
+          userId,
+          videoId,
+          uploadSessionId,
+        }),
+      ).resolves.toMatchObject({
+        uploadSession: {
+          id: uploadSessionId,
+          status: 'initiated',
+        },
+      });
+
+      const thumbnail = await createPng(1600, 900);
+      await expect(
+        migrationVideosService.uploadSourceThumbnail({
+          userId,
+          videoId,
+          uploadSessionId,
+          file: {
+            buffer: thumbnail,
+            size: thumbnail.length,
+          },
+        }),
+      ).resolves.toMatchObject({
+        thumbnail: {
+          uploadSessionId,
+          width: 1280,
+          height: 720,
+        },
+      });
+      thumbnailObjectKey = (
+        await migrationPrisma.videoSourceThumbnail.findUniqueOrThrow({
+          where: {
+            uploadSessionId,
+          },
+          select: {
+            objectKey: true,
+          },
+        })
+      ).objectKey;
+    } finally {
+      await migrationPrisma?.$disconnect();
+      if (thumbnailObjectKey) {
+        await runtime.videoObjectStorage.deleteObject(
+          thumbnailObjectKey,
+          VIDEO_OBJECT_STORAGE_BUCKET,
+        );
+      }
+      await runPostgresContainerCommand(runtime.postgresContainer, [
+        'dropdb',
+        '--force',
+        '-U',
+        'user',
+        databaseName,
+      ]);
+    }
+  }, 120_000);
 
   test('runs the account lifecycle through HTTP, Prisma, and Redis', async () => {
     if (!runtime) {
@@ -1209,7 +1484,6 @@ describe('auth integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
-
     const owner = await createVerifiedSession(runtime, {
       email: 'reconciliation-lease@example.com',
       username: 'reconcile_lease',
@@ -1717,7 +1991,1349 @@ describe('auth integration', () => {
     expect(afterCleanup._sum.expectedSizeBytes).toBe(BigInt(secondBody.length));
   });
 
-  test('takes over a stale transcode into a complete generation and retires the previous generation atomically', async () => {
+  test('counts source thumbnails in the video quota and blocks repeated near-limit reservations', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'thumbnail-quota-abuse@example.com',
+      username: 'thumb_quota_abuse',
+    });
+    const noisyPixels = randomBytes(1280 * 720 * 3);
+    const nearUploadLimitThumbnail = await sharp(noisyPixels, {
+      raw: {
+        width: 1280,
+        height: 720,
+        channels: 3,
+      },
+    })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    const normalized = await createUserMediaProcessor({
+      profileMediaMaxUploadBytes: PROFILE_MEDIA_MAX_UPLOAD_BYTES,
+    }).processVideoThumbnail({
+      buffer: nearUploadLimitThumbnail,
+      size: nearUploadLimitThumbnail.length,
+    });
+
+    expect(nearUploadLimitThumbnail.length).toBeGreaterThan(2 * 1024 * 1024);
+    expect(nearUploadLimitThumbnail.length).toBeLessThan(PROFILE_MEDIA_MAX_UPLOAD_BYTES);
+
+    const videos = await Promise.all(
+      Array.from({ length: 3 }, (_, index) =>
+        runtime?.videosService.createVideo({
+          userId: owner.userId,
+          title: `Thumbnail quota abuse ${index}`,
+          description: null,
+          tags: [],
+          license: 'all_rights_reserved',
+          visibility: 'unlisted',
+          allowComments: true,
+        }),
+      ),
+    );
+    const quotaBytes = 3 + normalized.sizeBytes * 2;
+    const quotaBoundService = createIntegrationVideosService(
+      runtime.prisma,
+      runtime.videoObjectStorage,
+      runtime.externalResources,
+      {
+        userStorageQuotaBytes: quotaBytes,
+      },
+    );
+    const sessions = [];
+
+    for (const created of videos) {
+      if (!created) {
+        throw new Error('Quota abuse video creation did not return a video');
+      }
+
+      sessions.push(
+        await quotaBoundService.initMultipartUpload({
+          userId: owner.userId,
+          videoId: created.video.id,
+          sizeBytes: 1,
+        }),
+      );
+    }
+
+    for (let index = 0; index < 2; index += 1) {
+      const created = videos[index];
+      const session = sessions[index];
+
+      if (!created || !session) {
+        throw new Error('Quota abuse setup is incomplete');
+      }
+
+      await expect(
+        quotaBoundService.uploadSourceThumbnail({
+          userId: owner.userId,
+          videoId: created.video.id,
+          uploadSessionId: session.uploadSession.id,
+          file: {
+            buffer: nearUploadLimitThumbnail,
+            size: nearUploadLimitThumbnail.length,
+          },
+        }),
+      ).resolves.toMatchObject({
+        thumbnail: {
+          sizeBytes: normalized.sizeBytes,
+        },
+      });
+    }
+
+    const blockedVideo = videos[2];
+    const blockedSession = sessions[2];
+
+    if (!blockedVideo || !blockedSession) {
+      throw new Error('Blocked quota abuse setup is incomplete');
+    }
+
+    await expect(
+      quotaBoundService.uploadSourceThumbnail({
+        userId: owner.userId,
+        videoId: blockedVideo.video.id,
+        uploadSessionId: blockedSession.uploadSession.id,
+        file: {
+          buffer: nearUploadLimitThumbnail,
+          size: nearUploadLimitThumbnail.length,
+        },
+      }),
+    ).rejects.toBeInstanceOf(VideoStorageQuotaExceededError);
+
+    const reserved = await runtime.prisma.externalResourceTarget.aggregate({
+      where: {
+        userId: owner.userId,
+        role: {
+          in: ['source', 'source_thumbnail'],
+        },
+        state: {
+          not: 'confirmed_absent',
+        },
+      },
+      _sum: {
+        expectedSizeBytes: true,
+      },
+    });
+
+    expect(reserved._sum.expectedSizeBytes).toBe(BigInt(quotaBytes));
+    await expect(
+      runtime.prisma.externalResourceTarget.count({
+        where: {
+          userId: owner.userId,
+          role: 'source_thumbnail',
+        },
+      }),
+    ).resolves.toBe(2);
+  });
+
+  test('publishes the latest confirmed custom thumbnail, cleans its replacement, and serves the generation copy', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'custom-video-thumbnail@example.com',
+      username: 'custom_thumb',
+    });
+    const created = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Custom video thumbnail',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    const firstThumbnail = await createPng(320, 900);
+    const secondThumbnail = await sharp({
+      create: {
+        width: 1_800,
+        height: 300,
+        channels: 3,
+        background: '#f04444',
+      },
+    })
+      .png()
+      .toBuffer();
+    const source = await uploadVideoSource(runtime.videosService, {
+      body: await createTranscodeTestVideo(),
+      userId: owner.userId,
+      videoId: created.video.id,
+      thumbnails: [firstThumbnail, secondThumbnail],
+    });
+    const confirmedThumbnail = await runtime.prisma.videoSourceThumbnail.findUniqueOrThrow({
+      where: {
+        uploadSessionId: source.uploadSession.id,
+      },
+      include: {
+        externalResourceTarget: true,
+      },
+    });
+    const replacedTarget = await runtime.prisma.externalResourceTarget.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+        generation: source.uploadSession.id,
+        role: 'source_thumbnail',
+        id: {
+          not: confirmedThumbnail.externalResourceTargetId,
+        },
+      },
+    });
+    const normalizedThumbnail = await readStoredObjectBuffer(
+      runtime.videoObjectStorage,
+      confirmedThumbnail.bucket,
+      confirmedThumbnail.objectKey,
+    );
+    const normalizedMetadata = await sharp(normalizedThumbnail).metadata();
+
+    expect(normalizedMetadata).toMatchObject({
+      format: 'webp',
+      width: 1280,
+      height: 720,
+    });
+    expect(confirmedThumbnail.externalResourceTarget).toMatchObject({
+      userId: owner.userId,
+      videoId: created.video.id,
+      generation: source.uploadSession.id,
+      goal: 'present',
+      role: 'source_thumbnail',
+      state: 'confirmed_present',
+    });
+    expect(replacedTarget).toMatchObject({
+      goal: 'absent',
+      state: 'quiescing',
+    });
+    const reservedBeforeCleanup = await runtime.prisma.externalResourceTarget.aggregate({
+      where: {
+        userId: owner.userId,
+        role: {
+          in: ['source', 'source_thumbnail'],
+        },
+        state: {
+          not: 'confirmed_absent',
+        },
+      },
+      _sum: {
+        expectedSizeBytes: true,
+      },
+    });
+    const expectedReservedBytes =
+      BigInt(source.uploadSession.expectedSizeBytes) +
+      (confirmedThumbnail.externalResourceTarget.expectedSizeBytes ?? 0n) +
+      (replacedTarget.expectedSizeBytes ?? 0n);
+
+    expect(reservedBeforeCleanup._sum.expectedSizeBytes).toBe(expectedReservedBytes);
+    const quotaProbeVideo = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Thumbnail replacement quota probe',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    const replacementQuotaService = createIntegrationVideosService(
+      runtime.prisma,
+      runtime.videoObjectStorage,
+      runtime.externalResources,
+      {
+        maxUploadBytes: 1,
+        userStorageQuotaBytes: Number(expectedReservedBytes),
+      },
+    );
+
+    await expect(
+      replacementQuotaService.initMultipartUpload({
+        userId: owner.userId,
+        videoId: quotaProbeVideo.video.id,
+        sizeBytes: 1,
+      }),
+    ).rejects.toBeInstanceOf(VideoStorageQuotaExceededError);
+
+    const cleanupDueAt = new Date(Date.now() - 1_000);
+    await runtime.prisma.externalResourceTarget.update({
+      where: {
+        id: replacedTarget.id,
+      },
+      data: {
+        quiescenceNotBefore: cleanupDueAt,
+        nextAttemptAt: cleanupDueAt,
+      },
+    });
+    await expect(runtime.videosService.reconcilePendingExternalResources()).resolves.toMatchObject({
+      confirmed: 1,
+      failed: 0,
+    });
+    await expect(
+      runtime.videoObjectStorage.headObject({
+        bucket: replacedTarget.bucket,
+        objectKey: replacedTarget.selector,
+      }),
+    ).resolves.toBeNull();
+
+    const job = await runtime.prisma.videoTranscodeJob.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+        sourceObjectKey: source.uploadSession.objectKey,
+      },
+      select: {
+        id: true,
+      },
+    });
+    const runnerErrors: object[] = [];
+    const runner = createVideoTranscodeRunner({
+      prisma: runtime.prisma,
+      objectStorage: runtime.videoObjectStorage,
+      clock: { now: () => new Date() },
+      config: {
+        maxConcurrentJobs: 1,
+        threadsPerJob: 1,
+      },
+      logger: {
+        info: () => undefined,
+        warn: () => undefined,
+        error: (data) => {
+          runnerErrors.push(data);
+        },
+      },
+    });
+
+    runner.start();
+    let completedJob: Awaited<ReturnType<typeof waitForTranscodeJob>>;
+
+    try {
+      completedJob = await waitForTranscodeJob(runtime.prisma, job.id);
+    } finally {
+      await runner.stop();
+    }
+
+    expect(completedJob).toMatchObject({
+      status: 'completed',
+      lastError: null,
+    });
+    expect(runnerErrors).toEqual([]);
+    const activeGeneration = await runtime.prisma.videoArtifactGeneration.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+        state: 'active',
+      },
+      select: {
+        bucket: true,
+        id: true,
+        thumbnailObjectKey: true,
+      },
+    });
+    const manifest = buildVideoArtifactManifest(
+      owner.userId,
+      created.video.id,
+      activeGeneration.id,
+      [],
+    );
+
+    expect(activeGeneration.thumbnailObjectKey).toBe(manifest.thumbnail.objectKey);
+    await expect(
+      readStoredObjectBuffer(
+        runtime.videoObjectStorage,
+        activeGeneration.bucket,
+        manifest.thumbnail.objectKey,
+      ),
+    ).resolves.toEqual(normalizedThumbnail);
+    await expect(
+      runtime.prisma.externalResourceTarget.findUniqueOrThrow({
+        where: {
+          id: confirmedThumbnail.externalResourceTargetId,
+        },
+        select: {
+          goal: true,
+          state: true,
+        },
+      }),
+    ).resolves.toEqual({
+      goal: 'absent',
+      state: 'quiescing',
+    });
+
+    const app = await createIntegrationApp(runtime);
+    const thumbnailRedirect = await request(app)
+      .get(`/videos/${created.video.publicId}/thumbnail`)
+      .expect(307)
+      .expect('Cache-Control', 'no-store');
+    const signedThumbnailUrl = thumbnailRedirect.headers.location;
+
+    if (!signedThumbnailUrl) {
+      throw new Error('Public thumbnail redirect did not expose a Location header');
+    }
+
+    const signedThumbnail = await fetch(signedThumbnailUrl);
+
+    expect(signedThumbnail.status).toBe(200);
+    expect(Buffer.from(await signedThumbnail.arrayBuffer())).toEqual(normalizedThumbnail);
+    await request(app)
+      .get('/videos/me')
+      .set('Authorization', `Bearer ${owner.sessionKey}`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.videos).toContainEqual(
+          expect.objectContaining({
+            id: created.video.id,
+            processingStatus: 'ready',
+            thumbnailObjectKey: manifest.thumbnail.objectKey,
+          }),
+        );
+      });
+  });
+
+  test('cleans the confirmed thumbnail of a source replaced before its generation is published', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'replaced-source-thumbnail@example.com',
+      username: 'replaced_src_thumb',
+    });
+    const created = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Replaced source thumbnail cleanup',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    const sourceA = await uploadVideoSource(runtime.videosService, {
+      body: Buffer.from('source A before publication'),
+      userId: owner.userId,
+      videoId: created.video.id,
+      thumbnails: [await createPng(1600, 900)],
+    });
+    const thumbnailA = await runtime.prisma.videoSourceThumbnail.findUniqueOrThrow({
+      where: {
+        uploadSessionId: sourceA.uploadSession.id,
+      },
+      include: {
+        externalResourceTarget: true,
+      },
+    });
+
+    expect(thumbnailA.externalResourceTarget).toMatchObject({
+      goal: 'present',
+      state: 'confirmed_present',
+    });
+    await uploadVideoSource(runtime.videosService, {
+      body: Buffer.from('source B replaces A before its job is claimed'),
+      userId: owner.userId,
+      videoId: created.video.id,
+    });
+
+    const scheduled = await runtime.prisma.externalResourceTarget.findUniqueOrThrow({
+      where: {
+        id: thumbnailA.externalResourceTargetId,
+      },
+    });
+
+    expect(scheduled).toMatchObject({
+      goal: 'absent',
+      state: 'quiescing',
+    });
+    const cleanupDueAt = new Date(Date.now() - 1_000);
+    await runtime.prisma.externalResourceTarget.update({
+      where: {
+        id: thumbnailA.externalResourceTargetId,
+      },
+      data: {
+        quiescenceNotBefore: cleanupDueAt,
+        nextAttemptAt: cleanupDueAt,
+      },
+    });
+    await expect(runtime.videosService.reconcilePendingExternalResources()).resolves.toMatchObject({
+      claimed: 1,
+      confirmed: 1,
+      failed: 0,
+    });
+    await expect(
+      runtime.prisma.externalResourceTarget.findUniqueOrThrow({
+        where: {
+          id: thumbnailA.externalResourceTargetId,
+        },
+        select: {
+          goal: true,
+          state: true,
+        },
+      }),
+    ).resolves.toEqual({
+      goal: 'absent',
+      state: 'confirmed_absent',
+    });
+    await expect(
+      runtime.prisma.videoSourceThumbnail.findUnique({
+        where: {
+          uploadSessionId: sourceA.uploadSession.id,
+        },
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      runtime.videoObjectStorage.headObject({
+        bucket: thumbnailA.bucket,
+        objectKey: thumbnailA.objectKey,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  test('rejects thumbnail IDOR before creating an external reservation', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const [owner, otherUser] = await Promise.all([
+      createVerifiedSession(runtime, {
+        email: 'thumbnail-owner@example.com',
+        username: 'thumb_owner',
+      }),
+      createVerifiedSession(runtime, {
+        email: 'thumbnail-attacker@example.com',
+        username: 'thumb_attacker',
+      }),
+    ]);
+    const [ownedVideo, otherVideo] = await Promise.all([
+      runtime.videosService.createVideo({
+        userId: owner.userId,
+        title: 'Owned thumbnail session',
+        description: null,
+        tags: [],
+        license: 'all_rights_reserved',
+        visibility: 'unlisted',
+        allowComments: true,
+      }),
+      runtime.videosService.createVideo({
+        userId: owner.userId,
+        title: 'Other owned video',
+        description: null,
+        tags: [],
+        license: 'all_rights_reserved',
+        visibility: 'unlisted',
+        allowComments: true,
+      }),
+    ]);
+    const initialized = await runtime.videosService.initMultipartUpload({
+      userId: owner.userId,
+      videoId: ownedVideo.video.id,
+      sizeBytes: 64,
+    });
+    const thumbnail = await createPng();
+    const countBefore = await runtime.prisma.externalResourceTarget.count({
+      where: {
+        role: 'source_thumbnail',
+      },
+    });
+
+    await expect(
+      runtime.videosService.uploadSourceThumbnail({
+        userId: otherUser.userId,
+        videoId: ownedVideo.video.id,
+        uploadSessionId: initialized.uploadSession.id,
+        file: { buffer: thumbnail, size: thumbnail.length },
+      }),
+    ).rejects.toBeInstanceOf(VideoUploadSessionNotFoundError);
+    await expect(
+      runtime.videosService.uploadSourceThumbnail({
+        userId: owner.userId,
+        videoId: otherVideo.video.id,
+        uploadSessionId: initialized.uploadSession.id,
+        file: { buffer: thumbnail, size: thumbnail.length },
+      }),
+    ).rejects.toBeInstanceOf(VideoUploadSessionNotFoundError);
+    await expect(
+      runtime.prisma.externalResourceTarget.count({
+        where: {
+          role: 'source_thumbnail',
+        },
+      }),
+    ).resolves.toBe(countBefore);
+  });
+
+  test('serializes thumbnail and source finalization transactions released by the same barrier', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+    const activeRuntime = runtime;
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'thumbnail-finalization-barrier@example.com',
+      username: 'thumb_final_barrier',
+    });
+    const created = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Thumbnail finalization barrier',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    const sourceBody = Buffer.from('source finalized against thumbnail');
+    const initialized = await runtime.videosService.initMultipartUpload({
+      userId: owner.userId,
+      videoId: created.video.id,
+      sizeBytes: sourceBody.length,
+    });
+    const signed = await runtime.videosService.signMultipartUploadParts({
+      userId: owner.userId,
+      videoId: created.video.id,
+      uploadSessionId: initialized.uploadSession.id,
+      partNumbers: [1],
+    });
+    const sourcePut = await fetch(signed.parts[0]?.url ?? '', {
+      method: 'PUT',
+      body: sourceBody,
+    });
+    const etag = sourcePut.headers.get('etag');
+
+    if (!etag) {
+      throw new Error('Concurrent finalization source PUT did not return an ETag');
+    }
+
+    const thumbnailPrisma = createPrismaClient(runtime.databaseUrl);
+    const completePrisma = createPrismaClient(runtime.databaseUrl);
+    const lockPrisma = createPrismaClient(runtime.databaseUrl);
+    const thumbnailStored = Promise.withResolvers<void>();
+    const releaseThumbnailPut = Promise.withResolvers<void>();
+    const bothHeadsCompleted = Promise.withResolvers<void>();
+    const releaseHeads = Promise.withResolvers<void>();
+    let completedHeads = 0;
+    const barrierStorage: ObjectStorage = {
+      ...runtime.videoObjectStorage,
+      putObject: async (input) => {
+        await activeRuntime.videoObjectStorage.putObject(input);
+        thumbnailStored.resolve();
+        await releaseThumbnailPut.promise;
+      },
+      headObject: async (input) => {
+        const object = await activeRuntime.videoObjectStorage.headObject(input);
+
+        completedHeads += 1;
+        if (completedHeads === 2) {
+          bothHeadsCompleted.resolve();
+        }
+        await releaseHeads.promise;
+
+        return object;
+      },
+    };
+    const thumbnailExternalResources = createExternalResourceReconciler({
+      prisma: thumbnailPrisma,
+      objectStorage: barrierStorage,
+      clock: {
+        now: () => new Date(),
+      },
+      logger: testLogger,
+    });
+    const completeExternalResources = createExternalResourceReconciler({
+      prisma: completePrisma,
+      objectStorage: barrierStorage,
+      clock: {
+        now: () => new Date(),
+      },
+      logger: testLogger,
+    });
+    const thumbnailService = createIntegrationVideosService(
+      thumbnailPrisma,
+      barrierStorage,
+      thumbnailExternalResources,
+    );
+    const completeService = createIntegrationVideosService(
+      completePrisma,
+      barrierStorage,
+      completeExternalResources,
+    );
+    const thumbnail = await createPng(900, 1200);
+    const thumbnailPromise = thumbnailService.uploadSourceThumbnail({
+      userId: owner.userId,
+      videoId: created.video.id,
+      uploadSessionId: initialized.uploadSession.id,
+      file: {
+        buffer: thumbnail,
+        size: thumbnail.length,
+      },
+    });
+
+    await thumbnailStored.promise;
+    const completePromise = completeService.completeMultipartUpload({
+      userId: owner.userId,
+      videoId: created.video.id,
+      uploadSessionId: initialized.uploadSession.id,
+      parts: [{ partNumber: 1, etag }],
+    });
+    releaseThumbnailPut.resolve();
+
+    await Promise.race([
+      bothHeadsCompleted.promise,
+      delay(10_000).then(() => {
+        throw new Error('Both reconciliations did not reach HEAD verification');
+      }),
+    ]);
+
+    const lockAcquired = Promise.withResolvers<void>();
+    const releaseLock = Promise.withResolvers<void>();
+    const lockTransaction = lockPrisma.$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe('LOCK TABLE "video_upload_sessions" IN ACCESS EXCLUSIVE MODE');
+        lockAcquired.resolve();
+        await releaseLock.promise;
+      },
+      {
+        timeout: 15_000,
+      },
+    );
+    let blockedFinalizations = 0;
+
+    try {
+      await Promise.race([
+        lockAcquired.promise,
+        delay(5_000).then(() => {
+          throw new Error('Finalization lock could not be acquired');
+        }),
+      ]);
+      releaseHeads.resolve();
+
+      const blockedDeadline = Date.now() + 5_000;
+
+      while (Date.now() < blockedDeadline) {
+        const [activity] = await runtime.prisma.$queryRaw<Array<{ blocked_count: number }>>`
+          SELECT count(*)::int AS blocked_count
+          FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND wait_event_type = 'Lock'
+            AND query LIKE '%video_upload_sessions%'
+        `;
+        blockedFinalizations = activity?.blocked_count ?? 0;
+
+        if (blockedFinalizations >= 2) {
+          break;
+        }
+
+        await delay(25);
+      }
+    } finally {
+      releaseLock.resolve();
+      releaseHeads.resolve();
+      await lockTransaction;
+      await lockPrisma.$disconnect();
+    }
+
+    let thumbnailResult: PromiseSettledResult<Awaited<typeof thumbnailPromise>>;
+    let completeResult: PromiseSettledResult<Awaited<typeof completePromise>>;
+
+    try {
+      [thumbnailResult, completeResult] = await Promise.allSettled([
+        thumbnailPromise,
+        completePromise,
+      ]);
+    } finally {
+      await Promise.all([thumbnailPrisma.$disconnect(), completePrisma.$disconnect()]);
+    }
+
+    expect(blockedFinalizations).toBeGreaterThanOrEqual(2);
+    expect(completeResult.status).toBe('fulfilled');
+
+    const [storedSession, thumbnailTargets] = await Promise.all([
+      runtime.prisma.videoUploadSession.findUniqueOrThrow({
+        where: {
+          id: initialized.uploadSession.id,
+        },
+        include: {
+          sourceThumbnail: true,
+        },
+      }),
+      runtime.prisma.externalResourceTarget.findMany({
+        where: {
+          generation: initialized.uploadSession.id,
+          role: 'source_thumbnail',
+        },
+      }),
+    ]);
+
+    expect(storedSession.status).toBe('completed');
+    expect(thumbnailTargets).toHaveLength(1);
+    const thumbnailTarget = thumbnailTargets[0];
+
+    if (!thumbnailTarget) {
+      throw new Error('Concurrent thumbnail target was not persisted');
+    }
+
+    if (storedSession.sourceThumbnail) {
+      expect(thumbnailResult.status).toBe('fulfilled');
+      expect(storedSession.sourceThumbnail.externalResourceTargetId).toBe(thumbnailTarget.id);
+      expect(thumbnailTarget).toMatchObject({
+        goal: 'present',
+        state: 'confirmed_present',
+      });
+    } else {
+      expect(thumbnailResult.status).toBe('rejected');
+      if (thumbnailResult.status === 'rejected') {
+        expect(thumbnailResult.reason).toBeInstanceOf(InvalidVideoUploadSessionStateError);
+      }
+      expect(thumbnailTarget).toMatchObject({
+        goal: 'absent',
+        state: 'quiescing',
+      });
+    }
+  });
+
+  test('finalizes two parallel thumbnails with one winner and one fully tracked cleanup', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+    const activeRuntime = runtime;
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'parallel-thumbnails@example.com',
+      username: 'parallel_thumbnails',
+    });
+    const created = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Parallel thumbnail replacement',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    const initialized = await runtime.videosService.initMultipartUpload({
+      userId: owner.userId,
+      videoId: created.video.id,
+      sizeBytes: 1,
+    });
+    const firstPrisma = createPrismaClient(runtime.databaseUrl);
+    const secondPrisma = createPrismaClient(runtime.databaseUrl);
+    const putBarrier = createOneShotBarrier(2);
+    const parallelStorage: ObjectStorage = {
+      ...runtime.videoObjectStorage,
+      putObject: async (input) => {
+        await activeRuntime.videoObjectStorage.putObject(input);
+        await putBarrier();
+      },
+    };
+    const firstExternalResources = createExternalResourceReconciler({
+      prisma: firstPrisma,
+      objectStorage: parallelStorage,
+      clock: {
+        now: () => new Date(),
+      },
+      logger: testLogger,
+    });
+    const secondExternalResources = createExternalResourceReconciler({
+      prisma: secondPrisma,
+      objectStorage: parallelStorage,
+      clock: {
+        now: () => new Date(),
+      },
+      logger: testLogger,
+    });
+    const firstService = createIntegrationVideosService(
+      firstPrisma,
+      parallelStorage,
+      firstExternalResources,
+    );
+    const secondService = createIntegrationVideosService(
+      secondPrisma,
+      parallelStorage,
+      secondExternalResources,
+    );
+    const [firstThumbnail, secondThumbnail] = await Promise.all([
+      createPng(900, 900),
+      createPng(1800, 600),
+    ]);
+    const firstUpload = firstService.uploadSourceThumbnail({
+      userId: owner.userId,
+      videoId: created.video.id,
+      uploadSessionId: initialized.uploadSession.id,
+      file: {
+        buffer: firstThumbnail,
+        size: firstThumbnail.length,
+      },
+    });
+    const secondUpload = secondService.uploadSourceThumbnail({
+      userId: owner.userId,
+      videoId: created.video.id,
+      uploadSessionId: initialized.uploadSession.id,
+      file: {
+        buffer: secondThumbnail,
+        size: secondThumbnail.length,
+      },
+    });
+    let first: PromiseSettledResult<Awaited<typeof firstUpload>>;
+    let second: PromiseSettledResult<Awaited<typeof secondUpload>>;
+
+    try {
+      [first, second] = await Promise.allSettled([firstUpload, secondUpload]);
+    } finally {
+      await Promise.all([firstPrisma.$disconnect(), secondPrisma.$disconnect()]);
+    }
+
+    if (![first, second].some((result) => result.status === 'fulfilled')) {
+      throw new AggregateError(
+        [first, second].flatMap((result) => (result.status === 'rejected' ? [result.reason] : [])),
+        'Both parallel thumbnail uploads failed',
+      );
+    }
+    const [linkedThumbnail, targets] = await Promise.all([
+      runtime.prisma.videoSourceThumbnail.findUniqueOrThrow({
+        where: {
+          uploadSessionId: initialized.uploadSession.id,
+        },
+      }),
+      runtime.prisma.externalResourceTarget.findMany({
+        where: {
+          generation: initialized.uploadSession.id,
+          role: 'source_thumbnail',
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      }),
+    ]);
+
+    expect(targets).toHaveLength(2);
+    const winner = targets.find((target) => target.id === linkedThumbnail.externalResourceTargetId);
+    const loser = targets.find((target) => target.id !== linkedThumbnail.externalResourceTargetId);
+
+    expect(winner).toMatchObject({
+      goal: 'present',
+      state: 'confirmed_present',
+    });
+    expect(loser).toMatchObject({
+      goal: 'absent',
+      state: 'quiescing',
+    });
+
+    if (!winner || !loser) {
+      throw new Error('Parallel thumbnail winner and loser were not both persisted');
+    }
+
+    const cleanupDueAt = new Date(Date.now() - 1_000);
+    await runtime.prisma.externalResourceTarget.update({
+      where: {
+        id: loser.id,
+      },
+      data: {
+        quiescenceNotBefore: cleanupDueAt,
+        nextAttemptAt: cleanupDueAt,
+      },
+    });
+    await expect(runtime.videosService.reconcilePendingExternalResources()).resolves.toMatchObject({
+      claimed: 1,
+      confirmed: 1,
+      failed: 0,
+    });
+    await expect(
+      runtime.prisma.externalResourceTarget.findUniqueOrThrow({
+        where: {
+          id: loser.id,
+        },
+        select: {
+          goal: true,
+          state: true,
+        },
+      }),
+    ).resolves.toEqual({
+      goal: 'absent',
+      state: 'confirmed_absent',
+    });
+    await expect(
+      runtime.videoObjectStorage.headObject({
+        bucket: loser.bucket,
+        objectKey: loser.selector,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      runtime.videoObjectStorage.headObject({
+        bucket: winner.bucket,
+        objectKey: winner.selector,
+      }),
+    ).resolves.toMatchObject({
+      sizeBytes: linkedThumbnail.sizeBytes,
+    });
+  });
+
+  test('discards a thumbnail whose PUT races with complete and transcodes with the ffmpeg fallback', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'thumbnail-complete-race@example.com',
+      username: 'thumb_race',
+    });
+    const created = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Thumbnail complete race',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    const sourceBody = await createTranscodeTestVideo();
+    const initialized = await runtime.videosService.initMultipartUpload({
+      userId: owner.userId,
+      videoId: created.video.id,
+      sizeBytes: sourceBody.length,
+    });
+    const signed = await runtime.videosService.signMultipartUploadParts({
+      userId: owner.userId,
+      videoId: created.video.id,
+      uploadSessionId: initialized.uploadSession.id,
+      partNumbers: [1],
+    });
+    const sourcePut = await fetch(signed.parts[0]?.url ?? '', {
+      method: 'PUT',
+      body: sourceBody,
+    });
+    const etag = sourcePut.headers.get('etag');
+
+    if (!etag) {
+      throw new Error('Multipart source upload did not return an ETag');
+    }
+
+    let racedThumbnail:
+      | {
+          body: Buffer;
+          bucket: string;
+          objectKey: string;
+        }
+      | undefined;
+    const raceService = createIntegrationVideosService(
+      runtime.prisma,
+      {
+        ...runtime.videoObjectStorage,
+        putObject: async (input) => {
+          await runtime?.videoObjectStorage.putObject(input);
+          racedThumbnail = {
+            body: input.body,
+            bucket: input.bucket ?? VIDEO_OBJECT_STORAGE_BUCKET,
+            objectKey: input.objectKey,
+          };
+          await runtime?.videosService.completeMultipartUpload({
+            userId: owner.userId,
+            videoId: created.video.id,
+            uploadSessionId: initialized.uploadSession.id,
+            parts: [{ partNumber: 1, etag }],
+          });
+        },
+      },
+      runtime.externalResources,
+    );
+    const thumbnail = await createPng(300, 900);
+
+    await expect(
+      raceService.uploadSourceThumbnail({
+        userId: owner.userId,
+        videoId: created.video.id,
+        uploadSessionId: initialized.uploadSession.id,
+        file: { buffer: thumbnail, size: thumbnail.length },
+      }),
+    ).rejects.toBeInstanceOf(InvalidVideoUploadSessionStateError);
+    expect(racedThumbnail).toBeDefined();
+    const app = await createIntegrationApp(runtime);
+    await request(app)
+      .put(`/videos/${created.video.id}/upload/multipart/${initialized.uploadSession.id}/thumbnail`)
+      .set('Authorization', `Bearer ${owner.sessionKey}`)
+      .attach('thumbnail', thumbnail, {
+        contentType: 'image/png',
+        filename: 'late-thumbnail.png',
+      })
+      .expect(409);
+    await expect(
+      runtime.prisma.videoSourceThumbnail.findUnique({
+        where: {
+          uploadSessionId: initialized.uploadSession.id,
+        },
+      }),
+    ).resolves.toBeNull();
+
+    const thumbnailTarget = await runtime.prisma.externalResourceTarget.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+        generation: initialized.uploadSession.id,
+        role: 'source_thumbnail',
+      },
+    });
+    expect(thumbnailTarget).toMatchObject({
+      goal: 'absent',
+      state: 'quiescing',
+    });
+    const cleanupDueAt = new Date(Date.now() - 1_000);
+    await runtime.prisma.externalResourceTarget.update({
+      where: {
+        id: thumbnailTarget.id,
+      },
+      data: {
+        quiescenceNotBefore: cleanupDueAt,
+        nextAttemptAt: cleanupDueAt,
+      },
+    });
+    await expect(raceService.reconcilePendingExternalResources()).resolves.toMatchObject({
+      confirmed: 1,
+      failed: 0,
+    });
+    const writtenThumbnail = racedThumbnail as
+      | { body: Buffer; bucket: string; objectKey: string }
+      | undefined;
+
+    if (!writtenThumbnail) {
+      throw new Error('Raced thumbnail PUT was not observed');
+    }
+
+    await expect(
+      runtime.videoObjectStorage.headObject({
+        bucket: writtenThumbnail.bucket,
+        objectKey: writtenThumbnail.objectKey,
+      }),
+    ).resolves.toBeNull();
+
+    const job = await runtime.prisma.videoTranscodeJob.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+      },
+      select: {
+        id: true,
+      },
+    });
+    const runner = createVideoTranscodeRunner({
+      prisma: runtime.prisma,
+      objectStorage: runtime.videoObjectStorage,
+      clock: { now: () => new Date() },
+      config: {
+        maxConcurrentJobs: 1,
+        threadsPerJob: 1,
+      },
+      logger: testLogger,
+    });
+
+    runner.start();
+
+    try {
+      await expect(waitForTranscodeJob(runtime.prisma, job.id)).resolves.toMatchObject({
+        status: 'completed',
+        lastError: null,
+      });
+    } finally {
+      await runner.stop();
+    }
+
+    const activeGeneration = await runtime.prisma.videoArtifactGeneration.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+        state: 'active',
+      },
+      select: {
+        bucket: true,
+        id: true,
+      },
+    });
+    const fallbackObjectKey = buildVideoArtifactManifest(
+      owner.userId,
+      created.video.id,
+      activeGeneration.id,
+      [],
+    ).thumbnail.objectKey;
+    const fallbackThumbnail = await readStoredObjectBuffer(
+      runtime.videoObjectStorage,
+      activeGeneration.bucket,
+      fallbackObjectKey,
+    );
+
+    expect(fallbackThumbnail).not.toEqual(writtenThumbnail.body);
+    await expect(sharp(fallbackThumbnail).metadata()).resolves.toMatchObject({
+      format: 'webp',
+    });
+  });
+
+  test('keeps a custom-thumbnail generation writing and cleans it when poster HEAD verification fails', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'custom-thumbnail-head-failure@example.com',
+      username: 'thumb_head_failure',
+    });
+    const created = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Custom thumbnail HEAD failure',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    const source = await uploadVideoSource(runtime.videosService, {
+      body: await createTranscodeTestVideo(),
+      userId: owner.userId,
+      videoId: created.video.id,
+      thumbnails: [await createPng(1600, 900)],
+    });
+    const sourceThumbnail = await runtime.prisma.videoSourceThumbnail.findUniqueOrThrow({
+      where: {
+        uploadSessionId: source.uploadSession.id,
+      },
+      select: {
+        externalResourceTargetId: true,
+      },
+    });
+    const job = await runtime.prisma.videoTranscodeJob.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+        sourceObjectKey: source.uploadSession.objectKey,
+      },
+      select: {
+        id: true,
+      },
+    });
+    let failedPosterKey: string | null = null;
+    const verificationFailureStorage: ObjectStorage = {
+      ...runtime.videoObjectStorage,
+      headObject: async (input) => {
+        if (input.objectKey.endsWith('/thumbnail/poster.webp')) {
+          failedPosterKey = input.objectKey;
+          return null;
+        }
+
+        return runtime?.videoObjectStorage.headObject(input) ?? null;
+      },
+    };
+    const runner = createVideoTranscodeRunner({
+      prisma: runtime.prisma,
+      objectStorage: verificationFailureStorage,
+      clock: { now: () => new Date() },
+      config: {
+        maxConcurrentJobs: 1,
+        threadsPerJob: 1,
+      },
+      logger: testLogger,
+    });
+
+    runner.start();
+    let failedJob:
+      | {
+          attempts: number;
+          lastError: string | null;
+          status: 'queued' | 'processing' | 'completed' | 'failed';
+        }
+      | undefined;
+    const retryDeadline = Date.now() + 40_000;
+
+    try {
+      while (Date.now() < retryDeadline) {
+        const observed = await runtime.prisma.videoTranscodeJob.findUniqueOrThrow({
+          where: {
+            id: job.id,
+          },
+          select: {
+            attempts: true,
+            lastError: true,
+            status: true,
+          },
+        });
+
+        if (observed.status === 'queued' && observed.attempts === 1 && observed.lastError) {
+          failedJob = observed;
+          break;
+        }
+
+        await delay(200);
+      }
+    } finally {
+      await runner.stop();
+    }
+
+    expect(failedJob).toMatchObject({
+      attempts: 1,
+      lastError: expect.stringContaining('Uploaded artifact could not be verified'),
+      status: 'queued',
+    });
+    expect(failedPosterKey).toMatch(/\/thumbnail\/poster\.webp$/u);
+
+    const generation = await runtime.prisma.videoArtifactGeneration.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+      },
+      select: {
+        id: true,
+        state: true,
+      },
+    });
+    const cleanupTargets = await runtime.prisma.externalResourceTarget.findMany({
+      where: {
+        generation: generation.id,
+        role: {
+          in: ['hls_artifacts', 'thumbnail_prefix'],
+        },
+      },
+    });
+
+    expect(generation.state).toBe('writing');
+    expect(cleanupTargets).toHaveLength(2);
+    expect(
+      cleanupTargets.every((target) => target.goal === 'absent' && target.state === 'quiescing'),
+    ).toBe(true);
+    await expect(
+      runtime.prisma.externalResourceTarget.findUniqueOrThrow({
+        where: {
+          id: sourceThumbnail.externalResourceTargetId,
+        },
+        select: {
+          goal: true,
+          state: true,
+        },
+      }),
+    ).resolves.toEqual({
+      goal: 'present',
+      state: 'confirmed_present',
+    });
+
+    const cleanupDueAt = new Date(Date.now() - 1_000);
+    await runtime.prisma.externalResourceTarget.updateMany({
+      where: {
+        generation: generation.id,
+        role: {
+          in: ['hls_artifacts', 'thumbnail_prefix'],
+        },
+      },
+      data: {
+        quiescenceNotBefore: cleanupDueAt,
+        nextAttemptAt: cleanupDueAt,
+      },
+    });
+    await expect(runtime.videosService.reconcilePendingExternalResources()).resolves.toMatchObject({
+      claimed: 2,
+      confirmed: 2,
+      failed: 0,
+    });
+    await expect(
+      runtime.prisma.videoArtifactGeneration.findUniqueOrThrow({
+        where: {
+          id: generation.id,
+        },
+        select: {
+          state: true,
+        },
+      }),
+    ).resolves.toEqual({
+      state: 'retired',
+    });
+    await expect(
+      runtime.videoObjectStorage.headObject({
+        bucket: VIDEO_OBJECT_STORAGE_BUCKET,
+        objectKey: failedPosterKey ?? '',
+      }),
+    ).resolves.toBeNull();
+  });
+
+  test('takes over a stale transcode into a complete generation, uses the ffmpeg thumbnail fallback, and retires the previous generation atomically', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
@@ -3578,6 +5194,7 @@ describe('auth integration', () => {
     const masterPath = `/videos/${firstVideo.video.publicId}/hls/master.m3u8`;
     const activeRenditionPath = `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480p/index.m3u8`;
     const activeSegmentPath = `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480p/segments/${active.segmentName}`;
+    const thumbnailPath = `/videos/${firstVideo.video.publicId}/thumbnail`;
     const masterResponse = await request(app).get(masterPath).expect(200);
 
     expect(masterResponse.headers['content-type']).toMatch(/^application\/vnd\.apple\.mpegurl/u);
@@ -3604,6 +5221,16 @@ describe('auth integration', () => {
     const segmentResponse = await fetch(signedSegmentUrl ?? '');
     expect(segmentResponse.status).toBe(200);
     expect(Buffer.from(await segmentResponse.arrayBuffer())).toEqual(active.segmentBody);
+    const thumbnailRedirect = await request(app).get(thumbnailPath).redirects(0).expect(307);
+    const signedThumbnailUrl = thumbnailRedirect.headers.location as string | undefined;
+
+    expect(thumbnailRedirect.headers['cache-control']).toBe('no-store');
+    expect(signedThumbnailUrl).toBeDefined();
+    const thumbnailResponse = await fetch(signedThumbnailUrl ?? '');
+    expect(thumbnailResponse.status).toBe(200);
+    expect(Buffer.from(await thumbnailResponse.arrayBuffer())).toEqual(
+      Buffer.from('test thumbnail bytes'),
+    );
 
     const notFoundBody = {
       error: 'NotFound',
@@ -3642,6 +5269,7 @@ describe('auth integration', () => {
     const rejectedResponse = await request(app).get(masterPath);
     expect(rejectedResponse.status).toBe(404);
     expect(rejectedResponse.body).toEqual(notFoundBody);
+    await request(app).get(thumbnailPath).expect(404).expect(notFoundBody);
 
     await runtime.prisma.video.update({
       where: { id: firstVideo.video.id },
@@ -3653,6 +5281,7 @@ describe('auth integration', () => {
     const processingResponse = await request(app).get(masterPath);
     expect(processingResponse.status).toBe(404);
     expect(processingResponse.body).toEqual(notFoundBody);
+    await request(app).get(thumbnailPath).expect(404).expect(notFoundBody);
 
     await runtime.prisma.video.update({
       where: { id: firstVideo.video.id },

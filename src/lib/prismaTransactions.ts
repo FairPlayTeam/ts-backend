@@ -2,8 +2,27 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 
 const SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS = 3;
 
+const isDriverAdapterTransactionConflictError = (err: unknown): boolean => {
+  if (typeof err !== 'object' || err === null) {
+    return false;
+  }
+
+  const driverError = err as {
+    cause?: {
+      kind?: unknown;
+    };
+    name?: unknown;
+  };
+
+  return (
+    driverError.name === 'DriverAdapterError' &&
+    driverError.cause?.kind === 'TransactionWriteConflict'
+  );
+};
+
 const isTransactionConflictError = (err: unknown): boolean =>
-  err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034';
+  (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') ||
+  isDriverAdapterTransactionConflictError(err);
 
 export const runSerializableTransaction = async <T>(
   prisma: Pick<PrismaClient, '$transaction'>,

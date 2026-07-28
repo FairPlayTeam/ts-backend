@@ -27,7 +27,7 @@ export type AuthServiceTestCalls = {
   externalResourceTargetUpdateMany: unknown;
   externalResourceTargets: Array<{
     id: string;
-    role: 'source' | 'hls_artifacts' | 'thumbnail_prefix' | 'user_media';
+    role: 'source' | 'source_thumbnail' | 'hls_artifacts' | 'thumbnail_prefix' | 'user_media';
   }>;
   reconcileDue: unknown;
   reconcileTarget: unknown;
