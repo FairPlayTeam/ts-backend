@@ -5,6 +5,7 @@ import { createApp } from '../src/app.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
 import { VideoNotFoundError } from '../src/services/videos.errors.js';
+import { VIDEO_LICENSES } from '../src/services/videos/videoLicenses.js';
 import type {
   AbortVideoMultipartUploadInput,
   CompleteVideoMultipartUploadInput,
@@ -213,6 +214,51 @@ describe('videos routes multipart uploads', () => {
         processingStatus: 'draft',
         moderationStatus: 'pending',
       },
+    });
+  });
+
+  test('accepts every supported video license', async () => {
+    for (const license of VIDEO_LICENSES) {
+      receivedCreateRequest = undefined;
+
+      const response = await fetch(`${baseUrl}/videos`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer route-session-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: `Video licensed as ${license}`,
+          license,
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      const observedCreateRequest = receivedCreateRequest as CreateVideoInput | undefined;
+      expect(observedCreateRequest?.license).toBe(license);
+    }
+  });
+
+  test('rejects unsupported video licenses before calling the service', async () => {
+    receivedCreateRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/videos`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer route-session-key',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title: 'Unsupported license',
+        license: 'public_domain',
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(receivedCreateRequest).toBeUndefined();
+    expect(await response.json()).toMatchObject({
+      error: 'ValidationError',
+      message: REQUEST_VALIDATION_FAILED_MESSAGE,
     });
   });
 

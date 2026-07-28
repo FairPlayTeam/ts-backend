@@ -22,6 +22,17 @@ enum VideoVisibility {
   unlisted
 }
 
+enum VideoLicense {
+  all_rights_reserved
+  cc_by
+  cc_by_sa
+  cc_by_nd
+  cc_by_nc
+  cc_by_nc_sa
+  cc_by_nc_nd
+  cc0
+}
+
 enum VideoModerationStatus {
   pending
   approved
@@ -166,7 +177,7 @@ model Video {
   title                      String                @db.VarChar(120)
   description                String?               @db.VarChar(5000)
   tags                       String[]              @default([])
-  license                    String                @default("all_rights_reserved") @db.VarChar(64)
+  license                    VideoLicense          @default(all_rights_reserved)
   visibility                 VideoVisibility       @default(unlisted)
   allowComments              Boolean               @default(true) @map("allow_comments")
   processingStatus           VideoProcessingStatus @default(draft) @map("processing_status")

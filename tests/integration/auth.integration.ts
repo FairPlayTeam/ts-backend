@@ -1773,7 +1773,7 @@ describe('auth integration', () => {
       userId: owner.userId,
       description: null,
       tags: [],
-      license: 'all_rights_reserved',
+      license: 'all_rights_reserved' as const,
       visibility: 'public' as const,
       allowComments: true,
     };

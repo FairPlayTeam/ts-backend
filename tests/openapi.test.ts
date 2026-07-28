@@ -7,6 +7,7 @@ import type { RouteDoc } from '../src/docs/registry.js';
 import { z } from '../src/docs/zod.js';
 import { discoverRouteFiles } from '../src/routing/loadRoutes.js';
 import { AUTH_ROLES } from '../src/services/auth.roles.js';
+import { VIDEO_LICENSES } from '../src/services/videos/videoLicenses.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
@@ -568,6 +569,12 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.FollowingProfilesResponse).toBeDefined();
     expect(document.components?.schemas?.UnfollowPublicProfileResponse).toBeDefined();
     expect(document.components?.schemas?.CreateVideoRequest).toBeDefined();
+    expect(document.components?.schemas?.CreateVideoRequest?.properties?.license).toEqual({
+      type: 'string',
+      enum: [...VIDEO_LICENSES],
+      default: 'all_rights_reserved',
+      example: 'all_rights_reserved',
+    });
     expect(document.components?.schemas?.CreateVideoResponse).toBeDefined();
     expect(document.components?.schemas?.MyVideosResponse).toBeDefined();
     expect(document.components?.schemas?.VideoUploadSessionResponse).toBeDefined();

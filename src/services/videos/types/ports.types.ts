@@ -1,3 +1,5 @@
+import type { VideoLicense } from '../videoLicenses.js';
+
 export type VideoUploadSessionStatus =
   | 'initializing'
   | 'initiated'
@@ -28,7 +30,7 @@ export type CreatedVideo = {
   title: string;
   description: string | null;
   tags: string[];
-  license: string;
+  license: VideoLicense;
   visibility: VideoVisibility;
   allowComments: boolean;
   processingStatus: VideoProcessingStatus;
@@ -55,7 +57,7 @@ export type CreateVideoInput = {
   title: string;
   description?: string | null;
   tags: string[];
-  license: string;
+  license: VideoLicense;
   visibility: VideoVisibility;
   allowComments: boolean;
 };

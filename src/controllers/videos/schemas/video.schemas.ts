@@ -1,10 +1,10 @@
 import { z } from '../../../docs/zod.js';
+import { VIDEO_LICENSES } from '../../../services/videos/videoLicenses.js';
 import { VIDEO_HLS_SEGMENT_NAME_PATTERN } from '../../../services/videos/videoObjectKeys.js';
 import { VIDEO_PUBLIC_ID_PATTERN } from '../../../services/videos/videoPublicId.js';
 
 const VIDEO_TITLE_MAX_LENGTH = 120;
 const VIDEO_DESCRIPTION_MAX_LENGTH = 5_000;
-const VIDEO_LICENSE_MAX_LENGTH = 64;
 const VIDEO_TAG_MAX_LENGTH = 40;
 const VIDEO_TAGS_MAX_COUNT = 20;
 
@@ -56,6 +56,7 @@ export const videoHlsSegmentParamsSchema = videoHlsRenditionParamsSchema
 const partNumberSchema = z.number().int().min(1).max(10_000).openapi({ example: 1 });
 
 const videoVisibilitySchema = z.enum(['public', 'unlisted']);
+const videoLicenseSchema = z.enum(VIDEO_LICENSES);
 
 const videoTagsSchema = z
   .array(
@@ -94,14 +95,7 @@ export const createVideoBodySchema = z
       .optional()
       .openapi({ example: 'A short behind-the-scenes video.' }),
     tags: videoTagsSchema.openapi({ example: ['fairplay', 'launch'] }),
-    license: z
-      .string()
-      .trim()
-      .min(1, 'Video license must not be empty')
-      .max(
-        VIDEO_LICENSE_MAX_LENGTH,
-        `Video license must be at most ${VIDEO_LICENSE_MAX_LENGTH} characters`,
-      )
+    license: videoLicenseSchema
       .default('all_rights_reserved')
       .openapi({ example: 'all_rights_reserved' }),
     visibility: videoVisibilitySchema.default('unlisted').openapi({ example: 'public' }),
@@ -218,7 +212,7 @@ const videoResponseBodySchema = z.object({
   title: z.string().openapi({ example: 'FairPlay launch recap' }),
   description: z.string().nullable().openapi({ example: 'A short behind-the-scenes video.' }),
   tags: z.array(z.string()).openapi({ example: ['fairplay', 'launch'] }),
-  license: z.string().openapi({ example: 'all_rights_reserved' }),
+  license: videoLicenseSchema.openapi({ example: 'all_rights_reserved' }),
   visibility: videoVisibilitySchema.openapi({ example: 'unlisted' }),
   allowComments: z.boolean().openapi({ example: true }),
   processingStatus: z
