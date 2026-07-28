@@ -3,6 +3,7 @@
   "module": "src/index.ts",
   "type": "module",
   "private": true,
+  "packageManager": "bun@1.3.10",
   "license": "AGPL-3.0-only",
   "description": "FairPlay backend API built with TypeScript, Express, Prisma, and Bun.",
   "version": "1.0.0",

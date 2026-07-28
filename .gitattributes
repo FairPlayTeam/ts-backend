@@ -21,4 +21,6 @@
 *.webp binary
 *.woff binary
 *.woff2 binary
-bun.lockb binary
+
+# Bun lockfile
+bun.lock text eol=lf linguist-generated=true
