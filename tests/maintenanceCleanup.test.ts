@@ -76,6 +76,13 @@ const createMaintenanceServices = (
         failed: 11,
       };
     },
+    deleteExpiredRejectedVideos: async (input) => {
+      calls.push(['rejectedVideos', input]);
+      return {
+        rejectedVideosDeleted: 12,
+        rejectedVideoTargetsScheduled: 13,
+      };
+    },
     ...videos,
   },
 });
@@ -129,6 +136,13 @@ describe('maintenance cleanup job', () => {
         },
       ],
       ['videoTargets', undefined],
+      [
+        'rejectedVideos',
+        {
+          observedAt: new Date('2026-01-31T00:00:00.000Z'),
+          rejectedBefore: new Date('2026-01-24T00:00:00.000Z'),
+        },
+      ],
     ]);
     expect(result).toEqual({
       skipped: false,
@@ -145,6 +159,8 @@ describe('maintenance cleanup job', () => {
         videoTargetsConfirmed: 9,
         videoTargetsRedirectedAbsent: 10,
         videoTargetsFailed: 11,
+        rejectedVideosDeleted: 12,
+        rejectedVideoTargetsScheduled: 13,
       },
       failedSteps: [],
     });
@@ -192,6 +208,7 @@ describe('maintenance cleanup job', () => {
       'multipartSessions',
       'abandonedArtifactGenerations',
       'videoTargets',
+      'rejectedVideos',
     ]);
     expect(result.failedSteps).toEqual(['sessions', 'abandonedArtifactGenerations']);
     expect(logs).toContainEqual({
@@ -206,6 +223,44 @@ describe('maintenance cleanup job', () => {
         cleanupStep: 'abandonedArtifactGenerations',
       },
       message: 'Maintenance cleanup step failed',
+    });
+  });
+
+  test('isolates a rejected-video purge failure after every earlier step has completed', async () => {
+    const calls: unknown[] = [];
+    const purgeError = new Error('rejected video purge unavailable');
+    const services = createMaintenanceServices(calls, {
+      videos: {
+        deleteExpiredRejectedVideos: async () => {
+          calls.push(['rejectedVideos']);
+          throw purgeError;
+        },
+      },
+    });
+    const job = createMaintenanceCleanupJob({
+      ...services,
+      clock: {
+        now: () => new Date('2026-01-31T00:00:00.000Z'),
+      },
+      config: cleanupConfig,
+      logger: createLogger().logger,
+    });
+
+    const result = await job.runOnce();
+
+    expect(calls.map((call) => (Array.isArray(call) ? call[0] : call))).toEqual([
+      'sessions',
+      'authTokens',
+      'userMediaTargets',
+      'multipartSessions',
+      'abandonedArtifactGenerations',
+      'videoTargets',
+      'rejectedVideos',
+    ]);
+    expect(result.failedSteps).toEqual(['rejectedVideos']);
+    expect(result.summary).toMatchObject({
+      sessionsDeleted: 2,
+      videoTargetsConfirmed: 9,
     });
   });
 
@@ -244,7 +299,7 @@ describe('maintenance cleanup job', () => {
     releaseCleanup.resolve();
     const [firstResult, secondResult] = await Promise.all([firstRun, secondRun]);
     expect(firstResult).toBe(secondResult);
-    expect(calls).toHaveLength(6);
+    expect(calls).toHaveLength(7);
   });
 
   test('acquires, renews, and releases the Redis lock only while its token is owned', async () => {

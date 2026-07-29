@@ -161,6 +161,8 @@ describe('OpenAPI generation', () => {
       '/health',
       '/health/live',
       '/health/ready',
+      '/moderation/videos',
+      '/moderation/videos/{videoId}/moderation',
       '/profiles/me/following',
       '/profiles/{username}',
       '/profiles/{username}/follow',
@@ -176,6 +178,10 @@ describe('OpenAPI generation', () => {
       '/videos/{videoId}/upload/multipart/{uploadSessionId}/complete',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}/parts/sign',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}/thumbnail',
+    ]);
+    expect(document.paths['/moderation/videos']?.get?.tags).toEqual(['Moderation']);
+    expect(document.paths['/moderation/videos/{videoId}/moderation']?.post?.tags).toEqual([
+      'Moderation',
     ]);
     expect(document.paths['/videos/{publicId}/hls/master.m3u8']?.get?.security).toEqual([]);
     expect(document.paths['/videos/{publicId}/thumbnail']?.get?.security).toEqual([]);

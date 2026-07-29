@@ -104,6 +104,7 @@ const VIDEO_SOURCE_THUMBNAIL_CACHE_CONTROL = 'private, no-store';
 const DEFAULT_MY_VIDEOS_LIMIT = 20;
 const MAX_MY_VIDEOS_LIMIT = 100;
 const MULTIPART_MAINTENANCE_BATCH_SIZE = 100;
+const REJECTED_VIDEO_MAINTENANCE_BATCH_SIZE = 100;
 const PUBLIC_ID_MAX_CREATE_ATTEMPTS = 5;
 
 const videoSelect = {
@@ -340,6 +341,157 @@ const normalizeMyVideosLimit = (limit: number | undefined): number => {
   }
 
   return Math.min(Math.max(Math.trunc(limit), 1), MAX_MY_VIDEOS_LIMIT);
+};
+
+const deleteExpiredRejectedVideo = async (
+  deps: VideosDependencies,
+  videoId: string,
+  observedAt: Date,
+  rejectedBefore: Date,
+): Promise<{ deleted: boolean; targetsScheduled: number }> =>
+  runSerializableTransaction(deps.prisma, async (tx) => {
+    await tx.$queryRaw(
+      Prisma.sql`
+        SELECT "id"
+        FROM "video_transcode_jobs"
+        WHERE "video_id" = CAST(${videoId} AS UUID)
+        FOR UPDATE
+      `,
+    );
+    const eligibleVideos = await tx.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`
+        SELECT "id"::text AS "id"
+        FROM "videos"
+        WHERE "id" = CAST(${videoId} AS UUID)
+          AND "moderation_status" = 'rejected'
+          AND "rejected_at" < ${rejectedBefore}
+        FOR UPDATE
+      `,
+    );
+
+    if (eligibleVideos.length === 0) {
+      return { deleted: false, targetsScheduled: 0 };
+    }
+
+    const video = await tx.video.findUnique({
+      where: { id: videoId },
+      select: {
+        sourceUploadSession: {
+          select: {
+            externalResourceTargetId: true,
+            sourceThumbnail: {
+              select: {
+                externalResourceTargetId: true,
+              },
+            },
+          },
+        },
+        artifactGenerations: {
+          where: {
+            state: {
+              in: ['writing', 'active', 'retiring'],
+            },
+          },
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    if (!video) {
+      return { deleted: false, targetsScheduled: 0 };
+    }
+
+    const generationIds = video.artifactGenerations.map(({ id }) => id);
+    const artifactTargets =
+      generationIds.length === 0
+        ? []
+        : await tx.externalResourceTarget.findMany({
+            where: {
+              videoId,
+              generation: {
+                in: generationIds,
+              },
+              role: {
+                in: ['hls_artifacts', 'thumbnail_prefix'],
+              },
+              state: {
+                not: 'confirmed_absent',
+              },
+            },
+            select: {
+              id: true,
+            },
+          });
+    const targetIds = [
+      ...(video.sourceUploadSession
+        ? [
+            video.sourceUploadSession.externalResourceTargetId,
+            ...(video.sourceUploadSession.sourceThumbnail
+              ? [video.sourceUploadSession.sourceThumbnail.externalResourceTargetId]
+              : []),
+          ]
+        : []),
+      ...artifactTargets.map(({ id }) => id),
+    ];
+    let targetsScheduled = 0;
+
+    for (const targetId of new Set(targetIds)) {
+      if (await requestExternalResourceAbsence(tx, targetId, observedAt)) {
+        targetsScheduled += 1;
+      }
+    }
+
+    await tx.video.delete({
+      where: { id: videoId },
+    });
+
+    return { deleted: true, targetsScheduled };
+  });
+
+const deleteExpiredRejectedVideos = async (
+  deps: VideosDependencies,
+  {
+    observedAt,
+    rejectedBefore,
+  }: {
+    observedAt: Date;
+    rejectedBefore: Date;
+  },
+): Promise<{
+  rejectedVideosDeleted: number;
+  rejectedVideoTargetsScheduled: number;
+}> => {
+  const candidates = await deps.prisma.video.findMany({
+    where: {
+      moderationStatus: 'rejected',
+      rejectedAt: {
+        lt: rejectedBefore,
+      },
+    },
+    select: {
+      id: true,
+    },
+    orderBy: [{ rejectedAt: 'asc' }, { id: 'asc' }],
+    take: REJECTED_VIDEO_MAINTENANCE_BATCH_SIZE,
+  });
+  let rejectedVideosDeleted = 0;
+  let rejectedVideoTargetsScheduled = 0;
+
+  for (const { id } of candidates) {
+    const result = await deleteExpiredRejectedVideo(deps, id, observedAt, rejectedBefore);
+
+    if (result.deleted) {
+      rejectedVideosDeleted += 1;
+      rejectedVideoTargetsScheduled += result.targetsScheduled;
+    }
+  }
+
+  return {
+    rejectedVideosDeleted,
+    rejectedVideoTargetsScheduled,
+  };
 };
 
 const normalizeOptionalDescription = (description: string | null | undefined): string | null => {
@@ -1176,9 +1328,6 @@ const findPublicHlsRendition = async (
         is: {
           publicId,
           processingStatus: 'ready',
-          moderationStatus: {
-            not: 'rejected',
-          },
           visibility: {
             in: ['public', 'unlisted'],
           },
@@ -1331,9 +1480,6 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
       where: {
         publicId,
         processingStatus: 'ready',
-        moderationStatus: {
-          not: 'rejected',
-        },
         visibility: {
           in: ['public', 'unlisted'],
         },
@@ -1385,9 +1531,6 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
       where: {
         publicId,
         processingStatus: 'ready',
-        moderationStatus: {
-          not: 'rejected',
-        },
         visibility: {
           in: ['public', 'unlisted'],
         },
@@ -2055,5 +2198,9 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
         thumbnail_prefix: artifactHandler,
       },
     });
+  },
+
+  async deleteExpiredRejectedVideos(input) {
+    return deleteExpiredRejectedVideos(deps, input);
   },
 });

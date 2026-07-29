@@ -15,6 +15,8 @@ import type {
   AdminPorts,
   BanAdminAccountInput,
   ListAdminAccountsInput,
+  ListAdminVideosInput,
+  ModerateAdminVideoInput,
   UnbanAdminAccountInput,
   UpdateAdminAccountRoleInput,
 } from '../src/services/admin.types.js';
@@ -27,11 +29,14 @@ let server: Server;
 let baseUrl: string;
 let receivedBanAccountRequest: BanAdminAccountInput | undefined;
 let receivedListAccountsRequest: ListAdminAccountsInput | undefined;
+let receivedListVideosRequest: ListAdminVideosInput | undefined;
+let receivedModerateVideoRequest: ModerateAdminVideoInput | undefined;
 let receivedUnbanAccountRequest: UnbanAdminAccountInput | undefined;
 let receivedUpdateAccountRoleRequest: UpdateAdminAccountRoleInput | undefined;
 let receivedSessionKey: string | undefined;
 
 const adminSessionKey = 'admin-session-key';
+const moderatorSessionKey = 'moderator-session-key';
 const userSessionKey = 'user-session-key';
 const cursorCreatedAt = '2026-01-01T00:00:00.000Z';
 const cursorId = '11111111-1111-4111-8111-111111111111';
@@ -63,6 +68,16 @@ describe('admin routes', () => {
 
             return adminService.listAccounts(input);
           },
+          listVideos: async (input) => {
+            receivedListVideosRequest = input;
+
+            return adminService.listVideos(input);
+          },
+          moderateVideo: async (input) => {
+            receivedModerateVideoRequest = input;
+
+            return adminService.moderateVideo(input);
+          },
           unbanAccount: async (input) => {
             receivedUnbanAccountRequest = input;
 
@@ -88,7 +103,12 @@ describe('admin routes', () => {
               ...result,
               user: {
                 ...result.user,
-                role: sessionKey === adminSessionKey ? 'admin' : 'user',
+                role:
+                  sessionKey === adminSessionKey
+                    ? 'admin'
+                    : sessionKey === moderatorSessionKey
+                      ? 'moderator'
+                      : 'user',
               },
             };
           },
@@ -174,6 +194,96 @@ describe('admin routes', () => {
       ],
       total: 1,
       nextCursor: null,
+    });
+  });
+
+  test('lists moderation videos for a moderator with filters, sorting, and the reserved search field', async () => {
+    receivedListVideosRequest = undefined;
+    const query = new URLSearchParams({
+      moderationStatus: 'pending',
+      processingStatus: 'ready',
+      sort: 'oldest',
+      search: '  reserved title  ',
+      cursorCreatedAt,
+      cursorId,
+      limit: '10',
+    });
+    const response = await fetch(`${baseUrl}/moderation/videos?${query.toString()}`, {
+      headers: {
+        authorization: `Bearer ${moderatorSessionKey}`,
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const observedListVideosRequest = receivedListVideosRequest as ListAdminVideosInput | undefined;
+    expect(observedListVideosRequest).toEqual({
+      moderationStatus: 'pending',
+      processingStatus: 'ready',
+      sort: 'oldest',
+      search: 'reserved title',
+      limit: 10,
+      cursor: {
+        createdAt: new Date(cursorCreatedAt),
+        id: cursorId,
+      },
+    });
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.json()).toEqual({
+      videos: [
+        {
+          id: '33333333-3333-4333-8333-333333333333',
+          publicId: 'AdminVid01_',
+          ownerId: '11111111-1111-4111-8111-111111111111',
+          username: 'admin_listed',
+          title: 'Video awaiting moderation',
+          moderationStatus: 'pending',
+          processingStatus: 'ready',
+          visibility: 'unlisted',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          thumbnailObjectKey: 'owner/video/generations/generation/thumbnail/poster.webp',
+          publishedAt: null,
+          rejectedAt: null,
+        },
+      ],
+      total: 1,
+      nextCursor: null,
+    });
+  });
+
+  test('applies a moderation decision for a moderator', async () => {
+    receivedModerateVideoRequest = undefined;
+    const response = await fetch(`${baseUrl}/moderation/videos/${cursorId}/moderation`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${moderatorSessionKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ decision: 'approved' }),
+    });
+
+    expect(response.status).toBe(200);
+    const observedModerateVideoRequest = receivedModerateVideoRequest as
+      | ModerateAdminVideoInput
+      | undefined;
+    expect(observedModerateVideoRequest).toEqual({
+      videoId: cursorId,
+      decision: 'approved',
+    });
+    expect(await response.json()).toEqual({
+      video: {
+        id: '33333333-3333-4333-8333-333333333333',
+        publicId: 'AdminVid01_',
+        ownerId: '11111111-1111-4111-8111-111111111111',
+        username: 'admin_listed',
+        title: 'Moderated video',
+        moderationStatus: 'approved',
+        processingStatus: 'ready',
+        visibility: 'public',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        thumbnailObjectKey: 'owner/video/generations/generation/thumbnail/poster.webp',
+        publishedAt: '2026-01-05T00:00:00.000Z',
+        rejectedAt: null,
+      },
     });
   });
 
@@ -321,6 +431,64 @@ describe('admin routes', () => {
     expect(await response.json()).toEqual({
       error: 'Forbidden',
       message: INSUFFICIENT_PERMISSIONS_MESSAGE,
+    });
+  });
+
+  test('rejects ordinary users on both moderation routes before calling the admin service', async () => {
+    receivedListVideosRequest = undefined;
+    receivedModerateVideoRequest = undefined;
+
+    const [listResponse, decisionResponse] = await Promise.all([
+      fetch(`${baseUrl}/moderation/videos`, {
+        headers: {
+          authorization: `Bearer ${userSessionKey}`,
+        },
+      }),
+      fetch(`${baseUrl}/moderation/videos/${cursorId}/moderation`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${userSessionKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ decision: 'rejected' }),
+      }),
+    ]);
+
+    expect(listResponse.status).toBe(403);
+    expect(decisionResponse.status).toBe(403);
+    expect(receivedListVideosRequest).toBeUndefined();
+    expect(receivedModerateVideoRequest).toBeUndefined();
+    expect(await listResponse.json()).toEqual({
+      error: 'Forbidden',
+      message: INSUFFICIENT_PERMISSIONS_MESSAGE,
+    });
+    expect(await decisionResponse.json()).toEqual({
+      error: 'Forbidden',
+      message: INSUFFICIENT_PERMISSIONS_MESSAGE,
+    });
+  });
+
+  test('requires a bearer session on both moderation routes', async () => {
+    const [listResponse, decisionResponse] = await Promise.all([
+      fetch(`${baseUrl}/moderation/videos`),
+      fetch(`${baseUrl}/moderation/videos/${cursorId}/moderation`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ decision: 'approved' }),
+      }),
+    ]);
+
+    expect(listResponse.status).toBe(401);
+    expect(decisionResponse.status).toBe(401);
+    expect(await listResponse.json()).toEqual({
+      error: 'Unauthorized',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+    expect(await decisionResponse.json()).toEqual({
+      error: 'Unauthorized',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
     });
   });
 

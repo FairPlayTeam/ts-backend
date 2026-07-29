@@ -196,6 +196,7 @@ model Video {
   ratingCount                Int                   @default(0) @map("rating_count")
   transcodeError             String?               @map("transcode_error") @db.VarChar(1000)
   publishedAt                DateTime?             @map("published_at")
+  rejectedAt                 DateTime?             @map("rejected_at")
   createdAt                  DateTime              @default(now()) @map("created_at")
   updatedAt                  DateTime              @updatedAt @map("updated_at")
 
@@ -208,6 +209,7 @@ model Video {
 
   @@index([ownerId, createdAt, id])
   @@index([visibility, moderationStatus, processingStatus, createdAt, id])
+  @@index([moderationStatus, rejectedAt, id])
   @@map("videos")
 }
 

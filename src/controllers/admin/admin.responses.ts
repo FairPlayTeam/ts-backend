@@ -2,6 +2,8 @@ import { toIsoString, toNullableIsoString } from '../http.responses.js';
 import type {
   BanAdminAccountResult,
   ListAdminAccountsResult,
+  ListAdminVideosResult,
+  ModerateAdminVideoResult,
   UnbanAdminAccountResult,
   UpdateAdminAccountRoleResult,
 } from '../../services/admin.types.js';
@@ -56,4 +58,26 @@ export const toUpdateAdminAccountRoleResponse = ({
     ...account,
     updatedAt: toIsoString(account.updatedAt),
   },
+});
+
+const toAdminVideoResponse = (video: ModerateAdminVideoResult['video']) => ({
+  ...video,
+  createdAt: toIsoString(video.createdAt),
+  publishedAt: toNullableIsoString(video.publishedAt),
+  rejectedAt: toNullableIsoString(video.rejectedAt),
+});
+
+export const toAdminVideosResponse = ({ nextCursor, total, videos }: ListAdminVideosResult) => ({
+  videos: videos.map(toAdminVideoResponse),
+  total,
+  nextCursor: nextCursor
+    ? {
+        createdAt: toIsoString(nextCursor.createdAt),
+        id: nextCursor.id,
+      }
+    : null,
+});
+
+export const toModerateAdminVideoResponse = ({ video }: ModerateAdminVideoResult) => ({
+  video: toAdminVideoResponse(video),
 });

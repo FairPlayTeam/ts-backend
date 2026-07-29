@@ -20,8 +20,29 @@ const isDriverAdapterTransactionConflictError = (err: unknown): boolean => {
   );
 };
 
+const isRawPostgresSerializationFailure = (err: Prisma.PrismaClientKnownRequestError): boolean => {
+  if (err.code !== 'P2010') {
+    return false;
+  }
+
+  const driverAdapterError = err.meta?.['driverAdapterError'];
+
+  if (typeof driverAdapterError !== 'object' || driverAdapterError === null) {
+    return false;
+  }
+
+  const cause = (driverAdapterError as { cause?: unknown }).cause;
+
+  return (
+    typeof cause === 'object' &&
+    cause !== null &&
+    (cause as { originalCode?: unknown }).originalCode === '40001'
+  );
+};
+
 const isTransactionConflictError = (err: unknown): boolean =>
-  (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') ||
+  (err instanceof Prisma.PrismaClientKnownRequestError &&
+    (err.code === 'P2034' || isRawPostgresSerializationFailure(err))) ||
   isDriverAdapterTransactionConflictError(err);
 
 export const runSerializableTransaction = async <T>(

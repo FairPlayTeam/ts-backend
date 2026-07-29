@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import type { ObjectStorage } from '../../lib/objectStorage.js';
 
-type Prisma = Pick<PrismaClient, '$transaction' | 'session' | 'user'>;
+type Prisma = Pick<PrismaClient, '$transaction' | 'session' | 'user' | 'video'>;
 
 export type AdminDependencies = {
   prisma: Prisma;

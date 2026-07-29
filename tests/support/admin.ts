@@ -55,6 +55,42 @@ export const createStubAdminService = (): AdminPorts => ({
     total: 1,
     nextCursor: null,
   }),
+  listVideos: async () => ({
+    videos: [
+      {
+        id: '33333333-3333-4333-8333-333333333333',
+        publicId: 'AdminVid01_',
+        ownerId: '11111111-1111-4111-8111-111111111111',
+        username: 'admin_listed',
+        title: 'Video awaiting moderation',
+        moderationStatus: 'pending',
+        processingStatus: 'ready',
+        visibility: 'unlisted',
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        thumbnailObjectKey: 'owner/video/generations/generation/thumbnail/poster.webp',
+        publishedAt: null,
+        rejectedAt: null,
+      },
+    ],
+    total: 1,
+    nextCursor: null,
+  }),
+  moderateVideo: async ({ decision }) => ({
+    video: {
+      id: '33333333-3333-4333-8333-333333333333',
+      publicId: 'AdminVid01_',
+      ownerId: '11111111-1111-4111-8111-111111111111',
+      username: 'admin_listed',
+      title: 'Moderated video',
+      moderationStatus: decision,
+      processingStatus: 'ready',
+      visibility: decision === 'approved' ? 'public' : 'unlisted',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      thumbnailObjectKey: 'owner/video/generations/generation/thumbnail/poster.webp',
+      publishedAt: decision === 'approved' ? new Date('2026-01-05T00:00:00.000Z') : null,
+      rejectedAt: decision === 'rejected' ? new Date('2026-01-05T00:00:00.000Z') : null,
+    },
+  }),
   updateAccountRole: async () => ({
     message: UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
     account: {

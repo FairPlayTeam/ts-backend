@@ -235,6 +235,10 @@ export type VideoMaintenancePort = {
     redirectedAbsent: number;
     failed: number;
   }>;
+  deleteExpiredRejectedVideos(input: { observedAt: Date; rejectedBefore: Date }): Promise<{
+    rejectedVideosDeleted: number;
+    rejectedVideoTargetsScheduled: number;
+  }>;
 };
 
 export type VideosService = VideosPorts & VideoMaintenancePort;

@@ -101,6 +101,7 @@ Some dependencies are pinned through `package.json` `overrides` to apply securit
 These overrides should be reviewed periodically and removed once the parent dependencies resolve to patched versions on their own.
 
 Current overrides:
+
 - `@hono/node-server@2.0.10`, pulled in by Prisma through `@prisma/dev`
 - `minimatch@10.2.6`, pulled in by ESLint, typescript-eslint, and Testcontainers
 - `valibot@1.4.2`, pulled in by Prisma through `@prisma/dev`

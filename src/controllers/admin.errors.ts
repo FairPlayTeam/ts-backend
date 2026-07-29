@@ -11,6 +11,7 @@ import {
   AdminSelfBanError,
   AdminSelfUnbanError,
 } from '../services/admin.errors.js';
+import { VideoNotFoundError } from '../services/videos.errors.js';
 
 export function toAdminHttpError(err: unknown): Error {
   if (err instanceof AdminBanReasonInvalidError) {
@@ -26,7 +27,7 @@ export function toAdminHttpError(err: unknown): Error {
     return new HttpError(403, 'Forbidden', err.message, { cause: err });
   }
 
-  if (err instanceof AdminAccountNotFoundError) {
+  if (err instanceof AdminAccountNotFoundError || err instanceof VideoNotFoundError) {
     return new HttpError(404, 'NotFound', err.message, { cause: err });
   }
 

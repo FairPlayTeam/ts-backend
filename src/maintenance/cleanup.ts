@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type { RedisClient } from '../lib/redis.js';
 import type { AuthMaintenancePort } from '../services/auth.types.js';
 import type { VideoMaintenancePort } from '../services/videos.types.js';
+import { REJECTED_VIDEO_RETENTION_MS } from '../config/constants.js';
 
 const MAINTENANCE_CLEANUP_LOCK_KEY = 'maintenance:cleanup:lock';
 const RELEASE_LOCK_SCRIPT = `
@@ -59,6 +60,8 @@ type MaintenanceCleanupSummary = Partial<{
   videoTargetsConfirmed: number;
   videoTargetsRedirectedAbsent: number;
   videoTargetsFailed: number;
+  rejectedVideosDeleted: number;
+  rejectedVideoTargetsScheduled: number;
 }>;
 
 type MaintenanceCleanupStep =
@@ -68,6 +71,7 @@ type MaintenanceCleanupStep =
   | 'multipartSessions'
   | 'abandonedArtifactGenerations'
   | 'videoTargets'
+  | 'rejectedVideos'
   | 'lockOwnership';
 
 type MaintenanceCleanupResult = {
@@ -153,6 +157,7 @@ export const createMaintenanceCleanupJob = ({
     currentRun = (async () => {
       const now = clock.now();
       const inactiveUpdatedBefore = new Date(now.getTime() - config.inactiveRetentionMs);
+      const rejectedBefore = new Date(now.getTime() - REJECTED_VIDEO_RETENTION_MS);
       const summary: MaintenanceCleanupSummary = {};
       const failedSteps: MaintenanceCleanupStep[] = [];
       const pendingRenewals = new Set<Promise<void>>();
@@ -288,6 +293,14 @@ export const createMaintenanceCleanupJob = ({
                 videoTargetsFailed: result.failed,
               };
             },
+          },
+          {
+            name: 'rejectedVideos',
+            run: () =>
+              videosService.deleteExpiredRejectedVideos({
+                observedAt: now,
+                rejectedBefore,
+              }),
           },
         ];
 
