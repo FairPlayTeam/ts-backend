@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { VideoNotFoundError } from '../videos.errors.js';
+import { buildVideoSearchFilter } from '../videos/videoSearch.js';
 import type { AdminDependencies } from './admin.dependencies.js';
 import type {
   AdminVideoSummary,
@@ -51,14 +52,21 @@ const listAdminVideos = async (
   deps: AdminDependencies,
   input: ListAdminVideosInput,
 ): Promise<ListAdminVideosResult> => {
-  const { cursor, limit, moderationStatus, processingStatus, sort = 'newest' } = input;
+  const { cursor, limit, moderationStatus, processingStatus, search, sort = 'newest' } = input;
   const pageSize = normalizeAdminVideosLimit(limit);
   const direction = sort === 'oldest' ? 'asc' : 'desc';
   const cursorOperator = sort === 'oldest' ? 'gt' : 'lt';
-  const resultFilter = {
+  const statusFilter = {
     ...(moderationStatus === undefined ? {} : { moderationStatus }),
     ...(processingStatus === undefined ? {} : { processingStatus }),
   } satisfies Prisma.VideoWhereInput;
+  const searchFilter = buildVideoSearchFilter(search);
+  const hasStatusFilter = moderationStatus !== undefined || processingStatus !== undefined;
+  const resultFilter = searchFilter
+    ? hasStatusFilter
+      ? { AND: [statusFilter, searchFilter] }
+      : searchFilter
+    : statusFilter;
   const cursorFilter: Prisma.VideoWhereInput = cursor
     ? {
         OR: [

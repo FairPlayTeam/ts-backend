@@ -7,6 +7,7 @@ import type {
   CreateVideoBody,
   InitVideoMultipartUploadBody,
   ListMyVideosQuery,
+  SearchPublicVideosQuery,
   SignVideoMultipartUploadPartsBody,
   VideoHlsMasterParams,
   VideoHlsRenditionParams,
@@ -19,6 +20,7 @@ import type { VideosControllerDependencies } from './videos.controller.types.js'
 import {
   toCreateVideoResponse,
   toMyVideosResponse,
+  toPublicVideoSearchResponse,
   toSignedVideoUploadPartsResponse,
   toUploadVideoSourceThumbnailResponse,
   toVideoUploadSessionResponse,
@@ -45,6 +47,7 @@ type CompleteRequest = Request<
 >;
 type CreateVideoRequest = Request<unknown, unknown, CreateVideoBody>;
 type ListMyVideosRequest = Request<unknown, unknown, unknown, ListMyVideosQuery>;
+type SearchPublicVideosRequest = Request<unknown, unknown, unknown, SearchPublicVideosQuery>;
 type HlsMasterRequest = Request<VideoHlsMasterParams>;
 type HlsRenditionRequest = Request<VideoHlsRenditionParams>;
 type HlsSegmentRequest = Request<VideoHlsSegmentParams>;
@@ -90,6 +93,30 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
       });
 
       return sendNoStoreJson(res, 200, toMyVideosResponse(result));
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const searchPublicVideos: RequestHandler = async (req, res, next) => {
+    try {
+      const searchReq = req as SearchPublicVideosRequest;
+      const { cursorCreatedAt, cursorPublicId, limit, search, sort } = searchReq.query;
+      const result = await videosService.searchPublicVideos({
+        search,
+        ...(limit === undefined ? {} : { limit }),
+        ...(sort === undefined ? {} : { sort }),
+        ...(cursorCreatedAt !== undefined && cursorPublicId !== undefined
+          ? {
+              cursor: {
+                createdAt: new Date(cursorCreatedAt),
+                publicId: cursorPublicId,
+              },
+            }
+          : {}),
+      });
+
+      return sendNoStoreJson(res, 200, toPublicVideoSearchResponse(result));
     } catch (err) {
       next(toVideosHttpError(err));
     }
@@ -286,6 +313,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     getThumbnail,
     initMultipartUpload,
     listMyVideos,
+    searchPublicVideos,
     signMultipartUploadParts,
     uploadSourceThumbnail,
   };

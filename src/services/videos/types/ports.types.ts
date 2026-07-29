@@ -45,6 +45,11 @@ export type VideoPaginationCursor = {
   id: string;
 };
 
+export type PublicVideoSearchCursor = {
+  createdAt: Date;
+  publicId: string;
+};
+
 export type VideoUploadPart = {
   partNumber: number;
   etag: string;
@@ -66,6 +71,32 @@ export type ListMyVideosInput = {
   userId: string;
   cursor?: VideoPaginationCursor;
   limit?: number;
+};
+
+export type PublicVideoSearchSort = 'newest' | 'oldest';
+
+export type SearchPublicVideosInput = {
+  search: string;
+  cursor?: PublicVideoSearchCursor;
+  limit?: number;
+  sort?: PublicVideoSearchSort;
+};
+
+export type PublicVideoSearchSummary = {
+  publicId: string;
+  title: string;
+  description: string | null;
+  tags: string[];
+  username: string;
+  thumbnailPath: string | null;
+  publishedAt: Date | null;
+  createdAt: Date;
+};
+
+export type SearchPublicVideosResult = {
+  videos: PublicVideoSearchSummary[];
+  total: number;
+  nextCursor: PublicVideoSearchCursor | null;
 };
 
 export type VideoUploadSession = {
@@ -200,6 +231,7 @@ export type VideoThumbnailResult = {
 export type VideosRoutePort = {
   createVideo(input: CreateVideoInput): Promise<CreateVideoResult>;
   listMyVideos(input: ListMyVideosInput): Promise<ListMyVideosResult>;
+  searchPublicVideos(input: SearchPublicVideosInput): Promise<SearchPublicVideosResult>;
   getThumbnail(input: GetVideoThumbnailInput): Promise<VideoThumbnailResult>;
   getHlsMaster(input: GetVideoHlsMasterInput): Promise<VideoHlsPlaylistResult>;
   getHlsRendition(input: GetVideoHlsRenditionInput): Promise<VideoHlsPlaylistResult>;

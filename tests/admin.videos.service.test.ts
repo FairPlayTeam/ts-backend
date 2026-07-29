@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import type { AdminDependencies } from '../src/services/admin/admin.dependencies.js';
 import { createAdminService } from '../src/services/admin.service.js';
 import type { ListAdminVideosInput } from '../src/services/admin.types.js';
-import type { VideoModerationStatus, VideoProcessingStatus } from '../src/services/videos.types.js';
 
 const createdAt = [
   new Date('2026-01-03T00:00:00.000Z'),
@@ -62,13 +61,10 @@ const createDeps = () => {
 };
 
 describe('admin video service', () => {
-  test('combines moderation and processing filters without adding a search predicate', async () => {
+  test('combines moderation, processing, and text-search filters', async () => {
     const combinations: Array<{
       input: ListAdminVideosInput;
-      where: {
-        moderationStatus?: VideoModerationStatus;
-        processingStatus?: VideoProcessingStatus;
-      };
+      where: unknown;
     }> = [
       {
         input: { moderationStatus: 'pending' },
@@ -82,11 +78,22 @@ describe('admin video service', () => {
         input: {
           moderationStatus: 'rejected',
           processingStatus: 'failed',
-          search: 'intentionally ignored',
+          search: 'failed upload',
         },
         where: {
-          moderationStatus: 'rejected',
-          processingStatus: 'failed',
+          AND: [
+            {
+              moderationStatus: 'rejected',
+              processingStatus: 'failed',
+            },
+            {
+              OR: [
+                { title: { contains: 'failed upload', mode: 'insensitive' } },
+                { description: { contains: 'failed upload', mode: 'insensitive' } },
+                { tags: { has: 'failed upload' } },
+              ],
+            },
+          ],
         },
       },
     ];
@@ -106,16 +113,33 @@ describe('admin video service', () => {
     }
   });
 
-  test('accepts the reserved search field while leaving the unfiltered query unchanged', async () => {
+  test('searches titles, descriptions, and exact tags without adding status filters', async () => {
+    const { calls, deps } = createDeps();
+    const service = createAdminService(deps);
+    const where = {
+      OR: [
+        { title: { contains: 'catalog phrase', mode: 'insensitive' } },
+        { description: { contains: 'catalog phrase', mode: 'insensitive' } },
+        { tags: { has: 'catalog phrase' } },
+      ],
+    };
+
+    await expect(service.listVideos({ search: 'catalog phrase' })).resolves.toBeDefined();
+    expect(calls.findMany).toEqual(
+      expect.objectContaining({
+        where,
+      }),
+    );
+    expect(calls.count).toEqual({ where });
+  });
+
+  test('treats an empty normalized search as no filter', async () => {
     const { calls, deps } = createDeps();
     const service = createAdminService(deps);
 
-    await expect(service.listVideos({ search: 'future title search' })).resolves.toBeDefined();
-    expect(calls.findMany).toEqual(
-      expect.objectContaining({
-        where: {},
-      }),
-    );
+    await service.listVideos({ search: '   ' });
+
+    expect(calls.findMany).toEqual(expect.objectContaining({ where: {} }));
     expect(calls.count).toEqual({ where: {} });
   });
 

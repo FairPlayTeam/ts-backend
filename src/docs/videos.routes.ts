@@ -5,6 +5,8 @@ import {
   initVideoMultipartUploadBodySchema,
   myVideosQuerySchema,
   myVideosResponseSchema,
+  publicVideoSearchQuerySchema,
+  publicVideoSearchResponseSchema,
   signedVideoUploadPartsResponseSchema,
   signVideoMultipartUploadPartsBodySchema,
   uploadVideoSourceThumbnailBodySchema,
@@ -30,6 +32,12 @@ const videoCreateResponses = {
 const videoListResponses = {
   400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
   401: jsonResponse('Authentication required', ApiErrorSchema),
+  429: jsonResponse('Too many requests', ApiErrorSchema),
+  500: jsonResponse('Internal server error', ApiErrorSchema),
+};
+
+const publicVideoSearchResponses = {
+  400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
   429: jsonResponse('Too many requests', ApiErrorSchema),
   500: jsonResponse('Internal server error', ApiErrorSchema),
 };
@@ -62,6 +70,20 @@ const videoHlsResponses = {
 };
 
 export const routeDocs = [
+  {
+    method: 'get',
+    path: '/videos/search',
+    summary: 'Search public videos',
+    tags: ['Videos'],
+    security: [],
+    request: {
+      query: publicVideoSearchQuerySchema,
+    },
+    responses: {
+      200: jsonResponse('Paginated public video search results', publicVideoSearchResponseSchema),
+      ...publicVideoSearchResponses,
+    },
+  },
   {
     method: 'get',
     path: '/videos/{publicId}/thumbnail',

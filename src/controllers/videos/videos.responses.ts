@@ -2,6 +2,7 @@ import { toIsoString, toNullableIsoString } from '../http.responses.js';
 import type {
   CreateVideoResult,
   ListMyVideosResult,
+  SearchPublicVideosResult,
   SignVideoMultipartUploadPartsResult,
   UploadVideoSourceThumbnailResult,
   VideoUploadSessionResult,
@@ -23,6 +24,25 @@ export const toMyVideosResponse = ({ nextCursor, total, videos }: ListMyVideosRe
   nextCursor: nextCursor
     ? {
         id: nextCursor.id,
+        createdAt: toIsoString(nextCursor.createdAt),
+      }
+    : null,
+});
+
+export const toPublicVideoSearchResponse = ({
+  nextCursor,
+  total,
+  videos,
+}: SearchPublicVideosResult) => ({
+  videos: videos.map((video) => ({
+    ...video,
+    publishedAt: toNullableIsoString(video.publishedAt),
+    createdAt: toIsoString(video.createdAt),
+  })),
+  total,
+  nextCursor: nextCursor
+    ? {
+        publicId: nextCursor.publicId,
         createdAt: toIsoString(nextCursor.createdAt),
       }
     : null,

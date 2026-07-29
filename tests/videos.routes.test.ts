@@ -17,6 +17,7 @@ import type {
   GetVideoThumbnailInput,
   InitVideoMultipartUploadInput,
   ListMyVideosInput,
+  SearchPublicVideosInput,
   SignVideoMultipartUploadPartsInput,
   UploadVideoSourceThumbnailInput,
   VideosPorts,
@@ -36,6 +37,7 @@ let receivedCompleteRequest: CompleteVideoMultipartUploadInput | undefined;
 let receivedAbortRequest: AbortVideoMultipartUploadInput | undefined;
 let receivedGetRequest: GetVideoMultipartUploadSessionInput | undefined;
 let receivedListRequest: ListMyVideosInput | undefined;
+let receivedPublicSearchRequest: SearchPublicVideosInput | undefined;
 let receivedHlsMasterRequest: GetVideoHlsMasterInput | undefined;
 let receivedHlsRenditionRequest: GetVideoHlsRenditionInput | undefined;
 let receivedHlsSegmentRequest: GetVideoHlsSegmentInput | undefined;
@@ -84,6 +86,11 @@ describe('videos routes multipart uploads', () => {
             receivedListRequest = input;
 
             return videosService.listMyVideos(input);
+          },
+          searchPublicVideos: async (input) => {
+            receivedPublicSearchRequest = input;
+
+            return videosService.searchPublicVideos(input);
           },
           getHlsMaster: async (input) => {
             receivedHlsMasterRequest = input;
@@ -345,6 +352,72 @@ describe('videos routes multipart uploads', () => {
       error: 'ValidationError',
       message: REQUEST_VALIDATION_FAILED_MESSAGE,
     });
+  });
+
+  test('searches public videos without authentication using stable pagination input', async () => {
+    receivedPublicSearchRequest = undefined;
+    receivedSessionKey = undefined;
+    const query = new URLSearchParams({
+      search: '  launch recap  ',
+      sort: 'oldest',
+      limit: '10',
+      cursorCreatedAt: '2026-01-01T00:00:00.000Z',
+      cursorPublicId: publicId,
+    });
+
+    const response = await fetch(`${baseUrl}/videos/search?${query.toString()}`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(receivedSessionKey).toBeUndefined();
+    const observedPublicSearchRequest = receivedPublicSearchRequest as
+      | SearchPublicVideosInput
+      | undefined;
+    expect(observedPublicSearchRequest).toEqual({
+      search: 'launch recap',
+      sort: 'oldest',
+      limit: 10,
+      cursor: {
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        publicId,
+      },
+    });
+    expect(await response.json()).toEqual({
+      videos: [
+        {
+          publicId: 'AbCdEf123_',
+          title: 'FairPlay launch recap',
+          description: 'A short behind-the-scenes video.',
+          tags: ['fairplay', 'launch'],
+          username: 'fairplay_creator',
+          thumbnailPath: '/videos/AbCdEf123_/thumbnail',
+          publishedAt: '2026-01-01T00:00:00.000Z',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      total: 1,
+      nextCursor: null,
+    });
+  });
+
+  test('rejects invalid public video searches before calling the service', async () => {
+    for (const query of [
+      '',
+      '?search=x',
+      `?search=valid&cursorCreatedAt=${encodeURIComponent('2026-01-01T00:00:00.000Z')}`,
+      '?search=%00x',
+    ]) {
+      receivedPublicSearchRequest = undefined;
+
+      const response = await fetch(`${baseUrl}/videos/search${query}`);
+
+      expect(response.status).toBe(400);
+      expect(receivedPublicSearchRequest).toBeUndefined();
+      expect(await response.json()).toMatchObject({
+        error: 'ValidationError',
+        message: REQUEST_VALIDATION_FAILED_MESSAGE,
+      });
+    }
   });
 
   test('rejects private video visibility before calling the service', async () => {

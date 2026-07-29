@@ -23,10 +23,19 @@ export const adminVideosQuerySchema = z
       example: 'newest',
       description: 'Sort by creation time. Defaults to newest.',
     }),
-    search: z.string().trim().max(254).optional().openapi({
-      example: 'launch recap',
-      description: 'Reserved; currently ignored and will be shared with a future search feature.',
-    }),
+    search: z
+      .string()
+      .trim()
+      .max(254)
+      .refine((search) => !search.includes('\u0000'), {
+        message: 'Video search must not contain NUL characters',
+      })
+      .optional()
+      .openapi({
+        example: 'launch recap',
+        description:
+          'Case-insensitive literal substring search over video titles and descriptions, plus exact tag matching.',
+      }),
     cursorCreatedAt: z.string().datetime().optional().openapi({
       example: '2026-01-01T00:00:00.000Z',
     }),

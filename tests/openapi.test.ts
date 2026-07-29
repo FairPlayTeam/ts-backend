@@ -168,6 +168,7 @@ describe('OpenAPI generation', () => {
       '/profiles/{username}/follow',
       '/videos',
       '/videos/me',
+      '/videos/search',
       '/videos/{publicId}/hls/master.m3u8',
       '/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8',
       '/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}',
@@ -183,6 +184,36 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/moderation/videos/{videoId}/moderation']?.post?.tags).toEqual([
       'Moderation',
     ]);
+    expect(document.paths['/videos/search']?.get?.tags).toEqual(['Videos']);
+    expect(document.paths['/videos/search']?.get?.security).toEqual([]);
+    expect(document.paths['/videos/search']?.get?.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'search',
+          in: 'query',
+          required: true,
+        }),
+        expect.objectContaining({
+          name: 'limit',
+          in: 'query',
+        }),
+        expect.objectContaining({
+          name: 'sort',
+          in: 'query',
+        }),
+        expect.objectContaining({
+          name: 'cursorCreatedAt',
+          in: 'query',
+        }),
+        expect.objectContaining({
+          name: 'cursorPublicId',
+          in: 'query',
+        }),
+      ]),
+    );
+    expect(document.paths['/videos/search']?.get?.responses?.[200]).toBeDefined();
+    expect(document.paths['/videos/search']?.get?.responses?.[400]).toBeDefined();
+    expect(document.paths['/videos/search']?.get?.responses?.[401]).toBeUndefined();
     expect(document.paths['/videos/{publicId}/hls/master.m3u8']?.get?.security).toEqual([]);
     expect(document.paths['/videos/{publicId}/thumbnail']?.get?.security).toEqual([]);
     expect(document.paths['/videos/{publicId}/thumbnail']?.get?.responses?.[307]).toBeDefined();

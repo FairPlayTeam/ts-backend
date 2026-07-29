@@ -1,6 +1,7 @@
 import type {
   CreateVideoResult,
   ListMyVideosResult,
+  SearchPublicVideosResult,
   SignVideoMultipartUploadPartsResult,
   UploadVideoSourceThumbnailResult,
   VideoUploadSessionResult,
@@ -68,6 +69,23 @@ const listMyVideosResult = (): ListMyVideosResult => ({
   nextCursor: null,
 });
 
+const searchPublicVideosResult = (): SearchPublicVideosResult => ({
+  videos: [
+    {
+      publicId: 'AbCdEf123_',
+      title: 'FairPlay launch recap',
+      description: 'A short behind-the-scenes video.',
+      tags: ['fairplay', 'launch'],
+      username: 'fairplay_creator',
+      thumbnailPath: '/videos/AbCdEf123_/thumbnail',
+      publishedAt: fixedNow,
+      createdAt: fixedNow,
+    },
+  ],
+  total: 1,
+  nextCursor: null,
+});
+
 export const createStubVideosService = (): VideosPorts => ({
   createVideo: async (input) =>
     createVideoResult({
@@ -79,6 +97,7 @@ export const createStubVideosService = (): VideosPorts => ({
       allowComments: input.allowComments,
     }),
   listMyVideos: async () => listMyVideosResult(),
+  searchPublicVideos: async () => searchPublicVideosResult(),
   getThumbnail: async () => ({
     url: 'http://localhost:9000/videos/thumbnail/poster.webp?signature=test',
   }),

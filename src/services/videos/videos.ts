@@ -61,6 +61,8 @@ import type {
   InitVideoMultipartUploadInput,
   ListMyVideosInput,
   ListMyVideosResult,
+  SearchPublicVideosInput,
+  SearchPublicVideosResult,
   SignVideoMultipartUploadPartsInput,
   SignVideoMultipartUploadPartsResult,
   UploadVideoSourceThumbnailInput,
@@ -72,6 +74,7 @@ import type {
   VideoUploadSessionResult,
   VideosService,
 } from './types/ports.types.js';
+import { buildVideoSearchFilter } from './videoSearch.js';
 
 const ACTIVE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
   'initializing',
@@ -103,6 +106,8 @@ const VIDEO_SOURCE_THUMBNAIL_CONTENT_TYPE = 'image/webp';
 const VIDEO_SOURCE_THUMBNAIL_CACHE_CONTROL = 'private, no-store';
 const DEFAULT_MY_VIDEOS_LIMIT = 20;
 const MAX_MY_VIDEOS_LIMIT = 100;
+const DEFAULT_PUBLIC_VIDEO_SEARCH_LIMIT = 20;
+const MAX_PUBLIC_VIDEO_SEARCH_LIMIT = 100;
 const MULTIPART_MAINTENANCE_BATCH_SIZE = 100;
 const REJECTED_VIDEO_MAINTENANCE_BATCH_SIZE = 100;
 const PUBLIC_ID_MAX_CREATE_ATTEMPTS = 5;
@@ -123,6 +128,25 @@ const videoSelect = {
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.VideoSelect;
+
+const publicVideoSearchSelect = {
+  publicId: true,
+  title: true,
+  description: true,
+  tags: true,
+  thumbnailObjectKey: true,
+  publishedAt: true,
+  createdAt: true,
+  owner: {
+    select: {
+      username: true,
+    },
+  },
+} satisfies Prisma.VideoSelect;
+
+type PublicVideoSearchRecord = Prisma.VideoGetPayload<{
+  select: typeof publicVideoSearchSelect;
+}>;
 
 const uploadSessionSelect = {
   id: true,
@@ -342,6 +366,34 @@ const normalizeMyVideosLimit = (limit: number | undefined): number => {
 
   return Math.min(Math.max(Math.trunc(limit), 1), MAX_MY_VIDEOS_LIMIT);
 };
+
+const normalizePublicVideoSearchLimit = (limit: number | undefined): number => {
+  if (limit === undefined || !Number.isFinite(limit)) {
+    return DEFAULT_PUBLIC_VIDEO_SEARCH_LIMIT;
+  }
+
+  return Math.min(Math.max(Math.trunc(limit), 1), MAX_PUBLIC_VIDEO_SEARCH_LIMIT);
+};
+
+const toPublicVideoSearchSummary = ({
+  createdAt,
+  description,
+  owner,
+  publicId,
+  publishedAt,
+  tags,
+  thumbnailObjectKey,
+  title,
+}: PublicVideoSearchRecord): SearchPublicVideosResult['videos'][number] => ({
+  publicId,
+  title,
+  description,
+  tags,
+  username: owner.username,
+  thumbnailPath: thumbnailObjectKey ? `/videos/${publicId}/thumbnail` : null,
+  publishedAt,
+  createdAt,
+});
 
 const deleteExpiredRejectedVideo = async (
   deps: VideosDependencies,
@@ -1468,6 +1520,71 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
 
     return {
       videos,
+      total,
+      nextCursor,
+    };
+  },
+
+  async searchPublicVideos({
+    cursor,
+    limit,
+    search,
+    sort = 'newest',
+  }: SearchPublicVideosInput): Promise<SearchPublicVideosResult> {
+    const searchFilter = buildVideoSearchFilter(search);
+
+    if (!searchFilter) {
+      return {
+        videos: [],
+        total: 0,
+        nextCursor: null,
+      };
+    }
+
+    const pageSize = normalizePublicVideoSearchLimit(limit);
+    const direction = sort === 'oldest' ? 'asc' : 'desc';
+    const cursorOperator = sort === 'oldest' ? 'gt' : 'lt';
+    const publicScopeFilter = {
+      visibility: 'public',
+      moderationStatus: 'approved',
+      processingStatus: 'ready',
+    } satisfies Prisma.VideoWhereInput;
+    const resultFilter = {
+      AND: [publicScopeFilter, searchFilter],
+    } satisfies Prisma.VideoWhereInput;
+    const cursorFilter: Prisma.VideoWhereInput = cursor
+      ? {
+          OR: [
+            { createdAt: { [cursorOperator]: cursor.createdAt } },
+            {
+              createdAt: cursor.createdAt,
+              publicId: { [cursorOperator]: cursor.publicId },
+            },
+          ],
+        }
+      : {};
+    const pageFilter = cursor ? { AND: [resultFilter, cursorFilter] } : resultFilter;
+
+    const [queriedVideos, total] = await deps.prisma.$transaction([
+      deps.prisma.video.findMany({
+        where: pageFilter,
+        select: publicVideoSearchSelect,
+        orderBy: [{ createdAt: direction }, { publicId: direction }],
+        take: pageSize + 1,
+      }),
+      deps.prisma.video.count({
+        where: resultFilter,
+      }),
+    ]);
+    const videos = queriedVideos.slice(0, pageSize);
+    const lastVideo = videos.at(-1);
+    const nextCursor =
+      queriedVideos.length > pageSize && lastVideo
+        ? { createdAt: lastVideo.createdAt, publicId: lastVideo.publicId }
+        : null;
+
+    return {
+      videos: videos.map(toPublicVideoSearchSummary),
       total,
       nextCursor,
     };

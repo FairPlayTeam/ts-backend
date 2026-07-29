@@ -1837,6 +1837,242 @@ describe('auth integration', () => {
     expect(secondPage.total).toBe(2);
   });
 
+  test('searches only public approved ready videos without leaking hidden matches', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const activeRuntime = runtime;
+    const app = await createIntegrationApp(runtime);
+    const owner = await createVerifiedSession(runtime, {
+      email: 'public-video-search@example.com',
+      username: 'public_search_owner',
+    });
+    const createSearchVideo = async ({
+      createdAt,
+      description = null,
+      moderationStatus,
+      processingStatus,
+      tags = ['catalog-metadata-tag'],
+      title,
+      visibility,
+    }: {
+      createdAt?: Date;
+      description?: string | null;
+      moderationStatus: 'pending' | 'approved' | 'rejected';
+      processingStatus: 'draft' | 'ready';
+      tags?: string[];
+      title: string;
+      visibility: 'public' | 'unlisted';
+    }) => {
+      const result = await activeRuntime.videosService.createVideo({
+        userId: owner.userId,
+        title,
+        description,
+        tags,
+        license: 'all_rights_reserved',
+        visibility: 'unlisted',
+        allowComments: true,
+      });
+
+      await activeRuntime.prisma.video.update({
+        where: { id: result.video.id },
+        data: {
+          moderationStatus,
+          processingStatus,
+          visibility,
+          publishedAt:
+            moderationStatus === 'approved' ? new Date('2026-04-01T00:00:00.000Z') : null,
+          ...(createdAt === undefined ? {} : { createdAt }),
+        },
+      });
+
+      return result.video;
+    };
+
+    await Promise.all([
+      createSearchVideo({
+        title: 'Hidden scope needle unlisted',
+        moderationStatus: 'approved',
+        processingStatus: 'ready',
+        tags: ['hidden-tag-only'],
+        visibility: 'unlisted',
+      }),
+      createSearchVideo({
+        title: 'Hidden scope needle pending',
+        moderationStatus: 'pending',
+        processingStatus: 'ready',
+        visibility: 'public',
+      }),
+      createSearchVideo({
+        title: 'Hidden scope needle rejected',
+        moderationStatus: 'rejected',
+        processingStatus: 'ready',
+        visibility: 'public',
+      }),
+      createSearchVideo({
+        title: 'Hidden scope needle unfinished',
+        moderationStatus: 'approved',
+        processingStatus: 'draft',
+        visibility: 'public',
+      }),
+    ]);
+
+    const hiddenOnly = await request(app)
+      .get('/videos/search')
+      .query({ search: 'hidden scope needle' })
+      .expect(200);
+    const absentEverywhere = await request(app)
+      .get('/videos/search')
+      .query({ search: 'term absent from every video' })
+      .expect(200);
+    const hiddenTagOnly = await request(app)
+      .get('/videos/search')
+      .query({ search: 'hidden-tag-only' })
+      .expect(200);
+    const emptySearchResponse = {
+      videos: [],
+      total: 0,
+      nextCursor: null,
+    };
+
+    expect(hiddenOnly.headers['cache-control']).toBe('no-store');
+    expect(absentEverywhere.headers['cache-control']).toBe('no-store');
+    expect(hiddenOnly.body).toEqual(emptySearchResponse);
+    expect(hiddenTagOnly.body).toEqual(emptySearchResponse);
+    expect(absentEverywhere.body).toEqual(emptySearchResponse);
+    expect(hiddenOnly.body).toEqual(absentEverywhere.body);
+    expect(hiddenTagOnly.body).toEqual(absentEverywhere.body);
+
+    const publicTagVideo = await createSearchVideo({
+      title: 'Title unrelated to its searchable tag',
+      moderationStatus: 'approved',
+      processingStatus: 'ready',
+      tags: ['discoverable-tag'],
+      visibility: 'public',
+    });
+    const tagOnlySearch = await request(app)
+      .get('/videos/search')
+      .query({ search: 'discoverable-tag' })
+      .expect(200);
+    expect(tagOnlySearch.body).toEqual({
+      videos: [
+        expect.objectContaining({
+          publicId: publicTagVideo.publicId,
+          tags: ['discoverable-tag'],
+        }),
+      ],
+      total: 1,
+      nextCursor: null,
+    });
+
+    const publicDates = [
+      new Date('2026-04-01T00:00:00.000Z'),
+      new Date('2026-04-02T00:00:00.000Z'),
+      new Date('2026-04-03T00:00:00.000Z'),
+    ] as const;
+    const publicVideos = await Promise.all([
+      createSearchVideo({
+        title: 'Catalog needle oldest',
+        moderationStatus: 'approved',
+        processingStatus: 'ready',
+        visibility: 'public',
+        createdAt: publicDates[0],
+      }),
+      createSearchVideo({
+        title: 'Middle public result',
+        description: 'The catalog needle is in this description',
+        moderationStatus: 'approved',
+        processingStatus: 'ready',
+        visibility: 'public',
+        createdAt: publicDates[1],
+      }),
+      createSearchVideo({
+        title: 'Catalog needle newest',
+        moderationStatus: 'approved',
+        processingStatus: 'ready',
+        visibility: 'public',
+        createdAt: publicDates[2],
+      }),
+    ]);
+
+    const firstPage = await request(app)
+      .get('/videos/search')
+      .query({ search: 'CATALOG NEEDLE', sort: 'oldest', limit: 2 })
+      .expect(200);
+    expect(firstPage.body.videos.map(({ title }: { title: string }) => title)).toEqual([
+      'Catalog needle oldest',
+      'Middle public result',
+    ]);
+    expect(firstPage.body.total).toBe(3);
+    expect(firstPage.body.nextCursor).toEqual({
+      createdAt: publicDates[1]?.toISOString(),
+      publicId: publicVideos[1]?.publicId,
+    });
+    expect(firstPage.body.videos[0]).toEqual({
+      publicId: publicVideos[0]?.publicId,
+      title: 'Catalog needle oldest',
+      description: null,
+      tags: ['catalog-metadata-tag'],
+      username: 'public_search_owner',
+      thumbnailPath: null,
+      publishedAt: '2026-04-01T00:00:00.000Z',
+      createdAt: publicDates[0]?.toISOString(),
+    });
+    expect(firstPage.body.videos[0]).not.toHaveProperty('id');
+    expect(firstPage.body.videos[0]).not.toHaveProperty('thumbnailObjectKey');
+
+    const secondPage = await request(app)
+      .get('/videos/search')
+      .query({
+        search: 'catalog needle',
+        sort: 'oldest',
+        limit: 2,
+        cursorCreatedAt: firstPage.body.nextCursor.createdAt,
+        cursorPublicId: firstPage.body.nextCursor.publicId,
+      })
+      .expect(200);
+    expect(secondPage.body.videos.map(({ title }: { title: string }) => title)).toEqual([
+      'Catalog needle newest',
+    ]);
+    expect(secondPage.body.total).toBe(3);
+    expect(secondPage.body.nextCursor).toBeNull();
+  });
+
+  test('rejects NUL search terms before they reach PostgreSQL', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const moderator = await createVerifiedSession(runtime, {
+      email: 'nul-search-moderator@example.com',
+      username: 'nul_search_moderator',
+    });
+    await runtime.prisma.user.update({
+      where: { id: moderator.userId },
+      data: { role: 'moderator' },
+    });
+
+    const publicResponse = await request(app).get('/videos/search?search=%00x').expect(400);
+    const moderationResponse = await request(app)
+      .get('/moderation/videos?search=%00x')
+      .set('Authorization', `Bearer ${moderator.sessionKey}`)
+      .expect(400);
+
+    for (const response of [publicResponse, moderationResponse]) {
+      expect(response.body).toMatchObject({
+        error: 'ValidationError',
+        details: [
+          {
+            field: 'query.search',
+            message: 'Video search must not contain NUL characters',
+          },
+        ],
+      });
+    }
+  });
+
   test('authorizes moderators and persists idempotent decisions with filtered cursor pagination', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
@@ -1869,12 +2105,12 @@ describe('auth integration', () => {
       where: { id: moderator.userId },
       data: { role: 'moderator' },
     });
-    const createVideo = (title: string) =>
+    const createVideo = (title: string, tags: string[] = []) =>
       activeRuntime.videosService.createVideo({
         userId: owner.userId,
         title,
         description: null,
-        tags: [],
+        tags,
         license: 'all_rights_reserved',
         visibility: 'unlisted',
         allowComments: true,
@@ -2020,7 +2256,7 @@ describe('auth integration', () => {
         moderationStatus: 'pending',
         processingStatus: 'ready',
         sort: 'oldest',
-        search: 'reserved and ignored',
+        search: 'pending',
         limit: 2,
       })
       .set('Authorization', `Bearer ${moderator.sessionKey}`)
@@ -2066,6 +2302,42 @@ describe('auth integration', () => {
       'Pending middle',
       'Pending oldest',
     ]);
+
+    const literalWildcardVideo = await createVideo('Literal 100% match');
+    const literalWildcardSearch = await request(app)
+      .get('/moderation/videos')
+      .query({ search: '%' })
+      .set('Authorization', `Bearer ${moderator.sessionKey}`)
+      .expect(200);
+    expect(literalWildcardSearch.body).toEqual({
+      videos: [
+        expect.objectContaining({
+          id: literalWildcardVideo.video.id,
+          title: 'Literal 100% match',
+        }),
+      ],
+      total: 1,
+      nextCursor: null,
+    });
+
+    const tagOnlyVideo = await createVideo('Title unrelated to its moderation tag', [
+      'moderation-tag-only',
+    ]);
+    const tagOnlySearch = await request(app)
+      .get('/moderation/videos')
+      .query({ search: 'moderation-tag-only' })
+      .set('Authorization', `Bearer ${moderator.sessionKey}`)
+      .expect(200);
+    expect(tagOnlySearch.body).toEqual({
+      videos: [
+        expect.objectContaining({
+          id: tagOnlyVideo.video.id,
+          title: 'Title unrelated to its moderation tag',
+        }),
+      ],
+      total: 1,
+      nextCursor: null,
+    });
   });
 
   test('keeps the first rejection timestamp and purges after its original seven-day window', async () => {

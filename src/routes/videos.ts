@@ -7,6 +7,7 @@ import {
   getVideoMultipartUploadSessionSchema,
   initVideoMultipartUploadSchema,
   listMyVideosSchema,
+  searchPublicVideosSchema,
   signVideoMultipartUploadPartsSchema,
   uploadVideoSourceThumbnailSchema,
 } from '../controllers/videos.schemas.js';
@@ -43,6 +44,7 @@ export const createRouter = ({
     getThumbnail,
     initMultipartUpload,
     listMyVideos,
+    searchPublicVideos,
     signMultipartUploadParts,
     uploadSourceThumbnail,
   } = createVideosController({ videosService });
@@ -59,6 +61,7 @@ export const createRouter = ({
 
   router.post('/', ...protectedValidatedRoute(createVideoSchema, createVideo));
   router.get('/me', ...protectedValidatedRoute(listMyVideosSchema, listMyVideos));
+  router.get('/search', validate(searchPublicVideosSchema), searchPublicVideos);
   router.get('/:publicId/thumbnail', getThumbnail);
   router.get('/:publicId/hls/master.m3u8', getHlsMaster);
   router.get('/:publicId/hls/:generationId/:quality/index.m3u8', getHlsRendition);

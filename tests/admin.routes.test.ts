@@ -197,13 +197,13 @@ describe('admin routes', () => {
     });
   });
 
-  test('lists moderation videos for a moderator with filters, sorting, and the reserved search field', async () => {
+  test('lists moderation videos for a moderator with filters, sorting, and text search', async () => {
     receivedListVideosRequest = undefined;
     const query = new URLSearchParams({
       moderationStatus: 'pending',
       processingStatus: 'ready',
       sort: 'oldest',
-      search: '  reserved title  ',
+      search: '  awaiting moderation  ',
       cursorCreatedAt,
       cursorId,
       limit: '10',
@@ -220,7 +220,7 @@ describe('admin routes', () => {
       moderationStatus: 'pending',
       processingStatus: 'ready',
       sort: 'oldest',
-      search: 'reserved title',
+      search: 'awaiting moderation',
       limit: 10,
       cursor: {
         createdAt: new Date(cursorCreatedAt),
