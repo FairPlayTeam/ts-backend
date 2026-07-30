@@ -33,30 +33,78 @@ const buildEmailLayoutHtml = ({
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     </head>
-    <body style="margin:0;padding:0;background:#fefefe;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
-      <table width="100%" cellpadding="0" cellspacing="0" style="background:#fefefe;padding:32px 0;">
-        <tr><td align="center">
-          <table width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;">
-            <tr>
-              <td style="background:#111111;padding:20px 32px;border-radius:12px 12px 0 0;">
-                <span style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.5px;">${APP_PRODUCT_NAME}</span>
-              </td>
-            </tr>
-            <tr>
-              <td style="background:#ffffff;padding:40px 32px 36px;text-align:center;">
-                <h1 style="margin:0 0 12px;font-size:22px;font-weight:700;color:#111111;">${safeTitle}</h1>
-                ${bodyHtml}
-              </td>
-            </tr>
-            <tr>
-              <td style="background:#111111;padding:16px 32px;border-radius:0 0 12px 12px;text-align:center;">
-                <p style="margin:0;font-size:12px;color:#bbbbbb;">
-                  ${safeFooterHtml}
-                </p>
-              </td>
-            </tr>
-          </table>
-        </td></tr>
+
+    <body style="margin:0;padding:0;background:#ffffff;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;padding:40px 16px;">
+        <tr>
+          <td align="center">
+
+            <table width="560" cellpadding="0" cellspacing="0" 
+              style="width:100%;max-width:560px;">
+
+              <!-- Brand -->
+              <tr>
+                <td style="padding:0 32px 36px;text-align:left;">
+                  <span style="
+                    color:#111827;
+                    font-size:18px;
+                    font-weight:700;
+                    letter-spacing:-0.3px;
+                  ">
+                    ${APP_PRODUCT_NAME}
+                  </span>
+                </td>
+              </tr>
+
+              <!-- Content -->
+              <tr>
+                <td style="
+                  padding:0 32px 40px;
+                  text-align:left;
+                ">
+                  <h1 style="
+                    margin:0 0 20px;
+                    font-size:24px;
+                    line-height:32px;
+                    font-weight:700;
+                    color:#111827;
+                    letter-spacing:-0.5px;
+                  ">
+                    ${safeTitle}
+                  </h1>
+
+                  <div style="
+                    font-size:15px;
+                    line-height:25px;
+                    color:#374151;
+                  ">
+                    ${bodyHtml}
+                  </div>
+                </td>
+              </tr>
+
+              <!-- Footer -->
+              <tr>
+                <td style="
+                  padding:24px 32px 0;
+                  border-top:1px solid #f0f0f0;
+                  text-align:left;
+                ">
+                  <p style="
+                    margin:0;
+                    font-size:12px;
+                    line-height:18px;
+                    color:#9ca3af;
+                  ">
+                    ${safeFooterHtml}
+                  </p>
+                </td>
+              </tr>
+
+            </table>
+
+          </td>
+        </tr>
       </table>
     </body>
     </html>
@@ -82,7 +130,7 @@ export function buildTransactionalEmailHtml({
                   ${safeIntro}<br/>
                   <span style="font-size:13px;color:#999999;">${safeExpiryLabel}</span>
                 </p>
-                <div style="display:inline-block;background:#f5f5f5;color:#111111;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;font-size:28px;font-weight:700;padding:14px 24px;border-radius:8px;border:1px solid #dddddd;">${safeActionCode}</div>
+                <div style="display:inline-block;background:#f8f8f8;color:#111111;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;font-size:28px;font-weight:700;padding:14px 24px;border-radius:8px;border:1px solid #dddddd;">${safeActionCode}</div>
     `,
   });
 }
@@ -114,7 +162,7 @@ export function buildNoticeEmailHtml({
                 <p style="margin:0 0 24px;font-size:15px;color:#555555;line-height:1.6;">
                   ${safeIntro}
                 </p>
-                <div style="background:#f5f5f5;color:#111111;text-align:left;font-size:14px;line-height:1.6;padding:18px 20px;border-radius:8px;border:1px solid #dddddd;">
+                <div style="background:#f8f8f8;color:#111111;text-align:left;font-size:14px;line-height:1.6;padding:18px 20px;border-radius:8px;border:1px solid #dddddd;">
                   <p style="margin:0 0 8px;font-weight:700;color:#111111;">${safeDetailsLabel}</p>
                   <p style="margin:0;white-space:pre-wrap;color:#333333;">${safeDetails}</p>
                 </div>

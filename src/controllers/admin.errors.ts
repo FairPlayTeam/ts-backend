@@ -10,11 +10,15 @@ import {
   AdminRoleHierarchyError,
   AdminSelfBanError,
   AdminSelfUnbanError,
+  AdminVideoRejectionReasonInvalidError,
 } from '../services/admin.errors.js';
 import { VideoNotFoundError } from '../services/videos.errors.js';
 
 export function toAdminHttpError(err: unknown): Error {
-  if (err instanceof AdminBanReasonInvalidError) {
+  if (
+    err instanceof AdminBanReasonInvalidError ||
+    err instanceof AdminVideoRejectionReasonInvalidError
+  ) {
     return new HttpError(400, 'BadRequest', err.message, { cause: err });
   }
 

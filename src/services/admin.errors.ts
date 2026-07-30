@@ -1,4 +1,4 @@
-import { BAN_REASON_MAX_LENGTH } from '../config/constants.js';
+import { BAN_REASON_MAX_LENGTH, VIDEO_REJECTION_REASON_MAX_LENGTH } from '../config/constants.js';
 
 export const ADMIN_ACCOUNT_NOT_FOUND_MESSAGE = 'Account not found';
 export const ADMIN_ACCOUNT_ALREADY_BANNED_MESSAGE = 'Account is already banned';
@@ -11,6 +11,10 @@ export const ADMIN_ROLE_ASSIGNMENT_MESSAGE = 'Cannot assign a role higher than y
 export const ADMIN_ROLE_ALREADY_ASSIGNED_MESSAGE = 'Account already has this role';
 export const ADMIN_BAN_REASON_REQUIRED_MESSAGE = 'Ban reason is required';
 export const ADMIN_BAN_REASON_TOO_LONG_MESSAGE = `Ban reason must be at most ${BAN_REASON_MAX_LENGTH} characters`;
+export const ADMIN_VIDEO_REJECTION_REASON_REQUIRED_MESSAGE = 'Video rejection reason is required';
+export const ADMIN_VIDEO_REJECTION_REASON_TOO_LONG_MESSAGE = `Video rejection reason must be at most ${VIDEO_REJECTION_REASON_MAX_LENGTH} characters`;
+export const ADMIN_VIDEO_REJECTION_REASON_NUL_MESSAGE =
+  'Video rejection reason must not contain NUL characters';
 
 export class AdminAccountNotFoundError extends Error {
   constructor() {
@@ -72,5 +76,12 @@ export class AdminBanReasonInvalidError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'AdminBanReasonInvalidError';
+  }
+}
+
+export class AdminVideoRejectionReasonInvalidError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AdminVideoRejectionReasonInvalidError';
   }
 }

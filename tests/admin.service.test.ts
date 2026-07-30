@@ -255,6 +255,7 @@ const createDeps = ({
           throw mailerError;
         }
       },
+      sendVideoRejectedEmail: async () => undefined,
     },
     objectStorage: {
       getSignedUrl: async (objectKey: string) => {

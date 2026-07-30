@@ -3,7 +3,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import { createAdminService } from '../../src/services/admin.service.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
+import { MailerDeliveryError } from '../../src/services/mailer/mailer.errors.js';
 import { createMaintenanceCleanupJob } from '../../src/maintenance/cleanup.js';
 import { HOUR_MS } from '../../src/config/constants.js';
 import { createPng, createVerifiedSession, uploadVideoSource } from './support/fixtures.js';
@@ -148,6 +150,7 @@ describe('videos moderation integration', () => {
           moderationStatus: true,
           publishedAt: true,
           rejectedAt: true,
+          rejectionReason: true,
           visibility: true,
         },
       }),
@@ -155,14 +158,16 @@ describe('videos moderation integration', () => {
       moderationStatus: 'approved',
       publishedAt: moderationNow,
       rejectedAt: null,
+      rejectionReason: null,
       visibility: 'public',
     });
+    expect(runtime.delivered.videoRejection).toEqual([]);
 
     moderationNow = new Date('2026-02-02T12:00:00.000Z');
     await request(app)
       .post(`/moderation/videos/${approved.video.id}/moderation`)
       .set('Authorization', `Bearer ${moderator.sessionKey}`)
-      .send({ decision: 'rejected' })
+      .send({ decision: 'rejected', reason: 'Approved video rejection reason.' })
       .expect(200);
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
@@ -171,6 +176,7 @@ describe('videos moderation integration', () => {
           moderationStatus: true,
           publishedAt: true,
           rejectedAt: true,
+          rejectionReason: true,
           visibility: true,
         },
       }),
@@ -178,8 +184,16 @@ describe('videos moderation integration', () => {
       moderationStatus: 'rejected',
       publishedAt: new Date('2026-02-01T12:00:00.000Z'),
       rejectedAt: moderationNow,
+      rejectionReason: 'Approved video rejection reason.',
       visibility: 'unlisted',
     });
+    expect(runtime.delivered.videoRejection).toEqual([
+      {
+        email: 'moderation-owner@example.com',
+        title: 'Approve unlisted',
+        reason: 'Approved video rejection reason.',
+      },
+    ]);
 
     moderationNow = new Date('2026-02-03T12:00:00.000Z');
     await request(app)
@@ -194,6 +208,7 @@ describe('videos moderation integration', () => {
           moderationStatus: true,
           publishedAt: true,
           rejectedAt: true,
+          rejectionReason: true,
           visibility: true,
         },
       }),
@@ -201,15 +216,29 @@ describe('videos moderation integration', () => {
       moderationStatus: 'approved',
       publishedAt: new Date('2026-02-01T12:00:00.000Z'),
       rejectedAt: null,
+      rejectionReason: null,
       visibility: 'public',
     });
+    expect(runtime.delivered.videoRejection).toHaveLength(1);
 
     const rejected = await createVideo('Rejected list item');
     await request(app)
       .post(`/moderation/videos/${rejected.video.id}/moderation`)
       .set('Authorization', `Bearer ${moderator.sessionKey}`)
-      .send({ decision: 'rejected' })
+      .send({ decision: 'rejected', reason: 'Pending video rejection reason.' })
       .expect(200);
+    expect(runtime.delivered.videoRejection).toEqual([
+      {
+        email: 'moderation-owner@example.com',
+        title: 'Approve unlisted',
+        reason: 'Approved video rejection reason.',
+      },
+      {
+        email: 'moderation-owner@example.com',
+        title: 'Rejected list item',
+        reason: 'Pending video rejection reason.',
+      },
+    ]);
 
     const pendingVideos = await Promise.all([
       createVideo('Pending oldest'),
@@ -373,13 +402,13 @@ describe('videos moderation integration', () => {
     await request(app)
       .post(`/moderation/videos/${video.video.id}/moderation`)
       .set('Authorization', `Bearer ${moderator.sessionKey}`)
-      .send({ decision: 'rejected' })
+      .send({ decision: 'rejected', reason: 'Original rejection reason.' })
       .expect(200);
     moderationNow = new Date(rejectionStartedAt.getTime() + 6 * 24 * HOUR_MS);
     await request(app)
       .post(`/moderation/videos/${video.video.id}/moderation`)
       .set('Authorization', `Bearer ${moderator.sessionKey}`)
-      .send({ decision: 'rejected' })
+      .send({ decision: 'rejected', reason: 'Replacement reason that must be ignored.' })
       .expect(200);
 
     await expect(
@@ -389,6 +418,7 @@ describe('videos moderation integration', () => {
           moderationStatus: true,
           publishedAt: true,
           rejectedAt: true,
+          rejectionReason: true,
           visibility: true,
         },
       }),
@@ -396,8 +426,16 @@ describe('videos moderation integration', () => {
       moderationStatus: 'rejected',
       publishedAt: null,
       rejectedAt: rejectionStartedAt,
+      rejectionReason: 'Original rejection reason.',
       visibility: 'unlisted',
     });
+    expect(runtime.delivered.videoRejection).toEqual([
+      {
+        email: 're-rejection-owner@example.com',
+        title: 'Original rejection deadline',
+        reason: 'Original rejection reason.',
+      },
+    ]);
 
     const observedAt = new Date(rejectionStartedAt.getTime() + 7 * 24 * HOUR_MS + 1);
     const controlledVideosService = createIntegrationVideosService(
@@ -421,6 +459,220 @@ describe('videos moderation integration', () => {
         where: { id: video.video.id },
       }),
     ).resolves.toBeNull();
+  });
+
+  test('keeps a committed rejection when notification delivery fails', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const moderationNow = new Date('2026-03-10T12:00:00.000Z');
+    const owner = await createVerifiedSession(runtime, {
+      email: 'rejection-mail-failure-owner@example.com',
+      username: 'mail_failure_owner',
+    });
+    const moderator = await createVerifiedSession(runtime, {
+      email: 'rejection-mail-failure-moderator@example.com',
+      username: 'mail_failure_mod',
+    });
+    await runtime.prisma.user.update({
+      where: { id: moderator.userId },
+      data: { role: 'moderator' },
+    });
+    const video = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Committed despite SMTP failure',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    const mailerError = new MailerDeliveryError('SMTP unavailable');
+    const warnings: Array<{ data: object; message: string }> = [];
+    const app = await createIntegrationApp({
+      ...runtime,
+      adminService: createAdminService({
+        prisma: runtime.prisma,
+        objectStorage: runtime.objectStorage,
+        mailer: {
+          sendAccountBannedEmail: async () => undefined,
+          sendVideoRejectedEmail: async () => {
+            throw mailerError;
+          },
+        },
+        clock: {
+          now: () => moderationNow,
+        },
+        logger: {
+          warn: (data, message) => {
+            warnings.push({ data, message });
+          },
+        },
+      }),
+    });
+
+    await request(app)
+      .post(`/moderation/videos/${video.video.id}/moderation`)
+      .set('Authorization', `Bearer ${moderator.sessionKey}`)
+      .send({ decision: 'rejected', reason: '  Rejection survives delivery failure.  ' })
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.video).toMatchObject({
+          moderationStatus: 'rejected',
+          rejectedAt: moderationNow.toISOString(),
+          rejectionReason: 'Rejection survives delivery failure.',
+          visibility: 'unlisted',
+        });
+      });
+
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: video.video.id },
+        select: {
+          moderationStatus: true,
+          rejectedAt: true,
+          rejectionReason: true,
+          visibility: true,
+        },
+      }),
+    ).resolves.toEqual({
+      moderationStatus: 'rejected',
+      rejectedAt: moderationNow,
+      rejectionReason: 'Rejection survives delivery failure.',
+      visibility: 'unlisted',
+    });
+    expect(warnings).toEqual([
+      {
+        data: { err: mailerError },
+        message: `Video rejection notification email could not be sent for video ${video.video.id}`,
+      },
+    ]);
+  });
+
+  test('serializes concurrent rejections with different reasons into one email', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const decisionAt = new Date('2026-03-10T18:00:00.000Z');
+    const firstReason = 'First moderator rejection reason.';
+    const secondReason = 'Second moderator rejection reason.';
+    const owner = await createVerifiedSession(runtime, {
+      email: 'concurrent-rejections-owner@example.com',
+      username: 'reject_race_owner',
+    });
+    const moderator = await createVerifiedSession(runtime, {
+      email: 'concurrent-rejections-moderator@example.com',
+      username: 'reject_race_mod',
+    });
+    await runtime.prisma.user.update({
+      where: { id: moderator.userId },
+      data: { role: 'moderator' },
+    });
+    const video = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Concurrent rejection reasons',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    const app = await createIntegrationApp({
+      ...runtime,
+      adminService: createIntegrationAdminService(
+        runtime.prisma,
+        runtime.objectStorage,
+        runtime.delivered,
+        () => decisionAt,
+      ),
+    });
+    const gatePrisma = createPrismaClient(runtime.databaseUrl);
+    const gateAcquired = Promise.withResolvers<void>();
+    const releaseGate = Promise.withResolvers<void>();
+    const gateTransaction = gatePrisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`
+          SELECT "id"
+          FROM "videos"
+          WHERE "id" = CAST(${video.video.id} AS UUID)
+          FOR UPDATE
+        `;
+        gateAcquired.resolve();
+        await releaseGate.promise;
+      },
+      {
+        timeout: 15_000,
+      },
+    );
+
+    await Promise.race([
+      gateAcquired.promise,
+      delay(5_000).then(() => {
+        throw new Error('Concurrent rejection gate could not be acquired');
+      }),
+    ]);
+    const startRejection = (reason: string) =>
+      request(app)
+        .post(`/moderation/videos/${video.video.id}/moderation`)
+        .set('Authorization', `Bearer ${moderator.sessionKey}`)
+        .send({ decision: 'rejected', reason })
+        .expect(200)
+        .then((response) => response);
+    const firstRejectionPromise = startRejection(firstReason);
+    let secondRejectionPromise: ReturnType<typeof startRejection>;
+
+    try {
+      await waitForBlockedVideoQueries(runtime.prisma, 1);
+      secondRejectionPromise = startRejection(secondReason);
+      await waitForBlockedVideoQueries(runtime.prisma, 2);
+    } finally {
+      releaseGate.resolve();
+      await gateTransaction;
+      await gatePrisma.$disconnect();
+    }
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      firstRejectionPromise,
+      secondRejectionPromise,
+    ]);
+
+    expect(firstResponse.body.video).toMatchObject({
+      moderationStatus: 'rejected',
+      rejectedAt: decisionAt.toISOString(),
+      rejectionReason: firstReason,
+      visibility: 'unlisted',
+    });
+    expect(secondResponse.body.video).toMatchObject({
+      moderationStatus: 'rejected',
+      rejectedAt: decisionAt.toISOString(),
+      rejectionReason: firstReason,
+      visibility: 'unlisted',
+    });
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: video.video.id },
+        select: {
+          moderationStatus: true,
+          rejectedAt: true,
+          rejectionReason: true,
+          visibility: true,
+        },
+      }),
+    ).resolves.toEqual({
+      moderationStatus: 'rejected',
+      rejectedAt: decisionAt,
+      rejectionReason: firstReason,
+      visibility: 'unlisted',
+    });
+    expect(runtime.delivered.videoRejection).toEqual([
+      {
+        email: 'concurrent-rejections-owner@example.com',
+        title: 'Concurrent rejection reasons',
+        reason: firstReason,
+      },
+    ]);
   });
 
   test('serializes opposing moderation decisions into one canonical final state', async () => {
@@ -493,7 +745,7 @@ describe('videos moderation integration', () => {
     const rejectionPromise = request(app)
       .post(`/moderation/videos/${video.video.id}/moderation`)
       .set('Authorization', `Bearer ${moderator.sessionKey}`)
-      .send({ decision: 'rejected' })
+      .send({ decision: 'rejected', reason: 'Concurrent rejection reason.' })
       .expect(200)
       .then((response) => response);
 
@@ -514,11 +766,13 @@ describe('videos moderation integration', () => {
       moderationStatus: 'approved',
       publishedAt: decisionAt.toISOString(),
       rejectedAt: null,
+      rejectionReason: null,
       visibility: 'public',
     });
     expect(rejectionResponse.body.video).toMatchObject({
       moderationStatus: 'rejected',
       rejectedAt: decisionAt.toISOString(),
+      rejectionReason: 'Concurrent rejection reason.',
       visibility: 'unlisted',
     });
     const finalState = await runtime.prisma.video.findUniqueOrThrow({
@@ -527,6 +781,7 @@ describe('videos moderation integration', () => {
         moderationStatus: true,
         publishedAt: true,
         rejectedAt: true,
+        rejectionReason: true,
         visibility: true,
       },
     });
@@ -536,6 +791,7 @@ describe('videos moderation integration', () => {
         moderationStatus: 'approved',
         publishedAt: decisionAt,
         rejectedAt: null,
+        rejectionReason: null,
         visibility: 'public',
       });
     } else {
@@ -543,6 +799,7 @@ describe('videos moderation integration', () => {
         moderationStatus: 'rejected',
         publishedAt: decisionAt,
         rejectedAt: decisionAt,
+        rejectionReason: 'Concurrent rejection reason.',
         visibility: 'unlisted',
       });
     }
@@ -699,6 +956,7 @@ describe('videos moderation integration', () => {
           moderationStatus: true,
           publishedAt: true,
           rejectedAt: true,
+          rejectionReason: true,
           visibility: true,
         },
       }),
@@ -706,6 +964,7 @@ describe('videos moderation integration', () => {
       moderationStatus: 'approved',
       publishedAt: cleanupNow,
       rejectedAt: null,
+      rejectionReason: null,
       visibility: 'public',
     });
 

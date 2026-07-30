@@ -243,6 +243,7 @@ describe('admin routes', () => {
           thumbnailObjectKey: 'owner/video/generations/generation/thumbnail/poster.webp',
           publishedAt: null,
           rejectedAt: null,
+          rejectionReason: null,
         },
       ],
       total: 1,
@@ -283,7 +284,61 @@ describe('admin routes', () => {
         thumbnailObjectKey: 'owner/video/generations/generation/thumbnail/poster.webp',
         publishedAt: '2026-01-05T00:00:00.000Z',
         rejectedAt: null,
+        rejectionReason: null,
       },
+    });
+  });
+
+  test('rejects moderation bodies that do not match the strict decision branch', async () => {
+    receivedModerateVideoRequest = undefined;
+
+    const [missingReasonResponse, superfluousReasonResponse] = await Promise.all([
+      fetch(`${baseUrl}/moderation/videos/${cursorId}/moderation`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${moderatorSessionKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ decision: 'rejected' }),
+      }),
+      fetch(`${baseUrl}/moderation/videos/${cursorId}/moderation`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${moderatorSessionKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ decision: 'approved', reason: 'Not accepted on approval.' }),
+      }),
+    ]);
+
+    expect(missingReasonResponse.status).toBe(400);
+    expect(superfluousReasonResponse.status).toBe(400);
+    expect(receivedModerateVideoRequest).toBeUndefined();
+  });
+
+  test('rejects a NUL character in the video rejection reason before calling the service', async () => {
+    receivedModerateVideoRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/moderation/videos/${cursorId}/moderation`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${moderatorSessionKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ decision: 'rejected', reason: 'raison\u0000suite' }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(receivedModerateVideoRequest).toBeUndefined();
+    expect(await response.json()).toEqual({
+      error: 'ValidationError',
+      message: REQUEST_VALIDATION_FAILED_MESSAGE,
+      details: [
+        {
+          field: 'body.reason',
+          message: 'Video rejection reason must not contain NUL characters',
+        },
+      ],
     });
   });
 
@@ -450,7 +505,7 @@ describe('admin routes', () => {
           authorization: `Bearer ${userSessionKey}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ decision: 'rejected' }),
+        body: JSON.stringify({ decision: 'rejected', reason: 'Video policy violation.' }),
       }),
     ]);
 

@@ -1,4 +1,12 @@
 import { Prisma } from '@prisma/client';
+import { VIDEO_REJECTION_REASON_MAX_LENGTH } from '../../config/constants.js';
+import {
+  AdminVideoRejectionReasonInvalidError,
+  ADMIN_VIDEO_REJECTION_REASON_NUL_MESSAGE,
+  ADMIN_VIDEO_REJECTION_REASON_REQUIRED_MESSAGE,
+  ADMIN_VIDEO_REJECTION_REASON_TOO_LONG_MESSAGE,
+} from '../admin.errors.js';
+import { handleExpectedMailerError } from '../mailer/mailer.helpers.js';
 import { VideoNotFoundError } from '../videos.errors.js';
 import { buildVideoSearchFilter } from '../videos/videoSearch.js';
 import type { AdminDependencies } from './admin.dependencies.js';
@@ -26,6 +34,7 @@ const adminVideoSelect = {
   thumbnailObjectKey: true,
   publishedAt: true,
   rejectedAt: true,
+  rejectionReason: true,
   owner: {
     select: {
       username: true,
@@ -34,6 +43,31 @@ const adminVideoSelect = {
 } satisfies Prisma.VideoSelect;
 
 type AdminVideoRecord = Prisma.VideoGetPayload<{ select: typeof adminVideoSelect }>;
+
+type LockedModerationVideo = Pick<
+  AdminVideoRecord,
+  'moderationStatus' | 'publishedAt' | 'rejectedAt' | 'rejectionReason' | 'title'
+> & {
+  ownerEmail: string;
+};
+
+const normalizeVideoRejectionReason = (reason: string): string => {
+  const normalizedReason = reason.trim();
+
+  if (!normalizedReason) {
+    throw new AdminVideoRejectionReasonInvalidError(ADMIN_VIDEO_REJECTION_REASON_REQUIRED_MESSAGE);
+  }
+
+  if (normalizedReason.length > VIDEO_REJECTION_REASON_MAX_LENGTH) {
+    throw new AdminVideoRejectionReasonInvalidError(ADMIN_VIDEO_REJECTION_REASON_TOO_LONG_MESSAGE);
+  }
+
+  if (normalizedReason.includes('\u0000')) {
+    throw new AdminVideoRejectionReasonInvalidError(ADMIN_VIDEO_REJECTION_REASON_NUL_MESSAGE);
+  }
+
+  return normalizedReason;
+};
 
 const normalizeAdminVideosLimit = (limit: number | undefined): number => {
   if (limit === undefined || !Number.isFinite(limit)) {
@@ -104,21 +138,26 @@ const listAdminVideos = async (
 
 const moderateAdminVideo = async (
   deps: AdminDependencies,
-  { decision, videoId }: ModerateAdminVideoInput,
+  input: ModerateAdminVideoInput,
 ): Promise<ModerateAdminVideoResult> => {
+  const { decision, videoId } = input;
+  const normalizedReason =
+    decision === 'rejected' ? normalizeVideoRejectionReason(input.reason) : null;
   const now = deps.clock.now();
-  const video = await deps.prisma.$transaction(async (tx) => {
-    const [currentVideo] = await tx.$queryRaw<
-      Array<Pick<AdminVideoRecord, 'moderationStatus' | 'publishedAt' | 'rejectedAt'>>
-    >(
+  const { rejectionNotification, video } = await deps.prisma.$transaction(async (tx) => {
+    const [currentVideo] = await tx.$queryRaw<Array<LockedModerationVideo>>(
       Prisma.sql`
         SELECT
-          "moderation_status" AS "moderationStatus",
-          "published_at" AS "publishedAt",
-          "rejected_at" AS "rejectedAt"
-        FROM "videos"
-        WHERE "id" = CAST(${videoId} AS UUID)
-        FOR UPDATE
+          v."moderation_status" AS "moderationStatus",
+          v."published_at" AS "publishedAt",
+          v."rejected_at" AS "rejectedAt",
+          v."rejection_reason" AS "rejectionReason",
+          v."title",
+          u."email" AS "ownerEmail"
+        FROM "videos" AS v
+        INNER JOIN "users" AS u ON u."id" = v."owner_id"
+        WHERE v."id" = CAST(${videoId} AS UUID)
+        FOR UPDATE OF v
       `,
     );
 
@@ -126,7 +165,8 @@ const moderateAdminVideo = async (
       throw new VideoNotFoundError();
     }
 
-    return tx.video.update({
+    const isNewRejection = decision === 'rejected' && currentVideo.moderationStatus !== 'rejected';
+    const updatedVideo = await tx.video.update({
       where: { id: videoId },
       data:
         decision === 'approved'
@@ -135,16 +175,45 @@ const moderateAdminVideo = async (
               visibility: 'public',
               publishedAt: currentVideo.publishedAt ?? now,
               rejectedAt: null,
+              rejectionReason: null,
             }
           : {
               moderationStatus: 'rejected',
               visibility: 'unlisted',
-              rejectedAt:
-                currentVideo.moderationStatus === 'rejected' ? currentVideo.rejectedAt : now,
+              rejectedAt: isNewRejection ? now : currentVideo.rejectedAt,
+              rejectionReason: isNewRejection ? normalizedReason : currentVideo.rejectionReason,
             },
       select: adminVideoSelect,
     });
+
+    return {
+      video: updatedVideo,
+      rejectionNotification:
+        isNewRejection && normalizedReason
+          ? {
+              email: currentVideo.ownerEmail,
+              reason: normalizedReason,
+              title: currentVideo.title,
+            }
+          : null,
+    };
   });
+
+  if (rejectionNotification) {
+    try {
+      await deps.mailer.sendVideoRejectedEmail(
+        rejectionNotification.email,
+        rejectionNotification.title,
+        rejectionNotification.reason,
+      );
+    } catch (err) {
+      await handleExpectedMailerError({
+        err,
+        logger: deps.logger,
+        warningMessage: `Video rejection notification email could not be sent for video ${video.id}`,
+      });
+    }
+  }
 
   return {
     video: toAdminVideoSummary(video),

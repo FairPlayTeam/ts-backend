@@ -1,4 +1,4 @@
-import { sendAccountBannedEmail } from './mailer.instance.js';
+import { sendAccountBannedEmail, sendVideoRejectedEmail } from './mailer.instance.js';
 import { objectStorage } from './objectStorage.instance.js';
 import { createUnavailableObjectStorage } from './lib/objectStorage.js';
 import { logger } from './lib/logger.js';
@@ -10,6 +10,7 @@ export const adminService = createAdminService({
   objectStorage: objectStorage ?? createUnavailableObjectStorage(),
   mailer: {
     sendAccountBannedEmail,
+    sendVideoRejectedEmail,
   },
   clock: {
     now: () => new Date(),

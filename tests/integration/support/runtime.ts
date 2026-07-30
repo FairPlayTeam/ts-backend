@@ -53,6 +53,12 @@ type DeliveredBanEmail = {
   reason: string;
 };
 
+type DeliveredVideoRejectionEmail = {
+  email: string;
+  title: string;
+  reason: string;
+};
+
 export type TestRuntime = {
   databaseUrl: string;
   redisUrl: string;
@@ -71,6 +77,7 @@ export type TestRuntime = {
     verification: DeliveredEmail[];
     passwordReset: DeliveredEmail[];
     accountBan: DeliveredBanEmail[];
+    videoRejection: DeliveredVideoRejectionEmail[];
   };
 };
 
@@ -154,6 +161,9 @@ export const createIntegrationAdminService = (
     mailer: {
       sendAccountBannedEmail: async (email, reason) => {
         delivered.accountBan.push({ email, reason });
+      },
+      sendVideoRejectedEmail: async (email, title, reason) => {
+        delivered.videoRejection.push({ email, title, reason });
       },
     },
     clock: {
@@ -289,6 +299,7 @@ export const startRuntime = async (): Promise<TestRuntime> => {
     verification: [] as DeliveredEmail[],
     passwordReset: [] as DeliveredEmail[],
     accountBan: [] as DeliveredBanEmail[],
+    videoRejection: [] as DeliveredVideoRejectionEmail[],
   };
 
   return {
@@ -329,4 +340,5 @@ export const resetState = async (runtime: TestRuntime): Promise<void> => {
   runtime.delivered.verification = [];
   runtime.delivered.passwordReset = [];
   runtime.delivered.accountBan = [];
+  runtime.delivered.videoRejection = [];
 };

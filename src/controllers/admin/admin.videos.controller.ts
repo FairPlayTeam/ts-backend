@@ -43,10 +43,18 @@ export const createAdminVideosController = (deps: AdminControllerDependencies) =
   const moderateVideo: RequestHandler = async (req, res, next) => {
     try {
       const moderationReq = req as ModerateVideoRequest;
-      const result = await deps.adminService.moderateVideo({
-        videoId: moderationReq.params.videoId,
-        decision: moderationReq.body.decision,
-      });
+      const result = await deps.adminService.moderateVideo(
+        moderationReq.body.decision === 'rejected'
+          ? {
+              videoId: moderationReq.params.videoId,
+              decision: 'rejected',
+              reason: moderationReq.body.reason,
+            }
+          : {
+              videoId: moderationReq.params.videoId,
+              decision: 'approved',
+            },
+      );
 
       return sendNoStoreJson(res, 200, toModerateAdminVideoResponse(result));
     } catch (err) {

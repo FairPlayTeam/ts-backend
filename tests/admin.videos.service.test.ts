@@ -26,6 +26,7 @@ const records = videoIds.map((id, index) => ({
   thumbnailObjectKey: null,
   publishedAt: null,
   rejectedAt: null,
+  rejectionReason: null,
   owner: {
     username: 'video_owner',
   },

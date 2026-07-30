@@ -197,6 +197,7 @@ model Video {
   transcodeError             String?               @map("transcode_error") @db.VarChar(1000)
   publishedAt                DateTime?             @map("published_at")
   rejectedAt                 DateTime?             @map("rejected_at")
+  rejectionReason            String?               @map("rejection_reason") @db.VarChar(1000)
   createdAt                  DateTime              @default(now()) @map("created_at")
   updatedAt                  DateTime              @updatedAt @map("updated_at")
 

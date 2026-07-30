@@ -70,6 +70,7 @@ export const createStubAdminService = (): AdminPorts => ({
         thumbnailObjectKey: 'owner/video/generations/generation/thumbnail/poster.webp',
         publishedAt: null,
         rejectedAt: null,
+        rejectionReason: null,
       },
     ],
     total: 1,
@@ -89,6 +90,7 @@ export const createStubAdminService = (): AdminPorts => ({
       thumbnailObjectKey: 'owner/video/generations/generation/thumbnail/poster.webp',
       publishedAt: decision === 'approved' ? new Date('2026-01-05T00:00:00.000Z') : null,
       rejectedAt: decision === 'rejected' ? new Date('2026-01-05T00:00:00.000Z') : null,
+      rejectionReason: decision === 'rejected' ? 'Video policy violation.' : null,
     },
   }),
   updateAccountRole: async () => ({

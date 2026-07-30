@@ -207,6 +207,52 @@ describe('mailer service', () => {
     expect(JSON.stringify(logs)).not.toContain('Repeated abuse');
   });
 
+  test('sends video rejection emails with the title, reason, and retention delay', async () => {
+    const { logger, logs } = createOperationLogCollector();
+    const sentEmails: unknown[] = [];
+    const service = createMailerService({
+      config: mailerConfig,
+      logger,
+      createTransporter: () => ({
+        sendMail: async (email: unknown) => {
+          sentEmails.push(email);
+        },
+      }),
+    });
+
+    await service.sendVideoRejectedEmail(
+      'creator@example.com',
+      'Launch recap <script>',
+      'Misleading title <script>alert("x")</script>',
+    );
+
+    const email = sentEmails.at(0) as SentMail | undefined;
+
+    expect(email).toBeDefined();
+    expect(email?.to).toBe('creator@example.com');
+    expect(email?.subject).toBe('Your FairPlay video was rejected');
+    expect(email?.text).toContain('Launch recap <script>');
+    expect(email?.text).toContain('Reason provided by the moderation team:');
+    expect(email?.text).toContain('Misleading title <script>alert("x")</script>');
+    expect(email?.text).toContain('available by direct link for 7 days');
+    expect(email?.text).toContain('permanently deleted automatically');
+    expect(email?.html).toContain('Launch recap &lt;script&gt;');
+    expect(email?.html).toContain(
+      'Misleading title &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;',
+    );
+    expect(email?.html).toContain('available by direct link for 7 days');
+    expect(logs[0]).toMatchObject({
+      level: 'info',
+      message: 'SMTP email delivery completed',
+      data: {
+        subject: 'Your FairPlay video was rejected',
+        template: 'video-rejection',
+      },
+    });
+    expect(JSON.stringify(logs)).not.toContain('Misleading title');
+    expect(JSON.stringify(logs)).not.toContain('Launch recap');
+  });
+
   test('fails clearly when mailer configuration is missing', async () => {
     const service = createMailerService({ config: null });
 

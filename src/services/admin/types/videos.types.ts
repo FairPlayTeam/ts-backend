@@ -5,7 +5,6 @@ import type {
 } from '../../videos.types.js';
 
 export type AdminVideoSort = 'newest' | 'oldest';
-export type AdminVideoModerationDecision = 'approved' | 'rejected';
 
 export type ListAdminVideosInput = {
   cursor?: {
@@ -32,6 +31,7 @@ export type AdminVideoSummary = {
   thumbnailObjectKey: string | null;
   publishedAt: Date | null;
   rejectedAt: Date | null;
+  rejectionReason: string | null;
 };
 
 export type ListAdminVideosResult = {
@@ -43,10 +43,16 @@ export type ListAdminVideosResult = {
   } | null;
 };
 
-export type ModerateAdminVideoInput = {
-  videoId: string;
-  decision: AdminVideoModerationDecision;
-};
+export type ModerateAdminVideoInput =
+  | {
+      videoId: string;
+      decision: 'approved';
+    }
+  | {
+      videoId: string;
+      decision: 'rejected';
+      reason: string;
+    };
 
 export type ModerateAdminVideoResult = {
   video: AdminVideoSummary;

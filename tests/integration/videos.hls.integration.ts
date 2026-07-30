@@ -348,7 +348,7 @@ describe('videos HLS integration', () => {
     await request(app)
       .post(`/moderation/videos/${firstVideo.video.id}/moderation`)
       .set('Authorization', `Bearer ${owner.sessionKey}`)
-      .send({ decision: 'rejected' })
+      .send({ decision: 'rejected', reason: 'Video policy violation.' })
       .expect(200);
     await request(app).get(masterPath).expect(200);
     await request(app).get(thumbnailPath).redirects(0).expect(307);

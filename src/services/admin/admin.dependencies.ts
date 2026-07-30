@@ -8,6 +8,7 @@ export type AdminDependencies = {
   objectStorage: Pick<ObjectStorage, 'getSignedUrl'>;
   mailer: {
     sendAccountBannedEmail(email: string, reason: string): Promise<void>;
+    sendVideoRejectedEmail(email: string, title: string, reason: string): Promise<void>;
   };
   clock: {
     now(): Date;

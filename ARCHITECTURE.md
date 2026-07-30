@@ -297,6 +297,15 @@ fail together and hls.js may surface a fatal playback error instead of skipping 
 segment. This is the accepted consequence of the same cleanup window and is not extended by
 readers; coordinating reconciliation with reader leases would add disproportionate complexity.
 
+Video rejection emails have two accepted best-effort limitations. A rejection immediately followed
+by approval can still send its rejection email when SMTP was already in progress; PostgreSQL keeps
+the final `approved` state canonical, while the email describes a real transition rather than
+mirroring the current state. A server crash exactly after the moderation transaction commits but
+before the SMTP call permanently loses that email, with no automatic retry; a later re-rejection
+does not send another message because it is not a new rejection episode. A transactional outbox
+would close these windows, but its coordination and operational cost are disproportionate for this
+secondary notification effect.
+
 Profile-media uploads reserve a writing target before PUT. Persisting the asset and confirming its
 target happen in one serializable transaction; replacement schedules the previous exact target in
 that same transaction. Account deletion locks the user’s transcode jobs, schedules every retained

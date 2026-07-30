@@ -1,4 +1,5 @@
 import { z } from '../../../docs/zod.js';
+import { VIDEO_REJECTION_REASON_MAX_LENGTH } from '../../../config/constants.js';
 
 export const ADMIN_VIDEOS_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorId must be provided together';
@@ -64,11 +65,34 @@ export const adminVideoParamsSchema = z
   .strict()
   .openapi('AdminVideoParams');
 
-export const moderateAdminVideoRequestSchema = z
+const approveAdminVideoRequestSchema = z
   .object({
-    decision: z.enum(['approved', 'rejected']).openapi({ example: 'approved' }),
+    decision: z.literal('approved').openapi({ example: 'approved' }),
   })
-  .strict()
+  .strict();
+
+const rejectAdminVideoRequestSchema = z
+  .object({
+    decision: z.literal('rejected').openapi({ example: 'rejected' }),
+    reason: z
+      .string()
+      .trim()
+      .min(1, 'Video rejection reason is required')
+      .max(
+        VIDEO_REJECTION_REASON_MAX_LENGTH,
+        `Video rejection reason must be at most ${VIDEO_REJECTION_REASON_MAX_LENGTH} characters`,
+      )
+      .refine((reason) => !reason.includes('\u0000'), {
+        message: 'Video rejection reason must not contain NUL characters',
+      })
+      .openapi({
+        example: 'The video contains content that violates the publishing guidelines.',
+      }),
+  })
+  .strict();
+
+export const moderateAdminVideoRequestSchema = z
+  .discriminatedUnion('decision', [approveAdminVideoRequestSchema, rejectAdminVideoRequestSchema])
   .openapi('ModerateAdminVideoRequest');
 
 export const moderateAdminVideoSchema = z.object({
@@ -94,6 +118,10 @@ const adminVideoSummaryResponseSchema = z.object({
     .openapi({ example: 'user-id/video-id/generations/generation-id/thumbnail/poster.webp' }),
   publishedAt: nullableVideoDateTimeSchema.openapi({ example: null }),
   rejectedAt: nullableVideoDateTimeSchema.openapi({ example: null }),
+  rejectionReason: z
+    .string()
+    .nullable()
+    .openapi({ example: 'The video contains content that violates the publishing guidelines.' }),
 });
 
 export const adminVideosResponseSchema = z
