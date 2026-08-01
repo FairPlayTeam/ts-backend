@@ -81,6 +81,11 @@ export const toUserDataExportResponse = (result: ExportUserDataResult) => ({
     createdAt: toIsoString(asset.createdAt),
     updatedAt: toIsoString(asset.updatedAt),
   })),
+  videoRatings: result.videoRatings.map((rating) => ({
+    ...rating,
+    createdAt: toIsoString(rating.createdAt),
+    updatedAt: toIsoString(rating.updatedAt),
+  })),
   sessions: result.sessions.map((session) => ({
     ...session,
     createdAt: toIsoString(session.createdAt),

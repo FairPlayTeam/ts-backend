@@ -27,6 +27,8 @@ const createVideoResult = (
     processingStatus: 'draft',
     moderationStatus: 'pending',
     thumbnailObjectKey: null,
+    ratingAverage: 0,
+    ratingCount: 0,
     createdAt: fixedNow,
     updatedAt: fixedNow,
     ...overrides,
@@ -78,6 +80,8 @@ const searchPublicVideosResult = (): SearchPublicVideosResult => ({
       tags: ['fairplay', 'launch'],
       username: 'fairplay_creator',
       thumbnailPath: '/videos/AbCdEf123_/thumbnail',
+      ratingAverage: 4.5,
+      ratingCount: 2,
       publishedAt: fixedNow,
       createdAt: fixedNow,
     },
@@ -98,6 +102,20 @@ export const createStubVideosService = (): VideosPorts => ({
     }),
   listMyVideos: async () => listMyVideosResult(),
   searchPublicVideos: async () => searchPublicVideosResult(),
+  getVideoRating: async () => ({
+    ratingAverage: 4.5,
+    ratingCount: 2,
+  }),
+  getMyVideoRating: async () => ({
+    ratingAverage: 4.5,
+    ratingCount: 2,
+    userRating: 5,
+  }),
+  rateVideo: async (input) => ({
+    ratingAverage: input.value,
+    ratingCount: 1,
+    userRating: input.value,
+  }),
   getThumbnail: async () => ({
     url: 'http://localhost:9000/videos/thumbnail/poster.webp?signature=test',
   }),

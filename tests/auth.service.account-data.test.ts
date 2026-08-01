@@ -30,6 +30,14 @@ describe('auth service account data', () => {
         bucket: 'fairplay-user-media',
       }),
     ]);
+    expect(result.videoRatings).toEqual([
+      {
+        videoId: '33333333-3333-4333-8333-333333333333',
+        value: 5,
+        createdAt: fixedNow,
+        updatedAt: fixedNow,
+      },
+    ]);
     expect(result.sessions.map(({ id, isCurrent }) => ({ id, isCurrent }))).toEqual([
       { id: 'session-id', isCurrent: true },
       { id: 'other-session-id', isCurrent: false },
@@ -44,6 +52,15 @@ describe('auth service account data', () => {
             bucket: true,
           }),
           orderBy: [{ kind: 'asc' }, { id: 'asc' }],
+        },
+        videoRatings: {
+          select: {
+            videoId: true,
+            value: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: [{ createdAt: 'asc' }, { videoId: 'asc' }],
         },
       }),
     });

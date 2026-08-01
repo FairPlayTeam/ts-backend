@@ -54,6 +54,7 @@ const createUserMediaAssetStore = (calls: AuthServiceTestCalls) => ({
 });
 
 const createAuthTransaction = (calls: AuthServiceTestCalls) => ({
+  $executeRaw: async () => 0,
   $queryRaw: async () => [],
   user: {
     findUnique: async (args: unknown) => {
@@ -198,6 +199,14 @@ const createExportableUser = () => ({
       sizeBytes: 2345,
       width: 1500,
       height: 500,
+      createdAt: fixedNow,
+      updatedAt: fixedNow,
+    },
+  ],
+  videoRatings: [
+    {
+      videoId: '33333333-3333-4333-8333-333333333333',
+      value: 5,
       createdAt: fixedNow,
       updatedAt: fixedNow,
     },

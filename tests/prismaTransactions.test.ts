@@ -63,4 +63,50 @@ describe('Prisma transactions', () => {
     );
     expect(attempts).toBe(2);
   });
+
+  test('keeps the three-attempt default while allowing a caller-specific retry budget', async () => {
+    let defaultAttempts = 0;
+    let configuredAttempts = 0;
+    const delayedAttempts: number[] = [];
+    const conflict = Object.assign(new Error('TransactionWriteConflict'), {
+      name: 'DriverAdapterError',
+      cause: {
+        kind: 'TransactionWriteConflict',
+      },
+    });
+    const defaultPrisma = {
+      $transaction: async () => {
+        defaultAttempts += 1;
+        throw conflict;
+      },
+    } as unknown as Pick<PrismaClient, '$transaction'>;
+    const configuredPrisma = {
+      $transaction: async (callback: (tx: never) => Promise<string>) => {
+        configuredAttempts += 1;
+
+        if (configuredAttempts < 5) {
+          throw conflict;
+        }
+
+        return callback({} as never);
+      },
+    } as unknown as Pick<PrismaClient, '$transaction'>;
+
+    await expect(runSerializableTransaction(defaultPrisma, async () => 'unreachable')).rejects.toBe(
+      conflict,
+    );
+    await expect(
+      runSerializableTransaction(configuredPrisma, async () => 'committed', {
+        maxAttempts: 5,
+        retryDelayMs: (attempt) => {
+          delayedAttempts.push(attempt);
+
+          return 0;
+        },
+      }),
+    ).resolves.toBe('committed');
+    expect(defaultAttempts).toBe(3);
+    expect(configuredAttempts).toBe(5);
+    expect(delayedAttempts).toEqual([1, 2, 3, 4]);
+  });
 });

@@ -6,6 +6,8 @@ import {
   InvalidVideoUploadStateError,
   VideoStorageQuotaExceededError,
   VideoNotFoundError,
+  VideoRatingTemporarilyUnavailableError,
+  VideoSelfRatingForbiddenError,
   VideoUploadSizeExceededError,
   VideoUploadSizeMismatchError,
   VideoUploadSessionExpiredError,
@@ -21,6 +23,14 @@ import {
 export function toVideosHttpError(err: unknown): Error {
   if (err instanceof VideoNotFoundError || err instanceof VideoUploadSessionNotFoundError) {
     return new HttpError(404, 'NotFound', err.message, { cause: err });
+  }
+
+  if (err instanceof VideoSelfRatingForbiddenError) {
+    return new HttpError(403, 'Forbidden', err.message, { cause: err });
+  }
+
+  if (err instanceof VideoRatingTemporarilyUnavailableError) {
+    return new HttpError(503, 'ServiceUnavailable', err.message, { cause: err });
   }
 
   if (err instanceof ActiveVideoUploadSessionExistsError) {

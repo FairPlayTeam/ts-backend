@@ -35,6 +35,12 @@ export type ExportUserDataResult = {
     createdAt: Date;
     updatedAt: Date;
   }[];
+  videoRatings: {
+    videoId: string;
+    value: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }[];
   sessions: {
     id: string;
     sessionKeySuffix: string | null;

@@ -289,6 +289,14 @@ describe('auth routes', () => {
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
       ],
+      videoRatings: [
+        {
+          videoId: '33333333-3333-4333-8333-333333333333',
+          value: 5,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
       sessions: [
         {
           id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',

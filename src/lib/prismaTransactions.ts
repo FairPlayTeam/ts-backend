@@ -2,6 +2,11 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 
 const SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS = 3;
 
+type SerializableTransactionOptions = {
+  maxAttempts?: number;
+  retryDelayMs?: number | ((attempt: number) => number);
+};
+
 const isDriverAdapterTransactionConflictError = (err: unknown): boolean => {
   if (typeof err !== 'object' || err === null) {
     return false;
@@ -40,7 +45,7 @@ const isRawPostgresSerializationFailure = (err: Prisma.PrismaClientKnownRequestE
   );
 };
 
-const isTransactionConflictError = (err: unknown): boolean =>
+export const isSerializableTransactionConflictError = (err: unknown): boolean =>
   (err instanceof Prisma.PrismaClientKnownRequestError &&
     (err.code === 'P2034' || isRawPostgresSerializationFailure(err))) ||
   isDriverAdapterTransactionConflictError(err);
@@ -48,15 +53,27 @@ const isTransactionConflictError = (err: unknown): boolean =>
 export const runSerializableTransaction = async <T>(
   prisma: Pick<PrismaClient, '$transaction'>,
   callback: (tx: Prisma.TransactionClient) => Promise<T>,
+  options: SerializableTransactionOptions = {},
 ): Promise<T> => {
-  for (let attempt = 1; attempt <= SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS; attempt += 1) {
+  const maxAttempts = options.maxAttempts ?? SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       return await prisma.$transaction(callback, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
     } catch (err) {
-      if (!isTransactionConflictError(err) || attempt === SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS) {
+      if (!isSerializableTransactionConflictError(err) || attempt === maxAttempts) {
         throw err;
+      }
+
+      const retryDelayMs =
+        typeof options.retryDelayMs === 'function'
+          ? options.retryDelayMs(attempt)
+          : (options.retryDelayMs ?? 0);
+
+      if (retryDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       }
     }
   }

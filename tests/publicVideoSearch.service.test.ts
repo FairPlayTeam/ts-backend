@@ -14,6 +14,8 @@ const records = createdAt.map((recordCreatedAt, index) => ({
   title: `Public search video ${index + 1}`,
   description: index === 0 ? 'Launch recap in the description' : null,
   tags: ['public-video-tag'],
+  ratingSum: index === 0 ? 9 : 0,
+  ratingCount: index === 0 ? 2 : 0,
   thumbnailObjectKey:
     index === 0 ? `owner/video-${index}/generations/generation/thumbnail/poster.webp` : null,
   publishedAt: new Date('2026-01-04T00:00:00.000Z'),
@@ -95,6 +97,8 @@ describe('public video search service', () => {
       tags: ['public-video-tag'],
       username: 'video_owner',
       thumbnailPath: '/videos/PublicVid01_/thumbnail',
+      ratingAverage: 4.5,
+      ratingCount: 2,
       publishedAt: new Date('2026-01-04T00:00:00.000Z'),
       createdAt: createdAt[0],
     });

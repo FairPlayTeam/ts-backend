@@ -7,6 +7,7 @@ import type {
   CreateVideoBody,
   InitVideoMultipartUploadBody,
   ListMyVideosQuery,
+  RateVideoBody,
   SearchPublicVideosQuery,
   SignVideoMultipartUploadPartsBody,
   VideoHlsMasterParams,
@@ -14,6 +15,7 @@ import type {
   VideoHlsSegmentParams,
   VideoMultipartUploadSessionParams,
   VideoParams,
+  VideoRatingParams,
   VideoThumbnailParams,
 } from '../videos.schemas.js';
 import type { VideosControllerDependencies } from './videos.controller.types.js';
@@ -48,6 +50,7 @@ type CompleteRequest = Request<
 type CreateVideoRequest = Request<unknown, unknown, CreateVideoBody>;
 type ListMyVideosRequest = Request<unknown, unknown, unknown, ListMyVideosQuery>;
 type SearchPublicVideosRequest = Request<unknown, unknown, unknown, SearchPublicVideosQuery>;
+type RateVideoRequest = Request<VideoRatingParams, unknown, RateVideoBody>;
 type HlsMasterRequest = Request<VideoHlsMasterParams>;
 type HlsRenditionRequest = Request<VideoHlsRenditionParams>;
 type HlsSegmentRequest = Request<VideoHlsSegmentParams>;
@@ -117,6 +120,50 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
       });
 
       return sendNoStoreJson(res, 200, toPublicVideoSearchResponse(result));
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const getVideoRating: RequestHandler = async (req, res, next) => {
+    try {
+      const videoReq = req as Request<VideoRatingParams>;
+      const result = await videosService.getVideoRating({
+        publicId: videoReq.params.publicId,
+      });
+
+      return sendNoStoreJson(res, 200, result);
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const getMyVideoRating: RequestHandler = async (req, res, next) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const videoReq = req as Request<VideoRatingParams>;
+      const result = await videosService.getMyVideoRating({
+        userId: authenticatedReq.user.id,
+        publicId: videoReq.params.publicId,
+      });
+
+      return sendNoStoreJson(res, 200, result);
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const rateVideo: RequestHandler = async (req, res, next) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const videoReq = req as RateVideoRequest;
+      const result = await videosService.rateVideo({
+        userId: authenticatedReq.user.id,
+        publicId: videoReq.params.publicId,
+        value: videoReq.body.value,
+      });
+
+      return sendNoStoreJson(res, 200, result);
     } catch (err) {
       next(toVideosHttpError(err));
     }
@@ -310,9 +357,12 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     getHlsRendition,
     getHlsSegment,
     getMultipartUploadSession,
+    getMyVideoRating,
     getThumbnail,
+    getVideoRating,
     initMultipartUpload,
     listMyVideos,
+    rateVideo,
     searchPublicVideos,
     signMultipartUploadParts,
     uploadSourceThumbnail,

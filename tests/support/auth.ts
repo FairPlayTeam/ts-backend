@@ -95,6 +95,14 @@ const userDataExportResult = {
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     },
   ],
+  videoRatings: [
+    {
+      videoId: '33333333-3333-4333-8333-333333333333',
+      value: 5,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    },
+  ],
   sessions: [
     {
       id: sessionResult.session.id,

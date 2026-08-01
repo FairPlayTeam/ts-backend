@@ -130,6 +130,7 @@ model User {
   following               UserFollow[]             @relation("UserFollowing")
   followers               UserFollow[]             @relation("UserFollowers")
   videos                  Video[]
+  videoRatings            VideoRating[]
   videoUploadSessions     VideoUploadSession[]
 
   @@map("users")
@@ -192,7 +193,7 @@ model Video {
   width                      Int?
   height                     Int?
   viewCount                  Int                   @default(0) @map("view_count")
-  ratingAverage              Float                 @default(0) @map("rating_average")
+  ratingSum                  Int                   @default(0) @map("rating_sum")
   ratingCount                Int                   @default(0) @map("rating_count")
   transcodeError             String?               @map("transcode_error") @db.VarChar(1000)
   publishedAt                DateTime?             @map("published_at")
@@ -205,6 +206,7 @@ model Video {
   sourceUploadSession      VideoUploadSession?       @relation("CurrentVideoSource", fields: [sourceUploadSessionId], references: [id], onDelete: SetNull)
   activeArtifactGeneration VideoArtifactGeneration?  @relation("ActiveArtifactGeneration", fields: [activeArtifactGenerationId], references: [id], onDelete: SetNull)
   artifactGenerations      VideoArtifactGeneration[] @relation("VideoArtifactGenerations")
+  ratings                  VideoRating[]
   transcodeJobs            VideoTranscodeJob[]
   uploadSessions           VideoUploadSession[]      @relation("VideoUploadSessions")
 
@@ -212,6 +214,21 @@ model Video {
   @@index([visibility, moderationStatus, processingStatus, createdAt, id])
   @@index([moderationStatus, rejectedAt, id])
   @@map("videos")
+}
+
+model VideoRating {
+  userId    String   @map("user_id") @db.Uuid
+  videoId   String   @map("video_id") @db.Uuid
+  value     Int
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@id([userId, videoId])
+  @@index([videoId])
+  @@map("video_ratings")
 }
 
 model VideoRendition {

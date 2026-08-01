@@ -172,6 +172,8 @@ describe('OpenAPI generation', () => {
       '/videos/{publicId}/hls/master.m3u8',
       '/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8',
       '/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}',
+      '/videos/{publicId}/rating',
+      '/videos/{publicId}/rating/me',
       '/videos/{publicId}/thumbnail',
       '/videos/{videoId}/upload/multipart/init',
       '/videos/{videoId}/upload/multipart/{uploadSessionId}',
@@ -214,6 +216,25 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/videos/search']?.get?.responses?.[200]).toBeDefined();
     expect(document.paths['/videos/search']?.get?.responses?.[400]).toBeDefined();
     expect(document.paths['/videos/search']?.get?.responses?.[401]).toBeUndefined();
+    expect(document.paths['/videos/{publicId}/rating']?.get?.security).toEqual([]);
+    expect(document.paths['/videos/{publicId}/rating']?.get?.responses?.[401]).toBeUndefined();
+    expect(document.paths['/videos/{publicId}/rating']?.get?.responses?.[403]).toBeUndefined();
+    expect(document.paths['/videos/{publicId}/rating/me']?.get?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+    expect(document.paths['/videos/{publicId}/rating/me']?.get?.responses?.[401]).toBeDefined();
+    expect(document.paths['/videos/{publicId}/rating/me']?.get?.responses?.[403]).toBeUndefined();
+    expect(document.paths['/videos/{publicId}/rating']?.put?.responses?.[403]).toBeDefined();
+    expect(document.paths['/videos/{publicId}/rating']?.put?.responses?.[503]).toBeDefined();
+    expect(document.paths['/videos/{publicId}/rating']?.put?.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'publicId',
+          in: 'path',
+          required: true,
+        }),
+      ]),
+    );
     expect(document.paths['/videos/{publicId}/hls/master.m3u8']?.get?.security).toEqual([]);
     expect(document.paths['/videos/{publicId}/thumbnail']?.get?.security).toEqual([]);
     expect(document.paths['/videos/{publicId}/thumbnail']?.get?.responses?.[307]).toBeDefined();
@@ -646,6 +667,15 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.VerifyEmailResponse).toBeDefined();
     expect(document.components?.schemas?.UserSessionsResponse).toBeDefined();
     expect(document.components?.schemas?.UserDataExportResponse).toBeDefined();
+    expect(
+      document.components?.schemas?.UserDataExportResponse?.properties?.videoRatings,
+    ).toMatchObject({
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['videoId', 'value', 'createdAt', 'updatedAt'],
+      },
+    });
     expect(document.components?.schemas?.LogoutAllSessionsResponse).toBeDefined();
     expect(document.components?.schemas?.LogoutOtherSessionsResponse).toBeDefined();
     expect(document.components?.schemas?.LogoutSessionResponse).toBeDefined();

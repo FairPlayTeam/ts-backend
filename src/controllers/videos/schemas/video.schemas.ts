@@ -37,6 +37,8 @@ export const videoHlsMasterParamsSchema = z
   .strict()
   .openapi('VideoHlsMasterParams');
 
+export const videoRatingParamsSchema = videoHlsMasterParamsSchema.openapi('VideoRatingParams');
+
 export const videoHlsRenditionParamsSchema = videoHlsMasterParamsSchema
   .extend({
     generationId: z.string().uuid().openapi({
@@ -105,6 +107,13 @@ export const createVideoBodySchema = z
   })
   .strict()
   .openapi('CreateVideoRequest');
+
+export const rateVideoBodySchema = z
+  .object({
+    value: z.number().int().min(1).max(5).openapi({ example: 5 }),
+  })
+  .strict()
+  .openapi('RateVideoRequest');
 
 export const myVideosQuerySchema = z
   .object({
@@ -245,6 +254,14 @@ const videoUploadPartResponseSchema = z.object({
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
 
+const videoRatingAggregateResponseShape = {
+  ratingAverage: z.number().min(0).max(5).openapi({
+    description: 'Arithmetic mean rounded to one decimal place, or zero when unrated',
+    example: 4.3,
+  }),
+  ratingCount: z.number().int().nonnegative().openapi({ example: 12 }),
+};
+
 const videoResponseBodySchema = z.object({
   id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
   publicId: z.string().openapi({ example: 'AbCdEf123_' }),
@@ -265,6 +282,7 @@ const videoResponseBodySchema = z.object({
     .string()
     .nullable()
     .openapi({ example: 'user-id/video-id/generations/generation-id/thumbnail/poster.webp' }),
+  ...videoRatingAggregateResponseShape,
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
   updatedAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
@@ -295,6 +313,7 @@ const publicVideoSearchSummaryResponseSchema = z.object({
   tags: z.array(z.string()).openapi({ example: ['fairplay', 'launch'] }),
   username: z.string().openapi({ example: 'fairplay_creator' }),
   thumbnailPath: z.string().nullable().openapi({ example: '/videos/AbCdEf123_/thumbnail' }),
+  ...videoRatingAggregateResponseShape,
   publishedAt: z.string().datetime().nullable().openapi({ example: '2026-01-01T00:00:00.000Z' }),
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
@@ -311,6 +330,16 @@ export const publicVideoSearchResponseSchema = z
       .nullable(),
   })
   .openapi('PublicVideoSearchResponse');
+
+export const videoRatingAggregateResponseSchema = z
+  .object(videoRatingAggregateResponseShape)
+  .openapi('VideoRatingAggregateResponse');
+
+export const videoRatingResponseSchema = videoRatingAggregateResponseSchema
+  .extend({
+    userRating: z.number().int().min(1).max(5).nullable().openapi({ example: 5 }),
+  })
+  .openapi('VideoRatingResponse');
 
 const videoUploadSessionResponseBodySchema = z.object({
   id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
@@ -398,8 +427,18 @@ export const searchPublicVideosSchema = z.object({
   query: publicVideoSearchQuerySchema,
 });
 
+export const getVideoRatingSchema = z.object({
+  params: videoRatingParamsSchema,
+});
+
+export const rateVideoSchema = z.object({
+  params: videoRatingParamsSchema,
+  body: rateVideoBodySchema,
+});
+
 export type VideoParams = z.infer<typeof initVideoMultipartUploadSchema>['params'];
 export type VideoHlsMasterParams = z.infer<typeof videoHlsMasterParamsSchema>;
+export type VideoRatingParams = z.infer<typeof videoRatingParamsSchema>;
 export type VideoThumbnailParams = VideoHlsMasterParams;
 export type VideoHlsRenditionParams = z.infer<typeof videoHlsRenditionParamsSchema>;
 export type VideoHlsSegmentParams = z.infer<typeof videoHlsSegmentParamsSchema>;
@@ -408,6 +447,7 @@ export type VideoMultipartUploadSessionParams = z.infer<
   typeof getVideoMultipartUploadSessionSchema
 >['params'];
 export type CreateVideoBody = z.infer<typeof createVideoSchema>['body'];
+export type RateVideoBody = z.infer<typeof rateVideoSchema>['body'];
 export type ListMyVideosQuery = z.infer<typeof listMyVideosSchema>['query'];
 export type SearchPublicVideosQuery = z.infer<typeof searchPublicVideosSchema>['query'];
 export type SignVideoMultipartUploadPartsBody = z.infer<

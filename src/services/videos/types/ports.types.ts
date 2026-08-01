@@ -36,6 +36,8 @@ export type CreatedVideo = {
   processingStatus: VideoProcessingStatus;
   moderationStatus: VideoModerationStatus;
   thumbnailObjectKey: string | null;
+  ratingAverage: number;
+  ratingCount: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -89,6 +91,8 @@ export type PublicVideoSearchSummary = {
   tags: string[];
   username: string;
   thumbnailPath: string | null;
+  ratingAverage: number;
+  ratingCount: number;
   publishedAt: Date | null;
   createdAt: Date;
 };
@@ -228,10 +232,34 @@ export type VideoThumbnailResult = {
   url: string;
 };
 
+export type GetVideoRatingInput = {
+  publicId: string;
+};
+
+export type GetMyVideoRatingInput = GetVideoRatingInput & {
+  userId: string;
+};
+
+export type RateVideoInput = GetMyVideoRatingInput & {
+  value: number;
+};
+
+export type VideoRatingAggregateResult = {
+  ratingAverage: number;
+  ratingCount: number;
+};
+
+export type VideoRatingResult = VideoRatingAggregateResult & {
+  userRating: number | null;
+};
+
 export type VideosRoutePort = {
   createVideo(input: CreateVideoInput): Promise<CreateVideoResult>;
   listMyVideos(input: ListMyVideosInput): Promise<ListMyVideosResult>;
   searchPublicVideos(input: SearchPublicVideosInput): Promise<SearchPublicVideosResult>;
+  getVideoRating(input: GetVideoRatingInput): Promise<VideoRatingAggregateResult>;
+  getMyVideoRating(input: GetMyVideoRatingInput): Promise<VideoRatingResult>;
+  rateVideo(input: RateVideoInput): Promise<VideoRatingResult>;
   getThumbnail(input: GetVideoThumbnailInput): Promise<VideoThumbnailResult>;
   getHlsMaster(input: GetVideoHlsMasterInput): Promise<VideoHlsPlaylistResult>;
   getHlsRendition(input: GetVideoHlsRenditionInput): Promise<VideoHlsPlaylistResult>;

@@ -5,8 +5,10 @@ import {
   completeVideoMultipartUploadSchema,
   createVideoSchema,
   getVideoMultipartUploadSessionSchema,
+  getVideoRatingSchema,
   initVideoMultipartUploadSchema,
   listMyVideosSchema,
+  rateVideoSchema,
   searchPublicVideosSchema,
   signVideoMultipartUploadPartsSchema,
   uploadVideoSourceThumbnailSchema,
@@ -41,9 +43,12 @@ export const createRouter = ({
     getHlsRendition,
     getHlsSegment,
     getMultipartUploadSession,
+    getMyVideoRating,
     getThumbnail,
+    getVideoRating,
     initMultipartUpload,
     listMyVideos,
+    rateVideo,
     searchPublicVideos,
     signMultipartUploadParts,
     uploadSourceThumbnail,
@@ -62,6 +67,12 @@ export const createRouter = ({
   router.post('/', ...protectedValidatedRoute(createVideoSchema, createVideo));
   router.get('/me', ...protectedValidatedRoute(listMyVideosSchema, listMyVideos));
   router.get('/search', validate(searchPublicVideosSchema), searchPublicVideos);
+  router.get(
+    '/:publicId/rating/me',
+    ...protectedValidatedRoute(getVideoRatingSchema, getMyVideoRating),
+  );
+  router.get('/:publicId/rating', validate(getVideoRatingSchema), getVideoRating);
+  router.put('/:publicId/rating', ...protectedValidatedRoute(rateVideoSchema, rateVideo));
   router.get('/:publicId/thumbnail', getThumbnail);
   router.get('/:publicId/hls/master.m3u8', getHlsMaster);
   router.get('/:publicId/hls/:generationId/:quality/index.m3u8', getHlsRendition);

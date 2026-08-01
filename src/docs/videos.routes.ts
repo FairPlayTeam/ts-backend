@@ -7,6 +7,7 @@ import {
   myVideosResponseSchema,
   publicVideoSearchQuerySchema,
   publicVideoSearchResponseSchema,
+  rateVideoBodySchema,
   signedVideoUploadPartsResponseSchema,
   signVideoMultipartUploadPartsBodySchema,
   uploadVideoSourceThumbnailBodySchema,
@@ -16,6 +17,9 @@ import {
   videoHlsSegmentParamsSchema,
   videoMultipartUploadSessionParamsSchema,
   videoParamsSchema,
+  videoRatingAggregateResponseSchema,
+  videoRatingParamsSchema,
+  videoRatingResponseSchema,
   videoUploadSessionResponseSchema,
 } from '../controllers/videos.schemas.js';
 import { jsonRequest, jsonResponse, multipartFormDataRequest } from './openapi.helpers.js';
@@ -51,6 +55,24 @@ const videoUploadResponses = {
   429: jsonResponse('Too many requests', ApiErrorSchema),
   500: jsonResponse('Internal server error', ApiErrorSchema),
   503: jsonResponse('Object storage unavailable', ApiErrorSchema),
+};
+
+const publicVideoRatingResponses = {
+  400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+  404: jsonResponse('Video not found or inaccessible', ApiErrorSchema),
+  429: jsonResponse('Too many requests', ApiErrorSchema),
+  500: jsonResponse('Internal server error', ApiErrorSchema),
+};
+
+const authenticatedVideoRatingResponses = {
+  ...publicVideoRatingResponses,
+  401: jsonResponse('Authentication required', ApiErrorSchema),
+};
+
+const putVideoRatingResponses = {
+  ...authenticatedVideoRatingResponses,
+  403: jsonResponse('Video owners cannot rate their own videos', ApiErrorSchema),
+  503: jsonResponse('Video rating temporarily unavailable', ApiErrorSchema),
 };
 
 const hlsPlaylistResponse = (description: string) => ({
@@ -168,6 +190,52 @@ export const routeDocs = [
     responses: {
       200: jsonResponse('Paginated owner video list', myVideosResponseSchema),
       ...videoListResponses,
+    },
+  },
+  {
+    method: 'get',
+    path: '/videos/{publicId}/rating',
+    summary: 'Get the public rating aggregate for a video',
+    tags: ['Videos'],
+    security: [],
+    request: {
+      params: videoRatingParamsSchema,
+    },
+    responses: {
+      200: jsonResponse('Video rating aggregate', videoRatingAggregateResponseSchema),
+      ...publicVideoRatingResponses,
+    },
+  },
+  {
+    method: 'get',
+    path: '/videos/{publicId}/rating/me',
+    summary: "Get the current user's rating for a video",
+    tags: ['Videos'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      params: videoRatingParamsSchema,
+    },
+    responses: {
+      200: jsonResponse(
+        'Video rating aggregate and current user rating',
+        videoRatingResponseSchema,
+      ),
+      ...authenticatedVideoRatingResponses,
+    },
+  },
+  {
+    method: 'put',
+    path: '/videos/{publicId}/rating',
+    summary: 'Create or update the current user rating for a video',
+    tags: ['Videos'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      params: videoRatingParamsSchema,
+      ...jsonRequest(rateVideoBodySchema),
+    },
+    responses: {
+      200: jsonResponse('Updated video rating aggregate', videoRatingResponseSchema),
+      ...putVideoRatingResponses,
     },
   },
   {

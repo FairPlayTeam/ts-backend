@@ -41,6 +41,15 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
           },
           orderBy: [{ kind: 'asc' }, { id: 'asc' }],
         },
+        videoRatings: {
+          select: {
+            videoId: true,
+            value: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: [{ createdAt: 'asc' }, { videoId: 'asc' }],
+        },
         sessions: {
           select: {
             id: true,
@@ -79,13 +88,20 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
       throw new AuthenticatedUserNotFoundError();
     }
 
-    const { emailVerificationTokens, mediaAssets, passwordResetToken, sessions, ...exportedUser } =
-      user;
+    const {
+      emailVerificationTokens,
+      mediaAssets,
+      passwordResetToken,
+      sessions,
+      videoRatings,
+      ...exportedUser
+    } = user;
 
     return {
       exportedAt,
       user: exportedUser,
       mediaAssets,
+      videoRatings,
       sessions: sessions.map((session) => ({
         ...session,
         isCurrent: session.id === currentSessionId,

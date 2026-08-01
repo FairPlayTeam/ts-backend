@@ -10,6 +10,8 @@ import type {
   AbortVideoMultipartUploadInput,
   CompleteVideoMultipartUploadInput,
   CreateVideoInput,
+  GetMyVideoRatingInput,
+  GetVideoRatingInput,
   GetVideoHlsMasterInput,
   GetVideoHlsRenditionInput,
   GetVideoHlsSegmentInput,
@@ -17,6 +19,7 @@ import type {
   GetVideoThumbnailInput,
   InitVideoMultipartUploadInput,
   ListMyVideosInput,
+  RateVideoInput,
   SearchPublicVideosInput,
   SignVideoMultipartUploadPartsInput,
   UploadVideoSourceThumbnailInput,
@@ -38,6 +41,9 @@ let receivedAbortRequest: AbortVideoMultipartUploadInput | undefined;
 let receivedGetRequest: GetVideoMultipartUploadSessionInput | undefined;
 let receivedListRequest: ListMyVideosInput | undefined;
 let receivedPublicSearchRequest: SearchPublicVideosInput | undefined;
+let receivedPublicRatingRequest: GetVideoRatingInput | undefined;
+let receivedMyRatingRequest: GetMyVideoRatingInput | undefined;
+let receivedRateVideoRequest: RateVideoInput | undefined;
 let receivedHlsMasterRequest: GetVideoHlsMasterInput | undefined;
 let receivedHlsRenditionRequest: GetVideoHlsRenditionInput | undefined;
 let receivedHlsSegmentRequest: GetVideoHlsSegmentInput | undefined;
@@ -91,6 +97,21 @@ describe('videos routes multipart uploads', () => {
             receivedPublicSearchRequest = input;
 
             return videosService.searchPublicVideos(input);
+          },
+          getVideoRating: async (input) => {
+            receivedPublicRatingRequest = input;
+
+            return videosService.getVideoRating(input);
+          },
+          getMyVideoRating: async (input) => {
+            receivedMyRatingRequest = input;
+
+            return videosService.getMyVideoRating(input);
+          },
+          rateVideo: async (input) => {
+            receivedRateVideoRequest = input;
+
+            return videosService.rateVideo(input);
           },
           getHlsMaster: async (input) => {
             receivedHlsMasterRequest = input;
@@ -391,6 +412,8 @@ describe('videos routes multipart uploads', () => {
           tags: ['fairplay', 'launch'],
           username: 'fairplay_creator',
           thumbnailPath: '/videos/AbCdEf123_/thumbnail',
+          ratingAverage: 4.5,
+          ratingCount: 2,
           publishedAt: '2026-01-01T00:00:00.000Z',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
@@ -418,6 +441,51 @@ describe('videos routes multipart uploads', () => {
         message: REQUEST_VALIDATION_FAILED_MESSAGE,
       });
     }
+  });
+
+  test('separates public rating aggregates from authenticated current-user ratings', async () => {
+    receivedPublicRatingRequest = undefined;
+    receivedMyRatingRequest = undefined;
+    receivedRateVideoRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const publicResponse = await fetch(`${baseUrl}/videos/${publicId}/rating`);
+
+    expect(publicResponse.status).toBe(200);
+    expect(receivedSessionKey).toBeUndefined();
+    expect(receivedPublicRatingRequest as GetVideoRatingInput | undefined).toEqual({ publicId });
+    expect(await publicResponse.json()).toEqual({ ratingAverage: 4.5, ratingCount: 2 });
+
+    const myResponse = await fetch(`${baseUrl}/videos/${publicId}/rating/me`, {
+      headers: { Authorization: 'Bearer route-session-key' },
+    });
+
+    expect(myResponse.status).toBe(200);
+    expect(receivedMyRatingRequest as GetMyVideoRatingInput | undefined).toEqual({
+      userId: authenticatedUserId,
+      publicId,
+    });
+    expect(await myResponse.json()).toEqual({
+      ratingAverage: 4.5,
+      ratingCount: 2,
+      userRating: 5,
+    });
+
+    const putResponse = await fetch(`${baseUrl}/videos/${publicId}/rating`, {
+      method: 'PUT',
+      headers: {
+        Authorization: 'Bearer route-session-key',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ value: 4 }),
+    });
+
+    expect(putResponse.status).toBe(200);
+    expect(receivedRateVideoRequest as RateVideoInput | undefined).toEqual({
+      userId: authenticatedUserId,
+      publicId,
+      value: 4,
+    });
   });
 
   test('rejects private video visibility before calling the service', async () => {

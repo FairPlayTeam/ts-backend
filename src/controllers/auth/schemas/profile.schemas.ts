@@ -64,6 +64,13 @@ const userDataExportMediaAssetSchema = z.object({
   updatedAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
 
+const userDataExportVideoRatingSchema = z.object({
+  videoId: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
+  value: z.number().int().min(1).max(5).openapi({ example: 5 }),
+  createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+  updatedAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+});
+
 export const userDataExportResponseSchema = z
   .object({
     exportedAt: userDataExportDateTimeSchema.openapi({
@@ -88,6 +95,7 @@ export const userDataExportResponseSchema = z
       }),
     }),
     mediaAssets: z.array(userDataExportMediaAssetSchema),
+    videoRatings: z.array(userDataExportVideoRatingSchema),
     sessions: z.array(
       z.object({
         id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),

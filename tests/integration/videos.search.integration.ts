@@ -266,6 +266,8 @@ describe('videos search integration', () => {
       tags: ['catalog-metadata-tag'],
       username: 'public_search_owner',
       thumbnailPath: null,
+      ratingAverage: 0,
+      ratingCount: 0,
       publishedAt: '2026-04-01T00:00:00.000Z',
       createdAt: publicDates[0]?.toISOString(),
     });
