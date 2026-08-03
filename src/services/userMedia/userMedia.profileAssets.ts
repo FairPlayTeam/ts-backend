@@ -1,5 +1,9 @@
 import type { Prisma } from '@prisma/client';
-import type { ObjectStorage } from '../../lib/objectStorage.js';
+import {
+  profileAvatarPath,
+  profileBannerPath,
+  resolveBestEffortLink,
+} from '../assets/assetLinks.js';
 import type { UserMediaKind } from './userMedia.types.js';
 
 export const profileMediaAssetWhere = {
@@ -9,9 +13,8 @@ export const profileMediaAssetWhere = {
 } satisfies Prisma.UserMediaAssetWhereInput;
 
 export const profileMediaAssetSelect = {
+  id: true,
   kind: true,
-  objectKey: true,
-  bucket: true,
 } satisfies Prisma.UserMediaAssetSelect;
 
 export type ProfileMediaAsset = Prisma.UserMediaAssetGetPayload<{
@@ -23,32 +26,20 @@ const getProfileMediaAsset = (
   kind: UserMediaKind,
 ): ProfileMediaAsset | undefined => mediaAssets.find((asset) => asset.kind === kind);
 
-export function toStoredUserMediaAssetUrl(
-  objectStorage: Pick<ObjectStorage, 'getSignedUrl'>,
-  asset: { objectKey: string; bucket: string },
-): Promise<string>;
-export function toStoredUserMediaAssetUrl(
-  objectStorage: Pick<ObjectStorage, 'getSignedUrl'>,
-  asset: { objectKey: string; bucket: string } | null | undefined,
-): Promise<string | null>;
-export async function toStoredUserMediaAssetUrl(
-  objectStorage: Pick<ObjectStorage, 'getSignedUrl'>,
-  asset: { objectKey: string; bucket: string } | null | undefined,
-): Promise<string | null> {
-  return asset ? objectStorage.getSignedUrl(asset.objectKey, asset.bucket) : null;
-}
+export const toProfileMediaUrl = (
+  username: string,
+  kind: UserMediaKind,
+  asset: object | null | undefined,
+): string | null =>
+  resolveBestEffortLink(
+    asset,
+    kind === 'avatar' ? profileAvatarPath(username) : profileBannerPath(username),
+  );
 
-export const toProfileMediaUrls = async (
-  objectStorage: Pick<ObjectStorage, 'getSignedUrl'>,
+export const toProfileMediaUrls = (
+  username: string,
   mediaAssets: readonly ProfileMediaAsset[],
-): Promise<{ avatarUrl: string | null; bannerUrl: string | null }> => {
-  const [avatarUrl, bannerUrl] = await Promise.all([
-    toStoredUserMediaAssetUrl(objectStorage, getProfileMediaAsset(mediaAssets, 'avatar')),
-    toStoredUserMediaAssetUrl(objectStorage, getProfileMediaAsset(mediaAssets, 'banner')),
-  ]);
-
-  return {
-    avatarUrl,
-    bannerUrl,
-  };
-};
+): { avatarUrl: string | null; bannerUrl: string | null } => ({
+  avatarUrl: toProfileMediaUrl(username, 'avatar', getProfileMediaAsset(mediaAssets, 'avatar')),
+  bannerUrl: toProfileMediaUrl(username, 'banner', getProfileMediaAsset(mediaAssets, 'banner')),
+});

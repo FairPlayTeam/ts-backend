@@ -1,5 +1,6 @@
 import { z } from '../../../docs/zod.js';
 import { VIDEO_REJECTION_REASON_MAX_LENGTH } from '../../../config/constants.js';
+import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
 
 export const ADMIN_VIDEOS_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorId must be provided together';
@@ -112,10 +113,9 @@ const adminVideoSummaryResponseSchema = z.object({
   processingStatus: videoProcessingStatusSchema.openapi({ example: 'ready' }),
   visibility: videoVisibilitySchema.openapi({ example: 'unlisted' }),
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
-  thumbnailObjectKey: z
-    .string()
+  thumbnailPath: relativeAssetPathSchema
     .nullable()
-    .openapi({ example: 'user-id/video-id/generations/generation-id/thumbnail/poster.webp' }),
+    .openapi({ example: '/videos/AbCdEf123_/thumbnail' }),
   publishedAt: nullableVideoDateTimeSchema.openapi({ example: null }),
   rejectedAt: nullableVideoDateTimeSchema.openapi({ example: null }),
   rejectionReason: z

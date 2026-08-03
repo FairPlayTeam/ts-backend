@@ -87,6 +87,13 @@ import type {
 } from './types/ports.types.js';
 import { calculateVideoRatingAverage, getVideoRatingRetryDelayMs } from './videoRating.js';
 import { buildVideoSearchFilter } from './videoSearch.js';
+import {
+  readForProxy,
+  resolveBestEffortLink,
+  resolveSignedRedirect,
+  videoThumbnailPath,
+} from '../assets/assetLinks.js';
+import { readableVideoWhere } from './videoReadability.js';
 
 const ACTIVE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
   'initializing',
@@ -374,9 +381,11 @@ const toUploadVideoSourceThumbnailResult = (
 
 const toVideoMetadata = ({
   ratingSum,
+  thumbnailObjectKey,
   ...video
 }: VideoMetadataRecord): CreateVideoResult['video'] => ({
   ...video,
+  thumbnailPath: resolveBestEffortLink(thumbnailObjectKey, videoThumbnailPath(video.publicId)),
   ratingAverage: calculateVideoRatingAverage(ratingSum, video.ratingCount),
 });
 
@@ -417,7 +426,7 @@ const toPublicVideoSearchSummary = ({
   description,
   tags,
   username: owner.username,
-  thumbnailPath: thumbnailObjectKey ? `/videos/${publicId}/thumbnail` : null,
+  thumbnailPath: resolveBestEffortLink(thumbnailObjectKey, videoThumbnailPath(publicId)),
   ratingAverage: calculateVideoRatingAverage(ratingSum, ratingCount),
   ratingCount,
   publishedAt,
@@ -1463,10 +1472,7 @@ const findPublicHlsRendition = async (
       video: {
         is: {
           publicId,
-          processingStatus: 'ready',
-          visibility: {
-            in: ['public', 'unlisted'],
-          },
+          ...readableVideoWhere,
         },
       },
       renditions: {
@@ -1824,10 +1830,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     const video = await deps.prisma.video.findFirst({
       where: {
         publicId,
-        processingStatus: 'ready',
-        visibility: {
-          in: ['public', 'unlisted'],
-        },
+        ...readableVideoWhere,
         activeArtifactGeneration: {
           is: {
             state: 'active',
@@ -1856,16 +1859,21 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     const objectKey = buildVideoArtifactManifest(video.ownerId, video.id, generation.id, [])
       .thumbnail.objectKey;
 
-    if (
-      video.thumbnailObjectKey !== objectKey ||
-      generation.thumbnailObjectKey !== objectKey ||
-      !(await deps.objectStorage.headObject({ bucket: generation.bucket, objectKey }))
-    ) {
+    if (video.thumbnailObjectKey !== objectKey || generation.thumbnailObjectKey !== objectKey) {
+      throw new VideoNotFoundError();
+    }
+
+    const url = await resolveSignedRedirect(deps.objectStorage, {
+      bucket: generation.bucket,
+      objectKey,
+    });
+
+    if (!url) {
       throw new VideoNotFoundError();
     }
 
     return {
-      url: await deps.objectStorage.getSignedUrl(objectKey, generation.bucket),
+      url,
     };
   },
 
@@ -1875,10 +1883,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     const video = await deps.prisma.video.findFirst({
       where: {
         publicId,
-        processingStatus: 'ready',
-        visibility: {
-          in: ['public', 'unlisted'],
-        },
+        ...readableVideoWhere,
         activeArtifactGeneration: {
           is: {
             state: 'active',
@@ -1917,11 +1922,14 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
       bandwidth: rendition.bitrate,
     }));
     const manifest = buildVideoArtifactManifest(video.ownerId, video.id, generation.id, profiles);
-    const storedPlaylist = await deps.objectStorage.readObject({
-      bucket: generation.bucket,
-      objectKey: manifest.master.objectKey,
-      maxBytes: VIDEO_HLS_PLAYLIST_MAX_BYTES,
-    });
+    const storedPlaylist = await readForProxy(
+      deps.objectStorage,
+      {
+        bucket: generation.bucket,
+        objectKey: manifest.master.objectKey,
+      },
+      VIDEO_HLS_PLAYLIST_MAX_BYTES,
+    );
 
     if (!storedPlaylist) {
       throw new VideoNotFoundError();
@@ -1952,11 +1960,14 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
       publicId,
       quality,
     });
-    const storedPlaylist = await deps.objectStorage.readObject({
-      bucket,
-      objectKey: rendition.playlistObjectKey,
-      maxBytes: VIDEO_HLS_PLAYLIST_MAX_BYTES,
-    });
+    const storedPlaylist = await readForProxy(
+      deps.objectStorage,
+      {
+        bucket,
+        objectKey: rendition.playlistObjectKey,
+      },
+      VIDEO_HLS_PLAYLIST_MAX_BYTES,
+    );
 
     if (!storedPlaylist) {
       throw new VideoNotFoundError();
@@ -1990,17 +2001,17 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
       quality,
     });
     const objectKey = videoHlsSegmentObjectKey(rendition, segment);
-    const storedSegment = await deps.objectStorage.headObject({
+    const url = await resolveSignedRedirect(deps.objectStorage, {
       bucket,
       objectKey,
     });
 
-    if (!storedSegment) {
+    if (!url) {
       throw new VideoNotFoundError();
     }
 
     return {
-      url: await deps.objectStorage.getSignedUrl(objectKey, bucket),
+      url,
     };
   },
 

@@ -35,7 +35,7 @@ export type CreatedVideo = {
   allowComments: boolean;
   processingStatus: VideoProcessingStatus;
   moderationStatus: VideoModerationStatus;
-  thumbnailObjectKey: string | null;
+  thumbnailPath: string | null;
   ratingAverage: number;
   ratingCount: number;
   createdAt: Date;

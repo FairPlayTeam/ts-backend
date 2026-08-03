@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { once } from 'node:events';
+import { createServer, type Agent as HttpAgent } from 'node:http';
 import { Readable } from 'node:stream';
 import type { ObjectStorageConfig } from '../src/config/env.parsers.js';
 import {
@@ -484,7 +486,7 @@ describe('object storage', () => {
     expect(logs.at(-1)?.data.err).toBeInstanceOf(Error);
   });
 
-  test('times out slow storage client operations and keeps the timeout as the cause', async () => {
+  test('times out slow storage client operations without aborting the shared client', async () => {
     let abortCalls = 0;
     const client = {
       abortActiveRequests: () => {
@@ -513,11 +515,101 @@ describe('object storage', () => {
     } catch (err) {
       expect(err).toBeInstanceOf(ObjectStorageUnavailableError);
       expect((err as Error).cause).toBeInstanceOf(OperationTimeoutError);
-      expect(abortCalls).toBe(1);
+      expect(abortCalls).toBe(0);
     }
   });
 
-  test('retries bucket initialization after an aborted timeout', async () => {
+  test('cancels only the timed-out request while a healthy request keeps using the same agent', async () => {
+    let markPutStarted: (() => void) | undefined;
+    let markReadStarted: (() => void) | undefined;
+    let markPutCancelled: (() => void) | undefined;
+    let releaseRead: (() => void) | undefined;
+    const putStarted = new Promise<void>((resolve) => {
+      markPutStarted = resolve;
+    });
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    const putCancelled = new Promise<void>((resolve) => {
+      markPutCancelled = resolve;
+    });
+    const readCanFinish = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    const server = createServer((request, response) => {
+      if (request.method === 'HEAD') {
+        response.writeHead(200).end();
+        return;
+      }
+
+      if (request.method === 'PUT') {
+        markPutStarted?.();
+        const acknowledgeCancellation = (): void => {
+          markPutCancelled?.();
+          response.destroy();
+        };
+        request.once('aborted', acknowledgeCancellation);
+        request.once('close', acknowledgeCancellation);
+        return;
+      }
+
+      if (request.method === 'GET') {
+        markReadStarted?.();
+        void readCanFinish.then(() => {
+          response.writeHead(200, { 'content-length': '6' }).end('avatar');
+        });
+        return;
+      }
+
+      response.writeHead(404).end();
+    });
+
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+
+    if (!address || typeof address === 'string') {
+      server.close();
+      throw new Error('Expected the storage test server to listen on a TCP port');
+    }
+
+    const config = createConfig({
+      endpoint: `http://127.0.0.1:${address.port}`,
+      operationTimeoutMs: 300,
+    });
+    const minioClient = createMinioClient(config);
+    const agent = (minioClient as unknown as { transportAgent: HttpAgent }).transportAgent;
+    const storage = createObjectStorage(config, minioClient, createOperationLogCollector().logger);
+
+    try {
+      await storage.ensureBucket();
+      const timedOutWrite = storage.putObject({
+        objectKey: 'users/user-id/avatar/replacement.webp',
+        body: Buffer.from('replacement'),
+        contentType: 'image/webp',
+      });
+      await putStarted;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const healthyRead = storage.readObject({
+        objectKey: 'users/user-id/avatar/current.webp',
+        maxBytes: 64,
+      });
+      await readStarted;
+
+      await expect(timedOutWrite).rejects.toBeInstanceOf(ObjectStorageUnavailableError);
+      releaseRead?.();
+      await expect(healthyRead).resolves.toEqual(Buffer.from('avatar'));
+      await putCancelled;
+    } finally {
+      releaseRead?.();
+      agent.destroy();
+      const serverClosed = new Promise<void>((resolve) => server.close(() => resolve()));
+      server.closeAllConnections();
+      await serverClosed;
+    }
+  });
+
+  test('retries bucket initialization after a timed-out attempt', async () => {
     let abortCalls = 0;
     let bucketExistsCalls = 0;
     let putObjectCalls = 0;
@@ -529,7 +621,7 @@ describe('object storage', () => {
         bucketExistsCalls += 1;
 
         if (bucketExistsCalls === 1) {
-          return new Promise<boolean>(() => undefined);
+          return new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 50));
         }
 
         return Promise.resolve(true);
@@ -564,7 +656,7 @@ describe('object storage', () => {
       }),
     ).resolves.toBeUndefined();
 
-    expect(abortCalls).toBe(1);
+    expect(abortCalls).toBe(0);
     expect(bucketExistsCalls).toBe(2);
     expect(putObjectCalls).toBe(1);
   });

@@ -1,5 +1,16 @@
+import type { UserMediaKind } from '../../userMedia/userMedia.types.js';
+
 export type GetPublicProfileInput = {
   username: string;
+};
+
+export type GetProfileMediaInput = GetPublicProfileInput & {
+  kind: UserMediaKind;
+};
+
+export type GetProfileMediaResult = {
+  body: Buffer;
+  mimeType: string;
 };
 
 export type FollowPublicProfileInput = {
@@ -55,6 +66,7 @@ export type ListFollowingProfilesResult = {
 };
 
 export type ProfilesPort = {
+  getProfileMedia: (input: GetProfileMediaInput) => Promise<GetProfileMediaResult>;
   getPublicProfile: (input: GetPublicProfileInput) => Promise<GetPublicProfileResult>;
   followPublicProfile: (input: FollowPublicProfileInput) => Promise<FollowPublicProfileResult>;
   listFollowingProfiles: (

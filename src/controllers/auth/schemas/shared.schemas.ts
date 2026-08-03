@@ -8,6 +8,7 @@ import {
   SESSION_USER_AGENT_MAX_LENGTH,
 } from '../../../config/constants.js';
 import { AUTH_ROLES } from '../../../services/auth.roles.js';
+import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
 
 export const responseMessageSchema = (example: string) => z.string().openapi({ example });
 
@@ -61,13 +62,11 @@ export const authUserResponseSchema = z.object({
 });
 
 export const authUserProfileResponseSchema = authUserResponseSchema.extend({
-  avatarUrl: z.string().url().nullable().openapi({
-    example:
-      'http://localhost:9000/fairplay-user-media/users/9fdf5/avatar/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
+  avatarUrl: relativeAssetPathSchema.nullable().openapi({
+    example: '/profiles/fairplay_creator/avatar',
   }),
-  bannerUrl: z.string().url().nullable().openapi({
-    example:
-      'http://localhost:9000/fairplay-user-media/users/9fdf5/banner/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
+  bannerUrl: relativeAssetPathSchema.nullable().openapi({
+    example: '/profiles/fairplay_creator/banner',
   }),
 });
 

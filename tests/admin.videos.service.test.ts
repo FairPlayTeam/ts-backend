@@ -23,7 +23,8 @@ const records = videoIds.map((id, index) => ({
   processingStatus: 'ready' as const,
   visibility: 'unlisted' as const,
   createdAt: createdAt[index] ?? createdAt[0],
-  thumbnailObjectKey: null,
+  thumbnailObjectKey:
+    index === 0 ? 'owner/video/generations/generation/thumbnail/poster.webp' : null,
   publishedAt: null,
   rejectedAt: null,
   rejectionReason: null,
@@ -208,5 +209,16 @@ describe('admin video service', () => {
         ],
       }),
     );
+  });
+
+  test('maps persisted thumbnail presence to an opaque relative path without exposing the key', async () => {
+    const { deps } = createDeps();
+    const result = await createAdminService(deps).listVideos({ limit: 1 });
+
+    expect(result.videos[0]).toMatchObject({
+      publicId: 'AdminVid01_',
+      thumbnailPath: '/videos/AdminVid01_/thumbnail',
+    });
+    expect(result.videos[0]).not.toHaveProperty('thumbnailObjectKey');
   });
 });

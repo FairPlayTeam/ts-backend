@@ -151,7 +151,7 @@ describe('maintenance and reconciliation integration', () => {
     });
     const failedAt = Date.now();
     await expect(
-      runtime.externalResources.reconcileDue({
+      runtime.videoExternalResources.reconcileDue({
         roles: ['source'],
         limit: 1,
       }),
@@ -986,15 +986,20 @@ describe('maintenance and reconciliation integration', () => {
       },
     });
     await expect(
-      runtime.externalResources.reconcileDue({
-        roles: ['source', 'hls_artifacts', 'thumbnail_prefix', 'user_media'],
-        limit: 10,
-      }),
-    ).resolves.toMatchObject({
-      claimed: 4,
-      confirmed: 4,
-      failed: 0,
-    });
+      Promise.all([
+        runtime.videoExternalResources.reconcileDue({
+          roles: ['source', 'hls_artifacts', 'thumbnail_prefix'],
+          limit: 10,
+        }),
+        runtime.userMediaExternalResources.reconcileDue({
+          roles: ['user_media'],
+          limit: 10,
+        }),
+      ]),
+    ).resolves.toEqual([
+      expect.objectContaining({ claimed: 3, confirmed: 3, failed: 0 }),
+      expect.objectContaining({ claimed: 1, confirmed: 1, failed: 0 }),
+    ]);
 
     await expect(
       runtime.prisma.externalResourceTarget.count({
@@ -1067,7 +1072,7 @@ describe('maintenance and reconciliation integration', () => {
       runtime.prisma,
       runtime.objectStorage,
       runtime.delivered,
-      runtime.externalResources,
+      runtime.userMediaExternalResources,
       {
         afterPasswordCompare: async () => {
           arrivals += 1;

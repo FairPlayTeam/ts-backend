@@ -313,6 +313,13 @@ target, deletes only the user row, and relies on PostgreSQL cascades for session
 and media rows. Temporary S3 failures therefore report deferred cleanup without rolling back the
 business deletion.
 
+Profile JSON exposes opaque same-origin avatar and banner paths only when the corresponding asset
+row exists; building list responses never performs a storage HEAD. The public media routes use the
+dedicated profile-media storage client to read bounded bytes and proxy them through the API, so
+neither a signed destination nor a bucket/object key appears in `Location`. A missing database row
+or stored object returns 404 on the media route. This client remains separate from video/HLS
+storage even though both consumers share the neutral asset-link primitives.
+
 ## In-process video transcoding
 
 There is no separate transcode worker service or queue runtime. Each backend process may claim
@@ -369,15 +376,21 @@ mistaken for active output.
 ## Public HLS reads
 
 Public HLS routes use the unguessable `publicId` as the shareable link and require no session. A
-request is served only while the video is `ready`, not moderation-rejected, and its generation is
-`active` or `retiring`. All unavailable, cross-video, cross-generation, and cross-rendition cases
-return the same 404. The master resolves only the current active generation; generation-qualified
-rendition and segment URLs remain usable while that generation is retiring.
+video is readable while it still exists, its processing status is `ready`, and its visibility is
+`public` or `unlisted`, regardless of moderation status (`rejected` included). Its generation must
+be `active` or `retiring`. All unavailable, cross-video, cross-generation, and cross-rendition
+cases return the same 404. The master resolves only the current active generation;
+generation-qualified rendition and segment URLs remain usable while that generation is retiring.
 
-`GET /videos/:publicId/thumbnail` applies the same shareability, moderation, readiness, and active
-generation checks. It rebuilds the generation thumbnail key from `buildVideoArtifactManifest`,
+`GET /videos/:publicId/thumbnail` applies the same readiness and visibility rule, without a stricter
+moderation rule, and requires an active generation. It rebuilds the generation thumbnail key from `buildVideoArtifactManifest`,
 checks the object with HEAD, and returns a non-cacheable temporary redirect to a freshly signed
 object-storage URL; Express never proxies the image bytes.
+
+Readability is deliberately distinct from discoverability and rating eligibility. Public search
+continues to require `public` + `approved` + `ready`; the current rating scope also excludes
+`rejected` videos. Reassessing those two policies is adjacent debt and is outside this asset-link
+unification.
 
 Playlist reads are capped at 512 KiB. URI lines are rewritten to API routes while all FFmpeg HLS
 tags remain untouched. Every object key is rebuilt from `buildVideoArtifactManifest`; rendition

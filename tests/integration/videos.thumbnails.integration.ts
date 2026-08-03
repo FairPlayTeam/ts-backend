@@ -290,7 +290,7 @@ describe('videos thumbnails integration', () => {
     const quotaBoundService = createIntegrationVideosService(
       runtime.prisma,
       runtime.videoObjectStorage,
-      runtime.externalResources,
+      runtime.videoExternalResources,
       {
         userStorageQuotaBytes: quotaBytes,
       },
@@ -490,7 +490,7 @@ describe('videos thumbnails integration', () => {
     const replacementQuotaService = createIntegrationVideosService(
       runtime.prisma,
       runtime.videoObjectStorage,
-      runtime.externalResources,
+      runtime.videoExternalResources,
       {
         maxUploadBytes: 1,
         userStorageQuotaBytes: Number(expectedReservedBytes),
@@ -632,9 +632,10 @@ describe('videos thumbnails integration', () => {
           expect.objectContaining({
             id: created.video.id,
             processingStatus: 'ready',
-            thumbnailObjectKey: manifest.thumbnail.objectKey,
+            thumbnailPath: `/videos/${created.video.publicId}/thumbnail`,
           }),
         );
+        expect(response.body.videos[0]).not.toHaveProperty('thumbnailObjectKey');
       });
   });
 
@@ -1277,7 +1278,7 @@ describe('videos thumbnails integration', () => {
           });
         },
       },
-      runtime.externalResources,
+      runtime.videoExternalResources,
     );
     const thumbnail = await createPng(300, 900);
 

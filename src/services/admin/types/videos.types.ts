@@ -28,7 +28,7 @@ export type AdminVideoSummary = {
   processingStatus: VideoProcessingStatus;
   visibility: VideoVisibility;
   createdAt: Date;
-  thumbnailObjectKey: string | null;
+  thumbnailPath: string | null;
   publishedAt: Date | null;
   rejectedAt: Date | null;
   rejectionReason: string | null;

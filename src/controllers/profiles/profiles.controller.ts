@@ -1,6 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type {
   FollowPublicProfileParams,
+  GetProfileMediaParams,
   GetPublicProfileParams,
   ListFollowingProfilesQuery,
   UnfollowPublicProfileParams,
@@ -16,11 +17,35 @@ import {
 } from './profiles.responses.js';
 
 type GetPublicProfileRequest = Request<GetPublicProfileParams>;
+type GetProfileMediaRequest = Request<GetProfileMediaParams>;
 type FollowPublicProfileRequest = Request<FollowPublicProfileParams>;
 type ListFollowingProfilesRequest = Request<unknown, unknown, unknown, ListFollowingProfilesQuery>;
 type UnfollowPublicProfileRequest = Request<UnfollowPublicProfileParams>;
 
 export const createProfilesController = (deps: ProfilesControllerDependencies) => {
+  const getProfileMedia =
+    (kind: 'avatar' | 'banner'): RequestHandler =>
+    async (req, res, next) => {
+      try {
+        const mediaReq = req as GetProfileMediaRequest;
+        const result = await deps.profilesService.getProfileMedia({
+          username: mediaReq.params.username,
+          kind,
+        });
+
+        return res
+          .status(200)
+          .set('Cache-Control', 'private, no-cache')
+          .set('Content-Length', String(result.body.length))
+          .type(result.mimeType)
+          .send(result.body);
+      } catch (err) {
+        next(toProfilesHttpError(err));
+      }
+    };
+  const getAvatar = getProfileMedia('avatar');
+  const getBanner = getProfileMedia('banner');
+
   const getPublicProfile = async (
     req: GetPublicProfileRequest,
     res: Response,
@@ -93,6 +118,8 @@ export const createProfilesController = (deps: ProfilesControllerDependencies) =
 
   return {
     followPublicProfile,
+    getAvatar,
+    getBanner,
     getPublicProfile,
     listFollowingProfiles,
     unfollowPublicProfile,

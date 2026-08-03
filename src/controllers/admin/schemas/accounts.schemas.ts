@@ -8,6 +8,7 @@ import {
 } from '../../../services/admin/admin.messages.js';
 import { ADMIN_ACCOUNT_BAN_STATUSES } from '../../../services/admin/admin.accountFilters.js';
 import { ADMIN_BAN_REASON_REQUIRED_MESSAGE } from '../../../services/admin.errors.js';
+import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
 
 export const ADMIN_ACCOUNTS_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorId must be provided together';
@@ -94,9 +95,8 @@ const adminAccountSummaryResponseSchema = z.object({
   email: z.string().email().openapi({ example: 'creator@example.com' }),
   username: z.string().openapi({ example: 'fairplay_creator' }),
   displayName: z.string().nullable().openapi({ example: 'FairPlay Creator' }),
-  avatarUrl: z.string().url().nullable().openapi({
-    example:
-      'http://localhost:9000/fairplay-user-media/users/9fdf5/avatar/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
+  avatarUrl: relativeAssetPathSchema.nullable().openapi({
+    example: '/profiles/fairplay_creator/avatar',
   }),
   createdAt: accountDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
   isVerified: z.boolean().openapi({ example: true }),

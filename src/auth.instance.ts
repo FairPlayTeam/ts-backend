@@ -13,7 +13,7 @@ import { createAuthService } from './services/auth.service.js';
 import { objectStorage } from './objectStorage.instance.js';
 import { createUnavailableObjectStorage } from './lib/objectStorage.js';
 import { createUserMediaProcessor } from './services/userMedia/userMedia.processor.js';
-import { externalResourceReconciler } from './externalResources.instance.js';
+import { userMediaExternalResourceReconciler } from './externalResources.instance.js';
 
 const bcryptHasher = {
   hash: (password: string, rounds: number) => bcrypt.hash(password, rounds),
@@ -38,7 +38,7 @@ export const authService = createAuthService({
   token: tokenService,
   mailer: { sendVerificationEmail, sendPasswordResetEmail },
   objectStorage: objectStorage ?? createUnavailableObjectStorage(),
-  externalResources: externalResourceReconciler,
+  externalResources: userMediaExternalResourceReconciler,
   userMediaProcessor: createUserMediaProcessor({
     profileMediaMaxUploadBytes: config.profileMediaMaxUploadBytes,
   }),

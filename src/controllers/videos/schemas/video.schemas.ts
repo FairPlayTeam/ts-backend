@@ -2,6 +2,7 @@ import { z } from '../../../docs/zod.js';
 import { VIDEO_LICENSES } from '../../../services/videos/videoLicenses.js';
 import { VIDEO_HLS_SEGMENT_NAME_PATTERN } from '../../../services/videos/videoObjectKeys.js';
 import { VIDEO_PUBLIC_ID_PATTERN } from '../../../services/videos/videoPublicId.js';
+import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
 
 const VIDEO_TITLE_MAX_LENGTH = 120;
 const VIDEO_DESCRIPTION_MAX_LENGTH = 5_000;
@@ -278,10 +279,9 @@ const videoResponseBodySchema = z.object({
       example: 'draft',
     }),
   moderationStatus: z.enum(['pending', 'approved', 'rejected']).openapi({ example: 'pending' }),
-  thumbnailObjectKey: z
-    .string()
+  thumbnailPath: relativeAssetPathSchema
     .nullable()
-    .openapi({ example: 'user-id/video-id/generations/generation-id/thumbnail/poster.webp' }),
+    .openapi({ example: '/videos/AbCdEf123_/thumbnail' }),
   ...videoRatingAggregateResponseShape,
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
   updatedAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
@@ -312,7 +312,9 @@ const publicVideoSearchSummaryResponseSchema = z.object({
   description: z.string().nullable().openapi({ example: 'A short behind-the-scenes video.' }),
   tags: z.array(z.string()).openapi({ example: ['fairplay', 'launch'] }),
   username: z.string().openapi({ example: 'fairplay_creator' }),
-  thumbnailPath: z.string().nullable().openapi({ example: '/videos/AbCdEf123_/thumbnail' }),
+  thumbnailPath: relativeAssetPathSchema
+    .nullable()
+    .openapi({ example: '/videos/AbCdEf123_/thumbnail' }),
   ...videoRatingAggregateResponseShape,
   publishedAt: z.string().datetime().nullable().openapi({ example: '2026-01-01T00:00:00.000Z' }),
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),

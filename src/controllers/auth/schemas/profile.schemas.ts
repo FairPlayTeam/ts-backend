@@ -7,6 +7,7 @@ import {
 } from '../../../services/auth/auth.messages.js';
 import { PROFILE_UPDATE_EMPTY_MESSAGE } from '../../../services/auth.errors.js';
 import { AUTH_ROLES } from '../../../services/auth.roles.js';
+import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
 import {
   authSessionResponseSchema,
   authUserProfileResponseSchema,
@@ -52,10 +53,7 @@ const userDataExportTokenSchema = z.object({
 const userDataExportMediaAssetSchema = z.object({
   id: z.string().uuid().openapi({ example: '9c1a78ff-8c35-4b2f-9ae0-289b4cfdbf38' }),
   kind: z.enum(['avatar', 'banner']).openapi({ example: 'avatar' }),
-  objectKey: z.string().openapi({
-    example: 'users/9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f/avatar/avatar-id.webp',
-  }),
-  bucket: z.string().openapi({ example: 'fairplay-user-media' }),
+  url: relativeAssetPathSchema.openapi({ example: '/profiles/fairplay_creator/avatar' }),
   mimeType: z.literal('image/webp').openapi({ example: 'image/webp' }),
   sizeBytes: z.number().int().positive().openapi({ example: 18342 }),
   width: z.number().int().positive().openapi({ example: 512 }),

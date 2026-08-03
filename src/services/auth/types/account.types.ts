@@ -26,8 +26,7 @@ export type ExportUserDataResult = {
   mediaAssets: {
     id: string;
     kind: UserMediaKind;
-    objectKey: string;
-    bucket: string;
+    url: string;
     mimeType: string;
     sizeBytes: number;
     width: number;

@@ -41,7 +41,7 @@ describe('videos search integration', () => {
     const service = createIntegrationVideosService(
       runtime.prisma,
       runtime.videoObjectStorage,
-      runtime.externalResources,
+      runtime.videoExternalResources,
       {
         publicIds: ['FixedId01_', 'FixedId01_', 'FixedId02_'],
       },

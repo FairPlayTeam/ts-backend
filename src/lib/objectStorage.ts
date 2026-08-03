@@ -1,12 +1,40 @@
-import { Agent as HttpAgent } from 'node:http';
-import { Agent as HttpsAgent } from 'node:https';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import {
+  Agent as HttpAgent,
+  request as httpRequest,
+  type IncomingMessage,
+  type RequestOptions,
+} from 'node:http';
+import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
 import type { Readable } from 'node:stream';
 import { Client } from 'minio';
 import type { ObjectStorageConfig } from '../config/env.parsers.js';
-import { observeOperation, type OperationLogger } from './operationMetrics.js';
+import {
+  observeOperation,
+  type OperationLogger,
+  type OperationTimeoutError,
+} from './operationMetrics.js';
+
+const requestAbortContext = new AsyncLocalStorage<AbortSignal>();
+
+type RequestTransport = { request: typeof httpRequest };
+type RequestFunction = (
+  options: RequestOptions,
+  callback: (response: IncomingMessage) => void,
+) => ReturnType<typeof httpRequest>;
+
+const createRequestScopedTransport = (request: RequestFunction): RequestTransport => ({
+  request: ((options: RequestOptions, callback: (response: IncomingMessage) => void) =>
+    request(
+      {
+        ...options,
+        signal: requestAbortContext.getStore(),
+      },
+      callback,
+    )) as typeof httpRequest,
+});
 
 type ObjectStorageClient = {
-  abortActiveRequests?(): void;
   abortMultipartUpload?(bucketName: string, objectName: string, uploadId: string): Promise<void>;
   bucketExists(bucketName: string): Promise<boolean>;
   completeMultipartUpload?(
@@ -44,10 +72,7 @@ type ObjectStorageClient = {
   ): Promise<string>;
 };
 
-type ObjectStorageSigningClient = Pick<
-  ObjectStorageClient,
-  'abortActiveRequests' | 'presignedGetObject' | 'presignedUrl'
->;
+type ObjectStorageSigningClient = Pick<ObjectStorageClient, 'presignedGetObject' | 'presignedUrl'>;
 
 export type ObjectStorage = {
   bucket: string;
@@ -178,7 +203,6 @@ const runObjectStorageOperation = async <T>({
   config,
   data = {},
   logger,
-  onAbort,
   operation,
   run,
 }: {
@@ -186,9 +210,10 @@ const runObjectStorageOperation = async <T>({
   data?: Record<string, unknown>;
   logger: OperationLogger;
   operation: string;
-  onAbort?: () => void;
   run: () => Promise<T>;
 }): Promise<T> => {
+  const abortController = new AbortController();
+
   try {
     return await observeOperation({
       operation,
@@ -198,10 +223,12 @@ const runObjectStorageOperation = async <T>({
         bucket: config.bucket,
         ...data,
       },
-      ...(onAbort ? { onAbort } : {}),
       successMessage: 'Object storage operation completed',
       failureMessage: 'Object storage operation failed',
-      run,
+      onAbort: (reason: OperationTimeoutError) => {
+        abortController.abort(reason);
+      },
+      run: () => requestAbortContext.run(abortController.signal, run),
     });
   } catch (err) {
     throw toObjectStorageUnavailableError(err);
@@ -383,10 +410,11 @@ const assertReadLimit = (maxBytes: number): void => {
 
 const createMinioClientForEndpoint = (config: ObjectStorageConfig, endpointUrl: string): Client => {
   const endpoint = new URL(endpointUrl);
-  const transportAgent =
-    endpoint.protocol === 'https:'
-      ? new HttpsAgent({ timeout: config.operationTimeoutMs })
-      : new HttpAgent({ timeout: config.operationTimeoutMs });
+  const useSsl = endpoint.protocol === 'https:';
+  const transportAgent = useSsl
+    ? new HttpsAgent({ timeout: config.operationTimeoutMs })
+    : new HttpAgent({ timeout: config.operationTimeoutMs });
+  const transport = createRequestScopedTransport(useSsl ? httpsRequest : httpRequest);
 
   const client = new Client({
     endPoint: endpoint.hostname,
@@ -396,14 +424,11 @@ const createMinioClientForEndpoint = (config: ObjectStorageConfig, endpointUrl: 
     region: config.region,
     accessKey: config.accessKey,
     secretKey: config.secretKey,
+    transport,
     transportAgent,
   });
 
-  return Object.assign(client, {
-    abortActiveRequests: () => {
-      transportAgent.destroy();
-    },
-  });
+  return client;
 };
 
 export const createMinioClient = (config: ObjectStorageConfig): Client =>
@@ -419,12 +444,6 @@ export const createObjectStorage = (
   signingClient: ObjectStorageSigningClient = client,
 ): ObjectStorage => {
   const bucketReady = new Map<string, Promise<void>>();
-  const abortActiveRequests = client.abortActiveRequests
-    ? (): void => client.abortActiveRequests?.()
-    : undefined;
-  const abortActiveSigningRequests = signingClient.abortActiveRequests
-    ? (): void => signingClient.abortActiveRequests?.()
-    : undefined;
 
   const ensureBucket = async (bucket = config.bucket): Promise<void> => {
     let initialization = bucketReady.get(bucket);
@@ -435,7 +454,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.ensureBucket',
         data: { bucket },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: async () => {
           const exists = await client.bucketExists(bucket);
 
@@ -461,7 +479,6 @@ export const createObjectStorage = (
       logger,
       operation: 'objectStorage.deleteObject',
       data: { bucket, objectKey },
-      ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
       run: async () => {
         try {
           await client.removeObject(bucket, objectKey);
@@ -486,7 +503,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.abortMultipartUpload',
         data: { bucket, objectKey },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: async () => {
           if (!client.abortMultipartUpload) {
             throw createUnsupportedMultipartError();
@@ -513,7 +529,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.completeMultipartUpload',
         data: { bucket, objectKey, partCount: parts.length },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: async () => {
           if (!client.completeMultipartUpload) {
             throw createUnsupportedMultipartError();
@@ -537,7 +552,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.downloadObject',
         data: { bucket, objectKey },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: () => {
           if (!client.fGetObject) {
             throw createUnsupportedObjectStorageOperationError('object downloads');
@@ -557,7 +571,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.readObject',
         data: { bucket, maxBytes, objectKey },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: async () => {
           if (!client.getObject) {
             throw createUnsupportedObjectStorageOperationError('bounded object reads');
@@ -589,7 +602,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.initiateMultipartUpload',
         data: { bucket, contentType, objectKey },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: () => {
           if (!client.initiateNewMultipartUpload) {
             throw createUnsupportedMultipartError();
@@ -618,7 +630,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.putObject',
         data: { bucket, contentType, objectKey, sizeBytes: body.length },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: async () => {
           await client.putObject(bucket, objectKey, body, body.length, {
             'Content-Type': contentType,
@@ -643,7 +654,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.getSignedUrl',
         data: { bucket, objectKey, signedUrlTtlSeconds: config.signedUrlTtlSeconds },
-        ...(abortActiveSigningRequests ? { onAbort: abortActiveSigningRequests } : {}),
         run: () => signingClient.presignedGetObject(bucket, objectKey, config.signedUrlTtlSeconds),
       });
 
@@ -658,7 +668,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.headObject',
         data: { bucket, objectKey },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: async () => {
           try {
             const result = await client.statObject(bucket, objectKey);
@@ -694,7 +703,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.listMultipartUploads',
         data: { bucket, limit, prefix },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: async () => {
           if (!client.listIncompleteUploads) {
             throw createUnsupportedObjectStorageOperationError('multipart upload listing');
@@ -723,7 +731,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.listObjects',
         data: { bucket, limit, prefix },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: async () => {
           if (!client.listObjectsV2) {
             throw createUnsupportedObjectStorageOperationError('object listing');
@@ -750,7 +757,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.signMultipartUploadPart',
         data: { bucket, objectKey, partNumber },
-        ...(abortActiveSigningRequests ? { onAbort: abortActiveSigningRequests } : {}),
         run: () => {
           if (!signingClient.presignedUrl) {
             throw createUnsupportedMultipartError();
@@ -773,7 +779,6 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.checkReady',
         data: { bucket },
-        ...(abortActiveRequests ? { onAbort: abortActiveRequests } : {}),
         run: async () => {
           await client.statObject(bucket, '.readiness').catch((err: unknown) => {
             if (!isNotFoundStorageError(err)) {

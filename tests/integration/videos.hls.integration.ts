@@ -350,8 +350,13 @@ describe('videos HLS integration', () => {
       .set('Authorization', `Bearer ${owner.sessionKey}`)
       .send({ decision: 'rejected', reason: 'Video policy violation.' })
       .expect(200);
-    await request(app).get(masterPath).expect(200);
-    await request(app).get(thumbnailPath).redirects(0).expect(307);
+    const rejectedReadableResponses = await Promise.all([
+      request(app).get(thumbnailPath).redirects(0),
+      request(app).get(masterPath),
+      request(app).get(activeRenditionPath),
+      request(app).get(activeSegmentPath).redirects(0),
+    ]);
+    expect(rejectedReadableResponses.map(({ status }) => status)).toEqual([307, 200, 200, 307]);
 
     await runtime.prisma.video.update({
       where: { id: firstVideo.video.id },

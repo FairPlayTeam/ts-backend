@@ -10,10 +10,8 @@ import { createTestDeps } from './support/authService.js';
 import type { AuthDeps } from './support/authService.js';
 
 describe('auth service profile', () => {
-  test('returns profile data with signed profile media urls', async () => {
+  test('returns relative profile media paths using only database presence', async () => {
     const { deps, calls } = createTestDeps();
-    const avatarObjectKey = 'users/user-id/avatar/current-avatar.webp';
-    const bannerObjectKey = 'users/user-id/banner/current-banner.webp';
     const service = createAuthService({
       ...deps,
       prisma: {
@@ -32,12 +30,12 @@ describe('auth service profile', () => {
               role: 'user',
               mediaAssets: [
                 {
+                  id: 'avatar-asset-id',
                   kind: 'avatar',
-                  objectKey: avatarObjectKey,
                 },
                 {
+                  id: 'banner-asset-id',
                   kind: 'banner',
-                  objectKey: bannerObjectKey,
                 },
               ],
             };
@@ -58,8 +56,8 @@ describe('auth service profile', () => {
         displayName: 'Fairplay User',
         bio: 'Definitely not an undercover Y**tube employee.',
         role: 'user',
-        avatarUrl: `http://localhost:9000/fairplay-user-media/${avatarObjectKey}`,
-        bannerUrl: `http://localhost:9000/fairplay-user-media/${bannerObjectKey}`,
+        avatarUrl: '/profiles/fairplay_user/avatar',
+        bannerUrl: '/profiles/fairplay_user/banner',
       },
     });
 
@@ -79,14 +77,13 @@ describe('auth service profile', () => {
             },
           },
           select: {
-            bucket: true,
+            id: true,
             kind: true,
-            objectKey: true,
           },
         },
       },
     });
-    expect(calls.signedUrlObjectKeys).toEqual([avatarObjectKey, bannerObjectKey]);
+    expect(calls.putObject).toBeUndefined();
   });
 
   test('returns profile data with null media urls when no profile media exists', async () => {
@@ -131,7 +128,7 @@ describe('auth service profile', () => {
       },
     });
 
-    expect(calls.signedUrlObjectKeys).toEqual([]);
+    expect(calls.putObject).toBeUndefined();
   });
 
   test('rejects profile reads when the authenticated user disappeared', async () => {

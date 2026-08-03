@@ -130,8 +130,7 @@ const userDataExportResult = {
     {
       id: '11111111-1111-4111-8111-111111111111',
       kind: 'avatar' as const,
-      objectKey: 'users/user-id/avatar/current-avatar.webp',
-      bucket: 'fairplay-user-media',
+      url: '/profiles/fairplay_user/avatar',
       mimeType: 'image/webp',
       sizeBytes: 1234,
       width: 512,
@@ -142,8 +141,7 @@ const userDataExportResult = {
     {
       id: '22222222-2222-4222-8222-222222222222',
       kind: 'banner' as const,
-      objectKey: 'users/user-id/banner/current-banner.webp',
-      bucket: 'fairplay-user-media',
+      url: '/profiles/fairplay_user/banner',
       mimeType: 'image/webp',
       sizeBytes: 2345,
       width: 1500,
@@ -191,10 +189,8 @@ const createControllerAuthService = (
   getProfile: async () => ({
     user: {
       ...loginResult.user,
-      avatarUrl:
-        'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
-      bannerUrl:
-        'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+      avatarUrl: '/profiles/fairplay_user/avatar',
+      bannerUrl: '/profiles/fairplay_user/banner',
     },
   }),
   getUserSessions: async () => userSessionsResult,
@@ -217,7 +213,7 @@ const createControllerAuthService = (
   uploadAvatar: async () => ({
     message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
     avatar: {
-      url: 'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+      url: '/profiles/fairplay_user/avatar',
       mimeType: 'image/webp',
       sizeBytes: 1234,
       width: 512,
@@ -232,7 +228,7 @@ const createControllerAuthService = (
   uploadBanner: async () => ({
     message: UPLOAD_BANNER_SUCCESS_MESSAGE,
     banner: {
-      url: 'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+      url: '/profiles/fairplay_user/banner',
       mimeType: 'image/webp',
       sizeBytes: 2345,
       width: 1500,
@@ -538,10 +534,8 @@ describe('auth controller', () => {
     const { response, state } = createMockResponse();
     const profileUser = {
       ...validatedSession.user,
-      avatarUrl:
-        'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
-      bannerUrl:
-        'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+      avatarUrl: '/profiles/fairplay_user/avatar',
+      bannerUrl: '/profiles/fairplay_user/banner',
     };
     const controller = createTestAuthController({
       getProfile: async (input) => {
@@ -647,8 +641,7 @@ describe('auth controller', () => {
         {
           id: '11111111-1111-4111-8111-111111111111',
           kind: 'avatar',
-          objectKey: 'users/user-id/avatar/current-avatar.webp',
-          bucket: 'fairplay-user-media',
+          url: '/profiles/fairplay_user/avatar',
           mimeType: 'image/webp',
           sizeBytes: 1234,
           width: 512,
@@ -659,8 +652,7 @@ describe('auth controller', () => {
         {
           id: '22222222-2222-4222-8222-222222222222',
           kind: 'banner',
-          objectKey: 'users/user-id/banner/current-banner.webp',
-          bucket: 'fairplay-user-media',
+          url: '/profiles/fairplay_user/banner',
           mimeType: 'image/webp',
           sizeBytes: 2345,
           width: 1500,
@@ -819,7 +811,7 @@ describe('auth controller', () => {
         return {
           message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
           avatar: {
-            url: 'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+            url: '/profiles/fairplay_user/avatar',
             mimeType: 'image/webp',
             sizeBytes: 1234,
             width: 512,
@@ -857,7 +849,7 @@ describe('auth controller', () => {
     expect(state.body).toEqual({
       message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
       avatar: {
-        url: 'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+        url: '/profiles/fairplay_user/avatar',
         mimeType: 'image/webp',
         sizeBytes: 1234,
         width: 512,
@@ -926,7 +918,7 @@ describe('auth controller', () => {
         return {
           message: UPLOAD_BANNER_SUCCESS_MESSAGE,
           banner: {
-            url: 'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+            url: '/profiles/fairplay_user/banner',
             mimeType: 'image/webp',
             sizeBytes: 2345,
             width: 1500,
@@ -964,7 +956,7 @@ describe('auth controller', () => {
     expect(state.body).toEqual({
       message: UPLOAD_BANNER_SUCCESS_MESSAGE,
       banner: {
-        url: 'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+        url: '/profiles/fairplay_user/banner',
         mimeType: 'image/webp',
         sizeBytes: 2345,
         width: 1500,

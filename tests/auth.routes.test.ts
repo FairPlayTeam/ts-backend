@@ -199,10 +199,8 @@ describe('auth routes', () => {
         displayName: 'Fairplay User',
         bio: 'Definitely not an undercover Y**tube employee.',
         role: 'user',
-        avatarUrl:
-          'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
-        bannerUrl:
-          'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+        avatarUrl: '/profiles/fairplay_user/avatar',
+        bannerUrl: '/profiles/fairplay_user/banner',
       },
       session: {
         id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
@@ -247,7 +245,8 @@ describe('auth routes', () => {
     const bodyText = await response.text();
     expect(bodyText).toContain('\n  "exportedAt": "2026-01-01T00:00:00.000Z"');
     expect(bodyText.endsWith('\n')).toBe(true);
-    expect(JSON.parse(bodyText)).toEqual({
+    const body = JSON.parse(bodyText) as { [key: string]: unknown; mediaAssets: unknown[] };
+    expect(body).toEqual({
       exportedAt: '2026-01-01T00:00:00.000Z',
       user: {
         id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
@@ -267,8 +266,7 @@ describe('auth routes', () => {
         {
           id: '11111111-1111-4111-8111-111111111111',
           kind: 'avatar',
-          objectKey: 'users/user-id/avatar/current-avatar.webp',
-          bucket: 'fairplay-user-media',
+          url: '/profiles/fairplay_user/avatar',
           mimeType: 'image/webp',
           sizeBytes: 1234,
           width: 512,
@@ -279,8 +277,7 @@ describe('auth routes', () => {
         {
           id: '22222222-2222-4222-8222-222222222222',
           kind: 'banner',
-          objectKey: 'users/user-id/banner/current-banner.webp',
-          bucket: 'fairplay-user-media',
+          url: '/profiles/fairplay_user/banner',
           mimeType: 'image/webp',
           sizeBytes: 2345,
           width: 1500,
@@ -315,6 +312,8 @@ describe('auth routes', () => {
       emailVerificationToken: null,
       passwordResetToken: null,
     });
+    expect(JSON.stringify(body.mediaAssets)).not.toContain('objectKey');
+    expect(JSON.stringify(body.mediaAssets)).not.toContain('bucket');
   });
 
   test('requires a bearer session to export current user data', async () => {
@@ -465,7 +464,7 @@ describe('auth routes', () => {
     expect(await response.json()).toEqual({
       message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
       avatar: {
-        url: 'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+        url: '/profiles/fairplay_user/avatar',
         mimeType: 'image/webp',
         sizeBytes: 1234,
         width: 512,
@@ -616,7 +615,7 @@ describe('auth routes', () => {
     expect(await response.json()).toEqual({
       message: UPLOAD_BANNER_SUCCESS_MESSAGE,
       banner: {
-        url: 'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+        url: '/profiles/fairplay_user/banner',
         mimeType: 'image/webp',
         sizeBytes: 2345,
         width: 1500,

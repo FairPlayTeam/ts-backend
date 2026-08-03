@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import {
   EXTERNAL_RESOURCE_QUIESCENCE_MS,
   ExternalResourceSizeMismatchError,
+  USER_MEDIA_EXTERNAL_RESOURCE_ROLES,
   VIDEO_EXTERNAL_RESOURCE_ROLES,
+  createExternalResourceReconciler,
   getExternalResourceQuiescenceNotBefore,
   getExternalResourceRetryDelayMs,
   reconcileExternalResourceStorage,
@@ -262,5 +264,20 @@ describe('external resource reconciliation', () => {
       'thumbnail_prefix',
     ]);
     expect(VIDEO_EXTERNAL_RESOURCE_ROLES).not.toContain('user_media');
+    expect(USER_MEDIA_EXTERNAL_RESOURCE_ROLES).toEqual(['user_media']);
+  });
+
+  test('rejects reconciliation roles outside an explicitly scoped reconciler', async () => {
+    const reconciler = createExternalResourceReconciler({
+      prisma: {} as never,
+      objectStorage: {} as never,
+      clock: { now: () => new Date() },
+      logger: { warn: () => undefined },
+      allowedRoles: USER_MEDIA_EXTERNAL_RESOURCE_ROLES,
+    });
+
+    await expect(reconciler.reconcileDue({ roles: ['source'] })).rejects.toThrow(
+      'External resource role source is outside this reconciler scope',
+    );
   });
 });

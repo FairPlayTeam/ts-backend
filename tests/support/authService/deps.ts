@@ -47,12 +47,6 @@ export function createTestDeps(overrides: AuthDepsOverrides = {}) {
       putObject: async (input: unknown) => {
         calls.putObject = input;
       },
-      getSignedUrl: async (objectKey: string) => {
-        calls.signedUrlObjectKey = objectKey;
-        calls.signedUrlObjectKeys.push(objectKey);
-
-        return `http://localhost:9000/fairplay-user-media/${objectKey}`;
-      },
     },
     externalResources: {
       reconcileTarget: async (input: unknown) => {

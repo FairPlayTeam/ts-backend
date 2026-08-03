@@ -31,7 +31,7 @@ export type AuthDependencies = {
     sendVerificationEmail(email: string, code: string): Promise<void>;
     sendPasswordResetEmail(email: string, code: string): Promise<void>;
   };
-  objectStorage: Pick<ObjectStorage, 'bucket' | 'putObject' | 'getSignedUrl'>;
+  objectStorage: Pick<ObjectStorage, 'bucket' | 'putObject'>;
   externalResources: Pick<ExternalResourceReconciler, 'reconcileDue' | 'reconcileTarget'>;
   userMediaProcessor: UserMediaProcessor;
   clock: {

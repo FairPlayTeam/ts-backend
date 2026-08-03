@@ -23,13 +23,15 @@ describe('auth service account data', () => {
     expect(result.mediaAssets).toEqual([
       expect.objectContaining({
         kind: 'avatar',
-        bucket: 'fairplay-user-media',
+        url: '/profiles/fairplay_user/avatar',
       }),
       expect.objectContaining({
         kind: 'banner',
-        bucket: 'fairplay-user-media',
+        url: '/profiles/fairplay_user/banner',
       }),
     ]);
+    expect(JSON.stringify(result.mediaAssets)).not.toContain('objectKey');
+    expect(JSON.stringify(result.mediaAssets)).not.toContain('bucket');
     expect(result.videoRatings).toEqual([
       {
         videoId: '33333333-3333-4333-8333-333333333333',
@@ -47,10 +49,16 @@ describe('auth service account data', () => {
       where: { id: 'user-id' },
       select: expect.objectContaining({
         mediaAssets: {
-          select: expect.objectContaining({
-            objectKey: true,
-            bucket: true,
-          }),
+          select: {
+            id: true,
+            kind: true,
+            mimeType: true,
+            sizeBytes: true,
+            width: true,
+            height: true,
+            createdAt: true,
+            updatedAt: true,
+          },
           orderBy: [{ kind: 'asc' }, { id: 'asc' }],
         },
         videoRatings: {
@@ -186,7 +194,7 @@ describe('auth service account data', () => {
       ),
     );
     expect(calls.userDeleteMany).toEqual({ where: { id: 'user-id' } });
-    expect(reconciledTargetIds).toEqual(targetIds);
+    expect(reconciledTargetIds).toEqual(['media-target']);
   });
 
   test('keeps account deletion successful when immediate reconciliation fails', async () => {

@@ -39,8 +39,6 @@ export const adminAccountRouteDocs = [
       429: jsonResponse('Too many requests', ApiErrorSchema),
 
       500: jsonResponse('Internal server error', ApiErrorSchema),
-
-      503: jsonResponse('Object storage unavailable', ApiErrorSchema),
     },
   },
   {

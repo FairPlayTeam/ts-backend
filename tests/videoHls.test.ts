@@ -10,6 +10,9 @@ import { VideoNotFoundError } from '../src/services/videos.errors.js';
 
 const publicId = 'AbCdEf123_';
 const generationId = '11111111-1111-4111-8111-111111111111';
+const videoId = '22222222-2222-4222-8222-222222222222';
+const ownerId = '33333333-3333-4333-8333-333333333333';
+const artifactPrefix = `${ownerId}/${videoId}/generations/${generationId}`;
 
 const createHlsServiceHarness = () => {
   const calls = {
@@ -49,6 +52,87 @@ const createHlsServiceHarness = () => {
       },
       getSignedUrl: async (objectKey: string) => {
         calls.signedObjectKeys.push(objectKey);
+        return 'http://localhost/signed';
+      },
+    },
+  } as unknown as Parameters<typeof createVideosService>[0]);
+
+  return { calls, service };
+};
+
+const createReadableVideoAssetHarness = () => {
+  const calls = {
+    events: [] as string[],
+    generationLookupArgs: [] as unknown[],
+    readObjectInputs: [] as unknown[],
+    videoLookupArgs: [] as unknown[],
+  };
+  const service = createVideosService({
+    prisma: {
+      video: {
+        findFirst: async (args: unknown) => {
+          calls.videoLookupArgs.push(args);
+
+          return {
+            id: videoId,
+            ownerId,
+            thumbnailObjectKey: `${artifactPrefix}/thumbnail/poster.webp`,
+            moderationStatus: 'rejected',
+            visibility: 'unlisted',
+            activeArtifactGeneration: {
+              id: generationId,
+              bucket: 'videos',
+              thumbnailObjectKey: `${artifactPrefix}/thumbnail/poster.webp`,
+              renditions: [
+                {
+                  quality: 'p480',
+                  width: 854,
+                  height: 480,
+                  bitrate: 1_400_000,
+                },
+              ],
+            },
+          };
+        },
+      },
+      videoArtifactGeneration: {
+        findFirst: async (args: unknown) => {
+          calls.generationLookupArgs.push(args);
+
+          return {
+            id: generationId,
+            bucket: 'videos',
+            video: { id: videoId, ownerId },
+            renditions: [
+              {
+                quality: 'p480',
+                width: 854,
+                height: 480,
+                bitrate: 1_400_000,
+              },
+            ],
+          };
+        },
+      },
+    },
+    objectStorage: {
+      readObject: async (input: unknown) => {
+        calls.events.push('read');
+        calls.readObjectInputs.push(input);
+        const objectKey = (input as { objectKey: string }).objectKey;
+
+        return objectKey.endsWith('/master.m3u8')
+          ? Buffer.from('#EXTM3U\n480p/index.m3u8\n')
+          : Buffer.from('#EXTM3U\nsegments/segment-00000.ts\n');
+      },
+      headObject: async () => {
+        calls.events.push('head');
+
+        return { objectKey: 'stored-object', sizeBytes: 1 };
+      },
+      getSignedUrl: async () => {
+        calls.events.push('sign');
+
         return 'http://localhost/signed';
       },
     },
@@ -210,5 +294,81 @@ describe('public video HLS helpers', () => {
       ],
       signedObjectKeys: [],
     });
+  });
+
+  test('allows ready unlisted thumbnails regardless of rejected moderation and signs only after HEAD', async () => {
+    const { calls, service } = createReadableVideoAssetHarness();
+
+    await expect(service.getThumbnail({ publicId })).resolves.toEqual({
+      url: 'http://localhost/signed',
+    });
+    expect(calls.events).toEqual(['head', 'sign']);
+    expect(calls.videoLookupArgs[0]).toEqual(
+      expect.objectContaining({
+        where: {
+          publicId,
+          processingStatus: 'ready',
+          visibility: { in: ['public', 'unlisted'] },
+          activeArtifactGeneration: { is: { state: 'active' } },
+        },
+      }),
+    );
+    expect((calls.videoLookupArgs[0] as { where: object }).where).not.toHaveProperty(
+      'moderationStatus',
+    );
+  });
+
+  test('proxies and rewrites HLS playlists through bounded reads without signing them', async () => {
+    const { calls, service } = createReadableVideoAssetHarness();
+
+    await expect(service.getHlsMaster({ publicId })).resolves.toEqual({
+      playlist: `#EXTM3U\n/videos/${publicId}/hls/${generationId}/480p/index.m3u8\n`,
+    });
+    await expect(
+      service.getHlsRendition({ publicId, generationId, quality: '480p' }),
+    ).resolves.toEqual({
+      playlist: `#EXTM3U\n/videos/${publicId}/hls/${generationId}/480p/segments/segment-00000.ts\n`,
+    });
+    expect(calls.events).toEqual(['read', 'read']);
+    expect(calls.readObjectInputs).toEqual([
+      {
+        bucket: 'videos',
+        objectKey: `${artifactPrefix}/hls/master.m3u8`,
+        maxBytes: 512 * 1024,
+      },
+      {
+        bucket: 'videos',
+        objectKey: `${artifactPrefix}/hls/480p/index.m3u8`,
+        maxBytes: 512 * 1024,
+      },
+    ]);
+  });
+
+  test('keeps the same readability rule for segments and signs only after object presence', async () => {
+    const { calls, service } = createReadableVideoAssetHarness();
+
+    await expect(
+      service.getHlsSegment({
+        publicId,
+        generationId,
+        quality: '480p',
+        segment: 'segment-00000.ts',
+      }),
+    ).resolves.toEqual({ url: 'http://localhost/signed' });
+    expect(calls.events).toEqual(['head', 'sign']);
+    const generationWhere = (calls.generationLookupArgs[0] as { where: object }).where;
+    expect(generationWhere).toEqual({
+      id: generationId,
+      state: { in: ['active', 'retiring'] },
+      video: {
+        is: {
+          publicId,
+          processingStatus: 'ready',
+          visibility: { in: ['public', 'unlisted'] },
+        },
+      },
+      renditions: { some: { quality: 'p480' } },
+    });
+    expect(JSON.stringify(generationWhere)).not.toContain('moderationStatus');
   });
 });

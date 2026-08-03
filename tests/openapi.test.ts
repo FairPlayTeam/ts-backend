@@ -138,6 +138,9 @@ describe('OpenAPI generation', () => {
     const response = await request(app).get('/openapi.json').expect(200);
     const document = response.body;
 
+    expect(JSON.stringify(document)).not.toContain('thumbnailObjectKey');
+    expect(JSON.stringify(document)).not.toContain('fairplay-user-media/users/');
+
     expect(Object.keys(document.paths).sort()).toEqual([
       '/',
       '/admin/users',
@@ -165,6 +168,8 @@ describe('OpenAPI generation', () => {
       '/moderation/videos/{videoId}/moderation',
       '/profiles/me/following',
       '/profiles/{username}',
+      '/profiles/{username}/avatar',
+      '/profiles/{username}/banner',
       '/profiles/{username}/follow',
       '/videos',
       '/videos/me',
@@ -236,6 +241,12 @@ describe('OpenAPI generation', () => {
       ]),
     );
     expect(document.paths['/videos/{publicId}/hls/master.m3u8']?.get?.security).toEqual([]);
+    expect(document.paths['/profiles/{username}/avatar']?.get?.security).toEqual([]);
+    expect(document.paths['/profiles/{username}/banner']?.get?.security).toEqual([]);
+    expect(
+      document.paths['/profiles/{username}/avatar']?.get?.responses?.[200]?.content?.['image/webp'],
+    ).toBeDefined();
+    expect(document.paths['/profiles/{username}']?.get?.responses?.[503]).toBeUndefined();
     expect(document.paths['/videos/{publicId}/thumbnail']?.get?.security).toEqual([]);
     expect(document.paths['/videos/{publicId}/thumbnail']?.get?.responses?.[307]).toBeDefined();
     expect(
@@ -291,7 +302,7 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/admin/users']?.get?.responses?.[400]).toBeDefined();
     expect(document.paths['/admin/users']?.get?.responses?.[401]).toBeDefined();
     expect(document.paths['/admin/users']?.get?.responses?.[403]).toBeDefined();
-    expect(document.paths['/admin/users']?.get?.responses?.[503]).toBeDefined();
+    expect(document.paths['/admin/users']?.get?.responses?.[503]).toBeUndefined();
     expect(document.paths['/admin/users/{userId}/ban']?.post?.requestBody).toBeDefined();
     expect(document.paths['/admin/users/{userId}/ban']?.post?.security).toEqual([
       { bearerAuth: [] },
@@ -355,7 +366,7 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/me']?.get?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/auth/me']?.get?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/me']?.get?.responses?.[404]).toBeDefined();
-    expect(document.paths['/auth/me']?.get?.responses?.[503]).toBeDefined();
+    expect(document.paths['/auth/me']?.get?.responses?.[503]).toBeUndefined();
     expect(document.paths['/auth/me']?.patch?.requestBody).toBeDefined();
     expect(document.paths['/auth/me']?.patch?.security).toEqual([{ bearerAuth: [] }]);
     expect(document.paths['/auth/me']?.patch?.responses?.[200]).toBeDefined();
@@ -406,6 +417,12 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/me/export']?.post?.responses?.[400]).toBeDefined();
     expect(document.paths['/auth/me/export']?.post?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/me/export']?.post?.responses?.[404]).toBeDefined();
+    const userDataExportSchema = JSON.stringify(
+      document.components?.schemas?.UserDataExportResponse,
+    );
+    expect(userDataExportSchema).toContain('"url"');
+    expect(userDataExportSchema).not.toContain('objectKey');
+    expect(userDataExportSchema).not.toContain('"bucket"');
     expect(document.paths['/auth/sessions']?.get?.requestBody).toBeUndefined();
     expect(document.paths['/auth/sessions']?.get?.parameters).toEqual(
       expect.arrayContaining([
@@ -498,7 +515,7 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/profiles/me/following']?.get?.responses?.[200]).toBeDefined();
     expect(document.paths['/profiles/me/following']?.get?.responses?.[400]).toBeDefined();
     expect(document.paths['/profiles/me/following']?.get?.responses?.[401]).toBeDefined();
-    expect(document.paths['/profiles/me/following']?.get?.responses?.[503]).toBeDefined();
+    expect(document.paths['/profiles/me/following']?.get?.responses?.[503]).toBeUndefined();
     expect(document.paths['/profiles/{username}']?.get?.requestBody).toBeUndefined();
     expect(document.paths['/profiles/{username}']?.get?.security).toBeUndefined();
     expect(document.paths['/profiles/{username}']?.get?.parameters).toEqual([
@@ -516,7 +533,7 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/profiles/{username}']?.get?.responses?.[200]).toBeDefined();
     expect(document.paths['/profiles/{username}']?.get?.responses?.[400]).toBeDefined();
     expect(document.paths['/profiles/{username}']?.get?.responses?.[404]).toBeDefined();
-    expect(document.paths['/profiles/{username}']?.get?.responses?.[503]).toBeDefined();
+    expect(document.paths['/profiles/{username}']?.get?.responses?.[503]).toBeUndefined();
     expect(document.paths['/profiles/{username}/follow']?.post?.requestBody).toBeUndefined();
     expect(document.paths['/profiles/{username}/follow']?.post?.security).toEqual([
       { bearerAuth: [] },
@@ -532,7 +549,7 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/profiles/{username}/follow']?.post?.responses?.[400]).toBeDefined();
     expect(document.paths['/profiles/{username}/follow']?.post?.responses?.[401]).toBeDefined();
     expect(document.paths['/profiles/{username}/follow']?.post?.responses?.[404]).toBeDefined();
-    expect(document.paths['/profiles/{username}/follow']?.post?.responses?.[503]).toBeDefined();
+    expect(document.paths['/profiles/{username}/follow']?.post?.responses?.[503]).toBeUndefined();
     expect(document.paths['/profiles/{username}/follow']?.delete?.requestBody).toBeUndefined();
     expect(document.paths['/profiles/{username}/follow']?.delete?.security).toEqual([
       { bearerAuth: [] },
@@ -548,7 +565,7 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[400]).toBeDefined();
     expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[401]).toBeDefined();
     expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[404]).toBeDefined();
-    expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[503]).toBeDefined();
+    expect(document.paths['/profiles/{username}/follow']?.delete?.responses?.[503]).toBeUndefined();
     expect(document.paths['/videos']?.post?.requestBody?.content).toHaveProperty(
       'application/json',
     );

@@ -73,8 +73,7 @@ const userDataExportResult = {
     {
       id: '11111111-1111-4111-8111-111111111111',
       kind: 'avatar' as const,
-      objectKey: 'users/user-id/avatar/current-avatar.webp',
-      bucket: 'fairplay-user-media',
+      url: '/profiles/fairplay_user/avatar',
       mimeType: 'image/webp',
       sizeBytes: 1234,
       width: 512,
@@ -85,8 +84,7 @@ const userDataExportResult = {
     {
       id: '22222222-2222-4222-8222-222222222222',
       kind: 'banner' as const,
-      objectKey: 'users/user-id/banner/current-banner.webp',
-      bucket: 'fairplay-user-media',
+      url: '/profiles/fairplay_user/banner',
       mimeType: 'image/webp',
       sizeBytes: 2345,
       width: 1500,
@@ -141,10 +139,8 @@ export const createStubAuthService = (): AuthPorts => ({
   getProfile: async () => ({
     user: {
       ...sessionResult.user,
-      avatarUrl:
-        'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
-      bannerUrl:
-        'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+      avatarUrl: '/profiles/fairplay_user/avatar',
+      bannerUrl: '/profiles/fairplay_user/banner',
     },
   }),
   requestPasswordReset: async () => ({
@@ -185,7 +181,7 @@ export const createStubAuthService = (): AuthPorts => ({
   uploadAvatar: async () => ({
     message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
     avatar: {
-      url: 'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
+      url: '/profiles/fairplay_user/avatar',
       mimeType: 'image/webp',
       sizeBytes: 1234,
       width: 512,
@@ -200,7 +196,7 @@ export const createStubAuthService = (): AuthPorts => ({
   uploadBanner: async () => ({
     message: UPLOAD_BANNER_SUCCESS_MESSAGE,
     banner: {
-      url: 'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+      url: '/profiles/fairplay_user/banner',
       mimeType: 'image/webp',
       sizeBytes: 2345,
       width: 1500,

@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import type { AdminDependencies } from './admin.dependencies.js';
+import { toProfileMediaUrl } from '../userMedia/userMedia.profileAssets.js';
 import { banAdminAccount } from './admin.accountBan.js';
 import {
   DEFAULT_ADMIN_ACCOUNT_BAN_STATUS,
@@ -40,15 +41,13 @@ const adminAccountSelect = {
       kind: 'avatar',
     },
     select: {
-      objectKey: true,
-      bucket: true,
+      id: true,
     },
     take: 1,
   },
 } satisfies Prisma.UserSelect;
 
 type AccountRecord = Prisma.UserGetPayload<{ select: typeof adminAccountSelect }>;
-type AccountMediaAsset = AccountRecord['mediaAssets'][number];
 
 const normalizeAdminAccountsLimit = (limit: number | undefined): number => {
   if (limit === undefined || !Number.isFinite(limit)) {
@@ -108,24 +107,12 @@ const getBanStatusFilter = (banStatus: AdminAccountBanStatus): Prisma.UserWhereI
   return {};
 };
 
-const getAvatarUrl = async (
-  deps: AdminDependencies,
-  mediaAssets: readonly AccountMediaAsset[],
-): Promise<string | null> => {
-  const avatar = mediaAssets[0];
-
-  return avatar ? deps.objectStorage.getSignedUrl(avatar.objectKey, avatar.bucket) : null;
-};
-
-const toAdminAccountSummary = async (
-  deps: AdminDependencies,
-  account: AccountRecord,
-): Promise<AdminAccountSummary> => {
+const toAdminAccountSummary = (account: AccountRecord): AdminAccountSummary => {
   const { mediaAssets, ...accountSummary } = account;
 
   return {
     ...accountSummary,
-    avatarUrl: await getAvatarUrl(deps, mediaAssets),
+    avatarUrl: toProfileMediaUrl(account.username, 'avatar', mediaAssets[0]),
   };
 };
 
@@ -169,7 +156,7 @@ export const createAdminAccountsService = (deps: AdminDependencies): AdminAccoun
         : null;
 
     return {
-      accounts: await Promise.all(accounts.map((account) => toAdminAccountSummary(deps, account))),
+      accounts: accounts.map(toAdminAccountSummary),
       total,
       nextCursor,
     };

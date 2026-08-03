@@ -9,6 +9,7 @@ import {
 import { handleExpectedMailerError } from '../mailer/mailer.helpers.js';
 import { VideoNotFoundError } from '../videos.errors.js';
 import { buildVideoSearchFilter } from '../videos/videoSearch.js';
+import { resolveBestEffortLink, videoThumbnailPath } from '../assets/assetLinks.js';
 import type { AdminDependencies } from './admin.dependencies.js';
 import type {
   AdminVideoSummary,
@@ -77,9 +78,14 @@ const normalizeAdminVideosLimit = (limit: number | undefined): number => {
   return Math.min(Math.max(Math.trunc(limit), 1), MAX_ADMIN_VIDEOS_LIMIT);
 };
 
-const toAdminVideoSummary = ({ owner, ...video }: AdminVideoRecord): AdminVideoSummary => ({
+const toAdminVideoSummary = ({
+  owner,
+  thumbnailObjectKey,
+  ...video
+}: AdminVideoRecord): AdminVideoSummary => ({
   ...video,
   username: owner.username,
+  thumbnailPath: resolveBestEffortLink(thumbnailObjectKey, videoThumbnailPath(video.publicId)),
 });
 
 const listAdminVideos = async (

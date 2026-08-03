@@ -6,7 +6,6 @@ import {
   currentUserNotFoundErrorResponse,
   jsonRequest,
   jsonResponse,
-  serviceUnavailableErrorResponse,
 } from './shared.js';
 import {
   currentUserResponseSchema,
@@ -28,8 +27,6 @@ export const profileRouteDocs = [
       ...authRequiredErrorResponse,
 
       ...currentUserNotFoundErrorResponse,
-
-      ...serviceUnavailableErrorResponse,
 
       ...commonErrorResponses,
     },

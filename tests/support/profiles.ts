@@ -9,8 +9,8 @@ const publicProfile = {
   username: 'fairplay_user',
   displayName: 'FairPlay User',
   bio: 'Sharing project updates with my subscribers.',
-  avatarUrl: 'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
-  bannerUrl: 'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+  avatarUrl: '/profiles/fairplay_user/avatar',
+  bannerUrl: '/profiles/fairplay_user/banner',
   followerCount: 12,
   followingCount: 3,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -20,11 +20,15 @@ const followingProfile = {
   id: '22222222-2222-4222-8222-222222222222',
   username: 'followed_creator',
   displayName: 'Followed Creator',
-  avatarUrl: 'http://localhost:9000/fairplay-user-media/users/followed/avatar/current-avatar.webp',
+  avatarUrl: '/profiles/followed_creator/avatar',
   followedAt: new Date('2026-01-02T00:00:00.000Z'),
 };
 
 export const createStubProfilesService = (): ProfilesPorts => ({
+  getProfileMedia: async ({ kind }) => ({
+    body: Buffer.from(`${kind}-bytes`),
+    mimeType: 'image/webp',
+  }),
   getPublicProfile: async () => ({
     profile: publicProfile,
   }),

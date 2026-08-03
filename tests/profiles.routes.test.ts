@@ -5,13 +5,18 @@ import { createApp } from '../src/app.js';
 import { FOLLOWING_PROFILES_CURSOR_PAIR_MESSAGE } from '../src/controllers/profiles.schemas.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
-import { PublicProfileNotFoundError } from '../src/services/profiles.errors.js';
+import { ObjectStorageUnavailableError } from '../src/lib/objectStorage.js';
+import {
+  PublicProfileMediaNotFoundError,
+  PublicProfileNotFoundError,
+} from '../src/services/profiles.errors.js';
 import {
   FOLLOW_PROFILE_SUCCESS_MESSAGE,
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
 } from '../src/services/profiles/profiles.messages.js';
 import type {
   FollowPublicProfileInput,
+  GetProfileMediaInput,
   GetPublicProfileInput,
   ListFollowingProfilesInput,
   ProfilesPorts,
@@ -23,6 +28,7 @@ import { createStubVideosService } from './support/videos.js';
 
 let server: Server;
 let baseUrl: string;
+let receivedProfileMediaRequest: GetProfileMediaInput | undefined;
 let receivedProfileRequest: GetPublicProfileInput | undefined;
 let receivedFollowProfileRequest: FollowPublicProfileInput | undefined;
 let receivedFollowingProfilesRequest: ListFollowingProfilesInput | undefined;
@@ -57,6 +63,19 @@ describe('profiles routes', () => {
         },
         profilesService: {
           ...profilesService,
+          getProfileMedia: async (input) => {
+            receivedProfileMediaRequest = input;
+
+            if (input.username === 'missing_user') {
+              throw new PublicProfileMediaNotFoundError();
+            }
+
+            if (input.username === 'unavailable_user') {
+              throw new ObjectStorageUnavailableError();
+            }
+
+            return profilesService.getProfileMedia(input);
+          },
           getPublicProfile: async (input) => {
             receivedProfileRequest = input;
 
@@ -134,14 +153,62 @@ describe('profiles routes', () => {
         username: 'fairplay_user',
         displayName: 'FairPlay User',
         bio: 'Sharing project updates with my subscribers.',
-        avatarUrl:
-          'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
-        bannerUrl:
-          'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+        avatarUrl: '/profiles/fairplay_user/avatar',
+        bannerUrl: '/profiles/fairplay_user/banner',
         followerCount: 12,
         followingCount: 3,
         createdAt: '2026-01-01T00:00:00.000Z',
       },
+    });
+  });
+
+  test('proxies avatar and banner bytes without exposing a storage redirect', async () => {
+    receivedProfileMediaRequest = undefined;
+
+    const avatarResponse = await fetch(`${baseUrl}/profiles/FairPlay_User/avatar`);
+
+    expect(avatarResponse.status).toBe(200);
+    expect(avatarResponse.headers.get('content-type')).toBe('image/webp');
+    expect(avatarResponse.headers.get('content-length')).toBe('12');
+    expect(avatarResponse.headers.get('cache-control')).toBe('private, no-cache');
+    expect(avatarResponse.headers.get('location')).toBeNull();
+    expect(Buffer.from(await avatarResponse.arrayBuffer())).toEqual(Buffer.from('avatar-bytes'));
+    const observedAvatarRequest = receivedProfileMediaRequest as GetProfileMediaInput | undefined;
+    expect(observedAvatarRequest).toEqual({
+      username: 'fairplay_user',
+      kind: 'avatar',
+    });
+
+    const bannerResponse = await fetch(`${baseUrl}/profiles/FairPlay_User/banner`);
+
+    expect(bannerResponse.status).toBe(200);
+    expect(bannerResponse.headers.get('content-type')).toBe('image/webp');
+    expect(bannerResponse.headers.get('content-length')).toBe('12');
+    expect(bannerResponse.headers.get('cache-control')).toBe('private, no-cache');
+    expect(bannerResponse.headers.get('location')).toBeNull();
+    expect(Buffer.from(await bannerResponse.arrayBuffer())).toEqual(Buffer.from('banner-bytes'));
+    const observedBannerRequest = receivedProfileMediaRequest as GetProfileMediaInput | undefined;
+    expect(observedBannerRequest).toEqual({
+      username: 'fairplay_user',
+      kind: 'banner',
+    });
+  });
+
+  test('maps missing profile media to 404 and storage failures to 503', async () => {
+    const missingResponse = await fetch(`${baseUrl}/profiles/missing_user/avatar`);
+
+    expect(missingResponse.status).toBe(404);
+    expect(await missingResponse.json()).toEqual({
+      error: 'NotFound',
+      message: 'Profile media not found',
+    });
+
+    const unavailableResponse = await fetch(`${baseUrl}/profiles/unavailable_user/banner`);
+
+    expect(unavailableResponse.status).toBe(503);
+    expect(await unavailableResponse.json()).toEqual({
+      error: 'ServiceUnavailable',
+      message: 'Object storage is not configured or unavailable',
     });
   });
 
@@ -183,8 +250,7 @@ describe('profiles routes', () => {
           id: '22222222-2222-4222-8222-222222222222',
           username: 'followed_creator',
           displayName: 'Followed Creator',
-          avatarUrl:
-            'http://localhost:9000/fairplay-user-media/users/followed/avatar/current-avatar.webp',
+          avatarUrl: '/profiles/followed_creator/avatar',
           followedAt: '2026-01-02T00:00:00.000Z',
         },
       ],
@@ -222,10 +288,8 @@ describe('profiles routes', () => {
         username: 'fairplay_user',
         displayName: 'FairPlay User',
         bio: 'Sharing project updates with my subscribers.',
-        avatarUrl:
-          'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
-        bannerUrl:
-          'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+        avatarUrl: '/profiles/fairplay_user/avatar',
+        bannerUrl: '/profiles/fairplay_user/banner',
         followerCount: 13,
         followingCount: 3,
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -261,10 +325,8 @@ describe('profiles routes', () => {
         username: 'fairplay_user',
         displayName: 'FairPlay User',
         bio: 'Sharing project updates with my subscribers.',
-        avatarUrl:
-          'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp',
-        bannerUrl:
-          'http://localhost:9000/fairplay-user-media/users/user-id/banner/current-banner.webp',
+        avatarUrl: '/profiles/fairplay_user/avatar',
+        bannerUrl: '/profiles/fairplay_user/banner',
         followerCount: 12,
         followingCount: 3,
         createdAt: '2026-01-01T00:00:00.000Z',

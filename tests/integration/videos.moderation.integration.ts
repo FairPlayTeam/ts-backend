@@ -78,7 +78,6 @@ describe('videos moderation integration', () => {
       ...runtime,
       adminService: createIntegrationAdminService(
         runtime.prisma,
-        runtime.objectStorage,
         runtime.delivered,
         () => moderationNow,
       ),
@@ -393,7 +392,6 @@ describe('videos moderation integration', () => {
       ...runtime,
       adminService: createIntegrationAdminService(
         runtime.prisma,
-        runtime.objectStorage,
         runtime.delivered,
         () => moderationNow,
       ),
@@ -441,7 +439,7 @@ describe('videos moderation integration', () => {
     const controlledVideosService = createIntegrationVideosService(
       runtime.prisma,
       runtime.videoObjectStorage,
-      runtime.externalResources,
+      runtime.videoExternalResources,
       { now: () => observedAt },
     );
 
@@ -494,7 +492,6 @@ describe('videos moderation integration', () => {
       ...runtime,
       adminService: createAdminService({
         prisma: runtime.prisma,
-        objectStorage: runtime.objectStorage,
         mailer: {
           sendAccountBannedEmail: async () => undefined,
           sendVideoRejectedEmail: async () => {
@@ -583,7 +580,6 @@ describe('videos moderation integration', () => {
       ...runtime,
       adminService: createIntegrationAdminService(
         runtime.prisma,
-        runtime.objectStorage,
         runtime.delivered,
         () => decisionAt,
       ),
@@ -706,7 +702,6 @@ describe('videos moderation integration', () => {
       ...runtime,
       adminService: createIntegrationAdminService(
         runtime.prisma,
-        runtime.objectStorage,
         runtime.delivered,
         () => decisionAt,
       ),
@@ -828,7 +823,6 @@ describe('videos moderation integration', () => {
       ...runtime,
       adminService: createIntegrationAdminService(
         runtime.prisma,
-        runtime.objectStorage,
         runtime.delivered,
         () => cleanupNow,
       ),

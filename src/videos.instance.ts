@@ -5,13 +5,13 @@ import { logger } from './lib/logger.js';
 import { videoObjectStorage } from './objectStorage.instance.js';
 import { createVideosService } from './services/videos.service.js';
 import { createVideoPublicId } from './services/videos/videoPublicId.js';
-import { externalResourceReconciler } from './externalResources.instance.js';
+import { videoExternalResourceReconciler } from './externalResources.instance.js';
 import { createUserMediaProcessor } from './services/userMedia/userMedia.processor.js';
 
 export const videosService = createVideosService({
   prisma,
   objectStorage: videoObjectStorage ?? createUnavailableObjectStorage(),
-  externalResources: externalResourceReconciler,
+  externalResources: videoExternalResourceReconciler,
   imageProcessor: createUserMediaProcessor({
     profileMediaMaxUploadBytes: config.profileMediaMaxUploadBytes,
   }),

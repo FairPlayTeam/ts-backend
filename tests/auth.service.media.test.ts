@@ -26,10 +26,6 @@ describe('auth service media', () => {
           events.push('put');
           calls.putObject = input;
         },
-        getSignedUrl: async (objectKey: string, bucket?: string) => {
-          calls.signedUrlObjectKey = objectKey;
-          return `http://localhost:9000/${bucket}/${objectKey}`;
-        },
       },
     });
     const originalTransaction = deps.prisma.$transaction.bind(deps.prisma);
@@ -46,7 +42,7 @@ describe('auth service media', () => {
         size: 10,
       },
     });
-    const objectKey = calls.signedUrlObjectKey as string;
+    const objectKey = (calls.putObject as { objectKey: string }).objectKey;
 
     expect(objectKey).toMatch(avatarObjectKeyPattern);
     expect(events.slice(0, 2)).toEqual(['transaction', 'put']);
@@ -66,6 +62,10 @@ describe('auth service media', () => {
         nextAttemptAt: new Date('2026-01-01T01:00:00.000Z'),
       },
       select: { id: true },
+    });
+    expect(calls.userFindUnique).toEqual({
+      where: { id: 'user-id' },
+      select: { id: true, username: true },
     });
     expect(calls.putObject).toEqual({
       objectKey,
@@ -113,7 +113,7 @@ describe('auth service media', () => {
     expect(result).toEqual({
       message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
       avatar: {
-        url: `http://localhost:9000/fairplay-user-media/${objectKey}`,
+        url: '/profiles/fairplay_user/avatar',
         mimeType: 'image/webp',
         sizeBytes: 6,
         width: 512,
@@ -175,7 +175,6 @@ describe('auth service media', () => {
         putObject: async () => {
           throw putError;
         },
-        getSignedUrl: async () => 'unused',
       },
       externalResources: {
         reconcileDue: async () => ({
@@ -387,13 +386,13 @@ describe('auth service media', () => {
       userId: 'user-id',
       file: { buffer: Buffer.from('raw-banner'), size: 10 },
     });
-    const objectKey = calls.signedUrlObjectKey as string;
+    const objectKey = (calls.putObject as { objectKey: string }).objectKey;
 
     expect(objectKey).toMatch(bannerObjectKeyPattern);
     expect(result).toEqual({
       message: UPLOAD_BANNER_SUCCESS_MESSAGE,
       banner: {
-        url: `http://localhost:9000/fairplay-user-media/${objectKey}`,
+        url: '/profiles/fairplay_user/banner',
         mimeType: 'image/webp',
         sizeBytes: 7,
         width: 1500,

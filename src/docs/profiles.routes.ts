@@ -8,6 +8,16 @@ import {
 } from '../controllers/profiles.schemas.js';
 import { jsonResponse } from './openapi.helpers.js';
 import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from './registry.js';
+import { z } from './zod.js';
+
+const profileMediaResponse = (description: string) => ({
+  description,
+  content: {
+    'image/webp': {
+      schema: z.string().openapi({ type: 'string', format: 'binary' }),
+    },
+  },
+});
 
 export const routeDocs = [
   {
@@ -29,7 +39,41 @@ export const routeDocs = [
       429: jsonResponse('Too many requests', ApiErrorSchema),
 
       500: jsonResponse('Internal server error', ApiErrorSchema),
-
+    },
+  },
+  {
+    method: 'get',
+    path: '/profiles/{username}/avatar',
+    summary: 'Proxy a user avatar through the API',
+    tags: ['Profiles'],
+    security: [],
+    request: {
+      params: publicProfileParamsSchema,
+    },
+    responses: {
+      200: profileMediaResponse('Avatar bytes'),
+      400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+      404: jsonResponse('Profile media not found', ApiErrorSchema),
+      429: jsonResponse('Too many requests', ApiErrorSchema),
+      500: jsonResponse('Internal server error', ApiErrorSchema),
+      503: jsonResponse('Object storage unavailable', ApiErrorSchema),
+    },
+  },
+  {
+    method: 'get',
+    path: '/profiles/{username}/banner',
+    summary: 'Proxy a user banner through the API',
+    tags: ['Profiles'],
+    security: [],
+    request: {
+      params: publicProfileParamsSchema,
+    },
+    responses: {
+      200: profileMediaResponse('Banner bytes'),
+      400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+      404: jsonResponse('Profile media not found', ApiErrorSchema),
+      429: jsonResponse('Too many requests', ApiErrorSchema),
+      500: jsonResponse('Internal server error', ApiErrorSchema),
       503: jsonResponse('Object storage unavailable', ApiErrorSchema),
     },
   },
@@ -51,8 +95,6 @@ export const routeDocs = [
       429: jsonResponse('Too many requests', ApiErrorSchema),
 
       500: jsonResponse('Internal server error', ApiErrorSchema),
-
-      503: jsonResponse('Object storage unavailable', ApiErrorSchema),
     },
   },
   {
@@ -76,8 +118,6 @@ export const routeDocs = [
       429: jsonResponse('Too many requests', ApiErrorSchema),
 
       500: jsonResponse('Internal server error', ApiErrorSchema),
-
-      503: jsonResponse('Object storage unavailable', ApiErrorSchema),
     },
   },
   {
@@ -101,8 +141,6 @@ export const routeDocs = [
       429: jsonResponse('Too many requests', ApiErrorSchema),
 
       500: jsonResponse('Internal server error', ApiErrorSchema),
-
-      503: jsonResponse('Object storage unavailable', ApiErrorSchema),
     },
   },
 ] satisfies RouteDoc[];

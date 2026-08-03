@@ -35,7 +35,7 @@ const createAccountRecord = ({
 }: {
   createdAt: Date;
   id: string;
-  mediaAssets?: { objectKey: string }[];
+  mediaAssets?: { id: string }[];
 }) => ({
   id,
   email: `${id}@example.com`,
@@ -91,7 +91,7 @@ const createDeps = ({
     createAccountRecord({
       id: '33333333-3333-4333-8333-333333333333',
       createdAt: firstCreatedAt,
-      mediaAssets: [{ objectKey: 'users/first/avatar/current.webp' }],
+      mediaAssets: [{ id: 'first-avatar-id' }],
     }),
     createAccountRecord({
       id: '22222222-2222-4222-8222-222222222222',
@@ -100,7 +100,7 @@ const createDeps = ({
     createAccountRecord({
       id: '11111111-1111-4111-8111-111111111111',
       createdAt: thirdCreatedAt,
-      mediaAssets: [{ objectKey: 'users/extra/avatar/current.webp' }],
+      mediaAssets: [{ id: 'extra-avatar-id' }],
     }),
   ],
   total = 3,
@@ -128,7 +128,6 @@ const createDeps = ({
     accountBanEmails: { email: string; reason: string }[];
     logs: { data: object; message: string }[];
     sessionUpdateMany?: unknown;
-    signedUrlObjectKeys: string[];
     transactionOperationCount?: number;
     userFindUnique: unknown[];
     userCount?: unknown;
@@ -137,7 +136,6 @@ const createDeps = ({
   } = {
     accountBanEmails: [],
     logs: [],
-    signedUrlObjectKeys: [],
     userFindUnique: [],
   };
   const deps = {
@@ -257,13 +255,6 @@ const createDeps = ({
       },
       sendVideoRejectedEmail: async () => undefined,
     },
-    objectStorage: {
-      getSignedUrl: async (objectKey: string) => {
-        calls.signedUrlObjectKeys.push(objectKey);
-
-        return `signed:${objectKey}`;
-      },
-    },
     clock: {
       now: () => now,
     },
@@ -278,7 +269,7 @@ const createDeps = ({
 };
 
 describe('admin service accounts', () => {
-  test('lists accounts with stable cursor pagination and signed avatar URLs', async () => {
+  test('lists accounts with stable cursor pagination and relative avatar paths', async () => {
     const { calls, deps } = createDeps();
     const service = createAdminService(deps);
 
@@ -289,7 +280,7 @@ describe('admin service accounts', () => {
           email: '33333333-3333-4333-8333-333333333333@example.com',
           username: 'user_3333',
           displayName: 'User 3333',
-          avatarUrl: 'signed:users/first/avatar/current.webp',
+          avatarUrl: '/profiles/user_3333/avatar',
           role: 'user',
           isVerified: true,
           isBanned: false,
@@ -339,8 +330,7 @@ describe('admin service accounts', () => {
             kind: 'avatar',
           },
           select: {
-            bucket: true,
-            objectKey: true,
+            id: true,
           },
           take: 1,
         },
@@ -350,7 +340,6 @@ describe('admin service accounts', () => {
     });
     expect(calls.userCount).toBeUndefined();
     expect(calls.transactionOperationCount).toBe(2);
-    expect(calls.signedUrlObjectKeys).toEqual(['users/first/avatar/current.webp']);
   });
 
   test('applies cursor filtering and caps oversized limits', async () => {

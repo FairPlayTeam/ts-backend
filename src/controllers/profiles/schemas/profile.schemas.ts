@@ -4,6 +4,7 @@ import {
   FOLLOW_PROFILE_SUCCESS_MESSAGE,
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
 } from '../../../services/profiles/profiles.messages.js';
+import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
 
 export const FOLLOWING_PROFILES_CURSOR_PAIR_MESSAGE =
   'cursorFollowedAt and cursorId must be provided together';
@@ -16,6 +17,10 @@ export const publicProfileParamsSchema = z
   .openapi('PublicProfileParams');
 
 export const getPublicProfileSchema = z.object({
+  params: publicProfileParamsSchema,
+});
+
+export const getProfileMediaSchema = z.object({
   params: publicProfileParamsSchema,
 });
 
@@ -58,13 +63,11 @@ const publicProfileSchema = z.object({
   bio: z.string().nullable().openapi({
     example: 'Sharing project updates with my subscribers.',
   }),
-  avatarUrl: z.string().url().nullable().openapi({
-    example:
-      'http://localhost:9000/fairplay-user-media/users/9fdf5/avatar/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
+  avatarUrl: relativeAssetPathSchema.nullable().openapi({
+    example: '/profiles/fairplay_creator/avatar',
   }),
-  bannerUrl: z.string().url().nullable().openapi({
-    example:
-      'http://localhost:9000/fairplay-user-media/users/9fdf5/banner/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
+  bannerUrl: relativeAssetPathSchema.nullable().openapi({
+    example: '/profiles/fairplay_creator/banner',
   }),
   followerCount: z.number().int().nonnegative().openapi({ example: 128 }),
   followingCount: z.number().int().nonnegative().openapi({ example: 42 }),
@@ -75,9 +78,8 @@ const followingProfileSchema = z.object({
   id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
   username: z.string().openapi({ example: 'fairplay_creator' }),
   displayName: z.string().nullable().openapi({ example: 'FairPlay Creator' }),
-  avatarUrl: z.string().url().nullable().openapi({
-    example:
-      'http://localhost:9000/fairplay-user-media/users/9fdf5/avatar/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
+  avatarUrl: relativeAssetPathSchema.nullable().openapi({
+    example: '/profiles/fairplay_creator/avatar',
   }),
   followedAt: publicProfileDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
@@ -120,6 +122,7 @@ export const followingProfilesResponseSchema = z
   .openapi('FollowingProfilesResponse');
 
 export type GetPublicProfileParams = z.infer<typeof getPublicProfileSchema>['params'];
+export type GetProfileMediaParams = z.infer<typeof getProfileMediaSchema>['params'];
 export type FollowPublicProfileParams = z.infer<typeof followPublicProfileSchema>['params'];
 export type UnfollowPublicProfileParams = z.infer<typeof unfollowPublicProfileSchema>['params'];
 export type ListFollowingProfilesQuery = z.infer<typeof listFollowingProfilesSchema>['query'];

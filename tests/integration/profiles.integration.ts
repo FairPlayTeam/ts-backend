@@ -1,13 +1,19 @@
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import sharp from '../../src/lib/sharp.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import { ObjectStorageUnavailableError } from '../../src/lib/objectStorage.js';
+import { OperationTimeoutError } from '../../src/lib/operationMetrics.js';
 import { UPLOAD_AVATAR_SUCCESS_MESSAGE } from '../../src/services/auth/auth.messages.js';
-import { SELF_FOLLOW_MESSAGE } from '../../src/services/profiles.errors.js';
+import {
+  PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE,
+  SELF_FOLLOW_MESSAGE,
+} from '../../src/services/profiles.errors.js';
 import {
   FOLLOW_PROFILE_SUCCESS_MESSAGE,
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
 } from '../../src/services/profiles/profiles.messages.js';
-import { createPng, createVerifiedSession } from './support/fixtures.js';
+import { createPng, createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import { OBJECT_STORAGE_BUCKET } from './support/infrastructure.js';
 import {
   createIntegrationApp,
@@ -169,7 +175,7 @@ describe('profiles integration', () => {
       });
   });
 
-  test('stores uploaded profile media in MinIO and serves it through signed profile URLs', async () => {
+  test('stores uploaded profile media in MinIO and proxies it through opaque profile paths', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
@@ -205,12 +211,16 @@ describe('profiles integration', () => {
       sizeBytes: number;
       url: string;
     };
-    const uploadUrl = new URL(uploadedAvatar.url);
-    expect(uploadUrl.origin).toBe(runtime.objectStorageConfig.publicUrl);
-    expect(uploadUrl.pathname).toMatch(
-      new RegExp(`^/${OBJECT_STORAGE_BUCKET}/users/[0-9a-f-]+/avatar/[0-9a-f-]+\\.webp$`),
-    );
-    expect(uploadUrl.search).not.toBe('');
+    expect(uploadedAvatar.url).toBe('/profiles/minio_media_user/avatar');
+    const bannerInput = await createPng(1_600, 600);
+    await request(app)
+      .put('/auth/me/banner')
+      .set('Authorization', `Bearer ${sessionKey}`)
+      .attach('banner', bannerInput, {
+        filename: 'banner.png',
+        contentType: 'image/png',
+      })
+      .expect(200);
 
     const asset = await runtime.prisma.userMediaAsset.findFirstOrThrow({
       where: {
@@ -244,16 +254,27 @@ describe('profiles integration', () => {
       .get('/auth/me')
       .set('Authorization', `Bearer ${sessionKey}`)
       .expect(200);
-    const avatarUrl = profileResponse.body.user.avatarUrl;
-    expect(avatarUrl).toEqual(
-      expect.stringContaining(`/${OBJECT_STORAGE_BUCKET}/${asset.objectKey}?`),
-    );
+    const avatarUrl = profileResponse.body.user.avatarUrl as string;
+    const bannerUrl = profileResponse.body.user.bannerUrl as string;
+    expect(avatarUrl).toBe('/profiles/minio_media_user/avatar');
+    expect(bannerUrl).toBe('/profiles/minio_media_user/banner');
 
-    const mediaResponse = await fetch(avatarUrl);
-    expect(mediaResponse.status).toBe(200);
-    expect(mediaResponse.headers.get('content-type')).toContain('image/webp');
+    const mediaResponse = await request(app)
+      .get(avatarUrl)
+      .expect(200)
+      .expect('Cache-Control', 'private, no-cache')
+      .expect('Content-Type', /image\/webp/);
+    expect(mediaResponse.headers.location).toBeUndefined();
+    await request(app)
+      .get(bannerUrl)
+      .expect(200)
+      .expect('Cache-Control', 'private, no-cache')
+      .expect('Content-Type', /image\/webp/)
+      .expect((response) => {
+        expect(response.headers.location).toBeUndefined();
+      });
 
-    const mediaBody = Buffer.from(await mediaResponse.arrayBuffer());
+    const mediaBody = mediaResponse.body as Buffer;
     expect(mediaBody.length).toBe(asset.sizeBytes);
     const metadata = await sharp(mediaBody).metadata();
     expect(metadata.format).toBe('webp');
@@ -396,5 +417,141 @@ describe('profiles integration', () => {
       quiescenceNotBefore: expect.any(Date),
       state: 'quiescing',
     });
+  });
+
+  test('returns a clean 404 for an admin-list avatar link followed after account deletion', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const admin = await createVerifiedSession(runtime, {
+      email: 'profile-list-admin@example.com',
+      username: 'profile_list_admin',
+    });
+    await runtime.prisma.user.update({
+      where: { id: admin.userId },
+      data: { role: 'admin' },
+    });
+    const target = await createVerifiedSession(runtime, {
+      email: 'deleted-list-profile@example.com',
+      username: 'deleted_list_profile',
+    });
+    const avatar = await createPng();
+    await runtime.authService.uploadAvatar({
+      userId: target.userId,
+      file: { buffer: avatar, size: avatar.length },
+    });
+
+    const accountsResponse = await request(app)
+      .get('/admin/users?limit=100')
+      .set('Authorization', `Bearer ${admin.sessionKey}`)
+      .expect(200);
+    const listedTarget = (
+      accountsResponse.body.accounts as { id: string; avatarUrl: string }[]
+    ).find(({ id }) => id === target.userId);
+
+    expect(listedTarget?.avatarUrl).toBe('/profiles/deleted_list_profile/avatar');
+    await runtime.authService.deleteAccount({
+      userId: target.userId,
+      currentPassword: INITIAL_PASSWORD,
+    });
+    await request(app)
+      .get(listedTarget?.avatarUrl ?? '')
+      .expect(404)
+      .expect({
+        error: 'NotFound',
+        message: PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE,
+      });
+  });
+
+  test('keeps an avatar proxy read healthy while video reconciliation times out', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const owner = await createVerifiedSession(runtime, {
+      email: 'storage-isolation@example.com',
+      username: 'storage_isolation',
+    });
+    const avatar = await createPng();
+    await runtime.authService.uploadAvatar({
+      userId: owner.userId,
+      file: { buffer: avatar, size: avatar.length },
+    });
+    const video = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Storage isolation timeout probe',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    const dueAt = new Date(Date.now() - 1_000);
+    await runtime.prisma.externalResourceTarget.create({
+      data: {
+        userId: owner.userId,
+        videoId: video.video.id,
+        bucket: runtime.videoObjectStorage.bucket,
+        selector: `isolation/${randomUUID()}.mp4`,
+        selectorKind: 'exact',
+        role: 'source',
+        generation: randomUUID(),
+        expectedSizeBytes: null,
+        mayHaveMultipartUpload: false,
+        goal: 'absent',
+        state: 'quiescing',
+        quiescenceNotBefore: dueAt,
+        nextAttemptAt: dueAt,
+      },
+    });
+
+    let markAvatarReadStarted: (() => void) | undefined;
+    let markVideoDeleteStarted: (() => void) | undefined;
+    const avatarReadStarted = new Promise<void>((resolve) => {
+      markAvatarReadStarted = resolve;
+    });
+    const videoDeleteStarted = new Promise<void>((resolve) => {
+      markVideoDeleteStarted = resolve;
+    });
+    const originalAvatarRead = runtime.objectStorage.readObject;
+    const originalVideoDelete = runtime.videoObjectStorage.deleteObject;
+    let avatarReadCalls = 0;
+    let videoDeleteCalls = 0;
+
+    runtime.objectStorage.readObject = async (input) => {
+      avatarReadCalls += 1;
+      markAvatarReadStarted?.();
+      await videoDeleteStarted;
+
+      return originalAvatarRead(input);
+    };
+    runtime.videoObjectStorage.deleteObject = async () => {
+      videoDeleteCalls += 1;
+      markVideoDeleteStarted?.();
+      await avatarReadStarted;
+      throw new ObjectStorageUnavailableError(undefined, {
+        cause: new OperationTimeoutError('objectStorage.deleteObject', 1),
+      });
+    };
+
+    try {
+      const [reconciliation, avatarResponse] = await Promise.all([
+        runtime.videoExternalResources.reconcileDue({ roles: ['source'], limit: 1 }),
+        request(app).get('/profiles/storage_isolation/avatar'),
+      ]);
+
+      expect(reconciliation).toMatchObject({ claimed: 1, confirmed: 0, failed: 1 });
+      expect(avatarResponse.status).toBe(200);
+      expect(avatarResponse.headers.location).toBeUndefined();
+      expect(Buffer.isBuffer(avatarResponse.body)).toBe(true);
+      expect(avatarReadCalls).toBe(1);
+      expect(videoDeleteCalls).toBe(1);
+    } finally {
+      runtime.objectStorage.readObject = originalAvatarRead;
+      runtime.videoObjectStorage.deleteObject = originalVideoDelete;
+    }
   });
 });

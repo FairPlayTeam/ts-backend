@@ -166,7 +166,7 @@ describe('videos upload integration', () => {
     const quotaBoundService = createIntegrationVideosService(
       runtime.prisma,
       runtime.videoObjectStorage,
-      runtime.externalResources,
+      runtime.videoExternalResources,
       {
         maxUploadBytes: 1,
         userStorageQuotaBytes: firstBody.length + secondBody.length,
@@ -261,7 +261,7 @@ describe('videos upload integration', () => {
     const service = createIntegrationVideosService(
       runtime.prisma,
       failingStorage,
-      runtime.externalResources,
+      runtime.videoExternalResources,
     );
 
     await expect(

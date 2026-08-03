@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { createProfilesService } from '../src/services/profiles.service.js';
-import { PublicProfileNotFoundError, SelfFollowError } from '../src/services/profiles.errors.js';
+import {
+  PublicProfileMediaNotFoundError,
+  PublicProfileNotFoundError,
+  SelfFollowError,
+} from '../src/services/profiles.errors.js';
 import {
   FOLLOW_PROFILE_SUCCESS_MESSAGE,
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
@@ -19,12 +23,12 @@ const createProfileRecord = ({
   followingCount = 3,
   mediaAssets = [
     {
+      id: 'avatar-asset-id',
       kind: 'avatar' as const,
-      objectKey: 'users/user-id/avatar/current-avatar.webp',
     },
     {
+      id: 'banner-asset-id',
       kind: 'banner' as const,
-      objectKey: 'users/user-id/banner/current-banner.webp',
     },
   ],
 } = {}) => ({
@@ -44,13 +48,13 @@ const createFollowingRecord = ({
   displayName = 'Followed User',
   followedAt,
   id,
-  mediaAssets = [{ kind: 'avatar' as const, objectKey: `users/${id}/avatar/current-avatar.webp` }],
+  mediaAssets = [{ id: `avatar-${id}`, kind: 'avatar' as const }],
   username = `followed_${id.slice(0, 4)}`,
 }: {
   displayName?: string | null;
   followedAt: Date;
   id: string;
-  mediaAssets?: { kind: 'avatar'; objectKey: string }[];
+  mediaAssets?: { id: string; kind: 'avatar' }[];
   username?: string;
 }) => ({
   createdAt: followedAt,
@@ -65,6 +69,13 @@ const createFollowingRecord = ({
 
 const createDeps = ({
   followingTotal = 3,
+  maxProxyBytes = { avatar: 10, banner: 20 },
+  profileMedia = {
+    bucket: 'fairplay-user-media',
+    objectKey: 'users/user-id/avatar/current-avatar.webp',
+    mimeType: 'image/webp',
+    sizeBytes: 12,
+  },
   profiles = [createProfileRecord()],
   queriedFollows = [
     createFollowingRecord({
@@ -86,23 +97,27 @@ const createDeps = ({
   ],
 }: {
   followingTotal?: number;
+  maxProxyBytes?: ProfilesDependencies['maxProxyBytes'];
+  profileMedia?: unknown;
   profiles?: unknown[] | unknown | null;
   queriedFollows?: ReturnType<typeof createFollowingRecord>[];
 } = {}) => {
   const profileQueue = Array.isArray(profiles) ? [...profiles] : [profiles];
   const calls: {
-    signedUrlObjectKeys: string[];
+    readObjectInputs: unknown[];
     transactionOperationCount?: number;
     transactionCount: number;
     userFindFirst: unknown[];
+    userMediaAssetFindFirst: unknown[];
     userFollowCount?: unknown;
     userFollowDeleteMany?: unknown;
     userFollowFindMany?: unknown;
     userFollowUpsert?: unknown;
   } = {
-    signedUrlObjectKeys: [],
+    readObjectInputs: [],
     transactionCount: 0,
     userFindFirst: [],
+    userMediaAssetFindFirst: [],
   };
   const takeProfile = () => (profileQueue.length > 1 ? profileQueue.shift() : profileQueue[0]);
 
@@ -136,6 +151,13 @@ const createDeps = ({
         return { count: 1 };
       },
     },
+    userMediaAsset: {
+      findFirst: async (args: unknown) => {
+        calls.userMediaAssetFindFirst.push(args);
+
+        return profileMedia;
+      },
+    },
     $transaction: async (input: unknown) => {
       calls.transactionCount += 1;
 
@@ -156,12 +178,13 @@ const createDeps = ({
   const deps: ProfilesDependencies = {
     prisma: prisma as unknown as ProfilesDependencies['prisma'],
     objectStorage: {
-      getSignedUrl: async (objectKey) => {
-        calls.signedUrlObjectKeys.push(objectKey);
+      readObject: async (input) => {
+        calls.readObjectInputs.push(input);
 
-        return `signed:${objectKey}`;
+        return Buffer.from('avatar-data');
       },
     },
+    maxProxyBytes,
   };
 
   return {
@@ -171,7 +194,95 @@ const createDeps = ({
 };
 
 describe('profiles service', () => {
-  test('returns a public profile with signed profile media urls', async () => {
+  test('reads public profile media through the user-media storage client with a bounded proxy read', async () => {
+    const { calls, deps } = createDeps();
+
+    await expect(
+      createProfilesService(deps).getProfileMedia({
+        username: ' FairPlay_User ',
+        kind: 'avatar',
+      }),
+    ).resolves.toEqual({
+      body: Buffer.from('avatar-data'),
+      mimeType: 'image/webp',
+    });
+    expect(calls.userMediaAssetFindFirst).toEqual([
+      {
+        where: {
+          kind: 'avatar',
+          user: {
+            username: 'fairplay_user',
+          },
+        },
+        select: {
+          bucket: true,
+          objectKey: true,
+          mimeType: true,
+          sizeBytes: true,
+        },
+      },
+    ]);
+    expect(calls.readObjectInputs).toEqual([
+      {
+        bucket: 'fairplay-user-media',
+        objectKey: 'users/user-id/avatar/current-avatar.webp',
+        maxBytes: 10,
+      },
+    ]);
+    expect(calls.readObjectInputs).toHaveLength(1);
+  });
+
+  test('uses the media-kind ceiling even when the persisted banner size is larger', async () => {
+    const { calls, deps } = createDeps({
+      profileMedia: {
+        bucket: 'fairplay-user-media',
+        objectKey: 'users/user-id/banner/current-banner.webp',
+        mimeType: 'image/webp',
+        sizeBytes: 30,
+      },
+    });
+
+    await createProfilesService(deps).getProfileMedia({
+      username: 'fairplay_user',
+      kind: 'banner',
+    });
+
+    expect(calls.readObjectInputs).toEqual([
+      {
+        bucket: 'fairplay-user-media',
+        objectKey: 'users/user-id/banner/current-banner.webp',
+        maxBytes: 20,
+      },
+    ]);
+  });
+
+  test('treats a missing profile-media row or stored object as not found', async () => {
+    const missingRow = createDeps({ profileMedia: null });
+
+    await expect(
+      createProfilesService(missingRow.deps).getProfileMedia({
+        username: 'fairplay_user',
+        kind: 'banner',
+      }),
+    ).rejects.toBeInstanceOf(PublicProfileMediaNotFoundError);
+    expect(missingRow.calls.readObjectInputs).toEqual([]);
+
+    const missingObject = createDeps();
+    missingObject.deps.objectStorage.readObject = async (input) => {
+      missingObject.calls.readObjectInputs.push(input);
+
+      return null;
+    };
+
+    await expect(
+      createProfilesService(missingObject.deps).getProfileMedia({
+        username: 'fairplay_user',
+        kind: 'avatar',
+      }),
+    ).rejects.toBeInstanceOf(PublicProfileMediaNotFoundError);
+  });
+
+  test('returns a public profile with relative media paths based only on database presence', async () => {
     const { calls, deps } = createDeps();
 
     await expect(
@@ -184,8 +295,8 @@ describe('profiles service', () => {
         username: 'fairplay_user',
         displayName: 'FairPlay User',
         bio: 'Sharing project updates with my subscribers.',
-        avatarUrl: 'signed:users/user-id/avatar/current-avatar.webp',
-        bannerUrl: 'signed:users/user-id/banner/current-banner.webp',
+        avatarUrl: '/profiles/fairplay_user/avatar',
+        bannerUrl: '/profiles/fairplay_user/banner',
         followerCount: 12,
         followingCount: 3,
         createdAt: profileCreatedAt,
@@ -211,9 +322,8 @@ describe('profiles service', () => {
             },
           },
           select: {
-            bucket: true,
+            id: true,
             kind: true,
-            objectKey: true,
           },
         },
         _count: {
@@ -224,10 +334,7 @@ describe('profiles service', () => {
         },
       },
     });
-    expect(calls.signedUrlObjectKeys).toEqual([
-      'users/user-id/avatar/current-avatar.webp',
-      'users/user-id/banner/current-banner.webp',
-    ]);
+    expect(calls.readObjectInputs).toEqual([]);
   });
 
   test('returns null profile media urls when no public media exists', async () => {
@@ -245,7 +352,7 @@ describe('profiles service', () => {
         bannerUrl: null,
       },
     });
-    expect(calls.signedUrlObjectKeys).toEqual([]);
+    expect(calls.readObjectInputs).toEqual([]);
   });
 
   test('rejects missing or non-public profiles', async () => {
@@ -256,10 +363,10 @@ describe('profiles service', () => {
         username: 'fairplay_user',
       }),
     ).rejects.toBeInstanceOf(PublicProfileNotFoundError);
-    expect(calls.signedUrlObjectKeys).toEqual([]);
+    expect(calls.readObjectInputs).toEqual([]);
   });
 
-  test('lists followed public profiles with stable cursor pagination and signed avatar urls', async () => {
+  test('lists followed public profiles with stable cursor pagination and relative avatar paths', async () => {
     const { calls, deps } = createDeps();
 
     await expect(
@@ -273,7 +380,7 @@ describe('profiles service', () => {
           id: '33333333-3333-4333-8333-333333333333',
           username: 'followed_3333',
           displayName: 'First Followed',
-          avatarUrl: 'signed:users/33333333-3333-4333-8333-333333333333/avatar/current-avatar.webp',
+          avatarUrl: '/profiles/followed_3333/avatar',
           followedAt: firstFollowedAt,
         },
         {
@@ -313,9 +420,8 @@ describe('profiles service', () => {
                 kind: 'avatar',
               },
               select: {
-                bucket: true,
+                id: true,
                 kind: true,
-                objectKey: true,
               },
               take: 1,
             },
@@ -329,9 +435,7 @@ describe('profiles service', () => {
       where: publicFollowingFilter,
     });
     expect(calls.transactionOperationCount).toBe(2);
-    expect(calls.signedUrlObjectKeys).toEqual([
-      'users/33333333-3333-4333-8333-333333333333/avatar/current-avatar.webp',
-    ]);
+    expect(calls.readObjectInputs).toEqual([]);
   });
 
   test('applies followed profile cursor filtering and caps oversized limits', async () => {
@@ -382,8 +486,8 @@ describe('profiles service', () => {
         username: 'fairplay_user',
         displayName: 'FairPlay User',
         bio: 'Sharing project updates with my subscribers.',
-        avatarUrl: 'signed:users/user-id/avatar/current-avatar.webp',
-        bannerUrl: 'signed:users/user-id/banner/current-banner.webp',
+        avatarUrl: '/profiles/fairplay_user/avatar',
+        bannerUrl: '/profiles/fairplay_user/banner',
         followerCount: 13,
         followingCount: 3,
         createdAt: profileCreatedAt,
@@ -458,7 +562,7 @@ describe('profiles service', () => {
     ).rejects.toBeInstanceOf(SelfFollowError);
     expect(calls.userFollowUpsert).toBeUndefined();
     expect(calls.userFollowDeleteMany).toBeUndefined();
-    expect(calls.signedUrlObjectKeys).toEqual([]);
+    expect(calls.readObjectInputs).toEqual([]);
   });
 
   test('rejects follow mutations for missing or non-public profiles', async () => {
@@ -471,6 +575,6 @@ describe('profiles service', () => {
       }),
     ).rejects.toBeInstanceOf(PublicProfileNotFoundError);
     expect(calls.userFollowUpsert).toBeUndefined();
-    expect(calls.signedUrlObjectKeys).toEqual([]);
+    expect(calls.readObjectInputs).toEqual([]);
   });
 });

@@ -24,6 +24,9 @@ export const VIDEO_EXTERNAL_RESOURCE_ROLES = [
   'hls_artifacts',
   'thumbnail_prefix',
 ] as const satisfies readonly ExternalResourceRole[];
+export const USER_MEDIA_EXTERNAL_RESOURCE_ROLES = [
+  'user_media',
+] as const satisfies readonly ExternalResourceRole[];
 
 const targetSelect = {
   id: true,
@@ -203,6 +206,7 @@ type ExternalResourceReconcilerDependencies = {
   logger: {
     warn(data: object, message: string): void;
   };
+  allowedRoles?: readonly ExternalResourceRole[];
 };
 
 type ExternalResourceStorageDependencies = {
@@ -412,6 +416,16 @@ export const createExternalResourceReconciler = (
   deps: ExternalResourceReconcilerDependencies,
 ): ExternalResourceReconciler => {
   const generateLeaseId = (): string => deps.leaseIdGenerator?.generate() ?? randomUUID();
+  const allowedRoles = deps.allowedRoles ? new Set<ExternalResourceRole>(deps.allowedRoles) : null;
+  const assertAllowedRoles = (roles: readonly ExternalResourceRole[]): void => {
+    const forbiddenRole = roles.find((role) => allowedRoles && !allowedRoles.has(role));
+
+    if (forbiddenRole) {
+      throw new TypeError(
+        `External resource role ${forbiddenRole} is outside this reconciler scope`,
+      );
+    }
+  };
 
   const claimTarget = async (
     roles: readonly ExternalResourceRole[],
@@ -709,6 +723,7 @@ export const createExternalResourceReconciler = (
 
   return {
     async reconcileTarget({ targetId, roles, handlers }) {
+      assertAllowedRoles(roles);
       const existing = await deps.prisma.externalResourceTarget.findUnique({
         where: { id: targetId },
         select: {
@@ -734,6 +749,7 @@ export const createExternalResourceReconciler = (
     },
 
     async reconcileDue({ roles, limit, handlers }) {
+      assertAllowedRoles(roles);
       const summary: ReconcileExternalResourcesSummary = {
         claimed: 0,
         confirmed: 0,

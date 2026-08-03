@@ -6,6 +6,7 @@ import {
   UPLOAD_BANNER_SUCCESS_MESSAGE,
 } from '../../../services/auth/auth.messages.js';
 import { responseMessageSchema } from './shared.schemas.js';
+import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
 
 const createUserMediaUploadBodySchema = (fieldName: 'avatar' | 'banner', componentName: string) =>
   z
@@ -40,7 +41,7 @@ const createUserMediaAssetResponseSchema = ({
   heightExample,
 }: CreateUserMediaAssetResponseSchemaInput) =>
   z.object({
-    url: z.string().url().openapi({
+    url: relativeAssetPathSchema.openapi({
       example: urlExample,
     }),
     mimeType: z.literal('image/webp').openapi({ example: 'image/webp' }),
@@ -51,15 +52,13 @@ const createUserMediaAssetResponseSchema = ({
   });
 
 const avatarAssetResponseSchema = createUserMediaAssetResponseSchema({
-  urlExample:
-    'http://localhost:9000/fairplay-user-media/users/9fdf5/avatar/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
+  urlExample: '/profiles/fairplay_creator/avatar',
   widthExample: 512,
   heightExample: 512,
 });
 
 const bannerAssetResponseSchema = createUserMediaAssetResponseSchema({
-  urlExample:
-    'http://localhost:9000/fairplay-user-media/users/9fdf5/banner/550e8400-e29b-41d4-a716-446655440000.webp?signature=...',
+  urlExample: '/profiles/fairplay_creator/banner',
   widthExample: 1500,
   heightExample: 500,
 });

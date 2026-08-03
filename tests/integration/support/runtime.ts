@@ -28,6 +28,8 @@ import { createAuthService } from '../../../src/services/auth.service.js';
 import {
   createExternalResourceReconciler,
   type ExternalResourceReconciler,
+  USER_MEDIA_EXTERNAL_RESOURCE_ROLES,
+  VIDEO_EXTERNAL_RESOURCE_ROLES,
 } from '../../../src/services/externalResources.js';
 import { createProfilesService } from '../../../src/services/profiles.service.js';
 import { createUserMediaProcessor } from '../../../src/services/userMedia/userMedia.processor.js';
@@ -68,7 +70,8 @@ export type TestRuntime = {
   redisClient: Redis;
   objectStorage: ObjectStorage;
   videoObjectStorage: ObjectStorage;
-  externalResources: ExternalResourceReconciler;
+  userMediaExternalResources: ExternalResourceReconciler;
+  videoExternalResources: ExternalResourceReconciler;
   adminService: AdminPorts;
   authService: AuthPorts;
   profilesService: ProfilesPorts;
@@ -151,13 +154,11 @@ export const createIntegrationAuthService = (
 
 export const createIntegrationAdminService = (
   prisma: PrismaClient,
-  objectStorage: ObjectStorage,
   delivered: TestRuntime['delivered'],
   now: () => Date = () => new Date(),
 ): AdminPorts =>
   createAdminService({
     prisma,
-    objectStorage,
     mailer: {
       sendAccountBannedEmail: async (email, reason) => {
         delivered.accountBan.push({ email, reason });
@@ -181,6 +182,10 @@ export const createIntegrationProfilesService = (
   createProfilesService({
     prisma,
     objectStorage,
+    maxProxyBytes: {
+      avatar: PROFILE_MEDIA_MAX_UPLOAD_BYTES,
+      banner: PROFILE_MEDIA_MAX_UPLOAD_BYTES,
+    },
   });
 
 export const createIntegrationVideosService = (
@@ -285,13 +290,23 @@ export const startRuntime = async (): Promise<TestRuntime> => {
     testLogger,
     createMinioSigningClient(infrastructure.videoObjectStorageConfig),
   );
-  const externalResources = createExternalResourceReconciler({
+  const userMediaExternalResources = createExternalResourceReconciler({
     prisma,
     objectStorage,
     clock: {
       now: () => new Date(),
     },
     logger: testLogger,
+    allowedRoles: USER_MEDIA_EXTERNAL_RESOURCE_ROLES,
+  });
+  const videoExternalResources = createExternalResourceReconciler({
+    prisma,
+    objectStorage: videoObjectStorage,
+    clock: {
+      now: () => new Date(),
+    },
+    logger: testLogger,
+    allowedRoles: VIDEO_EXTERNAL_RESOURCE_ROLES,
   });
   await connectRedisClient(redisClient);
 
@@ -311,11 +326,21 @@ export const startRuntime = async (): Promise<TestRuntime> => {
     redisClient,
     objectStorage,
     videoObjectStorage,
-    externalResources,
-    adminService: createIntegrationAdminService(prisma, objectStorage, delivered),
-    authService: createIntegrationAuthService(prisma, objectStorage, delivered, externalResources),
+    userMediaExternalResources,
+    videoExternalResources,
+    adminService: createIntegrationAdminService(prisma, delivered),
+    authService: createIntegrationAuthService(
+      prisma,
+      objectStorage,
+      delivered,
+      userMediaExternalResources,
+    ),
     profilesService: createIntegrationProfilesService(prisma, objectStorage),
-    videosService: createIntegrationVideosService(prisma, videoObjectStorage, externalResources),
+    videosService: createIntegrationVideosService(
+      prisma,
+      videoObjectStorage,
+      videoExternalResources,
+    ),
     delivered,
   };
 };

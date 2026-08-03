@@ -38,7 +38,7 @@ export const createProfileService = (deps: AuthDependencies): ProfileService => 
     }
 
     const { mediaAssets, ...profileUser } = user;
-    const { avatarUrl, bannerUrl } = await toProfileMediaUrls(deps.objectStorage, mediaAssets);
+    const { avatarUrl, bannerUrl } = toProfileMediaUrls(profileUser.username, mediaAssets);
 
     return {
       user: {

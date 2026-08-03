@@ -26,7 +26,7 @@ const createVideoResult = (
     allowComments: true,
     processingStatus: 'draft',
     moderationStatus: 'pending',
-    thumbnailObjectKey: null,
+    thumbnailPath: null,
     ratingAverage: 0,
     ratingCount: 0,
     createdAt: fixedNow,

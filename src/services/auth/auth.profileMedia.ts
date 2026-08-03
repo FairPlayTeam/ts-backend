@@ -39,7 +39,7 @@ const uploadProfileMedia = async (
     file,
   });
 
-  return toUserMediaAssetResult(deps, asset);
+  return toUserMediaAssetResult(asset, kind);
 };
 
 const deleteProfileMedia = async (

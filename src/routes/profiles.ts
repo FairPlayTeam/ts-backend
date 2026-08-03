@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from 'express';
 import { createProfilesController } from '../controllers/profiles.controller.js';
 import {
   followPublicProfileSchema,
+  getProfileMediaSchema,
   getPublicProfileSchema,
   listFollowingProfilesSchema,
   unfollowPublicProfileSchema,
@@ -20,8 +21,14 @@ type ValidationSchema = Parameters<typeof validate>[0];
 
 export const createRouter = ({ authService, profilesService }: ProfilesRouterDependencies) => {
   const router = Router();
-  const { followPublicProfile, getPublicProfile, listFollowingProfiles, unfollowPublicProfile } =
-    createProfilesController({ profilesService });
+  const {
+    followPublicProfile,
+    getAvatar,
+    getBanner,
+    getPublicProfile,
+    listFollowingProfiles,
+    unfollowPublicProfile,
+  } = createProfilesController({ profilesService });
   const protect = createRouteProtector({ authService });
   const protectedValidatedRoute = (schema: ValidationSchema, ...handlers: RequestHandler[]) => [
     ...protect(),
@@ -41,6 +48,8 @@ export const createRouter = ({ authService, profilesService }: ProfilesRouterDep
     '/:username/follow',
     ...protectedValidatedRoute(unfollowPublicProfileSchema, unfollowPublicProfile),
   );
+  router.get('/:username/avatar', validate(getProfileMediaSchema), getAvatar);
+  router.get('/:username/banner', validate(getProfileMediaSchema), getBanner);
   router.get('/:username', validate(getPublicProfileSchema), getPublicProfile);
 
   return router;

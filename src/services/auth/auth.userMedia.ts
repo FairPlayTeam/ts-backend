@@ -9,7 +9,7 @@ import { runSerializableTransaction } from '../../lib/prismaTransactions.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import { isPrismaForeignKeyConstraintError } from './auth.prismaErrors.js';
 import type { ProcessedUserMedia, UserMediaKind } from '../userMedia/userMedia.types.js';
-import { toStoredUserMediaAssetUrl } from '../userMedia/userMedia.profileAssets.js';
+import { profileAvatarPath, profileBannerPath } from '../assets/assetLinks.js';
 import type { UserMediaAssetResult } from './types/profileMedia.types.js';
 import { AuthenticatedUserNotFoundError } from '../auth.errors.js';
 
@@ -23,6 +23,10 @@ type StoredUserMediaAsset = {
   width: number;
   height: number;
   updatedAt: Date;
+};
+
+type UploadedUserMediaAsset = StoredUserMediaAsset & {
+  username: string;
 };
 
 type UserMediaFileInput = {
@@ -198,7 +202,7 @@ export const createUserMediaReconciliationHandler = (
 export const uploadUserMediaAsset = async (
   deps: AuthDependencies,
   { userId, kind, file }: UploadUserMediaAssetInput,
-): Promise<StoredUserMediaAsset> => {
+): Promise<UploadedUserMediaAsset> => {
   const processedMedia = await deps.userMediaProcessor.process({
     kind,
     file,
@@ -209,14 +213,14 @@ export const uploadUserMediaAsset = async (
   const target = await runSerializableTransaction(deps.prisma, async (tx) => {
     const user = await tx.user.findUnique({
       where: { id: userId },
-      select: { id: true },
+      select: { id: true, username: true },
     });
 
     if (!user) {
       throw new AuthenticatedUserNotFoundError();
     }
 
-    return tx.externalResourceTarget.create({
+    const reservedTarget = await tx.externalResourceTarget.create({
       data: {
         userId,
         videoId: null,
@@ -235,6 +239,11 @@ export const uploadUserMediaAsset = async (
         id: true,
       },
     });
+
+    return {
+      ...reservedTarget,
+      username: user.username,
+    };
   });
 
   try {
@@ -297,7 +306,10 @@ export const uploadUserMediaAsset = async (
     );
   }
 
-  return asset;
+  return {
+    ...asset,
+    username: target.username,
+  };
 };
 
 export const deleteUserMediaAsset = async (
@@ -349,26 +361,11 @@ export const deleteUserMediaAsset = async (
   }
 };
 
-export function toUserMediaAssetUrl(
-  deps: AuthDependencies,
-  asset: { objectKey: string; bucket: string },
-): Promise<string>;
-export function toUserMediaAssetUrl(
-  deps: AuthDependencies,
-  asset: { objectKey: string; bucket: string } | null | undefined,
-): Promise<string | null>;
-export async function toUserMediaAssetUrl(
-  deps: AuthDependencies,
-  asset: { objectKey: string; bucket: string } | null | undefined,
-): Promise<string | null> {
-  return toStoredUserMediaAssetUrl(deps.objectStorage, asset);
-}
-
-export const toUserMediaAssetResult = async (
-  deps: AuthDependencies,
-  asset: StoredUserMediaAsset,
-): Promise<UserMediaAssetResult> => ({
-  url: await toUserMediaAssetUrl(deps, asset),
+export const toUserMediaAssetResult = (
+  asset: UploadedUserMediaAsset,
+  kind: UserMediaKind,
+): UserMediaAssetResult => ({
+  url: kind === 'avatar' ? profileAvatarPath(asset.username) : profileBannerPath(asset.username),
   mimeType: asset.mimeType,
   sizeBytes: asset.sizeBytes,
   width: asset.width,

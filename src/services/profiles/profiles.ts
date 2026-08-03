@@ -2,10 +2,15 @@ import type { Prisma } from '@prisma/client';
 import {
   profileMediaAssetSelect,
   profileMediaAssetWhere,
-  toStoredUserMediaAssetUrl,
+  toProfileMediaUrl,
   toProfileMediaUrls,
 } from '../userMedia/userMedia.profileAssets.js';
-import { PublicProfileNotFoundError, SelfFollowError } from '../profiles.errors.js';
+import {
+  PublicProfileMediaNotFoundError,
+  PublicProfileNotFoundError,
+  SelfFollowError,
+} from '../profiles.errors.js';
+import { readForProxy } from '../assets/assetLinks.js';
 import type { ProfilesDependencies } from './profiles.dependencies.js';
 import {
   FOLLOW_PROFILE_SUCCESS_MESSAGE,
@@ -15,6 +20,8 @@ import type {
   FollowPublicProfileInput,
   FollowPublicProfileResult,
   FollowingProfile,
+  GetProfileMediaInput,
+  GetProfileMediaResult,
   GetPublicProfileInput,
   GetPublicProfileResult,
   ListFollowingProfilesInput,
@@ -99,11 +106,12 @@ const findPublicProfileRecord = (
     select: publicProfileSelect,
   });
 
-const toPublicProfile = async (
-  deps: ProfilesDependencies,
-  { _count, mediaAssets, ...profile }: PublicProfileRecord,
-): Promise<PublicProfile> => {
-  const { avatarUrl, bannerUrl } = await toProfileMediaUrls(deps.objectStorage, mediaAssets);
+const toPublicProfile = ({
+  _count,
+  mediaAssets,
+  ...profile
+}: PublicProfileRecord): PublicProfile => {
+  const { avatarUrl, bannerUrl } = toProfileMediaUrls(profile.username, mediaAssets);
 
   return {
     ...profile,
@@ -114,14 +122,14 @@ const toPublicProfile = async (
   };
 };
 
-const toFollowingProfile = async (
-  deps: ProfilesDependencies,
-  { createdAt, following }: FollowingProfileRecord,
-): Promise<FollowingProfile> => ({
+const toFollowingProfile = ({
+  createdAt,
+  following,
+}: FollowingProfileRecord): FollowingProfile => ({
   id: following.id,
   username: following.username,
   displayName: following.displayName,
-  avatarUrl: await toStoredUserMediaAssetUrl(deps.objectStorage, following.mediaAssets[0]),
+  avatarUrl: toProfileMediaUrl(following.username, 'avatar', following.mediaAssets[0]),
   followedAt: createdAt,
 });
 
@@ -153,10 +161,46 @@ const mutatePublicProfileFollow = async (
     return updatedTarget;
   });
 
-  return toPublicProfile(deps, profile);
+  return toPublicProfile(profile);
 };
 
 export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort => ({
+  async getProfileMedia({ kind, username }: GetProfileMediaInput): Promise<GetProfileMediaResult> {
+    const asset = await deps.prisma.userMediaAsset.findFirst({
+      where: {
+        kind,
+        user: {
+          username: normalizeUsername(username),
+        },
+      },
+      select: {
+        bucket: true,
+        objectKey: true,
+        mimeType: true,
+        sizeBytes: true,
+      },
+    });
+
+    if (!asset) {
+      throw new PublicProfileMediaNotFoundError();
+    }
+
+    const body = await readForProxy(
+      deps.objectStorage,
+      asset,
+      Math.min(asset.sizeBytes, deps.maxProxyBytes[kind]),
+    );
+
+    if (!body) {
+      throw new PublicProfileMediaNotFoundError();
+    }
+
+    return {
+      body,
+      mimeType: asset.mimeType,
+    };
+  },
+
   async getPublicProfile({ username }: GetPublicProfileInput): Promise<GetPublicProfileResult> {
     const profile = await findPublicProfileRecord(deps.prisma, {
       username: normalizeUsername(username),
@@ -167,7 +211,7 @@ export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort 
     }
 
     return {
-      profile: await toPublicProfile(deps, profile),
+      profile: toPublicProfile(profile),
     };
   },
 
@@ -243,7 +287,7 @@ export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort 
         : null;
 
     return {
-      profiles: await Promise.all(follows.map((follow) => toFollowingProfile(deps, follow))),
+      profiles: follows.map(toFollowingProfile),
       total,
       nextCursor,
     };

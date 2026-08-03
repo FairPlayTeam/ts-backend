@@ -70,6 +70,7 @@ const createAuthTransaction = (calls: AuthServiceTestCalls) => ({
 
       return {
         id: 'user-id',
+        username: 'fairplay_user',
         email: 'user@example.com',
         isVerified: false,
         isBanned: false,

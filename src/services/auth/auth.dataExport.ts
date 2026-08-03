@@ -2,6 +2,7 @@ import type { AuthDependencies } from './auth.dependencies.js';
 import { reauthenticateSensitiveAction } from './auth.reauthentication.js';
 import type { AuthAccountPort, ExportUserDataInput } from './types/account.types.js';
 import { AuthenticatedUserNotFoundError } from '../auth.errors.js';
+import { profileAvatarPath, profileBannerPath } from '../assets/assetLinks.js';
 
 type DataExportService = Pick<AuthAccountPort, 'exportUserData'>;
 
@@ -30,8 +31,6 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
           select: {
             id: true,
             kind: true,
-            objectKey: true,
-            bucket: true,
             mimeType: true,
             sizeBytes: true,
             width: true,
@@ -100,7 +99,22 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
     return {
       exportedAt,
       user: exportedUser,
-      mediaAssets,
+      mediaAssets: mediaAssets.map(
+        ({ id, kind, mimeType, sizeBytes, width, height, createdAt, updatedAt }) => ({
+          id,
+          kind,
+          url:
+            kind === 'avatar'
+              ? profileAvatarPath(exportedUser.username)
+              : profileBannerPath(exportedUser.username),
+          mimeType,
+          sizeBytes,
+          width,
+          height,
+          createdAt,
+          updatedAt,
+        }),
+      ),
       videoRatings,
       sessions: sessions.map((session) => ({
         ...session,

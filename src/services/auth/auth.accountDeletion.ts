@@ -11,14 +11,6 @@ import type { AuthAccountPort, DeleteAccountInput } from './types/account.types.
 
 type AccountDeletionService = Pick<AuthAccountPort, 'deleteAccount'>;
 
-const ALL_EXTERNAL_RESOURCE_ROLES = [
-  'source',
-  'source_thumbnail',
-  'hls_artifacts',
-  'thumbnail_prefix',
-  'user_media',
-] as const;
-
 export const createAccountDeletionService = (deps: AuthDependencies): AccountDeletionService => ({
   async deleteAccount({ userId, currentPassword }: DeleteAccountInput) {
     await reauthenticateSensitiveAction(deps, { userId, currentPassword });
@@ -90,19 +82,21 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
     });
 
     await Promise.all(
-      targets.map(async ({ id: targetId }) => {
-        try {
-          await deps.externalResources.reconcileTarget({
-            targetId,
-            roles: ALL_EXTERNAL_RESOURCE_ROLES,
-          });
-        } catch (error) {
-          deps.logger.warn(
-            { err: error, targetId, userId },
-            'Immediate external resource reconciliation failed after account deletion',
-          );
-        }
-      }),
+      targets
+        .filter(({ role }) => role === 'user_media')
+        .map(async ({ id: targetId }) => {
+          try {
+            await deps.externalResources.reconcileTarget({
+              targetId,
+              roles: ['user_media'],
+            });
+          } catch (error) {
+            deps.logger.warn(
+              { err: error, targetId, userId },
+              'Immediate external resource reconciliation failed after account deletion',
+            );
+          }
+        }),
     );
     const mediaCleanupQueued = targets.filter(({ role }) => role === 'user_media').length;
 
