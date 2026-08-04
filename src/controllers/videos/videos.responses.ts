@@ -67,6 +67,7 @@ export const toPublicVideoDetailResponse = ({ video }: GetPublicVideoDetailResul
     ratingAverage: video.ratingAverage,
     ratingCount: video.ratingCount,
     userRating: video.userRating,
+    viewCount: video.viewCount,
     hlsMasterPath: video.hlsMasterPath,
   },
 });

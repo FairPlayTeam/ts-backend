@@ -158,6 +158,12 @@ const userDataExportResult = {
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     },
   ],
+  videoViews: [
+    {
+      videoId: '33333333-3333-4333-8333-333333333333',
+      viewedOn: new Date('2026-01-01T00:00:00.000Z'),
+    },
+  ],
   sessions: [
     {
       id: loginResult.session.id,
@@ -667,6 +673,12 @@ describe('auth controller', () => {
           value: 5,
           createdAt: '2026-01-01T00:00:00.000Z',
           updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      videoViews: [
+        {
+          videoId: '33333333-3333-4333-8333-333333333333',
+          viewedOn: '2026-01-01',
         },
       ],
       sessions: [

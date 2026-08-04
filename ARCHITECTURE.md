@@ -384,10 +384,22 @@ generation-qualified rendition and segment URLs remain usable while that generat
 
 `GET /videos/:publicId` assembles the public playback-page detail in one short PostgreSQL
 `RepeatableRead` transaction. The video, owner, database presence of the owner's avatar, rating
-aggregate, and optional current-user rating therefore come from one snapshot. Missing, malformed,
-expired, or revoked authentication degrades to an anonymous read, and the response is always
-`Cache-Control: no-store`. The response exposes only opaque same-origin avatar and active-master
-paths; it performs no object-storage read while assembling the JSON.
+aggregate, view aggregate, and optional current-user rating therefore come from one snapshot.
+Missing, malformed, expired, or revoked authentication degrades to an anonymous read, and the
+response is always `Cache-Control: no-store`. The response exposes only opaque same-origin avatar
+and active-master paths; it performs no object-storage read while assembling the JSON.
+
+After that read transaction commits, an authenticated non-owner detail load schedules a detached,
+best-effort view write. Anonymous loads and owner loads never count. `video_views` stores one fact
+per `(user, video, UTC day)`, while `videos.view_count` keeps the public aggregate cheap to read.
+One atomic `INSERT ... SELECT ... ON CONFLICT DO NOTHING` both rechecks that the viewer is not the
+current owner and increments the aggregate only when a new daily fact was inserted. Repeated or
+concurrent loads on the same UTC day therefore count once. The response does not wait for this
+write, so its snapshot may precede its own increment; writer failures are logged without failing
+playback. Account deletion subtracts all of the user's per-video view facts before cascade deletion,
+inside the same serializable transaction used to repair rating aggregates. A user's own view days
+are included only in the authenticated `/auth/me/export`; public contracts expose the aggregate,
+never viewer identities or dates.
 
 `GET /videos/:publicId/thumbnail` applies the same readiness and visibility rule, without a stricter
 moderation rule, and requires an active generation. It rebuilds the generation thumbnail key from `buildVideoArtifactManifest`,

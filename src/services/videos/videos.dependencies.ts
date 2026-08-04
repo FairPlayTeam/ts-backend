@@ -7,6 +7,7 @@ import type { VideoPublicIdGenerator } from './videoPublicId.js';
 
 type Prisma = Pick<
   PrismaClient,
+  | '$executeRaw'
   | '$queryRaw'
   | '$transaction'
   | 'externalResourceTarget'

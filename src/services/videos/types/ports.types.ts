@@ -116,6 +116,7 @@ export type PublicVideoDetail = Pick<
     avatarUrl: string | null;
   };
   userRating: number | null;
+  viewCount: number;
   hlsMasterPath: string;
 };
 

@@ -40,6 +40,10 @@ export type ExportUserDataResult = {
     createdAt: Date;
     updatedAt: Date;
   }[];
+  videoViews: {
+    videoId: string;
+    viewedOn: Date;
+  }[];
   sessions: {
     id: string;
     sessionKeySuffix: string | null;

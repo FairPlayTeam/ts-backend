@@ -109,6 +109,7 @@ const getPublicVideoDetailResult = (): GetPublicVideoDetailResult => ({
     ratingAverage: 4.5,
     ratingCount: 2,
     userRating: null,
+    viewCount: 128,
     hlsMasterPath: '/videos/AbCdEf123_/hls/master.m3u8',
   },
 });

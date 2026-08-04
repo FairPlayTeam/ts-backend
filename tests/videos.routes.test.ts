@@ -501,6 +501,7 @@ describe('videos routes multipart uploads', () => {
         ratingAverage: 4.5,
         ratingCount: 2,
         userRating: null,
+        viewCount: 128,
         hlsMasterPath: `/videos/${publicId}/hls/master.m3u8`,
       },
     });

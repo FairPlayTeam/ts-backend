@@ -88,6 +88,7 @@ import type {
   VideosService,
 } from './types/ports.types.js';
 import { calculateVideoRatingAverage, getVideoRatingRetryDelayMs } from './videoRating.js';
+import { recordVideoView, toUtcVideoViewDay } from './videoViews.js';
 import { buildVideoSearchFilter } from './videoSearch.js';
 import {
   readForProxy,
@@ -176,7 +177,9 @@ const publicVideoSearchSelect = {
 } satisfies Prisma.VideoSelect;
 
 const publicVideoDetailSelect = {
+  id: true,
   publicId: true,
+  ownerId: true,
   title: true,
   description: true,
   tags: true,
@@ -184,6 +187,7 @@ const publicVideoDetailSelect = {
   visibility: true,
   ratingSum: true,
   ratingCount: true,
+  viewCount: true,
   publishedAt: true,
   createdAt: true,
   owner: {
@@ -493,6 +497,7 @@ const toPublicVideoDetail = (
     avatarUrl: toProfileMediaUrl(video.owner.username, 'avatar', video.owner.mediaAssets[0]),
   },
   ...toVideoRatingResult(video.ratingSum, video.ratingCount, userRating),
+  viewCount: video.viewCount,
   hlsMasterPath: videoHlsMasterPath(video.publicId),
 });
 
@@ -1749,7 +1754,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
   }: GetPublicVideoDetailInput): Promise<GetPublicVideoDetailResult> {
     assertValidPublicHlsVideoId(publicId);
 
-    return deps.prisma.$transaction(
+    const detail = await deps.prisma.$transaction(
       async (tx) => {
         const video = await tx.video.findFirst({
           where: {
@@ -1787,12 +1792,33 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
 
         return {
           video: toPublicVideoDetail(video, rating?.value ?? null),
+          videoId: video.id,
+          ownerId: video.ownerId,
         };
       },
       {
         isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
       },
     );
+
+    // Keep playback availability and latency independent from analytics persistence.
+    // The returned count belongs to the read snapshot; this request may appear on a later read.
+    if (userId && userId !== detail.ownerId) {
+      const viewedOn = toUtcVideoViewDay(deps.clock.now());
+
+      void recordVideoView(deps.prisma, {
+        userId,
+        videoId: detail.videoId,
+        viewedOn,
+      }).catch((error: unknown) => {
+        deps.logger.warn(
+          { err: error, userId, videoId: detail.videoId, viewedOn },
+          'Best-effort video view recording failed',
+        );
+      });
+    }
+
+    return { video: detail.video };
   },
 
   async getVideoRating({ publicId }: GetVideoRatingInput): Promise<VideoRatingAggregateResult> {

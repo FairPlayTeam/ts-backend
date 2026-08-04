@@ -204,10 +204,17 @@ cannot publish.
 ## Public HLS playback
 
 `GET /videos/:publicId` returns the playback-page detail for a readable video. It combines video
-metadata, creator identity and opaque avatar path, rating aggregate, optional current-user rating,
-and the opaque master-playlist path in one short PostgreSQL `RepeatableRead` snapshot. The route
-accepts anonymous requests, treats invalid optional authentication as anonymous, and always sends
-`Cache-Control: no-store`.
+metadata, creator identity and opaque avatar path, rating and view aggregates, optional current-user
+rating, and the opaque master-playlist path in one short PostgreSQL `RepeatableRead` snapshot. The
+route accepts anonymous requests, treats invalid optional authentication as anonymous, and always
+sends `Cache-Control: no-store`.
+
+An authenticated non-owner load schedules one best-effort view per video and UTC day after the
+snapshot commits. Anonymous and owner loads never count. The write is deduplicated atomically and
+does not delay or fail playback, so the count returned by a request may precede that request's own
+increment. Public responses expose only `viewCount`; personal view days are available only through
+the authenticated account-data export and are removed, with their aggregate contribution, when the
+account is deleted.
 
 Rating reads follow the same public/unlisted + ready policy as playback, including for `rejected`
 videos. `PUT /videos/:publicId/rating` remains stricter and refuses new or updated votes after

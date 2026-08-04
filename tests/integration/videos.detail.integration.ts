@@ -1,9 +1,10 @@
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import type { Prisma, PrismaClient, VideoVisibility } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type { AuthPorts } from '../../src/services/auth.types.js';
 import type { VideosService } from '../../src/services/videos.types.js';
-import { createPng, createVerifiedSession, uploadVideoSource } from './support/fixtures.js';
+import { createPng, createVerifiedSession } from './support/fixtures.js';
+import { createPlayableVideo, type PlayableVideo } from './support/playableVideo.js';
 import { seedHlsGeneration } from './support/videoArtifacts.js';
 import {
   createIntegrationApp,
@@ -14,90 +15,12 @@ import {
   type TestRuntime,
 } from './support/runtime.js';
 
-type PlayableVideo = {
-  id: string;
-  publicId: string;
-  createdAt: Date;
-  generationId: string;
-  publishedAt: Date;
-  sourceUploadSessionId: string;
-  transcodeJobId: string;
-};
-
-const createPlayableVideo = async (
-  runtime: TestRuntime,
-  {
-    ownerId,
-    title,
-    visibility,
-  }: {
-    ownerId: string;
-    title: string;
-    visibility: VideoVisibility;
-  },
-): Promise<PlayableVideo> => {
-  const created = await runtime.videosService.createVideo({
-    userId: ownerId,
-    title,
-    description: '00:00 Intro 00:05 The cool thing 00:17 End.',
-    tags: ['zoo', 'elephants'],
-    license: 'cc_by',
-    visibility,
-    allowComments: true,
-  });
-  const source = await uploadVideoSource(runtime.videosService, {
-    body: Buffer.from(`source for ${title}`),
-    userId: ownerId,
-    videoId: created.video.id,
-  });
-  const job = await runtime.prisma.videoTranscodeJob.findFirstOrThrow({
-    where: {
-      videoId: created.video.id,
-      sourceObjectKey: source.uploadSession.objectKey,
-    },
-    select: { id: true },
-  });
-  const generation = await seedHlsGeneration(runtime, {
-    segmentBody: Buffer.from(`segment for ${title}`),
-    sourceUploadSessionId: source.uploadSession.id,
-    state: 'active',
-    transcodeJobId: job.id,
-    userId: ownerId,
-    videoId: created.video.id,
-  });
-  const publishedAt = new Date('2026-06-01T12:00:00.000Z');
-  const video = await runtime.prisma.video.update({
-    where: { id: created.video.id },
-    data: {
-      activeArtifactGenerationId: generation.generationId,
-      hlsMasterObjectKey: generation.manifest.master.objectKey,
-      thumbnailObjectKey: generation.manifest.thumbnail.objectKey,
-      processingStatus: 'ready',
-      moderationStatus: 'approved',
-      visibility,
-      publishedAt,
-    },
-    select: {
-      id: true,
-      publicId: true,
-      createdAt: true,
-    },
-  });
-
-  return {
-    ...video,
-    generationId: generation.generationId,
-    publishedAt,
-    sourceUploadSessionId: source.uploadSession.id,
-    transcodeJobId: job.id,
-  };
-};
-
 const createVideoReadBarrierService = (
   runtime: TestRuntime,
   afterVideoRead: () => Promise<void>,
 ): VideosService => {
   const barrierPrisma = {
+    $executeRaw: (query: Prisma.Sql) => runtime.prisma.$executeRaw(query),
     $transaction: async <T>(
       run: (tx: Prisma.TransactionClient) => Promise<T>,
       options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
@@ -291,6 +214,7 @@ describe('public video detail integration', () => {
         ratingAverage: 4.5,
         ratingCount: 2,
         userRating: null,
+        viewCount: 0,
         hlsMasterPath: `/videos/${publicVideo.publicId}/hls/master.m3u8`,
       },
     });
@@ -308,6 +232,7 @@ describe('public video detail integration', () => {
         'tags',
         'title',
         'userRating',
+        'viewCount',
         'visibility',
       ].sort(),
     );
@@ -655,6 +580,7 @@ describe('public video detail integration', () => {
         'tags',
         'title',
         'userRating',
+        'viewCount',
         'visibility',
       ].sort(),
     );

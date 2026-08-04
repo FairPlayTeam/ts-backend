@@ -17,6 +17,7 @@ const videoRecord = {
   visibility: 'unlisted' as const,
   ratingSum: 9,
   ratingCount: 2,
+  viewCount: 128,
   publishedAt,
   createdAt,
   owner: {
@@ -41,17 +42,23 @@ const videoRecord = {
 const createDeps = ({
   record = videoRecord,
   userRating = 5 as number | null,
+  viewWriteError,
 }: {
   record?: typeof videoRecord | null;
   userRating?: number | null;
+  viewWriteError?: Error;
 } = {}) => {
   const calls: {
     transactionOptions?: unknown;
     videoFindFirst?: unknown;
     ratingFindFirst?: unknown;
     ratingFindFirstCalls: number;
+    viewWriteCalls: number;
+    warnings: unknown[];
   } = {
     ratingFindFirstCalls: 0,
+    viewWriteCalls: 0,
+    warnings: [],
   };
   const tx = {
     video: {
@@ -74,6 +81,17 @@ const createDeps = ({
         calls.transactionOptions = options;
         return run(tx);
       },
+      $executeRaw: async () => {
+        calls.viewWriteCalls += 1;
+        if (viewWriteError) {
+          throw viewWriteError;
+        }
+        return 1;
+      },
+    },
+    clock: { now: () => new Date('2026-01-03T12:00:00.000Z') },
+    logger: {
+      warn: (data: unknown) => calls.warnings.push(data),
     },
   } as unknown as VideosDependencies;
 
@@ -106,6 +124,7 @@ describe('public video detail service', () => {
         ratingAverage: calculateVideoRatingAverage(9, 2),
         ratingCount: 2,
         userRating: 5,
+        viewCount: 128,
         hlsMasterPath: '/videos/AbCdEf123_/hls/master.m3u8',
       },
     });
@@ -150,6 +169,7 @@ describe('public video detail service', () => {
       expect(serialized).not.toContain(forbidden);
     }
     expect(result.video).not.toHaveProperty('id');
+    expect(calls.viewWriteCalls).toBe(1);
   });
 
   test('keeps anonymous unrated details functional and maps missing avatars to null', async () => {
@@ -179,6 +199,7 @@ describe('public video detail service', () => {
     expect(result.video.ratingCount).toBe(0);
     expect(result.video.userRating).toBeNull();
     expect(calls.ratingFindFirstCalls).toBe(0);
+    expect(calls.viewWriteCalls).toBe(0);
   });
 
   test('returns the uniform not-found error without querying a rating when no playable video exists', async () => {
@@ -191,5 +212,39 @@ describe('public video detail service', () => {
       }),
     ).rejects.toBeInstanceOf(VideoNotFoundError);
     expect(calls.ratingFindFirstCalls).toBe(0);
+    expect(calls.viewWriteCalls).toBe(0);
+  });
+
+  test('never schedules a view for the video owner', async () => {
+    const { calls, deps } = createDeps();
+
+    await createVideosService(deps).getPublicVideoDetail({
+      publicId: videoRecord.publicId,
+      userId: videoRecord.ownerId,
+    });
+
+    expect(calls.viewWriteCalls).toBe(0);
+  });
+
+  test('keeps the detail successful when best-effort view recording fails', async () => {
+    const viewWriteError = new Error('view storage unavailable');
+    const { calls, deps } = createDeps({ viewWriteError });
+
+    const result = await createVideosService(deps).getPublicVideoDetail({
+      publicId: videoRecord.publicId,
+      userId: '44444444-4444-4444-8444-444444444444',
+    });
+    await Promise.resolve();
+
+    expect(result.video.publicId).toBe(videoRecord.publicId);
+    expect(calls.viewWriteCalls).toBe(1);
+    expect(calls.warnings).toEqual([
+      expect.objectContaining({
+        err: viewWriteError,
+        userId: '44444444-4444-4444-8444-444444444444',
+        videoId: videoRecord.id,
+        viewedOn: '2026-01-03',
+      }),
+    ]);
   });
 });

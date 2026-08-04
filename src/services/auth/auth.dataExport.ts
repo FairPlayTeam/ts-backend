@@ -49,6 +49,13 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
           },
           orderBy: [{ createdAt: 'asc' }, { videoId: 'asc' }],
         },
+        videoViews: {
+          select: {
+            videoId: true,
+            viewedOn: true,
+          },
+          orderBy: [{ viewedOn: 'asc' }, { videoId: 'asc' }],
+        },
         sessions: {
           select: {
             id: true,
@@ -93,6 +100,7 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
       passwordResetToken,
       sessions,
       videoRatings,
+      videoViews,
       ...exportedUser
     } = user;
 
@@ -116,6 +124,7 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
         }),
       ),
       videoRatings,
+      videoViews,
       sessions: sessions.map((session) => ({
         ...session,
         isCurrent: session.id === currentSessionId,

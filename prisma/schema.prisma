@@ -131,6 +131,7 @@ model User {
   followers               UserFollow[]             @relation("UserFollowers")
   videos                  Video[]
   videoRatings            VideoRating[]
+  videoViews              VideoView[]
   videoUploadSessions     VideoUploadSession[]
 
   @@map("users")
@@ -207,6 +208,7 @@ model Video {
   activeArtifactGeneration VideoArtifactGeneration?  @relation("ActiveArtifactGeneration", fields: [activeArtifactGenerationId], references: [id], onDelete: SetNull)
   artifactGenerations      VideoArtifactGeneration[] @relation("VideoArtifactGenerations")
   ratings                  VideoRating[]
+  views                    VideoView[]
   transcodeJobs            VideoTranscodeJob[]
   uploadSessions           VideoUploadSession[]      @relation("VideoUploadSessions")
 
@@ -229,6 +231,19 @@ model VideoRating {
   @@id([userId, videoId])
   @@index([videoId])
   @@map("video_ratings")
+}
+
+model VideoView {
+  userId   String   @map("user_id") @db.Uuid
+  videoId  String   @map("video_id") @db.Uuid
+  viewedOn DateTime @map("viewed_on") @db.Date
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@id([userId, videoId, viewedOn])
+  @@index([videoId])
+  @@map("video_views")
 }
 
 model VideoRendition {

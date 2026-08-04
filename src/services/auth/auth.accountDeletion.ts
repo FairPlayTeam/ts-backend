@@ -29,7 +29,7 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
           `,
       );
 
-      // User-rating cascades do not maintain the denormalized aggregates on videos.
+      // User-rating and user-view cascades do not maintain denormalized video aggregates.
       // Lock every affected video in a stable order before applying those deltas.
       await tx.$queryRaw(
         Prisma.sql`
@@ -39,6 +39,11 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
             OR "id" IN (
               SELECT "video_id"
               FROM "video_ratings"
+              WHERE "user_id" = CAST(${userId} AS UUID)
+            )
+            OR "id" IN (
+              SELECT "video_id"
+              FROM "video_views"
               WHERE "user_id" = CAST(${userId} AS UUID)
             )
           ORDER BY "id"
@@ -54,6 +59,21 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
           FROM "video_ratings" AS vr
           WHERE vr."user_id" = CAST(${userId} AS UUID)
             AND vr."video_id" = v."id"
+        `,
+      );
+      await tx.$executeRaw(
+        Prisma.sql`
+          UPDATE "videos" AS v
+          SET "view_count" = v."view_count" - viewed."view_count"
+          FROM (
+            SELECT
+              "video_id",
+              COUNT(*)::integer AS "view_count"
+            FROM "video_views"
+            WHERE "user_id" = CAST(${userId} AS UUID)
+            GROUP BY "video_id"
+          ) AS viewed
+          WHERE viewed."video_id" = v."id"
         `,
       );
 

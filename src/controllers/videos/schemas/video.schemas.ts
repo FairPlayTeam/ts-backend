@@ -346,6 +346,7 @@ const publicVideoDetailResponseBodySchema = publicVideoSearchSummaryResponseSche
       avatarUrl: relativeAssetPathSchema.nullable().openapi({ example: '/profiles/jawed/avatar' }),
     }),
     userRating: z.number().int().min(1).max(5).nullable().openapi({ example: 5 }),
+    viewCount: z.number().int().nonnegative().openapi({ example: 128 }),
     hlsMasterPath: relativeAssetPathSchema.openapi({
       example: '/videos/AbCdEf123_/hls/master.m3u8',
     }),
