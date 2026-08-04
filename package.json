@@ -74,7 +74,13 @@
   },
   "overrides": {
     "@hono/node-server": "2.0.10",
+    "brace-expansion": "5.0.9",
+    "fast-uri": "3.1.5",
+    "hono": "4.13.0",
+    "ip-address": "10.4.0",
     "minimatch": "10.2.6",
+    "postcss": "8.5.25",
+    "undici": "8.10.0",
     "valibot": "1.4.2"
   }
 }

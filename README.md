@@ -103,7 +103,13 @@ These overrides should be reviewed periodically and removed once the parent depe
 Current overrides:
 
 - `@hono/node-server@2.0.10`, pulled in by Prisma through `@prisma/dev`
+- `brace-expansion@5.0.9`, pulled in by `minimatch`
+- `fast-uri@3.1.5`, pulled in by Ajv
+- `hono@4.13.0`, pulled in by Prisma through `@prisma/dev`
+- `ip-address@10.4.0`, pulled in by `express-rate-limit`
 - `minimatch@10.2.6`, pulled in by ESLint, typescript-eslint, and Testcontainers
+- `postcss@8.5.25`, pulled in by Vite
+- `undici@8.10.0`, pulled in by Testcontainers
 - `valibot@1.4.2`, pulled in by Prisma through `@prisma/dev`
 
 See https://bun.sh/docs/pm/overrides for more details about overrides.
@@ -196,6 +202,16 @@ one-hour-delayed prefix cleanup. A late process from an execution taken over els
 cannot publish.
 
 ## Public HLS playback
+
+`GET /videos/:publicId` returns the playback-page detail for a readable video. It combines video
+metadata, creator identity and opaque avatar path, rating aggregate, optional current-user rating,
+and the opaque master-playlist path in one short PostgreSQL `RepeatableRead` snapshot. The route
+accepts anonymous requests, treats invalid optional authentication as anonymous, and always sends
+`Cache-Control: no-store`.
+
+Rating reads follow the same public/unlisted + ready policy as playback, including for `rejected`
+videos. `PUT /videos/:publicId/rating` remains stricter and refuses new or updated votes after
+rejection.
 
 The public master URL is
 `GET /videos/:publicId/hls/master.m3u8`; it resolves the current active generation and needs no
