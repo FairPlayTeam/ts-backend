@@ -1,5 +1,6 @@
 import type {
   CreateVideoResult,
+  GetPublicVideoDetailResult,
   ListMyVideosResult,
   SearchPublicVideosResult,
   SignVideoMultipartUploadPartsResult,
@@ -18,7 +19,7 @@ const createVideoResult = (
     id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
     publicId: 'AbCdEf123_',
     ownerId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
-    title: 'FairPlay launch recap',
+    title: 'Me at the zoo',
     description: null,
     tags: [],
     license: 'all_rights_reserved',
@@ -75,10 +76,10 @@ const searchPublicVideosResult = (): SearchPublicVideosResult => ({
   videos: [
     {
       publicId: 'AbCdEf123_',
-      title: 'FairPlay launch recap',
-      description: 'A short behind-the-scenes video.',
-      tags: ['fairplay', 'launch'],
-      username: 'fairplay_creator',
+      title: 'Me at the zoo',
+      description: '00:00 Intro 00:05 The cool thing 00:17 End.',
+      tags: ['zoo', 'elephants'],
+      username: 'jawed',
       thumbnailPath: '/videos/AbCdEf123_/thumbnail',
       ratingAverage: 4.5,
       ratingCount: 2,
@@ -88,6 +89,28 @@ const searchPublicVideosResult = (): SearchPublicVideosResult => ({
   ],
   total: 1,
   nextCursor: null,
+});
+
+const getPublicVideoDetailResult = (): GetPublicVideoDetailResult => ({
+  video: {
+    publicId: 'AbCdEf123_',
+    title: 'Me at the zoo',
+    description: '00:00 Intro 00:05 The cool thing 00:17 End.',
+    tags: ['zoo', 'elephants'],
+    license: 'all_rights_reserved',
+    visibility: 'public',
+    createdAt: fixedNow,
+    publishedAt: fixedNow,
+    creator: {
+      username: 'jawed',
+      displayName: 'Jawed Karim',
+      avatarUrl: '/profiles/jawed/avatar',
+    },
+    ratingAverage: 4.5,
+    ratingCount: 2,
+    userRating: null,
+    hlsMasterPath: '/videos/AbCdEf123_/hls/master.m3u8',
+  },
 });
 
 export const createStubVideosService = (): VideosPorts => ({
@@ -102,6 +125,7 @@ export const createStubVideosService = (): VideosPorts => ({
     }),
   listMyVideos: async () => listMyVideosResult(),
   searchPublicVideos: async () => searchPublicVideosResult(),
+  getPublicVideoDetail: async () => getPublicVideoDetailResult(),
   getVideoRating: async () => ({
     ratingAverage: 4.5,
     ratingCount: 2,

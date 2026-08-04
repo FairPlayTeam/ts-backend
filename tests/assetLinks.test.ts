@@ -5,6 +5,7 @@ import {
   readForProxy,
   resolveBestEffortLink,
   resolveSignedRedirect,
+  videoHlsMasterPath,
   videoThumbnailPath,
 } from '../src/services/assets/assetLinks.js';
 
@@ -18,6 +19,7 @@ describe('asset links', () => {
     expect(profileAvatarPath('creator/name')).toBe('/profiles/creator%2Fname/avatar');
     expect(profileBannerPath('créateur')).toBe('/profiles/cr%C3%A9ateur/banner');
     expect(videoThumbnailPath('public/id')).toBe('/videos/public%2Fid/thumbnail');
+    expect(videoHlsMasterPath('public/id')).toBe('/videos/public%2Fid/hls/master.m3u8');
   });
 
   test('resolves links solely from persisted reference presence', () => {

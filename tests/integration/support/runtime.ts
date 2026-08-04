@@ -224,7 +224,13 @@ export const createIntegrationVideosService = (
     },
   });
 
-export const createIntegrationApp = async (runtime: TestRuntime) =>
+export const createIntegrationApp = async (
+  runtime: TestRuntime,
+  overrides: {
+    authService?: AuthPorts;
+    videosService?: VideosService;
+  } = {},
+) =>
   createApp(
     {
       allowedOrigins: [],
@@ -237,9 +243,9 @@ export const createIntegrationApp = async (runtime: TestRuntime) =>
     },
     {
       adminService: runtime.adminService,
-      authService: runtime.authService,
+      authService: overrides.authService ?? runtime.authService,
       profilesService: runtime.profilesService,
-      videosService: runtime.videosService,
+      videosService: overrides.videosService ?? runtime.videosService,
       redisClient: runtime.redisClient,
       readinessChecks: {
         database: async () => {

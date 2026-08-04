@@ -15,6 +15,11 @@ export type AuthenticatedRequest = Request & {
   session: AuthenticatedSession;
 };
 
+export type OptionallyAuthenticatedRequest = Request & {
+  user?: AuthenticatedUser;
+  session?: AuthenticatedSession;
+};
+
 type AuthMiddlewareDependencies = {
   authService: AuthSessionValidationPort;
 };
@@ -56,6 +61,33 @@ export const createAuthenticateSession = ({
       const authenticatedReq = req as AuthenticatedRequest;
       authenticatedReq.user = result.user;
       authenticatedReq.session = result.session;
+
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+};
+
+export const createOptionalAuthenticateSession = ({
+  authService,
+}: AuthMiddlewareDependencies): RequestHandler => {
+  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+    const sessionKey = parseBearerToken(req.headers.authorization);
+
+    if (!sessionKey) {
+      next();
+      return;
+    }
+
+    try {
+      const result = await authService.validateSession(sessionKey);
+
+      if (result) {
+        const authenticatedReq = req as OptionallyAuthenticatedRequest;
+        authenticatedReq.user = result.user;
+        authenticatedReq.session = result.session;
+      }
 
       next();
     } catch (err) {

@@ -296,7 +296,7 @@ describe('video ratings integration', () => {
     );
   });
 
-  test('returns the same 404 for non-ready and rejected videos', async () => {
+  test('keeps rejected ratings readable while refusing non-ready reads and both writes', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
@@ -318,29 +318,35 @@ describe('video ratings integration', () => {
       visibility: 'unlisted',
     });
 
-    for (const video of [nonReady, rejected]) {
-      const publicReadResponse = await request(app)
-        .get(`/videos/${video.publicId}/rating`)
-        .expect(404);
-      expect(publicReadResponse.body).toMatchObject({
-        error: 'NotFound',
-        message: 'Video not found',
-      });
-      await request(app)
-        .get(`/videos/${video.publicId}/rating/me`)
-        .set('Authorization', `Bearer ${rater.sessionKey}`)
-        .expect(404);
-      const response = await request(app)
-        .put(`/videos/${video.publicId}/rating`)
-        .set('Authorization', `Bearer ${rater.sessionKey}`)
-        .send({ value: 3 })
-        .expect(404);
+    await request(app)
+      .get(`/videos/${nonReady.publicId}/rating`)
+      .expect(404)
+      .expect({ error: 'NotFound', message: 'Video not found' });
+    await request(app)
+      .get(`/videos/${nonReady.publicId}/rating/me`)
+      .set('Authorization', `Bearer ${rater.sessionKey}`)
+      .expect(404);
+    await request(app)
+      .put(`/videos/${nonReady.publicId}/rating`)
+      .set('Authorization', `Bearer ${rater.sessionKey}`)
+      .send({ value: 3 })
+      .expect(404);
 
-      expect(response.body).toMatchObject({
-        error: 'NotFound',
-        message: 'Video not found',
-      });
-    }
+    await request(app)
+      .get(`/videos/${rejected.publicId}/rating`)
+      .expect(200)
+      .expect({ ratingAverage: 0, ratingCount: 0 });
+    await request(app)
+      .get(`/videos/${rejected.publicId}/rating/me`)
+      .set('Authorization', `Bearer ${rater.sessionKey}`)
+      .expect(200)
+      .expect({ ratingAverage: 0, ratingCount: 0, userRating: null });
+    await request(app)
+      .put(`/videos/${rejected.publicId}/rating`)
+      .set('Authorization', `Bearer ${rater.sessionKey}`)
+      .send({ value: 3 })
+      .expect(404)
+      .expect({ error: 'NotFound', message: 'Video not found' });
 
     await expect(runtime.prisma.videoRating.count()).resolves.toBe(0);
   });

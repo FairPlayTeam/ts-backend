@@ -1,6 +1,7 @@
 import { toIsoString, toNullableIsoString } from '../http.responses.js';
 import type {
   CreateVideoResult,
+  GetPublicVideoDetailResult,
   ListMyVideosResult,
   SearchPublicVideosResult,
   SignVideoMultipartUploadPartsResult,
@@ -46,6 +47,28 @@ export const toPublicVideoSearchResponse = ({
         createdAt: toIsoString(nextCursor.createdAt),
       }
     : null,
+});
+
+export const toPublicVideoDetailResponse = ({ video }: GetPublicVideoDetailResult) => ({
+  video: {
+    publicId: video.publicId,
+    title: video.title,
+    description: video.description,
+    tags: video.tags,
+    license: video.license,
+    visibility: video.visibility,
+    createdAt: toIsoString(video.createdAt),
+    publishedAt: toNullableIsoString(video.publishedAt),
+    creator: {
+      username: video.creator.username,
+      displayName: video.creator.displayName,
+      avatarUrl: video.creator.avatarUrl,
+    },
+    ratingAverage: video.ratingAverage,
+    ratingCount: video.ratingCount,
+    userRating: video.userRating,
+    hlsMasterPath: video.hlsMasterPath,
+  },
 });
 
 export const toVideoUploadSessionResponse = ({ uploadSession }: VideoUploadSessionResult) => ({

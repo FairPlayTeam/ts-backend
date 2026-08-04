@@ -382,15 +382,23 @@ be `active` or `retiring`. All unavailable, cross-video, cross-generation, and c
 cases return the same 404. The master resolves only the current active generation;
 generation-qualified rendition and segment URLs remain usable while that generation is retiring.
 
+`GET /videos/:publicId` assembles the public playback-page detail in one short PostgreSQL
+`RepeatableRead` transaction. The video, owner, database presence of the owner's avatar, rating
+aggregate, and optional current-user rating therefore come from one snapshot. Missing, malformed,
+expired, or revoked authentication degrades to an anonymous read, and the response is always
+`Cache-Control: no-store`. The response exposes only opaque same-origin avatar and active-master
+paths; it performs no object-storage read while assembling the JSON.
+
 `GET /videos/:publicId/thumbnail` applies the same readiness and visibility rule, without a stricter
 moderation rule, and requires an active generation. It rebuilds the generation thumbnail key from `buildVideoArtifactManifest`,
 checks the object with HEAD, and returns a non-cacheable temporary redirect to a freshly signed
 object-storage URL; Express never proxies the image bytes.
 
-Readability is deliberately distinct from discoverability and rating eligibility. Public search
-continues to require `public` + `approved` + `ready`; the current rating scope also excludes
-`rejected` videos. Reassessing those two policies is adjacent debt and is outside this asset-link
-unification.
+Readability is deliberately distinct from discoverability and rating write eligibility. Public
+search continues to require `public` + `approved` + `ready`. Rating reads use the same readability
+scope as playback, so existing aggregates and the current user's previous rating remain visible on
+`rejected` videos. Rating writes retain the stricter scope and reject new or updated votes once a
+video is `rejected`.
 
 Playlist reads are capped at 512 KiB. URI lines are rewritten to API routes while all FFmpeg HLS
 tags remain untouched. Every object key is rebuilt from `buildVideoArtifactManifest`; rendition

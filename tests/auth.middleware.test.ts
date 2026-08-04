@@ -4,8 +4,10 @@ import {
   AUTH_SESSION_REQUIRED_MESSAGE,
   INVALID_AUTH_SESSION_MESSAGE,
   createAuthenticateSession,
+  createOptionalAuthenticateSession,
   createRejectAuthenticatedSession,
   type AuthenticatedRequest,
+  type OptionallyAuthenticatedRequest,
 } from '../src/middleware/auth.js';
 import {
   INSUFFICIENT_PERMISSIONS_MESSAGE,
@@ -145,6 +147,97 @@ describe('auth session middleware', () => {
 
     await authenticateSession(
       createRequest('Bearer plain-session-token'),
+      {} as Response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedError).toBe(validationError);
+  });
+
+  test('optionally authenticates valid sessions and treats missing or invalid sessions as anonymous', async () => {
+    const optionalAuthenticateSession = createOptionalAuthenticateSession({
+      authService: {
+        validateSession: async (sessionKey) =>
+          sessionKey === 'valid-session-token' ? sessionResult : null,
+      },
+    });
+    const anonymousRequests = [createRequest(), createRequest('Bearer invalid-session-token')];
+
+    for (const req of anonymousRequests) {
+      let receivedError: unknown;
+      await optionalAuthenticateSession(
+        req,
+        {} as Response,
+        ((err?: unknown) => {
+          receivedError = err;
+        }) as NextFunction,
+      );
+
+      expect(receivedError).toBeUndefined();
+      expect((req as OptionallyAuthenticatedRequest).user).toBeUndefined();
+      expect((req as OptionallyAuthenticatedRequest).session).toBeUndefined();
+    }
+
+    const authenticatedRequest = createRequest('Bearer valid-session-token');
+    let receivedError: unknown;
+    await optionalAuthenticateSession(
+      authenticatedRequest,
+      {} as Response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedError).toBeUndefined();
+    expect((authenticatedRequest as OptionallyAuthenticatedRequest).user).toEqual(
+      sessionResult.user,
+    );
+    expect((authenticatedRequest as OptionallyAuthenticatedRequest).session).toEqual(
+      sessionResult.session,
+    );
+  });
+
+  test('optional authentication ignores malformed bearer headers without validating them', async () => {
+    let validateCalls = 0;
+    let receivedError: unknown;
+    const req = createRequest('Bearer token with spaces');
+    const optionalAuthenticateSession = createOptionalAuthenticateSession({
+      authService: {
+        validateSession: async () => {
+          validateCalls += 1;
+          return sessionResult;
+        },
+      },
+    });
+
+    await optionalAuthenticateSession(
+      req,
+      {} as Response,
+      ((err?: unknown) => {
+        receivedError = err;
+      }) as NextFunction,
+    );
+
+    expect(receivedError).toBeUndefined();
+    expect(validateCalls).toBe(0);
+    expect((req as OptionallyAuthenticatedRequest).user).toBeUndefined();
+  });
+
+  test('optional authentication preserves unexpected validation failures', async () => {
+    const validationError = new Error('Session database unavailable');
+    let receivedError: unknown;
+    const optionalAuthenticateSession = createOptionalAuthenticateSession({
+      authService: {
+        validateSession: async () => {
+          throw validationError;
+        },
+      },
+    });
+
+    await optionalAuthenticateSession(
+      createRequest('Bearer valid-session-token'),
       {} as Response,
       ((err?: unknown) => {
         receivedError = err;

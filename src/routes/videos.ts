@@ -4,6 +4,7 @@ import {
   abortVideoMultipartUploadSchema,
   completeVideoMultipartUploadSchema,
   createVideoSchema,
+  getPublicVideoDetailSchema,
   getVideoMultipartUploadSessionSchema,
   getVideoRatingSchema,
   initVideoMultipartUploadSchema,
@@ -15,6 +16,7 @@ import {
 } from '../controllers/videos.schemas.js';
 import { createSingleFileUpload } from '../middleware/upload.js';
 import { createRouteProtector } from '../middleware/routeProtection.js';
+import { createOptionalAuthenticateSession } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
 import type { AuthSessionValidationPort } from '../services/auth.types.js';
 import type { VideosRoutePort } from '../services/videos.types.js';
@@ -43,6 +45,7 @@ export const createRouter = ({
     getHlsRendition,
     getHlsSegment,
     getMultipartUploadSession,
+    getPublicVideoDetail,
     getMyVideoRating,
     getThumbnail,
     getVideoRating,
@@ -54,6 +57,7 @@ export const createRouter = ({
     uploadSourceThumbnail,
   } = createVideosController({ videosService });
   const protect = createRouteProtector({ authService });
+  const optionalAuthenticate = createOptionalAuthenticateSession({ authService });
   const uploadThumbnailFile = createSingleFileUpload({
     fieldName: 'thumbnail',
     maxFileSizeBytes: profileMediaMaxUploadBytes,
@@ -67,6 +71,12 @@ export const createRouter = ({
   router.post('/', ...protectedValidatedRoute(createVideoSchema, createVideo));
   router.get('/me', ...protectedValidatedRoute(listMyVideosSchema, listMyVideos));
   router.get('/search', validate(searchPublicVideosSchema), searchPublicVideos);
+  router.get(
+    '/:publicId',
+    validate(getPublicVideoDetailSchema),
+    optionalAuthenticate,
+    getPublicVideoDetail,
+  );
   router.get(
     '/:publicId/rating/me',
     ...protectedValidatedRoute(getVideoRatingSchema, getMyVideoRating),

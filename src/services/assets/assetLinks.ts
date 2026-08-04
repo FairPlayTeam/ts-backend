@@ -14,6 +14,9 @@ export const profileBannerPath = (username: string): string =>
 export const videoThumbnailPath = (publicId: string): string =>
   `/videos/${encodeURIComponent(publicId)}/thumbnail`;
 
+export const videoHlsMasterPath = (publicId: string): string =>
+  `/videos/${encodeURIComponent(publicId)}/hls/master.m3u8`;
+
 export const resolveBestEffortLink = (reference: unknown, path: string): string | null =>
   reference === null || reference === undefined ? null : path;
 

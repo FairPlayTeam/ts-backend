@@ -12,6 +12,7 @@ type Prisma = Pick<
   | 'externalResourceTarget'
   | 'video'
   | 'videoArtifactGeneration'
+  | 'videoRating'
   | 'videoSourceThumbnail'
   | 'videoUploadSession'
 >;

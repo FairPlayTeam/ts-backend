@@ -60,6 +60,8 @@ import type {
   CreateVideoInput,
   CreateVideoResult,
   GetMyVideoRatingInput,
+  GetPublicVideoDetailInput,
+  GetPublicVideoDetailResult,
   GetVideoRatingInput,
   GetVideoHlsMasterInput,
   GetVideoHlsRenditionInput,
@@ -91,9 +93,14 @@ import {
   readForProxy,
   resolveBestEffortLink,
   resolveSignedRedirect,
+  videoHlsMasterPath,
   videoThumbnailPath,
 } from '../assets/assetLinks.js';
-import { readableVideoWhere } from './videoReadability.js';
+import { READABLE_VIDEO_SCOPE_SQL, readableVideoWhere } from './videoReadability.js';
+import {
+  profileMediaAssetSelect,
+  toProfileMediaUrl,
+} from '../userMedia/userMedia.profileAssets.js';
 
 const ACTIVE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
   'initializing',
@@ -168,8 +175,43 @@ const publicVideoSearchSelect = {
   },
 } satisfies Prisma.VideoSelect;
 
+const publicVideoDetailSelect = {
+  publicId: true,
+  title: true,
+  description: true,
+  tags: true,
+  license: true,
+  visibility: true,
+  ratingSum: true,
+  ratingCount: true,
+  publishedAt: true,
+  createdAt: true,
+  owner: {
+    select: {
+      username: true,
+      displayName: true,
+      mediaAssets: {
+        where: {
+          kind: 'avatar',
+        },
+        select: profileMediaAssetSelect,
+        take: 1,
+      },
+    },
+  },
+  activeArtifactGeneration: {
+    select: {
+      id: true,
+    },
+  },
+} satisfies Prisma.VideoSelect;
+
 type PublicVideoSearchRecord = Prisma.VideoGetPayload<{
   select: typeof publicVideoSearchSelect;
+}>;
+
+type PublicVideoDetailRecord = Prisma.VideoGetPayload<{
+  select: typeof publicVideoDetailSelect;
 }>;
 
 const uploadSessionSelect = {
@@ -431,6 +473,27 @@ const toPublicVideoSearchSummary = ({
   ratingCount,
   publishedAt,
   createdAt,
+});
+
+const toPublicVideoDetail = (
+  video: PublicVideoDetailRecord,
+  userRating: number | null,
+): GetPublicVideoDetailResult['video'] => ({
+  publicId: video.publicId,
+  title: video.title,
+  description: video.description,
+  tags: video.tags,
+  license: video.license,
+  visibility: video.visibility,
+  createdAt: video.createdAt,
+  publishedAt: video.publishedAt,
+  creator: {
+    username: video.owner.username,
+    displayName: video.owner.displayName,
+    avatarUrl: toProfileMediaUrl(video.owner.username, 'avatar', video.owner.mediaAssets[0]),
+  },
+  ...toVideoRatingResult(video.ratingSum, video.ratingCount, userRating),
+  hlsMasterPath: videoHlsMasterPath(video.publicId),
 });
 
 type LockedRatableVideo = {
@@ -1680,6 +1743,58 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     };
   },
 
+  async getPublicVideoDetail({
+    publicId,
+    userId,
+  }: GetPublicVideoDetailInput): Promise<GetPublicVideoDetailResult> {
+    assertValidPublicHlsVideoId(publicId);
+
+    return deps.prisma.$transaction(
+      async (tx) => {
+        const video = await tx.video.findFirst({
+          where: {
+            publicId,
+            ...readableVideoWhere,
+            activeArtifactGeneration: {
+              is: {
+                state: 'active',
+                renditions: {
+                  some: {},
+                },
+              },
+            },
+          },
+          select: publicVideoDetailSelect,
+        });
+
+        if (!video || !video.activeArtifactGeneration) {
+          throw new VideoNotFoundError();
+        }
+
+        const rating = userId
+          ? await tx.videoRating.findFirst({
+              where: {
+                userId,
+                video: {
+                  publicId,
+                },
+              },
+              select: {
+                value: true,
+              },
+            })
+          : null;
+
+        return {
+          video: toPublicVideoDetail(video, rating?.value ?? null),
+        };
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      },
+    );
+  },
+
   async getVideoRating({ publicId }: GetVideoRatingInput): Promise<VideoRatingAggregateResult> {
     const [video] = await deps.prisma.$queryRaw<Array<{ ratingCount: number; ratingSum: number }>>(
       Prisma.sql`
@@ -1688,7 +1803,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
           v."rating_count" AS "ratingCount"
         FROM "videos" AS v
         WHERE v."public_id" = ${publicId}
-          AND ${RATABLE_VIDEO_SCOPE_SQL}
+          AND ${READABLE_VIDEO_SCOPE_SQL}
       `,
     );
 
@@ -1713,7 +1828,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
           ON vr."video_id" = v."id"
           AND vr."user_id" = CAST(${userId} AS UUID)
         WHERE v."public_id" = ${publicId}
-          AND ${RATABLE_VIDEO_SCOPE_SQL}
+          AND ${READABLE_VIDEO_SCOPE_SQL}
       `,
     );
 

@@ -31,16 +31,16 @@ export const videoMultipartUploadSessionParamsSchema = videoParamsSchema
   })
   .openapi('VideoMultipartUploadSessionParams');
 
-export const videoHlsMasterParamsSchema = z
+export const publicVideoIdParamsSchema = z
   .object({
     publicId: z.string().regex(VIDEO_PUBLIC_ID_PATTERN).openapi({ example: 'AbCdEf123_' }),
   })
   .strict()
-  .openapi('VideoHlsMasterParams');
+  .openapi('PublicVideoIdParams');
 
-export const videoRatingParamsSchema = videoHlsMasterParamsSchema.openapi('VideoRatingParams');
+export const videoRatingParamsSchema = publicVideoIdParamsSchema.openapi('VideoRatingParams');
 
-export const videoHlsRenditionParamsSchema = videoHlsMasterParamsSchema
+export const videoHlsRenditionParamsSchema = publicVideoIdParamsSchema
   .extend({
     generationId: z.string().uuid().openapi({
       example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
@@ -88,7 +88,7 @@ export const createVideoBodySchema = z
         VIDEO_TITLE_MAX_LENGTH,
         `Video title must be at most ${VIDEO_TITLE_MAX_LENGTH} characters`,
       )
-      .openapi({ example: 'FairPlay launch recap' }),
+      .openapi({ example: 'Me at the zoo' }),
     description: z
       .string()
       .trim()
@@ -98,8 +98,8 @@ export const createVideoBodySchema = z
       )
       .nullable()
       .optional()
-      .openapi({ example: 'A short behind-the-scenes video.' }),
-    tags: videoTagsSchema.openapi({ example: ['fairplay', 'launch'] }),
+      .openapi({ example: '00:00 Intro 00:05 The cool thing 00:17 End.' }),
+    tags: videoTagsSchema.openapi({ example: ['zoo', 'elephants'] }),
     license: videoLicenseSchema
       .default('all_rights_reserved')
       .openapi({ example: 'all_rights_reserved' }),
@@ -267,9 +267,12 @@ const videoResponseBodySchema = z.object({
   id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
   publicId: z.string().openapi({ example: 'AbCdEf123_' }),
   ownerId: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
-  title: z.string().openapi({ example: 'FairPlay launch recap' }),
-  description: z.string().nullable().openapi({ example: 'A short behind-the-scenes video.' }),
-  tags: z.array(z.string()).openapi({ example: ['fairplay', 'launch'] }),
+  title: z.string().openapi({ example: 'Me at the zoo' }),
+  description: z
+    .string()
+    .nullable()
+    .openapi({ example: '00:00 Intro 00:05 The cool thing 00:17 End.' }),
+  tags: z.array(z.string()).openapi({ example: ['zoo', 'elephants'] }),
   license: videoLicenseSchema.openapi({ example: 'all_rights_reserved' }),
   visibility: videoVisibilitySchema.openapi({ example: 'unlisted' }),
   allowComments: z.boolean().openapi({ example: true }),
@@ -308,10 +311,13 @@ export const myVideosResponseSchema = z
 
 const publicVideoSearchSummaryResponseSchema = z.object({
   publicId: z.string().openapi({ example: 'AbCdEf123_' }),
-  title: z.string().openapi({ example: 'FairPlay launch recap' }),
-  description: z.string().nullable().openapi({ example: 'A short behind-the-scenes video.' }),
-  tags: z.array(z.string()).openapi({ example: ['fairplay', 'launch'] }),
-  username: z.string().openapi({ example: 'fairplay_creator' }),
+  title: z.string().openapi({ example: 'Me at the zoo' }),
+  description: z
+    .string()
+    .nullable()
+    .openapi({ example: '00:00 Intro 00:05 The cool thing 00:17 End.' }),
+  tags: z.array(z.string()).openapi({ example: ['zoo', 'elephants'] }),
+  username: z.string().openapi({ example: 'jawed' }),
   thumbnailPath: relativeAssetPathSchema
     .nullable()
     .openapi({ example: '/videos/AbCdEf123_/thumbnail' }),
@@ -319,6 +325,37 @@ const publicVideoSearchSummaryResponseSchema = z.object({
   publishedAt: z.string().datetime().nullable().openapi({ example: '2026-01-01T00:00:00.000Z' }),
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
+
+const publicVideoDetailResponseBodySchema = publicVideoSearchSummaryResponseSchema
+  .pick({
+    publicId: true,
+    title: true,
+    description: true,
+    tags: true,
+    ratingAverage: true,
+    ratingCount: true,
+    publishedAt: true,
+    createdAt: true,
+  })
+  .extend({
+    license: videoLicenseSchema.openapi({ example: 'all_rights_reserved' }),
+    visibility: videoVisibilitySchema.openapi({ example: 'unlisted' }),
+    creator: z.object({
+      username: z.string().openapi({ example: 'jawed' }),
+      displayName: z.string().nullable().openapi({ example: 'Jawed Karim' }),
+      avatarUrl: relativeAssetPathSchema.nullable().openapi({ example: '/profiles/jawed/avatar' }),
+    }),
+    userRating: z.number().int().min(1).max(5).nullable().openapi({ example: 5 }),
+    hlsMasterPath: relativeAssetPathSchema.openapi({
+      example: '/videos/AbCdEf123_/hls/master.m3u8',
+    }),
+  });
+
+export const publicVideoDetailResponseSchema = z
+  .object({
+    video: publicVideoDetailResponseBodySchema,
+  })
+  .openapi('PublicVideoDetailResponse');
 
 export const publicVideoSearchResponseSchema = z
   .object({
@@ -429,6 +466,10 @@ export const searchPublicVideosSchema = z.object({
   query: publicVideoSearchQuerySchema,
 });
 
+export const getPublicVideoDetailSchema = z.object({
+  params: publicVideoIdParamsSchema,
+});
+
 export const getVideoRatingSchema = z.object({
   params: videoRatingParamsSchema,
 });
@@ -439,9 +480,9 @@ export const rateVideoSchema = z.object({
 });
 
 export type VideoParams = z.infer<typeof initVideoMultipartUploadSchema>['params'];
-export type VideoHlsMasterParams = z.infer<typeof videoHlsMasterParamsSchema>;
+export type PublicVideoIdParams = z.infer<typeof publicVideoIdParamsSchema>;
 export type VideoRatingParams = z.infer<typeof videoRatingParamsSchema>;
-export type VideoThumbnailParams = VideoHlsMasterParams;
+export type VideoThumbnailParams = PublicVideoIdParams;
 export type VideoHlsRenditionParams = z.infer<typeof videoHlsRenditionParamsSchema>;
 export type VideoHlsSegmentParams = z.infer<typeof videoHlsSegmentParamsSchema>;
 export type InitVideoMultipartUploadBody = z.infer<typeof initVideoMultipartUploadSchema>['body'];

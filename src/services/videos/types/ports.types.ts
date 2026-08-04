@@ -97,6 +97,37 @@ export type PublicVideoSearchSummary = {
   createdAt: Date;
 };
 
+export type PublicVideoDetail = Pick<
+  PublicVideoSearchSummary,
+  | 'publicId'
+  | 'title'
+  | 'description'
+  | 'tags'
+  | 'ratingAverage'
+  | 'ratingCount'
+  | 'publishedAt'
+  | 'createdAt'
+> & {
+  license: VideoLicense;
+  visibility: VideoVisibility;
+  creator: {
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+  };
+  userRating: number | null;
+  hlsMasterPath: string;
+};
+
+export type GetPublicVideoDetailInput = {
+  publicId: string;
+  userId?: string;
+};
+
+export type GetPublicVideoDetailResult = {
+  video: PublicVideoDetail;
+};
+
 export type SearchPublicVideosResult = {
   videos: PublicVideoSearchSummary[];
   total: number;
@@ -257,6 +288,7 @@ export type VideosRoutePort = {
   createVideo(input: CreateVideoInput): Promise<CreateVideoResult>;
   listMyVideos(input: ListMyVideosInput): Promise<ListMyVideosResult>;
   searchPublicVideos(input: SearchPublicVideosInput): Promise<SearchPublicVideosResult>;
+  getPublicVideoDetail(input: GetPublicVideoDetailInput): Promise<GetPublicVideoDetailResult>;
   getVideoRating(input: GetVideoRatingInput): Promise<VideoRatingAggregateResult>;
   getMyVideoRating(input: GetMyVideoRatingInput): Promise<VideoRatingResult>;
   rateVideo(input: RateVideoInput): Promise<VideoRatingResult>;

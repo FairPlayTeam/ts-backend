@@ -2,15 +2,16 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { sendNoStoreJson } from '../http.responses.js';
 import { toVideosHttpError } from '../videos.errors.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
+import type { OptionallyAuthenticatedRequest } from '../../middleware/auth.js';
 import type {
   CompleteVideoMultipartUploadBody,
   CreateVideoBody,
   InitVideoMultipartUploadBody,
   ListMyVideosQuery,
+  PublicVideoIdParams,
   RateVideoBody,
   SearchPublicVideosQuery,
   SignVideoMultipartUploadPartsBody,
-  VideoHlsMasterParams,
   VideoHlsRenditionParams,
   VideoHlsSegmentParams,
   VideoMultipartUploadSessionParams,
@@ -22,6 +23,7 @@ import type { VideosControllerDependencies } from './videos.controller.types.js'
 import {
   toCreateVideoResponse,
   toMyVideosResponse,
+  toPublicVideoDetailResponse,
   toPublicVideoSearchResponse,
   toSignedVideoUploadPartsResponse,
   toUploadVideoSourceThumbnailResponse,
@@ -50,8 +52,9 @@ type CompleteRequest = Request<
 type CreateVideoRequest = Request<unknown, unknown, CreateVideoBody>;
 type ListMyVideosRequest = Request<unknown, unknown, unknown, ListMyVideosQuery>;
 type SearchPublicVideosRequest = Request<unknown, unknown, unknown, SearchPublicVideosQuery>;
+type PublicVideoDetailRequest = Request<PublicVideoIdParams>;
 type RateVideoRequest = Request<VideoRatingParams, unknown, RateVideoBody>;
-type HlsMasterRequest = Request<VideoHlsMasterParams>;
+type HlsMasterRequest = Request<PublicVideoIdParams>;
 type HlsRenditionRequest = Request<VideoHlsRenditionParams>;
 type HlsSegmentRequest = Request<VideoHlsSegmentParams>;
 type ThumbnailRequest = Request<VideoThumbnailParams>;
@@ -120,6 +123,22 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
       });
 
       return sendNoStoreJson(res, 200, toPublicVideoSearchResponse(result));
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const getPublicVideoDetail: RequestHandler = async (req, res, next) => {
+    try {
+      const detailReq = req as PublicVideoDetailRequest;
+      const optionallyAuthenticatedReq = req as OptionallyAuthenticatedRequest;
+      const userId = optionallyAuthenticatedReq.user?.id;
+      const result = await videosService.getPublicVideoDetail({
+        publicId: detailReq.params.publicId,
+        ...(userId === undefined ? {} : { userId }),
+      });
+
+      return sendNoStoreJson(res, 200, toPublicVideoDetailResponse(result));
     } catch (err) {
       next(toVideosHttpError(err));
     }
@@ -357,6 +376,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     getHlsRendition,
     getHlsSegment,
     getMultipartUploadSession,
+    getPublicVideoDetail,
     getMyVideoRating,
     getThumbnail,
     getVideoRating,

@@ -2,9 +2,11 @@ import {
   completeVideoMultipartUploadBodySchema,
   createVideoBodySchema,
   createVideoResponseSchema,
+  publicVideoDetailResponseSchema,
   initVideoMultipartUploadBodySchema,
   myVideosQuerySchema,
   myVideosResponseSchema,
+  publicVideoIdParamsSchema,
   publicVideoSearchQuerySchema,
   publicVideoSearchResponseSchema,
   rateVideoBodySchema,
@@ -12,7 +14,6 @@ import {
   signVideoMultipartUploadPartsBodySchema,
   uploadVideoSourceThumbnailBodySchema,
   uploadVideoSourceThumbnailResponseSchema,
-  videoHlsMasterParamsSchema,
   videoHlsRenditionParamsSchema,
   videoHlsSegmentParamsSchema,
   videoMultipartUploadSessionParamsSchema,
@@ -42,6 +43,13 @@ const videoListResponses = {
 
 const publicVideoSearchResponses = {
   400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+  429: jsonResponse('Too many requests', ApiErrorSchema),
+  500: jsonResponse('Internal server error', ApiErrorSchema),
+};
+
+const publicVideoDetailResponses = {
+  400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+  404: jsonResponse('Video not found or inaccessible', ApiErrorSchema),
   429: jsonResponse('Too many requests', ApiErrorSchema),
   500: jsonResponse('Internal server error', ApiErrorSchema),
 };
@@ -108,12 +116,26 @@ export const routeDocs = [
   },
   {
     method: 'get',
+    path: '/videos/{publicId}',
+    summary: 'Get a playable public video detail',
+    tags: ['Videos'],
+    security: [{}, { bearerAuth: [] }],
+    request: {
+      params: publicVideoIdParamsSchema,
+    },
+    responses: {
+      200: jsonResponse('Playable public video detail', publicVideoDetailResponseSchema),
+      ...publicVideoDetailResponses,
+    },
+  },
+  {
+    method: 'get',
     path: '/videos/{publicId}/thumbnail',
     summary: 'Redirect to the active public video thumbnail',
     tags: ['Videos'],
     security: [],
     request: {
-      params: videoHlsMasterParamsSchema,
+      params: publicVideoIdParamsSchema,
     },
     responses: {
       307: {
@@ -129,7 +151,7 @@ export const routeDocs = [
     tags: ['Videos'],
     security: [],
     request: {
-      params: videoHlsMasterParamsSchema,
+      params: publicVideoIdParamsSchema,
     },
     responses: {
       200: hlsPlaylistResponse('Rewritten HLS master playlist'),

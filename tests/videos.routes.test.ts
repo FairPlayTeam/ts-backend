@@ -11,6 +11,7 @@ import type {
   CompleteVideoMultipartUploadInput,
   CreateVideoInput,
   GetMyVideoRatingInput,
+  GetPublicVideoDetailInput,
   GetVideoRatingInput,
   GetVideoHlsMasterInput,
   GetVideoHlsRenditionInput,
@@ -41,6 +42,7 @@ let receivedAbortRequest: AbortVideoMultipartUploadInput | undefined;
 let receivedGetRequest: GetVideoMultipartUploadSessionInput | undefined;
 let receivedListRequest: ListMyVideosInput | undefined;
 let receivedPublicSearchRequest: SearchPublicVideosInput | undefined;
+let receivedPublicVideoDetailRequest: GetPublicVideoDetailInput | undefined;
 let receivedPublicRatingRequest: GetVideoRatingInput | undefined;
 let receivedMyRatingRequest: GetMyVideoRatingInput | undefined;
 let receivedRateVideoRequest: RateVideoInput | undefined;
@@ -77,6 +79,10 @@ describe('videos routes multipart uploads', () => {
           validateSession: async (sessionKey) => {
             receivedSessionKey = sessionKey;
 
+            if (sessionKey === 'invalid-session-key') {
+              return null;
+            }
+
             return authService.validateSession(sessionKey);
           },
         },
@@ -97,6 +103,26 @@ describe('videos routes multipart uploads', () => {
             receivedPublicSearchRequest = input;
 
             return videosService.searchPublicVideos(input);
+          },
+          getPublicVideoDetail: async (input) => {
+            receivedPublicVideoDetailRequest = input;
+            const result = await videosService.getPublicVideoDetail(input);
+
+            return {
+              video: {
+                ...result.video,
+                userRating: input.userId ? 5 : null,
+                id: 'internal-video-id',
+                ownerId: 'internal-owner-id',
+                moderationStatus: 'rejected',
+                processingStatus: 'ready',
+                thumbnailObjectKey: 'internal-thumbnail-key',
+                hlsMasterObjectKey: 'internal-master-key',
+                rejectionReason: 'internal reason',
+                bucket: 'internal-bucket',
+                objectKey: 'internal-object-key',
+              },
+            } as Awaited<ReturnType<VideosPorts['getPublicVideoDetail']>>;
           },
           getVideoRating: async (input) => {
             receivedPublicRatingRequest = input;
@@ -207,9 +233,9 @@ describe('videos routes multipart uploads', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        title: 'FairPlay launch recap',
-        description: 'A short behind-the-scenes video.',
-        tags: ['fairplay', 'launch', 'fairplay'],
+        title: 'Me at the zoo',
+        description: '00:00 Intro 00:05 The cool thing 00:17 End.',
+        tags: ['zoo', 'elephants', 'zoo'],
         license: 'all_rights_reserved',
         visibility: 'public',
         allowComments: false,
@@ -223,9 +249,9 @@ describe('videos routes multipart uploads', () => {
     expect(observedSessionKey).toBe('route-session-key');
     expect(observedCreateRequest).toEqual({
       userId: authenticatedUserId,
-      title: 'FairPlay launch recap',
-      description: 'A short behind-the-scenes video.',
-      tags: ['fairplay', 'launch'],
+      title: 'Me at the zoo',
+      description: '00:00 Intro 00:05 The cool thing 00:17 End.',
+      tags: ['zoo', 'elephants'],
       license: 'all_rights_reserved',
       visibility: 'public',
       allowComments: false,
@@ -233,9 +259,9 @@ describe('videos routes multipart uploads', () => {
     expect(await response.json()).toMatchObject({
       video: {
         ownerId: authenticatedUserId,
-        title: 'FairPlay launch recap',
-        description: 'A short behind-the-scenes video.',
-        tags: ['fairplay', 'launch'],
+        title: 'Me at the zoo',
+        description: '00:00 Intro 00:05 The cool thing 00:17 End.',
+        tags: ['zoo', 'elephants'],
         license: 'all_rights_reserved',
         visibility: 'unlisted',
         allowComments: false,
@@ -300,7 +326,7 @@ describe('videos routes multipart uploads', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        title: 'FairPlay launch recap',
+        title: 'Me at the zoo',
       }),
     });
 
@@ -407,10 +433,10 @@ describe('videos routes multipart uploads', () => {
       videos: [
         {
           publicId: 'AbCdEf123_',
-          title: 'FairPlay launch recap',
-          description: 'A short behind-the-scenes video.',
-          tags: ['fairplay', 'launch'],
-          username: 'fairplay_creator',
+          title: 'Me at the zoo',
+          description: '00:00 Intro 00:05 The cool thing 00:17 End.',
+          tags: ['zoo', 'elephants'],
+          username: 'jawed',
           thumbnailPath: '/videos/AbCdEf123_/thumbnail',
           ratingAverage: 4.5,
           ratingCount: 2,
@@ -441,6 +467,110 @@ describe('videos routes multipart uploads', () => {
         message: REQUEST_VALIDATION_FAILED_MESSAGE,
       });
     }
+  });
+
+  test('serves an anonymous public video detail through a strict no-store response', async () => {
+    receivedPublicVideoDetailRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const response = await fetch(`${baseUrl}/videos/${publicId}`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(receivedSessionKey).toBeUndefined();
+    const observedAnonymousDetailRequest = receivedPublicVideoDetailRequest as
+      | GetPublicVideoDetailInput
+      | undefined;
+    expect(observedAnonymousDetailRequest).toEqual({ publicId });
+    const body = (await response.json()) as { video: Record<string, unknown> };
+    expect(body).toEqual({
+      video: {
+        publicId,
+        title: 'Me at the zoo',
+        description: '00:00 Intro 00:05 The cool thing 00:17 End.',
+        tags: ['zoo', 'elephants'],
+        license: 'all_rights_reserved',
+        visibility: 'public',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        publishedAt: '2026-01-01T00:00:00.000Z',
+        creator: {
+          username: 'jawed',
+          displayName: 'Jawed Karim',
+          avatarUrl: '/profiles/jawed/avatar',
+        },
+        ratingAverage: 4.5,
+        ratingCount: 2,
+        userRating: null,
+        hlsMasterPath: `/videos/${publicId}/hls/master.m3u8`,
+      },
+    });
+    for (const forbidden of [
+      'id',
+      'ownerId',
+      'moderationStatus',
+      'processingStatus',
+      'thumbnailObjectKey',
+      'hlsMasterObjectKey',
+      'rejectionReason',
+      'bucket',
+      'objectKey',
+    ]) {
+      expect(body.video).not.toHaveProperty(forbidden);
+    }
+  });
+
+  test('includes the current rating with valid optional auth and degrades invalid auth to anonymous', async () => {
+    receivedPublicVideoDetailRequest = undefined;
+    receivedSessionKey = undefined;
+    const authenticatedResponse = await fetch(`${baseUrl}/videos/${publicId}`, {
+      headers: { Authorization: 'Bearer route-session-key' },
+    });
+
+    expect(authenticatedResponse.status).toBe(200);
+    const observedAuthenticatedSessionKey = receivedSessionKey as string | undefined;
+    const observedAuthenticatedDetailRequest = receivedPublicVideoDetailRequest as
+      | GetPublicVideoDetailInput
+      | undefined;
+    expect(observedAuthenticatedSessionKey).toBe('route-session-key');
+    expect(observedAuthenticatedDetailRequest).toEqual({
+      publicId,
+      userId: authenticatedUserId,
+    });
+    expect((await authenticatedResponse.json()) as unknown).toEqual(
+      expect.objectContaining({
+        video: expect.objectContaining({ userRating: 5 }),
+      }),
+    );
+
+    receivedPublicVideoDetailRequest = undefined;
+    receivedSessionKey = undefined;
+    const invalidResponse = await fetch(`${baseUrl}/videos/${publicId}`, {
+      headers: { Authorization: 'Bearer invalid-session-key' },
+    });
+
+    expect(invalidResponse.status).toBe(200);
+    const observedInvalidSessionKey = receivedSessionKey as string | undefined;
+    const observedInvalidDetailRequest = receivedPublicVideoDetailRequest as
+      | GetPublicVideoDetailInput
+      | undefined;
+    expect(observedInvalidSessionKey).toBe('invalid-session-key');
+    expect(observedInvalidDetailRequest).toEqual({ publicId });
+    expect((await invalidResponse.json()) as unknown).toEqual(
+      expect.objectContaining({
+        video: expect.objectContaining({ userRating: null }),
+      }),
+    );
+  });
+
+  test('rejects a malformed detail public id before authentication or service access', async () => {
+    receivedPublicVideoDetailRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const response = await fetch(`${baseUrl}/videos/not-valid`);
+
+    expect(response.status).toBe(400);
+    expect(receivedSessionKey).toBeUndefined();
+    expect(receivedPublicVideoDetailRequest).toBeUndefined();
   });
 
   test('separates public rating aggregates from authenticated current-user ratings', async () => {
@@ -498,7 +628,7 @@ describe('videos routes multipart uploads', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        title: 'FairPlay launch recap',
+        title: 'Me at the zoo',
         visibility: 'private',
       }),
     });

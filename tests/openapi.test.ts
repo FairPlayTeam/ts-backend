@@ -174,6 +174,7 @@ describe('OpenAPI generation', () => {
       '/videos',
       '/videos/me',
       '/videos/search',
+      '/videos/{publicId}',
       '/videos/{publicId}/hls/master.m3u8',
       '/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8',
       '/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}',
@@ -221,6 +222,10 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/videos/search']?.get?.responses?.[200]).toBeDefined();
     expect(document.paths['/videos/search']?.get?.responses?.[400]).toBeDefined();
     expect(document.paths['/videos/search']?.get?.responses?.[401]).toBeUndefined();
+    expect(document.paths['/videos/{publicId}']?.get?.security).toEqual([{}, { bearerAuth: [] }]);
+    expect(document.paths['/videos/{publicId}']?.get?.responses?.[200]).toBeDefined();
+    expect(document.paths['/videos/{publicId}']?.get?.responses?.[404]).toBeDefined();
+    expect(document.paths['/videos/{publicId}']?.get?.responses?.[401]).toBeUndefined();
     expect(document.paths['/videos/{publicId}/rating']?.get?.security).toEqual([]);
     expect(document.paths['/videos/{publicId}/rating']?.get?.responses?.[401]).toBeUndefined();
     expect(document.paths['/videos/{publicId}/rating']?.get?.responses?.[403]).toBeUndefined();

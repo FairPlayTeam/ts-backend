@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 export const readableVideoWhere = {
   processingStatus: 'ready',
@@ -6,3 +6,8 @@ export const readableVideoWhere = {
     in: ['public', 'unlisted'],
   },
 } satisfies Prisma.VideoWhereInput;
+
+export const READABLE_VIDEO_SCOPE_SQL = Prisma.sql`
+  v."processing_status" = 'ready'
+  AND v."visibility" IN ('public', 'unlisted')
+`;
