@@ -9,7 +9,7 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "bun --watch scripts/dev.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "bun scripts/build.ts",
     "start": "bun dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun run test:unit",

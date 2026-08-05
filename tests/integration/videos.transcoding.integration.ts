@@ -135,6 +135,7 @@ describe('videos transcoding integration', () => {
         hlsMasterObjectKey: previousManifest.master.objectKey,
         thumbnailObjectKey: previousManifest.thumbnail.objectKey,
         processingStatus: 'ready',
+        durationSeconds: 2,
       },
     });
 

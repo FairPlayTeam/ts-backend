@@ -130,6 +130,7 @@ describe('videos search integration', () => {
         data: {
           moderationStatus,
           processingStatus,
+          ...(processingStatus === 'ready' ? { durationSeconds: 19 } : {}),
           visibility,
           publishedAt:
             moderationStatus === 'approved' ? new Date('2026-04-01T00:00:00.000Z') : null,

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { Prisma } from '@prisma/client';
 import type { VideosDependencies } from '../src/services/videos/videos.dependencies.js';
 import { createVideosService } from '../src/services/videos.service.js';
 import type { SearchPublicVideosInput } from '../src/services/videos.types.js';
@@ -31,26 +32,32 @@ const createDeps = () => {
     findMany?: unknown;
     countCalls: number;
     findManyCalls: number;
+    transactionOptions?: unknown;
   } = {
     countCalls: 0,
     findManyCalls: 0,
   };
+  const tx = {
+    video: {
+      findMany: async (args: unknown) => {
+        calls.findMany = args;
+        calls.findManyCalls += 1;
+
+        return records;
+      },
+      count: async (args: unknown) => {
+        calls.count = args;
+        calls.countCalls += 1;
+
+        return records.length;
+      },
+    },
+  };
   const deps = {
     prisma: {
-      $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
-      video: {
-        findMany: async (args: unknown) => {
-          calls.findMany = args;
-          calls.findManyCalls += 1;
-
-          return records;
-        },
-        count: async (args: unknown) => {
-          calls.count = args;
-          calls.countCalls += 1;
-
-          return records.length;
-        },
+      $transaction: async (run: (transaction: typeof tx) => Promise<unknown>, options: unknown) => {
+        calls.transactionOptions = options;
+        return run(tx);
       },
     },
   } as unknown as VideosDependencies;
@@ -90,6 +97,9 @@ describe('public video search service', () => {
       }),
     );
     expect(calls.count).toEqual({ where: resultFilter });
+    expect(calls.transactionOptions).toEqual({
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    });
     expect(result.videos[0]).toEqual({
       publicId: 'PublicVid01_',
       title: 'Public search video 1',

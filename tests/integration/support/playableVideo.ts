@@ -62,6 +62,7 @@ export const createPlayableVideo = async (
       hlsMasterObjectKey: generation.manifest.master.objectKey,
       thumbnailObjectKey: generation.manifest.thumbnail.objectKey,
       processingStatus: 'ready',
+      durationSeconds: 19,
       moderationStatus: 'approved',
       visibility,
       publishedAt,

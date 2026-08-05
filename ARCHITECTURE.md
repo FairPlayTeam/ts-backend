@@ -382,12 +382,33 @@ be `active` or `retiring`. All unavailable, cross-video, cross-generation, and c
 cases return the same 404. The master resolves only the current active generation;
 generation-qualified rendition and segment URLs remain usable while that generation is retiring.
 
+`GET /videos` and `GET /videos/search` share one concrete public-catalog query path: the
+`public` + `approved` + `ready` scope, `(createdAt, publicId)` cursor, bounded page size,
+`RepeatableRead` page/count transaction, and next-cursor calculation cannot drift between them. The
+feed always sorts newest first and omits the search-only text filter. Their output mappers remain
+distinct whitelists because feed cards intentionally exclude descriptions, tags, ratings, avatars,
+and playback data. Both routes return `Cache-Control: no-store`.
+
+The catalog deliberately relies on the publication invariant that a `ready` video has an active,
+usable artifact generation instead of duplicating the playback-generation predicate in the
+discoverability scope. A database drift that removed an active generation without updating the
+video status could therefore expose a feed card whose detail later returns 404. This residual risk
+is accepted because the normal publication and cleanup paths update those states coherently. The
+shared catalog query currently selects the union of search-summary and feed-card columns; the feed
+discards search-only metadata in its whitelist mapper. That bounded over-fetch is accepted as minor
+debt to keep the shared scope and pagination path simple.
+
+FFprobe duration is rounded up to a positive whole second and persisted on `videos` in the same
+publication transaction that marks a video `ready`. PostgreSQL rejects any `ready` video with a
+null duration. Public feed cards and playback details therefore expose the same non-null `duration`
+value without probing media or object storage during a read.
+
 `GET /videos/:publicId` assembles the public playback-page detail in one short PostgreSQL
 `RepeatableRead` transaction. The video, owner, database presence of the owner's avatar, rating
 aggregate, view aggregate, and optional current-user rating therefore come from one snapshot.
 Missing, malformed, expired, or revoked authentication degrades to an anonymous read, and the
-response is always `Cache-Control: no-store`. The response exposes only opaque same-origin avatar
-and active-master paths; it performs no object-storage read while assembling the JSON.
+response is always `Cache-Control: no-store`. The response exposes only opaque same-origin avatar,
+thumbnail, and active-master paths; it performs no object-storage read while assembling the JSON.
 
 After that read transaction commits, an authenticated non-owner detail load schedules a detached,
 best-effort view write. Anonymous loads and owner loads never count. `video_views` stores one fact

@@ -257,13 +257,14 @@ describe('videos moderation integration', () => {
           data: {
             createdAt: pendingDates[index] ?? pendingDates[0],
             processingStatus: 'ready',
+            durationSeconds: 19,
           },
         }),
       ),
     );
     await runtime.prisma.video.update({
       where: { id: approved.video.id },
-      data: { processingStatus: 'ready' },
+      data: { processingStatus: 'ready', durationSeconds: 19 },
     });
     await runtime.prisma.video.update({
       where: { id: rejected.video.id },
@@ -1036,6 +1037,7 @@ describe('videos moderation integration', () => {
         thumbnailObjectKey: generation.manifest.thumbnail.objectKey,
         moderationStatus: 'rejected',
         processingStatus: 'ready',
+        durationSeconds: 19,
         rejectedAt,
       },
     });

@@ -9,6 +9,7 @@ import {
   getVideoRatingSchema,
   initVideoMultipartUploadSchema,
   listMyVideosSchema,
+  listPublicVideosSchema,
   rateVideoSchema,
   searchPublicVideosSchema,
   signVideoMultipartUploadPartsSchema,
@@ -50,6 +51,7 @@ export const createRouter = ({
     getThumbnail,
     getVideoRating,
     initMultipartUpload,
+    listPublicVideos,
     listMyVideos,
     rateVideo,
     searchPublicVideos,
@@ -69,6 +71,7 @@ export const createRouter = ({
   ];
 
   router.post('/', ...protectedValidatedRoute(createVideoSchema, createVideo));
+  router.get('/', validate(listPublicVideosSchema), listPublicVideos);
   router.get('/me', ...protectedValidatedRoute(listMyVideosSchema, listMyVideos));
   router.get('/search', validate(searchPublicVideosSchema), searchPublicVideos);
   router.get(

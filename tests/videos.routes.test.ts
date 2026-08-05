@@ -20,6 +20,7 @@ import type {
   GetVideoThumbnailInput,
   InitVideoMultipartUploadInput,
   ListMyVideosInput,
+  ListPublicVideosInput,
   RateVideoInput,
   SearchPublicVideosInput,
   SignVideoMultipartUploadPartsInput,
@@ -41,6 +42,7 @@ let receivedCompleteRequest: CompleteVideoMultipartUploadInput | undefined;
 let receivedAbortRequest: AbortVideoMultipartUploadInput | undefined;
 let receivedGetRequest: GetVideoMultipartUploadSessionInput | undefined;
 let receivedListRequest: ListMyVideosInput | undefined;
+let receivedPublicListRequest: ListPublicVideosInput | undefined;
 let receivedPublicSearchRequest: SearchPublicVideosInput | undefined;
 let receivedPublicVideoDetailRequest: GetPublicVideoDetailInput | undefined;
 let receivedPublicRatingRequest: GetVideoRatingInput | undefined;
@@ -98,6 +100,11 @@ describe('videos routes multipart uploads', () => {
             receivedListRequest = input;
 
             return videosService.listMyVideos(input);
+          },
+          listPublicVideos: async (input) => {
+            receivedPublicListRequest = input;
+
+            return videosService.listPublicVideos(input);
           },
           searchPublicVideos: async (input) => {
             receivedPublicSearchRequest = input;
@@ -449,6 +456,65 @@ describe('videos routes multipart uploads', () => {
     });
   });
 
+  test('lists the public feed without authentication using chronological pagination', async () => {
+    receivedPublicListRequest = undefined;
+    receivedSessionKey = undefined;
+    const query = new URLSearchParams({
+      limit: '10',
+      cursorCreatedAt: '2026-01-01T00:00:00.000Z',
+      cursorPublicId: publicId,
+    });
+
+    const response = await fetch(`${baseUrl}/videos?${query.toString()}`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(receivedSessionKey).toBeUndefined();
+    const observedPublicListRequest = receivedPublicListRequest as
+      | ListPublicVideosInput
+      | undefined;
+    expect(observedPublicListRequest).toEqual({
+      limit: 10,
+      cursor: {
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        publicId,
+      },
+    });
+    expect(await response.json()).toEqual({
+      videos: [
+        {
+          publicId,
+          title: 'Me at the zoo',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          thumbnailPath: `/videos/${publicId}/thumbnail`,
+          creator: {
+            username: 'jawed',
+            displayName: 'Jawed Karim',
+          },
+          viewCount: 128,
+          duration: 19,
+        },
+      ],
+      total: 1,
+      nextCursor: null,
+    });
+  });
+
+  test('rejects invalid public feed queries before calling the service', async () => {
+    for (const query of [
+      `?cursorCreatedAt=${encodeURIComponent('2026-01-01T00:00:00.000Z')}`,
+      '?sort=oldest',
+      '?limit=101',
+    ]) {
+      receivedPublicListRequest = undefined;
+
+      const response = await fetch(`${baseUrl}/videos${query}`);
+
+      expect(response.status).toBe(400);
+      expect(receivedPublicListRequest).toBeUndefined();
+    }
+  });
+
   test('rejects invalid public video searches before calling the service', async () => {
     for (const query of [
       '',
@@ -493,6 +559,7 @@ describe('videos routes multipart uploads', () => {
         visibility: 'public',
         createdAt: '2026-01-01T00:00:00.000Z',
         publishedAt: '2026-01-01T00:00:00.000Z',
+        thumbnailPath: `/videos/${publicId}/thumbnail`,
         creator: {
           username: 'jawed',
           displayName: 'Jawed Karim',
@@ -502,6 +569,7 @@ describe('videos routes multipart uploads', () => {
         ratingCount: 2,
         userRating: null,
         viewCount: 128,
+        duration: 19,
         hlsMasterPath: `/videos/${publicId}/hls/master.m3u8`,
       },
     });

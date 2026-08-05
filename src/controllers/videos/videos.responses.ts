@@ -2,6 +2,7 @@ import { toIsoString, toNullableIsoString } from '../http.responses.js';
 import type {
   CreateVideoResult,
   GetPublicVideoDetailResult,
+  ListPublicVideosResult,
   ListMyVideosResult,
   SearchPublicVideosResult,
   SignVideoMultipartUploadPartsResult,
@@ -49,6 +50,28 @@ export const toPublicVideoSearchResponse = ({
     : null,
 });
 
+export const toPublicVideosResponse = ({ nextCursor, total, videos }: ListPublicVideosResult) => ({
+  videos: videos.map((video) => ({
+    publicId: video.publicId,
+    title: video.title,
+    createdAt: toIsoString(video.createdAt),
+    thumbnailPath: video.thumbnailPath,
+    creator: {
+      username: video.creator.username,
+      displayName: video.creator.displayName,
+    },
+    viewCount: video.viewCount,
+    duration: video.duration,
+  })),
+  total,
+  nextCursor: nextCursor
+    ? {
+        publicId: nextCursor.publicId,
+        createdAt: toIsoString(nextCursor.createdAt),
+      }
+    : null,
+});
+
 export const toPublicVideoDetailResponse = ({ video }: GetPublicVideoDetailResult) => ({
   video: {
     publicId: video.publicId,
@@ -59,6 +82,7 @@ export const toPublicVideoDetailResponse = ({ video }: GetPublicVideoDetailResul
     visibility: video.visibility,
     createdAt: toIsoString(video.createdAt),
     publishedAt: toNullableIsoString(video.publishedAt),
+    thumbnailPath: video.thumbnailPath,
     creator: {
       username: video.creator.username,
       displayName: video.creator.displayName,
@@ -68,6 +92,7 @@ export const toPublicVideoDetailResponse = ({ video }: GetPublicVideoDetailResul
     ratingCount: video.ratingCount,
     userRating: video.userRating,
     viewCount: video.viewCount,
+    duration: video.duration,
     hlsMasterPath: video.hlsMasterPath,
   },
 });

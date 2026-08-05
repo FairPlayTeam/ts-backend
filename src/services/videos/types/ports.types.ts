@@ -47,7 +47,7 @@ export type VideoPaginationCursor = {
   id: string;
 };
 
-export type PublicVideoSearchCursor = {
+export type PublicVideoCursor = {
   createdAt: Date;
   publicId: string;
 };
@@ -79,9 +79,14 @@ export type PublicVideoSearchSort = 'newest' | 'oldest';
 
 export type SearchPublicVideosInput = {
   search: string;
-  cursor?: PublicVideoSearchCursor;
+  cursor?: PublicVideoCursor;
   limit?: number;
   sort?: PublicVideoSearchSort;
+};
+
+export type ListPublicVideosInput = {
+  cursor?: PublicVideoCursor;
+  limit?: number;
 };
 
 export type PublicVideoSearchSummary = {
@@ -97,6 +102,19 @@ export type PublicVideoSearchSummary = {
   createdAt: Date;
 };
 
+export type PublicVideoFeedCard = {
+  publicId: string;
+  title: string;
+  createdAt: Date;
+  thumbnailPath: string | null;
+  creator: {
+    username: string;
+    displayName: string | null;
+  };
+  viewCount: number;
+  duration: number;
+};
+
 export type PublicVideoDetail = Pick<
   PublicVideoSearchSummary,
   | 'publicId'
@@ -105,6 +123,7 @@ export type PublicVideoDetail = Pick<
   | 'tags'
   | 'ratingAverage'
   | 'ratingCount'
+  | 'thumbnailPath'
   | 'publishedAt'
   | 'createdAt'
 > & {
@@ -117,6 +136,7 @@ export type PublicVideoDetail = Pick<
   };
   userRating: number | null;
   viewCount: number;
+  duration: number;
   hlsMasterPath: string;
 };
 
@@ -132,7 +152,13 @@ export type GetPublicVideoDetailResult = {
 export type SearchPublicVideosResult = {
   videos: PublicVideoSearchSummary[];
   total: number;
-  nextCursor: PublicVideoSearchCursor | null;
+  nextCursor: PublicVideoCursor | null;
+};
+
+export type ListPublicVideosResult = {
+  videos: PublicVideoFeedCard[];
+  total: number;
+  nextCursor: PublicVideoCursor | null;
 };
 
 export type VideoUploadSession = {
@@ -288,6 +314,7 @@ export type VideoRatingResult = VideoRatingAggregateResult & {
 export type VideosRoutePort = {
   createVideo(input: CreateVideoInput): Promise<CreateVideoResult>;
   listMyVideos(input: ListMyVideosInput): Promise<ListMyVideosResult>;
+  listPublicVideos(input: ListPublicVideosInput): Promise<ListPublicVideosResult>;
   searchPublicVideos(input: SearchPublicVideosInput): Promise<SearchPublicVideosResult>;
   getPublicVideoDetail(input: GetPublicVideoDetailInput): Promise<GetPublicVideoDetailResult>;
   getVideoRating(input: GetVideoRatingInput): Promise<VideoRatingAggregateResult>;

@@ -9,6 +9,8 @@ import {
   publicVideoIdParamsSchema,
   publicVideoSearchQuerySchema,
   publicVideoSearchResponseSchema,
+  publicVideosQuerySchema,
+  publicVideosResponseSchema,
   rateVideoBodySchema,
   signedVideoUploadPartsResponseSchema,
   signVideoMultipartUploadPartsBodySchema,
@@ -100,6 +102,20 @@ const videoHlsResponses = {
 };
 
 export const routeDocs = [
+  {
+    method: 'get',
+    path: '/videos',
+    summary: 'List the public video feed',
+    tags: ['Videos'],
+    security: [],
+    request: {
+      query: publicVideosQuerySchema,
+    },
+    responses: {
+      200: jsonResponse('Paginated public video feed', publicVideosResponseSchema),
+      ...publicVideoSearchResponses,
+    },
+  },
   {
     method: 'get',
     path: '/videos/search',

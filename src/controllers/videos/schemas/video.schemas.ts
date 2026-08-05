@@ -11,7 +11,7 @@ const VIDEO_TAGS_MAX_COUNT = 20;
 
 export const MY_VIDEOS_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorId must be provided together';
-export const PUBLIC_VIDEO_SEARCH_CURSOR_PAIR_MESSAGE =
+export const PUBLIC_VIDEO_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorPublicId must be provided together';
 
 export const videoParamsSchema = z
@@ -134,8 +134,34 @@ export const myVideosQuerySchema = z
   })
   .openapi('MyVideosQuery');
 
+const publicVideoPaginationQueryShape = {
+  limit: z.coerce.number().int().min(1).max(100).optional().openapi({ example: 20 }),
+  cursorCreatedAt: z.string().datetime().optional().openapi({
+    example: '2026-01-01T00:00:00.000Z',
+  }),
+  cursorPublicId: z
+    .string()
+    .regex(VIDEO_PUBLIC_ID_PATTERN, 'Cursor video public id must be valid')
+    .optional()
+    .openapi({ example: 'AbCdEf123_' }),
+};
+
+const hasCompletePublicVideoCursor = (query: {
+  cursorCreatedAt?: string | undefined;
+  cursorPublicId?: string | undefined;
+}): boolean => (query.cursorCreatedAt === undefined) === (query.cursorPublicId === undefined);
+
+export const publicVideosQuerySchema = z
+  .object(publicVideoPaginationQueryShape)
+  .strict()
+  .refine(hasCompletePublicVideoCursor, {
+    message: PUBLIC_VIDEO_CURSOR_PAIR_MESSAGE,
+  })
+  .openapi('PublicVideosQuery');
+
 export const publicVideoSearchQuerySchema = z
   .object({
+    ...publicVideoPaginationQueryShape,
     search: z
       .string()
       .trim()
@@ -149,27 +175,15 @@ export const publicVideoSearchQuerySchema = z
         description:
           'Case-insensitive literal substring search over public video titles and descriptions, plus exact tag matching.',
       }),
-    limit: z.coerce.number().int().min(1).max(100).optional().openapi({ example: 20 }),
     sort: z.enum(['newest', 'oldest']).optional().openapi({
       example: 'newest',
       description: 'Sort by creation time. Defaults to newest.',
     }),
-    cursorCreatedAt: z.string().datetime().optional().openapi({
-      example: '2026-01-01T00:00:00.000Z',
-    }),
-    cursorPublicId: z
-      .string()
-      .regex(VIDEO_PUBLIC_ID_PATTERN, 'Cursor video public id must be valid')
-      .optional()
-      .openapi({ example: 'AbCdEf123_' }),
   })
   .strict()
-  .refine(
-    (query) => (query.cursorCreatedAt === undefined) === (query.cursorPublicId === undefined),
-    {
-      message: PUBLIC_VIDEO_SEARCH_CURSOR_PAIR_MESSAGE,
-    },
-  )
+  .refine(hasCompletePublicVideoCursor, {
+    message: PUBLIC_VIDEO_CURSOR_PAIR_MESSAGE,
+  })
   .openapi('PublicVideoSearchQuery');
 
 export const signVideoMultipartUploadPartsBodySchema = z
@@ -334,6 +348,7 @@ const publicVideoDetailResponseBodySchema = publicVideoSearchSummaryResponseSche
     tags: true,
     ratingAverage: true,
     ratingCount: true,
+    thumbnailPath: true,
     publishedAt: true,
     createdAt: true,
   })
@@ -347,6 +362,7 @@ const publicVideoDetailResponseBodySchema = publicVideoSearchSummaryResponseSche
     }),
     userRating: z.number().int().min(1).max(5).nullable().openapi({ example: 5 }),
     viewCount: z.number().int().nonnegative().openapi({ example: 128 }),
+    duration: z.number().int().positive().openapi({ example: 19 }),
     hlsMasterPath: relativeAssetPathSchema.openapi({
       example: '/videos/AbCdEf123_/hls/master.m3u8',
     }),
@@ -358,18 +374,43 @@ export const publicVideoDetailResponseSchema = z
   })
   .openapi('PublicVideoDetailResponse');
 
+const publicVideoNextCursorResponseSchema = z
+  .object({
+    createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
+    publicId: z.string().regex(VIDEO_PUBLIC_ID_PATTERN).openapi({ example: 'AbCdEf123_' }),
+  })
+  .nullable();
+
 export const publicVideoSearchResponseSchema = z
   .object({
     videos: z.array(publicVideoSearchSummaryResponseSchema),
     total: z.number().int().nonnegative().openapi({ example: 42 }),
-    nextCursor: z
-      .object({
-        createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
-        publicId: z.string().regex(VIDEO_PUBLIC_ID_PATTERN).openapi({ example: 'AbCdEf123_' }),
-      })
-      .nullable(),
+    nextCursor: publicVideoNextCursorResponseSchema,
   })
   .openapi('PublicVideoSearchResponse');
+
+const publicVideoFeedCardResponseSchema = z.object({
+  publicId: z.string().regex(VIDEO_PUBLIC_ID_PATTERN).openapi({ example: 'AbCdEf123_' }),
+  title: z.string().openapi({ example: 'Me at the zoo' }),
+  createdAt: z.string().datetime().openapi({ example: '2005-04-23T20:31:52.000Z' }),
+  thumbnailPath: relativeAssetPathSchema
+    .nullable()
+    .openapi({ example: '/videos/AbCdEf123_/thumbnail' }),
+  creator: z.object({
+    username: z.string().openapi({ example: 'jawed' }),
+    displayName: z.string().nullable().openapi({ example: 'Jawed Karim' }),
+  }),
+  viewCount: z.number().int().nonnegative().openapi({ example: 128 }),
+  duration: z.number().int().positive().openapi({ example: 19 }),
+});
+
+export const publicVideosResponseSchema = z
+  .object({
+    videos: z.array(publicVideoFeedCardResponseSchema),
+    total: z.number().int().nonnegative().openapi({ example: 42 }),
+    nextCursor: publicVideoNextCursorResponseSchema,
+  })
+  .openapi('PublicVideosResponse');
 
 export const videoRatingAggregateResponseSchema = z
   .object(videoRatingAggregateResponseShape)
@@ -463,6 +504,10 @@ export const listMyVideosSchema = z.object({
   query: myVideosQuerySchema,
 });
 
+export const listPublicVideosSchema = z.object({
+  query: publicVideosQuerySchema,
+});
+
 export const searchPublicVideosSchema = z.object({
   query: publicVideoSearchQuerySchema,
 });
@@ -493,6 +538,7 @@ export type VideoMultipartUploadSessionParams = z.infer<
 export type CreateVideoBody = z.infer<typeof createVideoSchema>['body'];
 export type RateVideoBody = z.infer<typeof rateVideoSchema>['body'];
 export type ListMyVideosQuery = z.infer<typeof listMyVideosSchema>['query'];
+export type ListPublicVideosQuery = z.infer<typeof listPublicVideosSchema>['query'];
 export type SearchPublicVideosQuery = z.infer<typeof searchPublicVideosSchema>['query'];
 export type SignVideoMultipartUploadPartsBody = z.infer<
   typeof signVideoMultipartUploadPartsSchema

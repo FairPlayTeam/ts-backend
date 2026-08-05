@@ -8,6 +8,7 @@ import type {
   CreateVideoBody,
   InitVideoMultipartUploadBody,
   ListMyVideosQuery,
+  ListPublicVideosQuery,
   PublicVideoIdParams,
   RateVideoBody,
   SearchPublicVideosQuery,
@@ -25,6 +26,7 @@ import {
   toMyVideosResponse,
   toPublicVideoDetailResponse,
   toPublicVideoSearchResponse,
+  toPublicVideosResponse,
   toSignedVideoUploadPartsResponse,
   toUploadVideoSourceThumbnailResponse,
   toVideoUploadSessionResponse,
@@ -51,6 +53,7 @@ type CompleteRequest = Request<
 >;
 type CreateVideoRequest = Request<unknown, unknown, CreateVideoBody>;
 type ListMyVideosRequest = Request<unknown, unknown, unknown, ListMyVideosQuery>;
+type ListPublicVideosRequest = Request<unknown, unknown, unknown, ListPublicVideosQuery>;
 type SearchPublicVideosRequest = Request<unknown, unknown, unknown, SearchPublicVideosQuery>;
 type PublicVideoDetailRequest = Request<PublicVideoIdParams>;
 type RateVideoRequest = Request<VideoRatingParams, unknown, RateVideoBody>;
@@ -123,6 +126,28 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
       });
 
       return sendNoStoreJson(res, 200, toPublicVideoSearchResponse(result));
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const listPublicVideos: RequestHandler = async (req, res, next) => {
+    try {
+      const listReq = req as ListPublicVideosRequest;
+      const { cursorCreatedAt, cursorPublicId, limit } = listReq.query;
+      const result = await videosService.listPublicVideos({
+        ...(limit === undefined ? {} : { limit }),
+        ...(cursorCreatedAt !== undefined && cursorPublicId !== undefined
+          ? {
+              cursor: {
+                createdAt: new Date(cursorCreatedAt),
+                publicId: cursorPublicId,
+              },
+            }
+          : {}),
+      });
+
+      return sendNoStoreJson(res, 200, toPublicVideosResponse(result));
     } catch (err) {
       next(toVideosHttpError(err));
     }
@@ -381,6 +406,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     getThumbnail,
     getVideoRating,
     initMultipartUpload,
+    listPublicVideos,
     listMyVideos,
     rateVideo,
     searchPublicVideos,

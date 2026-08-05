@@ -227,6 +227,7 @@ describe('videos HLS integration', () => {
         hlsMasterObjectKey: active.manifest.master.objectKey,
         thumbnailObjectKey: active.manifest.thumbnail.objectKey,
         processingStatus: 'ready',
+        durationSeconds: 6,
       },
     });
 
@@ -267,6 +268,7 @@ describe('videos HLS integration', () => {
         hlsMasterObjectKey: otherVideoGeneration.manifest.master.objectKey,
         thumbnailObjectKey: otherVideoGeneration.manifest.thumbnail.objectKey,
         processingStatus: 'ready',
+        durationSeconds: 6,
       },
     });
 
@@ -457,6 +459,7 @@ describe('videos HLS integration', () => {
         hlsMasterObjectKey: generationA.manifest.master.objectKey,
         thumbnailObjectKey: generationA.manifest.thumbnail.objectKey,
         processingStatus: 'ready',
+        durationSeconds: 6,
       },
     });
 
@@ -641,6 +644,7 @@ describe('videos HLS integration', () => {
           hlsMasterObjectKey: generationA.manifest.master.objectKey,
           thumbnailObjectKey: generationA.manifest.thumbnail.objectKey,
           processingStatus: 'ready',
+          durationSeconds: 6,
         },
       }),
     ]);

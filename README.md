@@ -203,11 +203,18 @@ cannot publish.
 
 ## Public HLS playback
 
+`GET /videos` returns the public main feed in reverse creation order. It uses the same
+`public` + `approved` + `ready` scope and the same `(createdAt, publicId)` cursor as
+`GET /videos/search`, without applying a text filter or exposing an alternative sort. Feed cards
+contain only the public id, title, creation time, opaque thumbnail path, creator identity, view
+count, and duration in whole seconds. Both public lists use `Cache-Control: no-store`.
+
 `GET /videos/:publicId` returns the playback-page detail for a readable video. It combines video
-metadata, creator identity and opaque avatar path, rating and view aggregates, optional current-user
-rating, and the opaque master-playlist path in one short PostgreSQL `RepeatableRead` snapshot. The
-route accepts anonymous requests, treats invalid optional authentication as anonymous, and always
-sends `Cache-Control: no-store`.
+metadata including its persisted duration in whole seconds, creator identity, opaque avatar and
+thumbnail paths, rating and view aggregates, optional current-user rating, and the opaque
+master-playlist path in one short PostgreSQL `RepeatableRead` snapshot. The route accepts anonymous
+requests, treats invalid optional authentication as anonymous, and always sends
+`Cache-Control: no-store`.
 
 An authenticated non-owner load schedules one best-effort view per video and UTC day after the
 snapshot commits. Anonymous and owner loads never count. The write is deduplicated atomically and

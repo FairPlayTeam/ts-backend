@@ -2,6 +2,7 @@ import type {
   CreateVideoResult,
   GetPublicVideoDetailResult,
   ListMyVideosResult,
+  ListPublicVideosResult,
   SearchPublicVideosResult,
   SignVideoMultipartUploadPartsResult,
   UploadVideoSourceThumbnailResult,
@@ -91,6 +92,25 @@ const searchPublicVideosResult = (): SearchPublicVideosResult => ({
   nextCursor: null,
 });
 
+const listPublicVideosResult = (): ListPublicVideosResult => ({
+  videos: [
+    {
+      publicId: 'AbCdEf123_',
+      title: 'Me at the zoo',
+      createdAt: fixedNow,
+      thumbnailPath: '/videos/AbCdEf123_/thumbnail',
+      creator: {
+        username: 'jawed',
+        displayName: 'Jawed Karim',
+      },
+      viewCount: 128,
+      duration: 19,
+    },
+  ],
+  total: 1,
+  nextCursor: null,
+});
+
 const getPublicVideoDetailResult = (): GetPublicVideoDetailResult => ({
   video: {
     publicId: 'AbCdEf123_',
@@ -101,6 +121,7 @@ const getPublicVideoDetailResult = (): GetPublicVideoDetailResult => ({
     visibility: 'public',
     createdAt: fixedNow,
     publishedAt: fixedNow,
+    thumbnailPath: '/videos/AbCdEf123_/thumbnail',
     creator: {
       username: 'jawed',
       displayName: 'Jawed Karim',
@@ -110,6 +131,7 @@ const getPublicVideoDetailResult = (): GetPublicVideoDetailResult => ({
     ratingCount: 2,
     userRating: null,
     viewCount: 128,
+    duration: 19,
     hlsMasterPath: '/videos/AbCdEf123_/hls/master.m3u8',
   },
 });
@@ -125,6 +147,7 @@ export const createStubVideosService = (): VideosPorts => ({
       allowComments: input.allowComments,
     }),
   listMyVideos: async () => listMyVideosResult(),
+  listPublicVideos: async () => listPublicVideosResult(),
   searchPublicVideos: async () => searchPublicVideosResult(),
   getPublicVideoDetail: async () => getPublicVideoDetailResult(),
   getVideoRating: async () => ({

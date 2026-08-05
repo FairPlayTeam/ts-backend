@@ -86,6 +86,7 @@ const createRatableVideo = async (
     data: {
       moderationStatus: data.moderationStatus ?? 'approved',
       processingStatus: data.processingStatus ?? 'ready',
+      ...(data.processingStatus === 'draft' ? {} : { durationSeconds: 19 }),
       visibility: data.visibility ?? 'public',
     },
   });
@@ -850,6 +851,7 @@ describe('video ratings integration', () => {
         visibility: 'public' as const,
         moderationStatus: 'approved' as const,
         processingStatus: 'ready' as const,
+        durationSeconds: 19,
         ratingSum: 3,
         ratingCount: 1,
       })),

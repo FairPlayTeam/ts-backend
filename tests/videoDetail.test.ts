@@ -18,6 +18,7 @@ const videoRecord = {
   ratingSum: 9,
   ratingCount: 2,
   viewCount: 128,
+  durationSeconds: 19,
   publishedAt,
   createdAt,
   owner: {
@@ -116,6 +117,7 @@ describe('public video detail service', () => {
         visibility: videoRecord.visibility,
         createdAt,
         publishedAt,
+        thumbnailPath: '/videos/AbCdEf123_/thumbnail',
         creator: {
           username: 'jawed',
           displayName: 'Jawed Karim',
@@ -125,6 +127,7 @@ describe('public video detail service', () => {
         ratingCount: 2,
         userRating: 5,
         viewCount: 128,
+        duration: 19,
         hlsMasterPath: '/videos/AbCdEf123_/hls/master.m3u8',
       },
     });

@@ -906,6 +906,7 @@ describe('maintenance and reconciliation integration', () => {
           hlsMasterObjectKey: masterObjectKey,
           thumbnailObjectKey,
           processingStatus: 'ready',
+          durationSeconds: 30,
         },
       }),
       runtime.prisma.externalResourceTarget.createMany({
