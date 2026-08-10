@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type CommentDeletionOrigin } from '@prisma/client';
 import {
   getSerializableTransactionRetryDelayMs,
   isSerializableTransactionConflictError,
@@ -29,6 +29,7 @@ import type {
   VideoCommentReply,
   VideoCommentRoot,
 } from './types/ports.types.js';
+import type { AuthRole } from '../auth.roles.js';
 import {
   readableVideoWhere,
   writableVideoEngagementWhere,
@@ -133,10 +134,45 @@ type LockedComment = {
   deletedAt: Date | null;
 };
 
-type LockedOwnedComment = {
+type LockedDeletionVideo = {
+  id: string;
+  ownerId: string;
+};
+
+type LockedDeletableComment = {
   id: string;
   authorId: string | null;
   deletedAt: Date | null;
+};
+
+export const resolveVideoCommentDeletionOrigin = ({
+  actorRole,
+  authorId,
+  ownerId,
+  userId,
+}: {
+  actorRole: AuthRole;
+  authorId: string | null;
+  ownerId: string;
+  userId: string;
+}): CommentDeletionOrigin | null => {
+  if (authorId === userId) {
+    return 'author';
+  }
+
+  if (ownerId === userId) {
+    return 'video_owner';
+  }
+
+  if (actorRole === 'moderator') {
+    return 'moderator';
+  }
+
+  if (actorRole === 'admin') {
+    return 'admin';
+  }
+
+  return null;
 };
 
 const normalizeVideoCommentsLimit = (limit: number | undefined): number => {
@@ -589,52 +625,60 @@ export const listVideoCommentReplies = async (
 ): Promise<ListVideoCommentRepliesResult> => {
   const pageSize = normalizeVideoCommentsLimit(limit);
 
-  return deps.prisma.$transaction(
-    async (tx) => {
-      const videoId = await findReadableVideoId(tx, publicId);
-      const root = await tx.comment.findFirst({
-        where: {
-          id: rootCommentId,
-          ...visibleRootWhere(videoId),
-        },
-        select: {
-          id: true,
-        },
-      });
+  try {
+    return await deps.prisma.$transaction(
+      async (tx) => {
+        const videoId = await findReadableVideoId(tx, publicId);
+        const root = await tx.comment.findFirst({
+          where: {
+            id: rootCommentId,
+            ...visibleRootWhere(videoId),
+          },
+          select: {
+            id: true,
+          },
+        });
 
-      if (!root) {
-        throw new VideoCommentNotFoundError();
-      }
+        if (!root) {
+          throw new VideoCommentNotFoundError();
+        }
 
-      const repliesWhere = {
-        videoId,
-        rootId: root.id,
-        deletedAt: null,
-      } satisfies Prisma.CommentWhereInput;
-      const pageWhere = cursor
-        ? ({
-            AND: [repliesWhere, commentCursorFilter(cursor, 'asc')],
-          } satisfies Prisma.CommentWhereInput)
-        : repliesWhere;
-      const queriedReplies = await tx.comment.findMany({
-        where: pageWhere,
-        select: commentListSelect,
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        take: pageSize + 1,
-      });
-      const replies = queriedReplies.slice(0, pageSize);
-      const total = await tx.comment.count({ where: repliesWhere });
+        const repliesWhere = {
+          videoId,
+          rootId: root.id,
+          deletedAt: null,
+        } satisfies Prisma.CommentWhereInput;
+        const pageWhere = cursor
+          ? ({
+              AND: [repliesWhere, commentCursorFilter(cursor, 'asc')],
+            } satisfies Prisma.CommentWhereInput)
+          : repliesWhere;
+        const queriedReplies = await tx.comment.findMany({
+          where: pageWhere,
+          select: commentListSelect,
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          take: pageSize + 1,
+        });
+        const replies = queriedReplies.slice(0, pageSize);
+        const total = await tx.comment.count({ where: repliesWhere });
 
-      return {
-        replies: replies.map(toVideoCommentReply),
-        total,
-        nextCursor: nextCommentCursor(replies, queriedReplies.length > pageSize),
-      };
-    },
-    {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
-    },
-  );
+        return {
+          replies: replies.map(toVideoCommentReply),
+          total,
+          nextCursor: nextCommentCursor(replies, queriedReplies.length > pageSize),
+        };
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      },
+    );
+  } catch (err) {
+    if (err instanceof VideoNotFoundError) {
+      throw new VideoCommentNotFoundError();
+    }
+
+    throw err;
+  }
 };
 
 /**
@@ -644,31 +688,45 @@ export const listVideoCommentReplies = async (
  */
 export const deleteVideoComment = async (
   deps: Pick<VideosDependencies, 'clock' | 'prisma'>,
-  { commentId, publicId, userId }: DeleteVideoCommentInput,
+  { actorRole, commentId, publicId, userId }: DeleteVideoCommentInput,
 ): Promise<void> => {
-  const ownedComment = await deps.prisma.comment.findFirst({
+  const candidate = await deps.prisma.comment.findFirst({
     where: {
       id: commentId,
-      authorId: userId,
       video: {
         publicId,
       },
     },
     select: {
-      id: true,
+      authorId: true,
+      video: {
+        select: {
+          ownerId: true,
+        },
+      },
     },
   });
 
-  if (!ownedComment) {
+  if (
+    !candidate ||
+    resolveVideoCommentDeletionOrigin({
+      actorRole,
+      authorId: candidate.authorId,
+      ownerId: candidate.video.ownerId,
+      userId,
+    }) === null
+  ) {
     throw new VideoCommentNotFoundError();
   }
 
   await runVideoCommentTransaction(deps, async (tx) => {
-    // Author deletion follows the same video-first pessimistic lock protocol as every mutation of
-    // commentCount. Prisma Client has no standard row-locking operation for this read.
-    const [video] = await tx.$queryRaw<Array<{ id: string }>>(
+    // Every deletion permission follows the same video-first pessimistic lock protocol as every
+    // mutation of commentCount. Prisma Client has no standard row-locking operation for this read.
+    const [video] = await tx.$queryRaw<LockedDeletionVideo[]>(
       Prisma.sql`
-        SELECT v."id"::text AS "id"
+        SELECT
+          v."id"::text AS "id",
+          v."owner_id"::text AS "ownerId"
         FROM "videos" AS v
         WHERE v."public_id" = ${publicId}
         FOR UPDATE
@@ -676,12 +734,13 @@ export const deleteVideoComment = async (
     );
 
     if (!video) {
-      throw new VideoNotFoundError();
+      throw new VideoCommentNotFoundError();
     }
 
-    // Revalidate ownership and lifecycle on the locked row. This explicit row lock is the
-    // established final-authorization boundary and Prisma Client has no equivalent standard read.
-    const [comment] = await tx.$queryRaw<LockedOwnedComment[]>(
+    // Revalidate video membership, every permission, and lifecycle on locked rows. This explicit
+    // row lock is the established final-authorization boundary and Prisma Client has no equivalent
+    // standard read.
+    const [comment] = await tx.$queryRaw<LockedDeletableComment[]>(
       Prisma.sql`
         SELECT
           c."id"::text AS "id",
@@ -694,7 +753,16 @@ export const deleteVideoComment = async (
       `,
     );
 
-    if (!comment || comment.authorId !== userId) {
+    const deletionOrigin = comment
+      ? resolveVideoCommentDeletionOrigin({
+          actorRole,
+          authorId: comment.authorId,
+          ownerId: video.ownerId,
+          userId,
+        })
+      : null;
+
+    if (!comment || deletionOrigin === null) {
       throw new VideoCommentNotFoundError();
     }
 
@@ -705,12 +773,13 @@ export const deleteVideoComment = async (
     const deleted = await tx.comment.updateMany({
       where: {
         id: comment.id,
-        authorId: userId,
+        videoId: video.id,
         deletedAt: null,
       },
       data: {
         content: null,
         deletedAt: deps.clock.now(),
+        deletionOrigin,
       },
     });
 

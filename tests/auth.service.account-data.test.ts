@@ -353,6 +353,7 @@ describe('auth service account data', () => {
       data: {
         content: null,
         deletedAt: fixedNow,
+        deletionOrigin: 'account_deletion',
       },
     });
     expect(calls.sessionDeleteMany).toBeUndefined();

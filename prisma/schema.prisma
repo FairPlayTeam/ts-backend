@@ -17,6 +17,15 @@ enum UserMediaKind {
   banner
 }
 
+enum CommentDeletionOrigin {
+  author
+  video_owner
+  moderator
+  admin
+  account_deletion
+  legacy_unknown
+}
+
 enum VideoVisibility {
   public
   unlisted
@@ -252,14 +261,15 @@ model VideoView {
 }
 
 model Comment {
-  id                  String    @id @default(uuid()) @db.Uuid
-  authorId            String?   @map("author_id") @db.Uuid
-  videoId             String    @map("video_id") @db.Uuid
-  rootId              String?   @map("root_id") @db.Uuid
-  replyingToCommentId String?   @map("replying_to_comment_id") @db.Uuid
-  content             String?   @db.VarChar(800)
-  createdAt           DateTime  @default(now()) @map("created_at")
-  deletedAt           DateTime? @map("deleted_at")
+  id                  String                 @id @default(uuid()) @db.Uuid
+  authorId            String?                @map("author_id") @db.Uuid
+  videoId             String                 @map("video_id") @db.Uuid
+  rootId              String?                @map("root_id") @db.Uuid
+  replyingToCommentId String?                @map("replying_to_comment_id") @db.Uuid
+  content             String?                @db.VarChar(800)
+  createdAt           DateTime               @default(now()) @map("created_at")
+  deletedAt           DateTime?              @map("deleted_at")
+  deletionOrigin      CommentDeletionOrigin? @map("deletion_origin")
 
   author            User?     @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   video             Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)

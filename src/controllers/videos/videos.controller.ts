@@ -201,6 +201,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
         publicId: commentReq.params.publicId,
         commentId: commentReq.params.commentId,
         userId: authenticatedReq.user.id,
+        actorRole: authenticatedReq.user.role,
       });
 
       return setNoStore(res).status(204).send();

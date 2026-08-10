@@ -458,13 +458,17 @@ If a database error occurs after headers have been sent, the server logs it stru
 the chunked response without the final JSON delimiter; clients must treat the interrupted transport
 or invalid JSON as an incomplete export and retry.
 
-Authentication for a comment mutation linearizes when its bearer session is validated at the start
-of the HTTP request. An administrative ban marks the account banned and revokes its sessions for
-subsequent requests, but a mutation that already passed session validation may finish after the ban
-commits. Comment insertion deliberately does not re-read the user's ban state inside its video
+Authentication and role authorization linearize when the bearer session is validated at the start
+of the HTTP request. An administrative ban or role downgrade applies to subsequent requests, but a
+comment mutation or video-moderation request that already passed session validation may finish after
+the administrative change commits. Comment insertion does not re-read the user's ban state, and a
+privileged comment deletion does not re-read the moderator/administrator role inside its video
 transaction: the remaining window is bounded to already-engaged requests, while adding a user-row
-check to every insertion would couple comment contention to account administration. This is an
-accepted request-authorization boundary, not a guarantee of immediate quiescence after a ban.
+check would couple comment contention to account administration. Unlike a reversible video-
+moderation decision, comment deletion permanently replaces the content with `NULL`; that higher
+impact is consciously accepted under the same request-authorization boundary rather than adding a
+second authorization instant inside the transaction. This boundary does not guarantee immediate
+quiescence after a ban or role downgrade.
 
 Personal-export completeness remains a separate backlog item. The current contract does not yet
 include the account ban reason, following/follower relations, videos owned by the user, or multipart
@@ -534,11 +538,17 @@ its UUIDs and normalized content have already crossed the HTTP validation bounda
 calling that port directly must reuse the same validation rules rather than treating the service as
 a runtime parser for arbitrary input.
 
-Root creation, replies, and author deletion share one authenticated per-user mutation rate limit.
-Deletion first performs an indexed ownership lookup without row locks, so random or unauthorized
-comment identifiers cannot contend on the video lock. A qualifying deletion then repeats the
-authorization check under the standard video-then-comment lock order. Comment creation and author
-deletion serialize by locking the video before comment rows. The engagement scope is part of the
+Root creation, replies, and deletion share one authenticated per-user mutation rate limit. The likes
+chantier must explicitly decide whether its mutations consume this same quota or use a separate one;
+it must not inherit either policy accidentally. Deletion first performs an indexed comment/video
+lookup without row locks, resolving permission in the order author, current video owner, then
+moderator/administrator role. Random or unauthorized comment identifiers therefore cannot contend on
+the video lock. A qualifying deletion repeats the same
+ordered authorization check against the locked video and comment rows under the standard
+video-then-comment lock order. Comment creation and deletion serialize by locking the video before
+comment rows. Deletion never applies the readability or engagement scope: the current video owner
+and moderator/administrator roles may remove a comment from rejected or non-ready videos. The
+engagement scope is part of the
 root-creation/reply `SELECT ... FOR UPDATE`, so an ineligible video is filtered before PostgreSQL
 attempts to lock it. Reply creation also performs an indexed root/video preflight before opening
 that transaction; random root UUIDs therefore never contend on the popular video's row, while the
@@ -547,19 +557,17 @@ share the same capped exponential full-jitter backoff used by rating writes. The
 denormalized `videos.comment_count` counts active comments only and is incremented or decremented in
 the same serializable transaction as the lifecycle change. The delete update itself requires
 `deleted_at IS NULL`, so retries and concurrent duplicate DELETE requests cannot decrement twice.
-Every future owner or moderator deletion route must reuse this exact soft-delete and aggregate
-protocol. A direct Prisma `comment.delete()` on a root would let the self-FK cascade erase its reply
+Every deletion permission reuses this exact soft-delete and aggregate protocol. A direct Prisma
+`comment.delete()` on a root would let the self-FK cascade erase its reply
 subtree while bypassing every corresponding `videos.comment_count` decrement, permanently drifting
 the denormalized aggregate.
 
-Before the separate extended-permissions chantier adds deletion by a video owner, moderator, or
-administrator, it must explicitly decide whether tombstones need a private deletion origin and/or
-actor for internal auditability. The current author-only route is unambiguous and therefore stores
-only `deleted_at`. Any future audit metadata must remain absent from public comment DTOs.
-This foundations commit must never be deployed alone to production without the immediately following
-extended-deletion-permissions chantier. Until that second chantier is present, banning an abusive
-comment author revokes their ability to delete the comment while neither the video owner nor a
-moderator/administrator has a removal route, leaving manual database intervention as the only remedy.
+Each new tombstone stores a private `deletion_origin`: author, current video owner, moderator,
+administrator, or account deletion. It records the permission category that won the lifecycle
+transition, not an actor identifier, and remains absent from public comment DTOs and personal data
+exports. Tombstones predating the metadata are backfilled as `legacy_unknown` because author
+deletion and account anonymization cannot be distinguished retrospectively. A bidirectional database
+CHECK requires active comments to have no origin and every deleted comment to have an origin.
 Account deletion first locks every affected video in UUID order, subtracts the exact number of the
 user's still-active comments per video, and soft-deletes their content before deleting the user.
 The `author_id ON DELETE SET NULL` action can then anonymize those preserved rows without violating

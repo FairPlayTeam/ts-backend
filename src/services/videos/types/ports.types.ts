@@ -1,4 +1,5 @@
 import type { VideoLicense } from '../videoLicenses.js';
+import type { AuthRole } from '../../auth.roles.js';
 
 export type VideoUploadSessionStatus =
   | 'initializing'
@@ -400,6 +401,7 @@ export type DeleteVideoCommentInput = {
   publicId: string;
   commentId: string;
   userId: string;
+  actorRole: AuthRole;
 };
 
 export type VideosRoutePort = {

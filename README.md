@@ -235,8 +235,10 @@ Readable videos expose public paginated comment threads through
 oldest-first, and both use a stable `(createdAt, id)` cursor. Creating a root or reply requires an
 authenticated user, enabled comments, and the stricter engagement scope that excludes rejected
 videos. Replies remain one level deep in storage while `replyingToCommentId` identifies the
-specific participant being addressed. Authors can soft-delete their own comments; a deleted root
-is returned as a content-free placeholder only while active replies still preserve its thread.
+specific participant being addressed. Authors can soft-delete their own comments. The current video
+owner and moderators or administrators can also soft-delete comments without depending on video
+readability or engagement state. A deleted root is returned as a content-free placeholder only while
+active replies still preserve its thread.
 All comment responses use `Cache-Control: no-store`.
 
 The public master URL is

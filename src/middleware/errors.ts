@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
+import { setNoStore } from '../controllers/http.responses.js';
 import { HttpError, isHttpError, type ApiErrorResponse } from '../errors/http.js';
 import { logger } from '../lib/logger.js';
 
@@ -85,5 +86,5 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     response.details = httpError.details;
   }
 
-  res.status(httpError.statusCode).json(response);
+  setNoStore(res).status(httpError.statusCode).json(response);
 };

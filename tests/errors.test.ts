@@ -44,9 +44,14 @@ const createMockResponse = () => {
   const state: {
     statusCode?: number;
     body?: unknown;
-  } = {};
+    headers: Record<string, string>;
+  } = { headers: {} };
 
   const response = {
+    set(field: string, value: string) {
+      state.headers[field] = value;
+      return response;
+    },
     status(statusCode: number) {
       state.statusCode = statusCode;
       return response;
@@ -217,6 +222,35 @@ describe('error handling', () => {
       error: 'TooManyRequests',
       message: AUTH_RATE_LIMIT_MESSAGE,
     });
+  });
+
+  test('marks every global error response as non-cacheable', () => {
+    const loggerError = spyOn(logger, 'error').mockImplementation(() => logger);
+
+    try {
+      for (const [statusCode, code] of [
+        [400, 'BadRequest'],
+        [404, 'NotFound'],
+        [409, 'Conflict'],
+        [429, 'TooManyRequests'],
+        [500, 'InternalServerError'],
+        [503, 'ServiceUnavailable'],
+      ] as const) {
+        const { response, state } = createMockResponse();
+
+        errorHandler(
+          new HttpError(statusCode, code, 'Expected test error'),
+          {} as Request,
+          response,
+          (() => undefined) as NextFunction,
+        );
+
+        expect(state.statusCode).toBe(statusCode);
+        expect(state.headers['Cache-Control']).toBe('no-store');
+      }
+    } finally {
+      loggerError.mockRestore();
+    }
   });
 
   test('logs streaming failures structurally after response headers were sent', () => {

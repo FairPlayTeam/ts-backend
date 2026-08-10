@@ -108,6 +108,7 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
         data: {
           content: null,
           deletedAt: requestedAt,
+          deletionOrigin: 'account_deletion',
         },
       });
 

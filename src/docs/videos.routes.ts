@@ -370,7 +370,7 @@ export const routeDocs = [
   {
     method: 'delete',
     path: '/videos/{publicId}/comments/{commentId}',
-    summary: "Soft-delete the current user's own video comment",
+    summary: 'Soft-delete a video comment when permitted',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
     request: {

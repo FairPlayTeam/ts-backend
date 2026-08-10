@@ -12,7 +12,9 @@ import {
   deleteVideoComment,
   listVideoCommentReplies,
   listVideoComments,
+  resolveVideoCommentDeletionOrigin,
 } from '../src/services/videos/videoComments.js';
+import { toVideoCommentsResponse } from '../src/controllers/videos/videos.responses.js';
 import { VideoCommentNotFoundError } from '../src/services/videos.errors.js';
 import {
   readableVideoWhere,
@@ -89,14 +91,134 @@ test('video comment pagination requires a complete stable cursor', () => {
   ).toBe(false);
 });
 
-test('comment deletion rejects an unowned or missing id before opening a transaction', async () => {
+test('resolves comment deletion permission in author, owner, then moderation order', () => {
+  const authorId = '11111111-1111-4111-8111-111111111111';
+  const ownerId = '22222222-2222-4222-8222-222222222222';
+  const thirdPartyId = '33333333-3333-4333-8333-333333333333';
+
+  expect(
+    resolveVideoCommentDeletionOrigin({
+      actorRole: 'admin',
+      authorId,
+      ownerId: authorId,
+      userId: authorId,
+    }),
+  ).toBe('author');
+  expect(
+    resolveVideoCommentDeletionOrigin({
+      actorRole: 'moderator',
+      authorId,
+      ownerId,
+      userId: ownerId,
+    }),
+  ).toBe('video_owner');
+  expect(
+    resolveVideoCommentDeletionOrigin({
+      actorRole: 'moderator',
+      authorId,
+      ownerId,
+      userId: thirdPartyId,
+    }),
+  ).toBe('moderator');
+  expect(
+    resolveVideoCommentDeletionOrigin({
+      actorRole: 'admin',
+      authorId,
+      ownerId,
+      userId: thirdPartyId,
+    }),
+  ).toBe('admin');
+  expect(
+    resolveVideoCommentDeletionOrigin({
+      actorRole: 'user',
+      authorId,
+      ownerId,
+      userId: thirdPartyId,
+    }),
+  ).toBeNull();
+});
+
+test('public comment DTOs whitelist fields independently of internal deletion metadata', () => {
+  const internalComment = {
+    id: '11111111-1111-4111-8111-111111111111',
+    content: 'Visible comment',
+    isDeleted: false as const,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    rootCommentId: null,
+    replyingTo: null,
+    replyCount: 0,
+    authorId: '22222222-2222-4222-8222-222222222222',
+    deletionOrigin: null,
+    role: 'admin',
+    author: {
+      username: 'comment_author',
+      displayName: null,
+      avatarUrl: null,
+      authorId: '22222222-2222-4222-8222-222222222222',
+      role: 'moderator',
+    },
+  };
+
+  expect(
+    toVideoCommentsResponse({ comments: [internalComment], total: 1, nextCursor: null }),
+  ).toEqual({
+    comments: [
+      {
+        id: internalComment.id,
+        content: internalComment.content,
+        isDeleted: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        rootCommentId: null,
+        replyingTo: null,
+        replyCount: 0,
+        author: {
+          username: 'comment_author',
+          displayName: null,
+          avatarUrl: null,
+        },
+      },
+    ],
+    total: 1,
+    nextCursor: null,
+  });
+});
+
+test.each([
+  {
+    name: 'target video owner with a missing id',
+    actorRole: 'user' as const,
+    userId: '22222222-2222-4222-8222-222222222222',
+    candidate: null,
+  },
+  {
+    name: 'owner of another video with a nonqualifying candidate',
+    actorRole: 'user' as const,
+    userId: '33333333-3333-4333-8333-333333333333',
+    candidate: {
+      authorId: '44444444-4444-4444-8444-444444444444',
+      video: { ownerId: '22222222-2222-4222-8222-222222222222' },
+    },
+  },
+  {
+    name: 'moderator with a missing id',
+    actorRole: 'moderator' as const,
+    userId: '55555555-5555-4555-8555-555555555555',
+    candidate: null,
+  },
+  {
+    name: 'administrator with a missing id',
+    actorRole: 'admin' as const,
+    userId: '66666666-6666-4666-8666-666666666666',
+    candidate: null,
+  },
+])('comment deletion rejects $name before opening a transaction', async (testCase) => {
   let findFirstArgs: unknown;
   let transactionCalls = 0;
   const prisma = {
     comment: {
       findFirst: async (args: unknown) => {
         findFirstArgs = args;
-        return null;
+        return testCase.candidate;
       },
     },
     $transaction: async () => {
@@ -114,20 +236,25 @@ test('comment deletion rejects an unowned or missing id before opening a transac
       {
         publicId: 'AbCdEf123_',
         commentId: '11111111-1111-4111-8111-111111111111',
-        userId: '22222222-2222-4222-8222-222222222222',
+        userId: testCase.userId,
+        actorRole: testCase.actorRole,
       },
     ),
   ).rejects.toBeInstanceOf(VideoCommentNotFoundError);
   expect(findFirstArgs).toEqual({
     where: {
       id: '11111111-1111-4111-8111-111111111111',
-      authorId: '22222222-2222-4222-8222-222222222222',
       video: {
         publicId: 'AbCdEf123_',
       },
     },
     select: {
-      id: true,
+      authorId: true,
+      video: {
+        select: {
+          ownerId: true,
+        },
+      },
     },
   });
   expect(transactionCalls).toBe(0);

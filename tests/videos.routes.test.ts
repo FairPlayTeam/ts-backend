@@ -929,6 +929,7 @@ describe('videos routes multipart uploads', () => {
       });
 
       expect(invalidResponse.status).toBe(400);
+      expect(invalidResponse.headers.get('cache-control')).toBe('no-store');
     }
   });
 
@@ -1003,6 +1004,7 @@ describe('videos routes multipart uploads', () => {
       publicId,
       commentId: rootCommentId,
       userId: authenticatedUserId,
+      actorRole: 'user',
     });
 
     receivedDeleteCommentRequest = undefined;

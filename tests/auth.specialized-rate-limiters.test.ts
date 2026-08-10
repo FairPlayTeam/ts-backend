@@ -260,6 +260,7 @@ describe('specialized auth rate limiters', () => {
       expect(accepted).toHaveLength(VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX);
       expect(rateLimited).toHaveLength(requestCount - VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX);
       expect(deleteCommentCalls).toBe(VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX);
+      expect(rateLimited[0]?.headers.get('cache-control')).toBe('no-store');
       await expect(rateLimited[0]?.json()).resolves.toEqual({
         error: 'TooManyRequests',
         message: VIDEO_COMMENT_MUTATION_RATE_LIMIT_MESSAGE,
