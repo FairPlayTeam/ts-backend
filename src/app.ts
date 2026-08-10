@@ -12,6 +12,7 @@ import { HttpError } from './errors/http.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { createLimiters } from './middleware/limiters.js';
 import { createEmailCooldown } from './middleware/abuseProtection.js';
+import { createUserAccountOperationGuard } from './middleware/userAccountOperationGuard.js';
 import type { Config } from './config/env.js';
 import { ALL_CORS_ORIGINS } from './config/env.parsers.js';
 import type { RedisClient } from './lib/redis.js';
@@ -106,6 +107,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     passwordResetIdentifierLimiter,
     resetPasswordIdentifierLimiter,
     resendVerificationIdentifierLimiter,
+    videoCommentMutationLimiter,
   } = createLimiters({
     redisClient: deps.redisClient ?? null,
     rateLimitKeySecret: config.rateLimitKeySecret,
@@ -127,6 +129,11 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     ttlMs: RESEND_VERIFICATION_EMAIL_COOLDOWN_MS,
     acceptedResponse: { message: RESEND_VERIFICATION_EMAIL_MESSAGE },
     getIdentifier: getBodyEmail,
+    logger,
+  });
+  const userAccountOperationGuard = createUserAccountOperationGuard({
+    redisClient: deps.redisClient ?? null,
+    keySecret: config.rateLimitKeySecret,
     logger,
   });
 
@@ -211,6 +218,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
       authService: deps.authService,
       profilesService: deps.profilesService,
       videosService: deps.videosService,
+      videoCommentMutationLimiter,
       profileMediaMaxUploadBytes: config.profileMediaMaxUploadBytes,
       authLimiter,
       profileMediaUploadLimiter,
@@ -224,6 +232,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
       readinessChecks: deps.readinessChecks ?? null,
       resendVerificationEmailCooldown,
       resendVerificationIdentifierLimiter,
+      userAccountOperationGuard,
     },
     apiLimiter,
   );

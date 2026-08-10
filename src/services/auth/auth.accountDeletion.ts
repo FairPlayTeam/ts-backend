@@ -29,8 +29,8 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
           `,
       );
 
-      // User-rating and user-view cascades do not maintain denormalized video aggregates.
-      // Lock every affected video in a stable order before applying those deltas.
+      // User-rating, user-view, and comment-author cascades do not maintain denormalized
+      // video aggregates. Lock every affected video in a stable order before applying deltas.
       await tx.$queryRaw(
         Prisma.sql`
           SELECT "id"
@@ -45,6 +45,12 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
               SELECT "video_id"
               FROM "video_views"
               WHERE "user_id" = CAST(${userId} AS UUID)
+            )
+            OR "id" IN (
+              SELECT "video_id"
+              FROM "comments"
+              WHERE "author_id" = CAST(${userId} AS UUID)
+                AND "deleted_at" IS NULL
             )
           ORDER BY "id"
           FOR UPDATE
@@ -76,6 +82,34 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
           WHERE viewed."video_id" = v."id"
         `,
       );
+      // Each video needs a different grouped decrement. Prisma updateMany supports only one fixed
+      // decrement value, so this remains one set-based UPDATE ... FROM under the video locks above.
+      await tx.$executeRaw(
+        Prisma.sql`
+          UPDATE "videos" AS v
+          SET "comment_count" = v."comment_count" - authored."comment_count"
+          FROM (
+            SELECT
+              "video_id",
+              COUNT(*)::integer AS "comment_count"
+            FROM "comments"
+            WHERE "author_id" = CAST(${userId} AS UUID)
+              AND "deleted_at" IS NULL
+            GROUP BY "video_id"
+          ) AS authored
+          WHERE authored."video_id" = v."id"
+        `,
+      );
+      await tx.comment.updateMany({
+        where: {
+          authorId: userId,
+          deletedAt: null,
+        },
+        data: {
+          content: null,
+          deletedAt: requestedAt,
+        },
+      });
 
       const targets = await tx.externalResourceTarget.findMany({
         where: {

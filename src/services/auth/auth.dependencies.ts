@@ -6,12 +6,15 @@ import type { UserMediaProcessor } from '../userMedia/userMedia.processor.js';
 type Prisma = Pick<
   PrismaClient,
   | '$transaction'
+  | 'comment'
   | 'emailVerificationToken'
   | 'externalResourceTarget'
   | 'passwordResetToken'
   | 'session'
   | 'user'
   | 'userMediaAsset'
+  | 'videoRating'
+  | 'videoView'
 >;
 
 export type AuthDependencies = {

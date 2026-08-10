@@ -4,6 +4,9 @@ import {
   ActiveVideoUploadSessionExistsError,
   InvalidVideoUploadSessionStateError,
   InvalidVideoUploadStateError,
+  VideoCommentNotFoundError,
+  VideoCommentsDisabledError,
+  VideoCommentTemporarilyUnavailableError,
   VideoStorageQuotaExceededError,
   VideoNotFoundError,
   VideoRatingTemporarilyUnavailableError,
@@ -25,11 +28,22 @@ export function toVideosHttpError(err: unknown): Error {
     return new HttpError(404, 'NotFound', err.message, { cause: err });
   }
 
+  if (err instanceof VideoCommentNotFoundError) {
+    return new HttpError(404, 'NotFound', err.message, { cause: err });
+  }
+
+  if (err instanceof VideoCommentsDisabledError) {
+    return new HttpError(409, 'Conflict', err.message, { cause: err });
+  }
+
   if (err instanceof VideoSelfRatingForbiddenError) {
     return new HttpError(403, 'Forbidden', err.message, { cause: err });
   }
 
-  if (err instanceof VideoRatingTemporarilyUnavailableError) {
+  if (
+    err instanceof VideoRatingTemporarilyUnavailableError ||
+    err instanceof VideoCommentTemporarilyUnavailableError
+  ) {
     return new HttpError(503, 'ServiceUnavailable', err.message, { cause: err });
   }
 

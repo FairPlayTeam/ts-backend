@@ -1,6 +1,8 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 
 const SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS = 3;
+const SERIALIZABLE_TRANSACTION_RETRY_BASE_DELAY_MS = 5;
+const SERIALIZABLE_TRANSACTION_RETRY_MAX_DELAY_MS = 250;
 
 type SerializableTransactionOptions = {
   maxAttempts?: number;
@@ -49,6 +51,19 @@ export const isSerializableTransactionConflictError = (err: unknown): boolean =>
   (err instanceof Prisma.PrismaClientKnownRequestError &&
     (err.code === 'P2034' || isRawPostgresSerializationFailure(err))) ||
   isDriverAdapterTransactionConflictError(err);
+
+export const getSerializableTransactionRetryDelayMs = (
+  attempt: number,
+  random: () => number = Math.random,
+): number => {
+  const exponent = Math.max(0, attempt - 1);
+  const delayCeiling = Math.min(
+    SERIALIZABLE_TRANSACTION_RETRY_MAX_DELAY_MS,
+    SERIALIZABLE_TRANSACTION_RETRY_BASE_DELAY_MS * 2 ** exponent,
+  );
+
+  return Math.floor(random() * (delayCeiling + 1));
+};
 
 export const runSerializableTransaction = async <T>(
   prisma: Pick<PrismaClient, '$transaction'>,

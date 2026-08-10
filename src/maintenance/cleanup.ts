@@ -1,31 +1,13 @@
-import crypto from 'node:crypto';
 import type { RedisClient } from '../lib/redis.js';
+import {
+  createRedisLeaseManager,
+  type RedisLease as MaintenanceCleanupLock,
+} from '../lib/redisLease.js';
 import type { AuthMaintenancePort } from '../services/auth.types.js';
 import type { VideoMaintenancePort } from '../services/videos.types.js';
 import { REJECTED_VIDEO_RETENTION_MS } from '../config/constants.js';
 
 const MAINTENANCE_CLEANUP_LOCK_KEY = 'maintenance:cleanup:lock';
-const RELEASE_LOCK_SCRIPT = `
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("del", KEYS[1])
-end
-
-return 0
-`;
-const RENEW_LOCK_SCRIPT = `
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("pexpire", KEYS[1], ARGV[2])
-end
-
-return 0
-`;
-
-type MaintenanceCleanupLock = {
-  renewalIntervalMs: number;
-  renew(): Promise<boolean>;
-  release(): Promise<void>;
-};
-
 type MaintenanceCleanupLockManager = {
   acquire(): Promise<MaintenanceCleanupLock | null>;
 };
@@ -95,48 +77,13 @@ export const createRedisMaintenanceCleanupLock = ({
   redisClient: Pick<RedisClient, 'call'>;
   ttlMs: number;
   tokenFactory?: () => string;
-}): MaintenanceCleanupLockManager => ({
-  async acquire() {
-    const token = tokenFactory();
-    const result = await redisClient.call(
-      'set',
-      MAINTENANCE_CLEANUP_LOCK_KEY,
-      token,
-      'PX',
-      String(ttlMs),
-      'NX',
-    );
+}): MaintenanceCleanupLockManager => {
+  const leaseManager = createRedisLeaseManager({ redisClient, ttlMs, tokenFactory });
 
-    if (result !== 'OK') {
-      return null;
-    }
-
-    return {
-      renewalIntervalMs: Math.max(10, Math.floor(ttlMs / 3)),
-      async renew() {
-        const renewed = await redisClient.call(
-          'eval',
-          RENEW_LOCK_SCRIPT,
-          '1',
-          MAINTENANCE_CLEANUP_LOCK_KEY,
-          token,
-          String(ttlMs),
-        );
-
-        return renewed === 1;
-      },
-      async release() {
-        await redisClient.call(
-          'eval',
-          RELEASE_LOCK_SCRIPT,
-          '1',
-          MAINTENANCE_CLEANUP_LOCK_KEY,
-          token,
-        );
-      },
-    };
-  },
-});
+  return {
+    acquire: () => leaseManager.acquire(MAINTENANCE_CLEANUP_LOCK_KEY),
+  };
+};
 
 export const createMaintenanceCleanupJob = ({
   authService,

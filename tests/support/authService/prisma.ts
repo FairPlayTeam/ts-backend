@@ -56,6 +56,13 @@ const createUserMediaAssetStore = (calls: AuthServiceTestCalls) => ({
 const createAuthTransaction = (calls: AuthServiceTestCalls) => ({
   $executeRaw: async () => 0,
   $queryRaw: async () => [],
+  comment: {
+    updateMany: async (args: unknown) => {
+      calls.commentUpdateMany = args;
+
+      return { count: 1 };
+    },
+  },
   user: {
     findUnique: async (args: unknown) => {
       calls.userFindUnique = args;
@@ -165,6 +172,70 @@ const createAuthTransaction = (calls: AuthServiceTestCalls) => ({
   },
 });
 
+const exportableComments = [
+  {
+    id: '44444444-4444-4444-8444-444444444444',
+    videoId: '33333333-3333-4333-8333-333333333333',
+    content: 'An exported comment.',
+    createdAt: fixedNow,
+    deletedAt: null,
+    rootId: null,
+    replyingToCommentId: null,
+  },
+  {
+    id: '55555555-5555-4555-8555-555555555555',
+    videoId: '33333333-3333-4333-8333-333333333333',
+    content: null,
+    createdAt: fixedNow,
+    deletedAt: new Date('2026-01-01T01:00:00.000Z'),
+    rootId: '44444444-4444-4444-8444-444444444444',
+    replyingToCommentId: '44444444-4444-4444-8444-444444444444',
+  },
+];
+
+const exportableVideoRatings = [
+  {
+    videoId: '33333333-3333-4333-8333-333333333333',
+    value: 5,
+    createdAt: fixedNow,
+    updatedAt: fixedNow,
+  },
+];
+
+const exportableVideoViews = [
+  {
+    videoId: '33333333-3333-4333-8333-333333333333',
+    viewedOn: fixedNow,
+  },
+];
+
+const exportableSessions = [
+  {
+    id: 'session-id',
+    sessionKeySuffix: 'in-token',
+    ipAddress: '127.0.0.1',
+    userAgent: 'bun-test',
+    deviceInfo: 'bun-test',
+    isActive: true,
+    createdAt: fixedNow,
+    updatedAt: fixedNow,
+    lastUsedAt: fixedNow,
+    expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+  },
+  {
+    id: 'other-session-id',
+    sessionKeySuffix: null,
+    ipAddress: null,
+    userAgent: null,
+    deviceInfo: null,
+    isActive: false,
+    createdAt: fixedNow,
+    updatedAt: fixedNow,
+    lastUsedAt: new Date('2026-01-01T00:00:01.000Z'),
+    expiresAt: new Date('2026-01-31T00:00:00.000Z'),
+  },
+];
+
 const createExportableUser = () => ({
   id: 'user-id',
   email: 'user@example.com',
@@ -204,46 +275,6 @@ const createExportableUser = () => ({
       updatedAt: fixedNow,
     },
   ],
-  videoRatings: [
-    {
-      videoId: '33333333-3333-4333-8333-333333333333',
-      value: 5,
-      createdAt: fixedNow,
-      updatedAt: fixedNow,
-    },
-  ],
-  videoViews: [
-    {
-      videoId: '33333333-3333-4333-8333-333333333333',
-      viewedOn: new Date('2026-01-01T00:00:00.000Z'),
-    },
-  ],
-  sessions: [
-    {
-      id: 'session-id',
-      sessionKeySuffix: 'in-token',
-      ipAddress: '127.0.0.1',
-      userAgent: 'bun-test',
-      deviceInfo: 'bun-test',
-      isActive: true,
-      createdAt: fixedNow,
-      updatedAt: fixedNow,
-      lastUsedAt: fixedNow,
-      expiresAt: new Date('2026-01-31T00:00:00.000Z'),
-    },
-    {
-      id: 'other-session-id',
-      sessionKeySuffix: null,
-      ipAddress: null,
-      userAgent: null,
-      deviceInfo: null,
-      isActive: false,
-      createdAt: fixedNow,
-      updatedAt: fixedNow,
-      lastUsedAt: new Date('2026-01-01T00:00:01.000Z'),
-      expiresAt: new Date('2026-01-31T00:00:00.000Z'),
-    },
-  ],
   emailVerificationTokens: [
     {
       id: 'verification-token-id',
@@ -264,6 +295,27 @@ export const createBaseAuthPrisma = (calls: AuthServiceTestCalls): AuthDeps['pri
     $transaction: async (
       input: ((transaction: typeof tx) => Promise<unknown>) | Promise<unknown>[],
     ) => (Array.isArray(input) ? Promise.all(input) : input(tx)),
+    comment: {
+      findMany: async (args: unknown) => {
+        calls.commentFindMany.push(args);
+
+        return calls.commentFindMany.length === 1 ? exportableComments : [];
+      },
+    },
+    videoRating: {
+      findMany: async (args: unknown) => {
+        calls.videoRatingFindMany.push(args);
+
+        return exportableVideoRatings;
+      },
+    },
+    videoView: {
+      findMany: async (args: unknown) => {
+        calls.videoViewFindMany.push(args);
+
+        return exportableVideoViews;
+      },
+    },
     user: {
       findUnique: async (args: unknown) => {
         calls.userFindUnique = args;
@@ -369,6 +421,12 @@ export const createBaseAuthPrisma = (calls: AuthServiceTestCalls): AuthDeps['pri
     session: {
       findMany: async (args: unknown) => {
         calls.sessionFindMany = args;
+
+        const select = (args as { select?: Record<string, unknown> }).select;
+
+        if (select?.isActive && select.updatedAt) {
+          return exportableSessions;
+        }
 
         return [
           {

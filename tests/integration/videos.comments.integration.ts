@@ -1,0 +1,2368 @@
+import type { Prisma, PrismaClient } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+import request from 'supertest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import { createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
+import { createPlayableVideo } from './support/playableVideo.js';
+import {
+  createIntegrationApp,
+  createIntegrationAdminService,
+  createIntegrationAuthService,
+  createIntegrationVideosService,
+  resetState,
+  startRuntime,
+  stopRuntime,
+  type TestRuntime,
+} from './support/runtime.js';
+
+type TransactionRawBarrier = {
+  after?: () => Promise<void> | void;
+  call: number;
+};
+
+const waitForBlockedVideoQueries = async (
+  prisma: PrismaClient,
+  expectedCount: number,
+  timeoutMs = 5_000,
+): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const [activity] = await prisma.$queryRaw<Array<{ blocked_count: number }>>`
+      SELECT count(*)::int AS blocked_count
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+        AND wait_event_type = 'Lock'
+        AND query LIKE '%FROM "videos"%'
+    `;
+
+    if ((activity?.blocked_count ?? 0) >= expectedCount) {
+      return;
+    }
+
+    await delay(25);
+  }
+
+  throw new Error(`Timed out waiting for ${expectedCount} blocked video queries`);
+};
+
+const createBarrierPrisma = (
+  prisma: PrismaClient,
+  {
+    afterCommentCandidates,
+    afterVideoCandidates,
+    onTransactionStart,
+    transactionRawBarrier,
+  }: {
+    afterCommentCandidates?: () => Promise<void> | void;
+    afterVideoCandidates?: () => Promise<void> | void;
+    onTransactionStart?: () => void;
+    transactionRawBarrier?: TransactionRawBarrier;
+  },
+): PrismaClient => {
+  let candidateBarrierUsed = false;
+  let commentCandidateBarrierUsed = false;
+  let rawBarrierUsed = false;
+
+  return new Proxy(prisma, {
+    get(target, property) {
+      if (property === 'comment' && afterCommentCandidates) {
+        return new Proxy(target.comment, {
+          get(commentTarget, commentProperty) {
+            if (commentProperty === 'findMany') {
+              return async (...args: Parameters<typeof commentTarget.findMany>) => {
+                const result = await commentTarget.findMany(...args);
+
+                if (!commentCandidateBarrierUsed) {
+                  commentCandidateBarrierUsed = true;
+                  await afterCommentCandidates();
+                }
+
+                return result;
+              };
+            }
+
+            const value = Reflect.get(commentTarget, commentProperty, commentTarget) as unknown;
+
+            return typeof value === 'function' ? value.bind(commentTarget) : value;
+          },
+        });
+      }
+
+      if (property === 'video' && afterVideoCandidates) {
+        return new Proxy(target.video, {
+          get(videoTarget, videoProperty) {
+            if (videoProperty === 'findMany') {
+              return async (...args: Parameters<typeof videoTarget.findMany>) => {
+                const result = await videoTarget.findMany(...args);
+
+                if (!candidateBarrierUsed) {
+                  candidateBarrierUsed = true;
+                  await afterVideoCandidates();
+                }
+
+                return result;
+              };
+            }
+
+            const value = Reflect.get(videoTarget, videoProperty, videoTarget) as unknown;
+
+            return typeof value === 'function' ? value.bind(videoTarget) : value;
+          },
+        });
+      }
+
+      if (property === '$transaction' && (onTransactionStart || transactionRawBarrier)) {
+        return async <T>(
+          run: (tx: Prisma.TransactionClient) => Promise<T>,
+          options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
+        ): Promise<T> => {
+          onTransactionStart?.();
+
+          if (!transactionRawBarrier) {
+            return target.$transaction(run, options);
+          }
+
+          return target.$transaction(async (tx) => {
+            let rawCall = 0;
+            const barrierTransaction = new Proxy(tx, {
+              get(transactionTarget, transactionProperty) {
+                if (transactionProperty === '$queryRaw') {
+                  return async <QueryResult>(query: Prisma.Sql): Promise<QueryResult> => {
+                    rawCall += 1;
+                    const useBarrier =
+                      transactionRawBarrier !== undefined &&
+                      !rawBarrierUsed &&
+                      rawCall === transactionRawBarrier.call;
+
+                    if (useBarrier) {
+                      rawBarrierUsed = true;
+                    }
+
+                    const result = await tx.$queryRaw<QueryResult>(query);
+
+                    if (useBarrier) {
+                      await transactionRawBarrier?.after?.();
+                    }
+
+                    return result;
+                  };
+                }
+
+                const value = Reflect.get(
+                  transactionTarget,
+                  transactionProperty,
+                  transactionTarget,
+                ) as unknown;
+
+                return typeof value === 'function' ? value.bind(transactionTarget) : value;
+              },
+            }) as Prisma.TransactionClient;
+
+            return run(barrierTransaction);
+          }, options);
+        };
+      }
+
+      const value = Reflect.get(target, property, target) as unknown;
+
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+};
+
+const expectConstraintViolation = async (
+  operation: Promise<unknown>,
+  constraintName: string,
+): Promise<void> => {
+  try {
+    await operation;
+  } catch (err) {
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain(constraintName);
+    return;
+  }
+
+  throw new Error(`Expected PostgreSQL constraint ${constraintName} to reject the write`);
+};
+
+type ExplainPlanRow = {
+  'QUERY PLAN': string;
+};
+
+const expectBoundedCommentCursorPlan = (rows: readonly ExplainPlanRow[]): void => {
+  const plan = rows.map((row) => row['QUERY PLAN']).join('\n');
+  const executedSequentialScans = plan
+    .split('\n')
+    .filter((line) => line.includes('Seq Scan') && !line.includes('(never executed)'));
+  const bufferLine = plan.match(/Buffers: shared hit=(\d+)(?: read=(\d+))?/);
+  const rowsRemoved = [...plan.matchAll(/Rows Removed by Filter: (\d+)/g)].reduce(
+    (total, match) => total + Number(match[1]),
+    0,
+  );
+
+  expect(plan).toMatch(/Index (?:Only )?Scan/);
+  expect(plan).toMatch(/Index Cond: .*created_at (?:<=|>=)/);
+  expect(executedSequentialScans).toEqual([]);
+  expect(plan).not.toContain('Bitmap Heap Scan');
+  expect(bufferLine).not.toBeNull();
+  expect(Number(bufferLine?.[1] ?? 0) + Number(bufferLine?.[2] ?? 0)).toBeLessThan(256);
+  expect(rowsRemoved).toBeLessThan(256);
+};
+
+describe('video comments integration', () => {
+  let runtime: TestRuntime | null = null;
+
+  beforeAll(async () => {
+    runtime = await startRuntime();
+  });
+
+  beforeEach(async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    await resetState(runtime);
+  });
+
+  afterAll(async () => {
+    await stopRuntime(runtime);
+  });
+
+  test('enforces the active/deleted lifecycle invariant in PostgreSQL itself', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-constraint-owner@example.com',
+      username: 'constraint_owner',
+    });
+    const commenter = await createVerifiedSession(runtime, {
+      email: 'comment-constraint-author@example.com',
+      username: 'constraint_author',
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Comment lifecycle constraint',
+      visibility: 'public',
+    });
+
+    await expectConstraintViolation(
+      runtime.prisma.$executeRaw`
+        INSERT INTO "comments" (
+          "id",
+          "author_id",
+          "video_id",
+          "content",
+          "deleted_at"
+        )
+        VALUES (
+          CAST('11111111-1111-4111-8111-111111111111' AS UUID),
+          CAST(${commenter.userId} AS UUID),
+          CAST(${video.id} AS UUID),
+          'content that must have been cleared',
+          CURRENT_TIMESTAMP
+        )
+      `,
+      'comments_lifecycle_state_check',
+    );
+
+    await expect(runtime.prisma.comment.count()).resolves.toBe(0);
+  });
+
+  test('enforces thread shape and nonnegative comment aggregates in PostgreSQL itself', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-shape-owner@example.com',
+      username: 'shape_owner',
+    });
+    const author = await createVerifiedSession(runtime, {
+      email: 'comment-shape-author@example.com',
+      username: 'shape_author',
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Comment structural constraints',
+      visibility: 'public',
+    });
+    const root = (
+      await runtime.videosService.createVideoComment({
+        publicId: video.publicId,
+        userId: author.userId,
+        content: 'A valid root for the invalid reply reference.',
+      })
+    ).comment;
+
+    await expectConstraintViolation(
+      runtime.prisma.$executeRaw`
+        INSERT INTO "comments" (
+          "id",
+          "author_id",
+          "video_id",
+          "root_id",
+          "content"
+        )
+        VALUES (
+          CAST('11111111-1111-4111-8111-111111111112' AS UUID),
+          CAST(${author.userId} AS UUID),
+          CAST(${video.id} AS UUID),
+          CAST(${root.id} AS UUID),
+          'A reply shape missing its reply target.'
+        )
+      `,
+      'comments_thread_shape_check',
+    );
+    await expectConstraintViolation(
+      runtime.prisma.$executeRaw`
+        UPDATE "videos"
+        SET "comment_count" = -1
+        WHERE "id" = CAST(${video.id} AS UUID)
+      `,
+      'videos_comment_count_nonnegative_check',
+    );
+
+    await expect(runtime.prisma.comment.count({ where: { videoId: video.id } })).resolves.toBe(1);
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: video.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 1 });
+  });
+
+  test('creates a root and flattens replies to replies onto that root', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-thread-owner@example.com',
+      username: 'thread_owner',
+    });
+    const firstAuthorUsername = 'thread_first';
+    const firstAuthor = await createVerifiedSession(runtime, {
+      email: 'comment-thread-first@example.com',
+      username: firstAuthorUsername,
+    });
+    const secondAuthorUsername = 'thread_second';
+    const secondAuthor = await createVerifiedSession(runtime, {
+      email: 'comment-thread-second@example.com',
+      username: secondAuthorUsername,
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'One-level comment thread',
+      visibility: 'public',
+    });
+
+    const rootResponse = await request(app)
+      .post(`/videos/${video.publicId}/comments`)
+      .set('Authorization', `Bearer ${firstAuthor.sessionKey}`)
+      .send({ content: '  A root comment.  ' })
+      .expect(201)
+      .expect('Cache-Control', 'no-store');
+    const rootId = rootResponse.body.comment.id as string;
+
+    expect(rootResponse.body).toEqual({
+      comment: {
+        id: rootId,
+        content: 'A root comment.',
+        isDeleted: false,
+        createdAt: expect.any(String),
+        rootCommentId: null,
+        replyingTo: null,
+        author: {
+          username: firstAuthorUsername,
+          displayName: firstAuthorUsername,
+          avatarUrl: null,
+        },
+      },
+    });
+
+    const directReplyResponse = await request(app)
+      .post(`/videos/${video.publicId}/comments/${rootId}/replies`)
+      .set('Authorization', `Bearer ${secondAuthor.sessionKey}`)
+      .send({ content: 'A direct reply.' })
+      .expect(201);
+    const directReplyId = directReplyResponse.body.comment.id as string;
+
+    expect(directReplyResponse.body.comment).toMatchObject({
+      content: 'A direct reply.',
+      rootCommentId: rootId,
+      replyingTo: {
+        commentId: rootId,
+        username: firstAuthorUsername,
+      },
+    });
+
+    const nestedConversationResponse = await request(app)
+      .post(`/videos/${video.publicId}/comments/${rootId}/replies`)
+      .set('Authorization', `Bearer ${firstAuthor.sessionKey}`)
+      .send({
+        content: 'Still physically one level deep.',
+        replyingToCommentId: directReplyId,
+      })
+      .expect(201);
+
+    expect(nestedConversationResponse.body.comment).toMatchObject({
+      rootCommentId: rootId,
+      replyingTo: {
+        commentId: directReplyId,
+        username: secondAuthorUsername,
+      },
+    });
+
+    const rows = await runtime.prisma.comment.findMany({
+      where: { videoId: video.id },
+      select: {
+        id: true,
+        rootId: true,
+        replyingToCommentId: true,
+      },
+    });
+    const rowsById = new Map(rows.map((row) => [row.id, row]));
+
+    expect(rowsById.get(rootId)).toEqual({
+      id: rootId,
+      rootId: null,
+      replyingToCommentId: null,
+    });
+    expect(rowsById.get(directReplyId)).toEqual({
+      id: directReplyId,
+      rootId,
+      replyingToCommentId: rootId,
+    });
+    expect(rowsById.get(nestedConversationResponse.body.comment.id)).toEqual({
+      id: nestedConversationResponse.body.comment.id,
+      rootId,
+      replyingToCommentId: directReplyId,
+    });
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: video.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 3 });
+
+    const otherRootResponse = await request(app)
+      .post(`/videos/${video.publicId}/comments`)
+      .set('Authorization', `Bearer ${secondAuthor.sessionKey}`)
+      .send({ content: 'A separate root.' })
+      .expect(201);
+
+    await request(app)
+      .post(`/videos/${video.publicId}/comments/${rootId}/replies`)
+      .set('Authorization', `Bearer ${firstAuthor.sessionKey}`)
+      .send({
+        content: 'Must not cross threads.',
+        replyingToCommentId: otherRootResponse.body.comment.id,
+      })
+      .expect(404);
+
+    const otherVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'A different comment thread video',
+      visibility: 'public',
+    });
+    const otherVideoRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: otherVideo.publicId,
+        userId: secondAuthor.userId,
+        content: 'A root on another video.',
+      })
+    ).comment;
+
+    await request(app)
+      .post(`/videos/${video.publicId}/comments/${rootId}/replies`)
+      .set('Authorization', `Bearer ${firstAuthor.sessionKey}`)
+      .send({
+        content: 'Must not cross videos.',
+        replyingToCommentId: otherVideoRoot.id,
+      })
+      .expect(404);
+
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: video.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 4 });
+  });
+
+  test('never exposes corrupt cross-video replies through roots, counts, or reply pages', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-cross-video-owner@example.com',
+      username: 'cross_video_owner',
+    });
+    const author = await createVerifiedSession(runtime, {
+      email: 'comment-cross-video-author@example.com',
+      username: 'cross_video_author',
+    });
+    const firstVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Cross-video read isolation source',
+      visibility: 'public',
+    });
+    const secondVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Cross-video read isolation corrupt row owner',
+      visibility: 'public',
+    });
+    const activeRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: firstVideo.publicId,
+        userId: author.userId,
+        content: 'Active root must report no corrupt replies.',
+      })
+    ).comment;
+    const deletedRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: firstVideo.publicId,
+        userId: author.userId,
+        content: 'Deleted root must not become a corrupt placeholder.',
+      })
+    ).comment;
+
+    await runtime.prisma.$executeRaw`
+      INSERT INTO "comments" (
+        "id",
+        "author_id",
+        "video_id",
+        "root_id",
+        "replying_to_comment_id",
+        "content"
+      )
+      VALUES
+        (
+          CAST('22222222-2222-4222-8222-222222222221' AS UUID),
+          CAST(${author.userId} AS UUID),
+          CAST(${secondVideo.id} AS UUID),
+          CAST(${activeRoot.id} AS UUID),
+          CAST(${activeRoot.id} AS UUID),
+          'Corrupt cross-video reply beneath the active root.'
+        ),
+        (
+          CAST('22222222-2222-4222-8222-222222222222' AS UUID),
+          CAST(${author.userId} AS UUID),
+          CAST(${secondVideo.id} AS UUID),
+          CAST(${deletedRoot.id} AS UUID),
+          CAST(${deletedRoot.id} AS UUID),
+          'Corrupt cross-video reply beneath the deleted root.'
+        )
+    `;
+    await runtime.videosService.deleteVideoComment({
+      publicId: firstVideo.publicId,
+      commentId: deletedRoot.id,
+      userId: author.userId,
+    });
+
+    await expect(
+      runtime.prisma.comment.count({
+        where: {
+          videoId: secondVideo.id,
+          rootId: { in: [activeRoot.id, deletedRoot.id] },
+        },
+      }),
+    ).resolves.toBe(2);
+
+    const rootsResponse = await request(app)
+      .get(`/videos/${firstVideo.publicId}/comments`)
+      .expect(200);
+    expect(rootsResponse.body.total).toBe(1);
+    expect(rootsResponse.body.comments).toEqual([
+      expect.objectContaining({
+        id: activeRoot.id,
+        replyCount: 0,
+      }),
+    ]);
+    expect(rootsResponse.body.comments.map(({ id }: { id: string }) => id)).not.toContain(
+      deletedRoot.id,
+    );
+
+    const repliesResponse = await request(app)
+      .get(`/videos/${firstVideo.publicId}/comments/${activeRoot.id}/replies`)
+      .expect(200);
+    expect(repliesResponse.body).toEqual({ replies: [], total: 0, nextCursor: null });
+  });
+
+  test('degrades cross-video and cross-thread reply targets to an absent target', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-target-guard-owner@example.com',
+      username: 'target_guard_owner',
+    });
+    const rootAuthor = await createVerifiedSession(runtime, {
+      email: 'comment-target-root@example.com',
+      username: 'target_root_author',
+    });
+    const replier = await createVerifiedSession(runtime, {
+      email: 'comment-target-replier@example.com',
+      username: 'target_guard_reply',
+    });
+    const otherThreadUsername = 'target_thread_author';
+    const otherThreadAuthor = await createVerifiedSession(runtime, {
+      email: 'comment-target-thread@example.com',
+      username: otherThreadUsername,
+    });
+    const otherVideoUsername = 'target_video_author';
+    const otherVideoAuthor = await createVerifiedSession(runtime, {
+      email: 'comment-target-video@example.com',
+      username: otherVideoUsername,
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Defensive reply target projection',
+      visibility: 'public',
+    });
+    const otherVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Foreign reply target video',
+      visibility: 'public',
+    });
+    const root = (
+      await runtime.videosService.createVideoComment({
+        publicId: video.publicId,
+        userId: rootAuthor.userId,
+        content: 'The legitimate root.',
+      })
+    ).comment;
+    const otherThreadRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: video.publicId,
+        userId: otherThreadAuthor.userId,
+        content: 'Foreign thread target content.',
+      })
+    ).comment;
+    const otherVideoRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: otherVideo.publicId,
+        userId: otherVideoAuthor.userId,
+        content: 'Foreign video target content.',
+      })
+    ).comment;
+    const crossThreadReplyId = '33333333-3333-4333-8333-333333333331';
+    const crossVideoReplyId = '33333333-3333-4333-8333-333333333332';
+
+    await runtime.prisma.$executeRaw`
+      INSERT INTO "comments" (
+        "id",
+        "author_id",
+        "video_id",
+        "root_id",
+        "replying_to_comment_id",
+        "content"
+      )
+      VALUES
+        (
+          CAST(${crossThreadReplyId} AS UUID),
+          CAST(${replier.userId} AS UUID),
+          CAST(${video.id} AS UUID),
+          CAST(${root.id} AS UUID),
+          CAST(${otherThreadRoot.id} AS UUID),
+          'A correctly placed reply with a foreign thread target.'
+        ),
+        (
+          CAST(${crossVideoReplyId} AS UUID),
+          CAST(${replier.userId} AS UUID),
+          CAST(${video.id} AS UUID),
+          CAST(${root.id} AS UUID),
+          CAST(${otherVideoRoot.id} AS UUID),
+          'A correctly placed reply with a foreign video target.'
+        )
+    `;
+
+    const response = await request(app)
+      .get(`/videos/${video.publicId}/comments/${root.id}/replies`)
+      .expect(200);
+    const repliesById = new Map(
+      response.body.replies.map((reply: { id: string; replyingTo: unknown }) => [reply.id, reply]),
+    );
+
+    expect(response.body.total).toBe(2);
+    expect(repliesById.get(crossThreadReplyId)).toMatchObject({ replyingTo: null });
+    expect(repliesById.get(crossVideoReplyId)).toMatchObject({ replyingTo: null });
+    expect(JSON.stringify(response.body)).not.toContain(otherThreadRoot.id);
+    expect(JSON.stringify(response.body)).not.toContain(otherVideoRoot.id);
+    expect(JSON.stringify(response.body)).not.toContain(otherThreadUsername);
+    expect(JSON.stringify(response.body)).not.toContain(otherVideoUsername);
+    expect(JSON.stringify(response.body)).not.toContain('Foreign thread target content.');
+    expect(JSON.stringify(response.body)).not.toContain('Foreign video target content.');
+  });
+
+  test('exports active comments and soft-deleted tombstones still attributed to the user', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-export-owner@example.com',
+      username: 'comment_export_owner',
+    });
+    const author = await createVerifiedSession(runtime, {
+      email: 'comment-export-author@example.com',
+      username: 'c_export_author',
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Comment personal data export',
+      visibility: 'public',
+    });
+    const root = (
+      await runtime.videosService.createVideoComment({
+        publicId: video.publicId,
+        userId: author.userId,
+        content: 'Root included in my personal export.',
+      })
+    ).comment;
+    const reply = (
+      await runtime.videosService.createVideoCommentReply({
+        publicId: video.publicId,
+        rootCommentId: root.id,
+        replyingToCommentId: root.id,
+        userId: author.userId,
+        content: 'Reply included with its root identifier.',
+      })
+    ).comment;
+    await request(app)
+      .delete(`/videos/${video.publicId}/comments/${root.id}`)
+      .set('Authorization', `Bearer ${author.sessionKey}`)
+      .expect(204);
+
+    const dataExport = await request(app)
+      .post('/auth/me/export')
+      .set('Authorization', `Bearer ${author.sessionKey}`)
+      .send({ currentPassword: INITIAL_PASSWORD })
+      .expect(200);
+
+    expect(dataExport.body.comments).toEqual(
+      expect.arrayContaining([
+        {
+          id: root.id,
+          videoId: video.id,
+          content: null,
+          createdAt: expect.any(String),
+          deletedAt: expect.any(String),
+          rootId: null,
+          replyingToCommentId: null,
+        },
+        {
+          id: reply.id,
+          videoId: video.id,
+          content: 'Reply included with its root identifier.',
+          createdAt: expect.any(String),
+          deletedAt: null,
+          rootId: root.id,
+          replyingToCommentId: root.id,
+        },
+      ]),
+    );
+    expect(dataExport.body.comments).toHaveLength(2);
+  });
+
+  test('streams several thousand exported comments while reading them in bounded batches', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const owner = await createVerifiedSession(runtime, {
+      email: 'large-comment-export-owner@example.com',
+      username: 'large_export_owner',
+    });
+    const author = await createVerifiedSession(runtime, {
+      email: 'large-comment-export-author@example.com',
+      username: 'large_export_author',
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Large comment personal data export',
+      visibility: 'public',
+    });
+    const commentCount = 2_500;
+
+    await runtime.prisma.$transaction([
+      runtime.prisma.comment.createMany({
+        data: Array.from({ length: commentCount }, (_, index) => ({
+          id: randomUUID(),
+          authorId: author.userId,
+          videoId: video.id,
+          content: `Exported comment ${index}`,
+        })),
+      }),
+      runtime.prisma.video.update({
+        where: { id: video.id },
+        data: { commentCount },
+      }),
+    ]);
+
+    const dataExport = await request(app)
+      .post('/auth/me/export')
+      .set('Authorization', `Bearer ${author.sessionKey}`)
+      .send({ currentPassword: INITIAL_PASSWORD })
+      .expect(200);
+
+    expect(dataExport.headers['content-length']).toBeUndefined();
+    expect(dataExport.headers['transfer-encoding']).toBe('chunked');
+    expect(dataExport.body.comments).toHaveLength(commentCount);
+    expect(dataExport.body.comments[0]).toEqual(
+      expect.objectContaining({
+        videoId: video.id,
+        content: expect.stringMatching(/^Exported comment \d+$/),
+      }),
+    );
+  });
+
+  test('rejects a burst of random reply roots before opening any video-lock transaction', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'invalid-reply-root-owner@example.com',
+      username: 'invalid_root_owner',
+    });
+    const replier = await createVerifiedSession(runtime, {
+      email: 'invalid-reply-root-author@example.com',
+      username: 'invalid_root_author',
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Popular video protected from invalid reply contention',
+      visibility: 'public',
+    });
+    let transactionCalls = 0;
+    const observedPrisma = createBarrierPrisma(runtime.prisma, {
+      onTransactionStart: () => {
+        transactionCalls += 1;
+      },
+    });
+    const observedService = createIntegrationVideosService(
+      observedPrisma,
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+    );
+    const app = await createIntegrationApp(runtime, {
+      videosService: observedService,
+    });
+    const responses = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        request(app)
+          .post(`/videos/${video.publicId}/comments/${randomUUID()}/replies`)
+          .set('Authorization', `Bearer ${replier.sessionKey}`)
+          .send({ content: 'This random root must fail before the video lock.' }),
+      ),
+    );
+
+    expect(responses.map(({ status }) => status)).toEqual(Array(20).fill(404));
+    expect(transactionCalls).toBe(0);
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: video.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 0 });
+  });
+
+  test('rejects invalid or foreign reply targets before opening any video-lock transaction', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'invalid-reply-target-owner@example.com',
+      username: 'target_owner',
+    });
+    const replier = await createVerifiedSession(runtime, {
+      email: 'invalid-reply-target-author@example.com',
+      username: 'target_author',
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Popular video protected from invalid reply target contention',
+      visibility: 'public',
+    });
+    const root = (
+      await runtime.videosService.createVideoComment({
+        publicId: video.publicId,
+        userId: replier.userId,
+        content: 'A valid root must not make invalid targets expensive.',
+      })
+    ).comment;
+    const otherVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Foreign reply target video',
+      visibility: 'public',
+    });
+    const foreignRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: otherVideo.publicId,
+        userId: replier.userId,
+        content: 'This root belongs to another video.',
+      })
+    ).comment;
+    let transactionCalls = 0;
+    const observedPrisma = createBarrierPrisma(runtime.prisma, {
+      onTransactionStart: () => {
+        transactionCalls += 1;
+      },
+    });
+    const observedService = createIntegrationVideosService(
+      observedPrisma,
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+    );
+    const app = await createIntegrationApp(runtime, {
+      videosService: observedService,
+    });
+    const invalidTargetIds = [...Array.from({ length: 20 }, () => randomUUID()), foreignRoot.id];
+    const responses = await Promise.all(
+      invalidTargetIds.map((replyingToCommentId) =>
+        request(app)
+          .post(`/videos/${video.publicId}/comments/${root.id}/replies`)
+          .set('Authorization', `Bearer ${replier.sessionKey}`)
+          .send({
+            content: 'This invalid target must fail before the video lock.',
+            replyingToCommentId,
+          }),
+      ),
+    );
+
+    expect(responses.map(({ status }) => status)).toEqual(Array(invalidTargetIds.length).fill(404));
+    expect(transactionCalls).toBe(0);
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: video.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 1 });
+  });
+
+  test('blocks creation when comments are disabled or the video is no longer engageable', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-scope-owner@example.com',
+      username: 'scope_owner',
+    });
+    const commenter = await createVerifiedSession(runtime, {
+      email: 'comment-scope-author@example.com',
+      username: 'scope_author',
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Comment engagement scope',
+      visibility: 'public',
+    });
+
+    await runtime.prisma.video.update({
+      where: { id: video.id },
+      data: { allowComments: false },
+    });
+    await request(app)
+      .post(`/videos/${video.publicId}/comments`)
+      .set('Authorization', `Bearer ${commenter.sessionKey}`)
+      .send({ content: 'Must be blocked while disabled.' })
+      .expect(409);
+
+    await runtime.prisma.video.update({
+      where: { id: video.id },
+      data: {
+        allowComments: true,
+        moderationStatus: 'rejected',
+      },
+    });
+    await request(app)
+      .post(`/videos/${video.publicId}/comments`)
+      .set('Authorization', `Bearer ${commenter.sessionKey}`)
+      .send({ content: 'Must be blocked after rejection.' })
+      .expect(404);
+
+    await expect(runtime.prisma.comment.count({ where: { videoId: video.id } })).resolves.toBe(0);
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: video.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 0 });
+  });
+
+  test('serializes comment creation with rejection in both video-lock orders', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-rejection-race-owner@example.com',
+      username: 'comment_reject_owner',
+    });
+    const commenter = await createVerifiedSession(runtime, {
+      email: 'comment-rejection-race-author@example.com',
+      username: 'c_reject_author',
+    });
+    const creationFirstVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Comment creation locks before rejection',
+      visibility: 'public',
+    });
+    const creationLocked = Promise.withResolvers<void>();
+    const releaseCreation = Promise.withResolvers<void>();
+    const creationFirstService = createIntegrationVideosService(
+      createBarrierPrisma(runtime.prisma, {
+        transactionRawBarrier: {
+          call: 1,
+          after: async () => {
+            creationLocked.resolve();
+            await releaseCreation.promise;
+          },
+        },
+      }),
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+    );
+    const creationFirstApp = await createIntegrationApp(runtime, {
+      videosService: creationFirstService,
+    });
+    const creationResponsePromise = request(creationFirstApp)
+      .post(`/videos/${creationFirstVideo.publicId}/comments`)
+      .set('Authorization', `Bearer ${commenter.sessionKey}`)
+      .send({ content: 'Committed before the rejection.' })
+      .then((response) => response);
+
+    await creationLocked.promise;
+    const rejectionPromise = runtime.adminService.moderateVideo({
+      videoId: creationFirstVideo.id,
+      decision: 'rejected',
+      reason: 'Concurrent rejection after the comment lock.',
+    });
+
+    await waitForBlockedVideoQueries(runtime.prisma, 1);
+    releaseCreation.resolve();
+
+    const creationResponse = await creationResponsePromise;
+    expect(creationResponse.status).toBe(201);
+    await rejectionPromise;
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: creationFirstVideo.id },
+        select: { commentCount: true, moderationStatus: true },
+      }),
+    ).resolves.toEqual({ commentCount: 1, moderationStatus: 'rejected' });
+
+    const rejectionFirstVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Rejection locks before comment creation',
+      visibility: 'public',
+    });
+    const rejectionLocked = Promise.withResolvers<void>();
+    const releaseRejection = Promise.withResolvers<void>();
+    const rejectionFirstService = createIntegrationAdminService(
+      createBarrierPrisma(runtime.prisma, {
+        transactionRawBarrier: {
+          call: 1,
+          after: async () => {
+            rejectionLocked.resolve();
+            await releaseRejection.promise;
+          },
+        },
+      }),
+      runtime.delivered,
+    );
+    const rejectionFirstPromise = rejectionFirstService.moderateVideo({
+      videoId: rejectionFirstVideo.id,
+      decision: 'rejected',
+      reason: 'Concurrent rejection before the comment lock.',
+    });
+
+    await rejectionLocked.promise;
+    const rejectionFirstApp = await createIntegrationApp(runtime);
+    const rejectedCreationResponsePromise = request(rejectionFirstApp)
+      .post(`/videos/${rejectionFirstVideo.publicId}/comments`)
+      .set('Authorization', `Bearer ${commenter.sessionKey}`)
+      .send({ content: 'Must not survive the rejection.' })
+      .then((response) => response);
+
+    await waitForBlockedVideoQueries(runtime.prisma, 1);
+    releaseRejection.resolve();
+
+    await rejectionFirstPromise;
+    const rejectedCreationResponse = await rejectedCreationResponsePromise;
+    expect(rejectedCreationResponse.status).toBe(404);
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: rejectionFirstVideo.id },
+        select: { commentCount: true, moderationStatus: true },
+      }),
+    ).resolves.toEqual({ commentCount: 0, moderationStatus: 'rejected' });
+    await expect(
+      runtime.prisma.comment.count({ where: { videoId: rejectionFirstVideo.id } }),
+    ).resolves.toBe(0);
+  });
+
+  test('keeps comment creation consistent across stale-candidate and already-rejected purges', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-purge-race-owner@example.com',
+      username: 'comment_purge_owner',
+    });
+    const commenter = await createVerifiedSession(runtime, {
+      email: 'comment-purge-race-author@example.com',
+      username: 'comment_purge_author',
+    });
+    const oldRejection = new Date('2026-07-01T00:00:00.000Z');
+    const observedAt = new Date('2026-08-05T12:00:00.000Z');
+    const rejectedBefore = new Date('2026-07-29T12:00:00.000Z');
+    const creationFirstVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Comment creation beats a stale purge snapshot',
+      visibility: 'public',
+    });
+    await runtime.prisma.video.update({
+      where: { id: creationFirstVideo.id },
+      data: {
+        moderationStatus: 'rejected',
+        rejectedAt: oldRejection,
+        visibility: 'unlisted',
+      },
+    });
+    const candidatesRead = Promise.withResolvers<void>();
+    const releaseCandidates = Promise.withResolvers<void>();
+    const staleCandidatePurgeService = createIntegrationVideosService(
+      createBarrierPrisma(runtime.prisma, {
+        afterVideoCandidates: async () => {
+          candidatesRead.resolve();
+          await releaseCandidates.promise;
+        },
+      }),
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+      { now: () => observedAt },
+    );
+    const staleCandidatePurgePromise = staleCandidatePurgeService.deleteExpiredRejectedVideos({
+      observedAt,
+      rejectedBefore,
+    });
+
+    await candidatesRead.promise;
+    await runtime.adminService.moderateVideo({
+      videoId: creationFirstVideo.id,
+      decision: 'approved',
+    });
+    const creationLocked = Promise.withResolvers<void>();
+    const releaseCreation = Promise.withResolvers<void>();
+    const creationFirstService = createIntegrationVideosService(
+      createBarrierPrisma(runtime.prisma, {
+        transactionRawBarrier: {
+          call: 1,
+          after: async () => {
+            creationLocked.resolve();
+            await releaseCreation.promise;
+          },
+        },
+      }),
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+    );
+    const creationFirstApp = await createIntegrationApp(runtime, {
+      videosService: creationFirstService,
+    });
+    const creationResponsePromise = request(creationFirstApp)
+      .post(`/videos/${creationFirstVideo.publicId}/comments`)
+      .set('Authorization', `Bearer ${commenter.sessionKey}`)
+      .send({ content: 'Created before the stale purge recheck.' })
+      .then((response) => response);
+
+    await creationLocked.promise;
+    releaseCandidates.resolve();
+    await waitForBlockedVideoQueries(runtime.prisma, 1);
+    releaseCreation.resolve();
+
+    const [creationResponse, stalePurgeResult] = await Promise.all([
+      creationResponsePromise,
+      staleCandidatePurgePromise,
+    ]);
+    expect(creationResponse.status).toBe(201);
+    expect(stalePurgeResult).toEqual({
+      rejectedVideosDeleted: 0,
+      rejectedVideoTargetsScheduled: 0,
+    });
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: creationFirstVideo.id },
+        select: { commentCount: true, moderationStatus: true },
+      }),
+    ).resolves.toEqual({ commentCount: 1, moderationStatus: 'approved' });
+
+    const purgeFirstVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Deferred purge beats comment creation',
+      visibility: 'public',
+    });
+    await runtime.prisma.video.update({
+      where: { id: purgeFirstVideo.id },
+      data: {
+        moderationStatus: 'rejected',
+        rejectedAt: oldRejection,
+        visibility: 'unlisted',
+      },
+    });
+    const purgeLocked = Promise.withResolvers<void>();
+    const releasePurge = Promise.withResolvers<void>();
+    const purgeFirstService = createIntegrationVideosService(
+      createBarrierPrisma(runtime.prisma, {
+        transactionRawBarrier: {
+          call: 2,
+          after: async () => {
+            purgeLocked.resolve();
+            await releasePurge.promise;
+          },
+        },
+      }),
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+      { now: () => observedAt },
+    );
+    const purgeFirstPromise = purgeFirstService.deleteExpiredRejectedVideos({
+      observedAt,
+      rejectedBefore,
+    });
+
+    await purgeLocked.promise;
+    const purgeFirstApp = await createIntegrationApp(runtime);
+    const purgedCreationResponsePromise = request(purgeFirstApp)
+      .post(`/videos/${purgeFirstVideo.publicId}/comments`)
+      .set('Authorization', `Bearer ${commenter.sessionKey}`)
+      .send({ content: 'Must not survive the deferred purge.' })
+      .then((response) => response);
+
+    // The rejected row is already ineligible in this transaction's snapshot. The engagement
+    // predicate belongs to the locking SELECT itself, so this 404 must complete while the purge
+    // still owns the video lock instead of waiting for that lock to be released.
+    const purgedCreationResponse = await purgedCreationResponsePromise;
+    expect(purgedCreationResponse.status).toBe(404);
+    releasePurge.resolve();
+
+    const purgeResult = await purgeFirstPromise;
+    expect(purgeResult).toEqual({
+      rejectedVideosDeleted: 1,
+      rejectedVideoTargetsScheduled: expect.any(Number),
+    });
+    await expect(
+      runtime.prisma.video.findUnique({ where: { id: purgeFirstVideo.id } }),
+    ).resolves.toBeNull();
+    await expect(
+      runtime.prisma.comment.count({ where: { videoId: purgeFirstVideo.id } }),
+    ).resolves.toBe(0);
+  });
+
+  test('returns one uniform 404 when a reply resource is absent or becomes ineligible', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'reply-not-found-owner@example.com',
+      username: 'reply_nf_owner',
+    });
+    const author = await createVerifiedSession(runtime, {
+      email: 'reply-not-found-author@example.com',
+      username: 'reply_nf_author',
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Uniform reply not found contract',
+      visibility: 'public',
+    });
+    const root = (
+      await runtime.videosService.createVideoComment({
+        publicId: video.publicId,
+        userId: author.userId,
+        content: 'Remembered while the video was readable.',
+      })
+    ).comment;
+    const expectedNotFound = {
+      error: 'NotFound',
+      message: 'Comment not found',
+    };
+
+    await runtime.prisma.video.update({
+      where: { id: video.id },
+      data: { processingStatus: 'failed' },
+    });
+    const inaccessibleKnownRoot = await request(await createIntegrationApp(runtime))
+      .post(`/videos/${video.publicId}/comments/${root.id}/replies`)
+      .set('Authorization', `Bearer ${author.sessionKey}`)
+      .send({ content: 'This video is no longer eligible.' })
+      .expect(404);
+    const inaccessibleMissingRoot = await request(await createIntegrationApp(runtime))
+      .post(`/videos/${video.publicId}/comments/${randomUUID()}/replies`)
+      .set('Authorization', `Bearer ${author.sessionKey}`)
+      .send({ content: 'This root does not exist.' })
+      .expect(404);
+
+    expect(inaccessibleKnownRoot.body).toEqual(expectedNotFound);
+    expect(inaccessibleMissingRoot.body).toEqual(expectedNotFound);
+
+    await runtime.prisma.video.update({
+      where: { id: video.id },
+      data: { processingStatus: 'ready' },
+    });
+    const candidatesRead = Promise.withResolvers<void>();
+    const releaseCandidates = Promise.withResolvers<void>();
+    const raceService = createIntegrationVideosService(
+      createBarrierPrisma(runtime.prisma, {
+        afterCommentCandidates: async () => {
+          candidatesRead.resolve();
+          await releaseCandidates.promise;
+        },
+      }),
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+    );
+    const raceApp = await createIntegrationApp(runtime, { videosService: raceService });
+    const raceResponsePromise = request(raceApp)
+      .post(`/videos/${video.publicId}/comments/${root.id}/replies`)
+      .set('Authorization', `Bearer ${author.sessionKey}`)
+      .send({ content: 'The status changes after preflight.' })
+      .then((response) => response);
+
+    await candidatesRead.promise;
+    await runtime.prisma.video.update({
+      where: { id: video.id },
+      data: { processingStatus: 'failed' },
+    });
+    releaseCandidates.resolve();
+
+    const raceResponse = await raceResponsePromise;
+    expect(raceResponse.status).toBe(404);
+    expect(raceResponse.body).toEqual(expectedNotFound);
+    await expect(runtime.prisma.comment.count({ where: { rootId: root.id } })).resolves.toBe(0);
+  });
+
+  test('paginates readable root threads and replies with stable cursors and grouped counts', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-list-owner@example.com',
+      username: 'comment_list_owner',
+    });
+    const firstAuthor = await createVerifiedSession(runtime, {
+      email: 'comment-list-first@example.com',
+      username: 'comment_list_first',
+    });
+    const secondAuthor = await createVerifiedSession(runtime, {
+      email: 'comment-list-second@example.com',
+      username: 'comment_list_second',
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Paginated comment threads',
+      visibility: 'public',
+    });
+    const roots = [];
+
+    for (const [userId, content] of [
+      [firstAuthor.userId, 'First root'],
+      [secondAuthor.userId, 'Second root'],
+      [firstAuthor.userId, 'Third root'],
+    ] as const) {
+      const result = await runtime.videosService.createVideoComment({
+        publicId: video.publicId,
+        userId,
+        content,
+      });
+      roots.push(result.comment);
+    }
+
+    const rootWithReplies = [...roots].sort((left, right) => right.id.localeCompare(left.id))[0];
+
+    if (!rootWithReplies) {
+      throw new Error('Expected a root comment');
+    }
+
+    const replies = [];
+
+    for (const [userId, content] of [
+      [secondAuthor.userId, 'First chronological reply'],
+      [firstAuthor.userId, 'Second chronological reply'],
+      [secondAuthor.userId, 'Third chronological reply'],
+    ] as const) {
+      const result = await runtime.videosService.createVideoCommentReply({
+        publicId: video.publicId,
+        userId,
+        rootCommentId: rootWithReplies.id,
+        content,
+      });
+      replies.push(result.comment);
+    }
+
+    const sharedCreatedAt = new Date('2026-08-05T10:00:00.000Z');
+    await runtime.prisma.comment.updateMany({
+      where: {
+        id: {
+          in: [...roots, ...replies].map(({ id }) => id),
+        },
+      },
+      data: {
+        createdAt: sharedCreatedAt,
+      },
+    });
+    await runtime.prisma.video.update({
+      where: { id: video.id },
+      data: {
+        allowComments: false,
+        moderationStatus: 'rejected',
+      },
+    });
+
+    const expectedRootIds = roots
+      .map(({ id }) => id)
+      .sort()
+      .reverse();
+    const firstPage = await request(app)
+      .get(`/videos/${video.publicId}/comments`)
+      .query({ limit: 2 })
+      .expect(200)
+      .expect('Cache-Control', 'no-store');
+
+    expect(firstPage.body.total).toBe(3);
+    expect(firstPage.body.comments.map(({ id }: { id: string }) => id)).toEqual(
+      expectedRootIds.slice(0, 2),
+    );
+    expect(
+      firstPage.body.comments.find(({ id }: { id: string }) => id === rootWithReplies.id)
+        ?.replyCount,
+    ).toBe(3);
+    expect(firstPage.body.nextCursor).toEqual({
+      id: expectedRootIds[1],
+      createdAt: sharedCreatedAt.toISOString(),
+    });
+
+    const secondPage = await request(app)
+      .get(`/videos/${video.publicId}/comments`)
+      .query({
+        limit: 2,
+        cursorCreatedAt: firstPage.body.nextCursor.createdAt,
+        cursorId: firstPage.body.nextCursor.id,
+      })
+      .expect(200);
+    expect(secondPage.body.total).toBe(3);
+    expect(secondPage.body.comments.map(({ id }: { id: string }) => id)).toEqual(
+      expectedRootIds.slice(2),
+    );
+    expect(secondPage.body.nextCursor).toBeNull();
+
+    const expectedReplyIds = replies.map(({ id }) => id).sort();
+    const firstRepliesPage = await request(app)
+      .get(`/videos/${video.publicId}/comments/${rootWithReplies.id}/replies`)
+      .query({ limit: 2 })
+      .expect(200);
+    expect(firstRepliesPage.body.total).toBe(3);
+    expect(firstRepliesPage.body.replies.map(({ id }: { id: string }) => id)).toEqual(
+      expectedReplyIds.slice(0, 2),
+    );
+
+    const secondRepliesPage = await request(app)
+      .get(`/videos/${video.publicId}/comments/${rootWithReplies.id}/replies`)
+      .query({
+        limit: 2,
+        cursorCreatedAt: firstRepliesPage.body.nextCursor.createdAt,
+        cursorId: firstRepliesPage.body.nextCursor.id,
+      })
+      .expect(200);
+    expect(secondRepliesPage.body.replies.map(({ id }: { id: string }) => id)).toEqual(
+      expectedReplyIds.slice(2),
+    );
+
+    await runtime.prisma.video.update({
+      where: { id: video.id },
+      data: { processingStatus: 'failed' },
+    });
+    await request(app).get(`/videos/${video.publicId}/comments`).expect(404);
+    await request(app)
+      .get(`/videos/${video.publicId}/comments/${rootWithReplies.id}/replies`)
+      .expect(404);
+  });
+
+  test('uses bounded ordered index scans with large remaining ranges in both sort directions', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-cursor-plan-owner@example.com',
+      username: 'cursor_plan_owner',
+    });
+    const author = await createVerifiedSession(runtime, {
+      email: 'comment-cursor-plan-author@example.com',
+      username: 'cursor_plan_author',
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Comment cursor execution plans',
+      visibility: 'public',
+    });
+    const root = (
+      await runtime.videosService.createVideoComment({
+        publicId: video.publicId,
+        userId: author.userId,
+        content: 'Root for the cursor plan replies.',
+      })
+    ).comment;
+
+    await runtime.prisma.$executeRaw`
+      INSERT INTO "comments" (
+        "id",
+        "author_id",
+        "video_id",
+        "content",
+        "created_at"
+      )
+      SELECT
+        md5('cursor-plan-root-' || series."i"::text)::uuid,
+        CAST(${author.userId} AS UUID),
+        CAST(${video.id} AS UUID),
+        'cursor-plan-root-' || series."i"::text,
+        TIMESTAMP '2026-01-01 00:00:00' + series."i" * INTERVAL '1 millisecond'
+      FROM generate_series(1, 20000) AS series("i")
+    `;
+    await runtime.prisma.$executeRaw`
+      INSERT INTO "comments" (
+        "id",
+        "author_id",
+        "video_id",
+        "root_id",
+        "replying_to_comment_id",
+        "content",
+        "created_at"
+      )
+      SELECT
+        md5('cursor-plan-reply-' || series."i"::text)::uuid,
+        CAST(${author.userId} AS UUID),
+        CAST(${video.id} AS UUID),
+        CAST(${root.id} AS UUID),
+        CAST(${root.id} AS UUID),
+        'cursor-plan-reply-' || series."i"::text,
+        TIMESTAMP '2026-01-01 00:00:00' + series."i" * INTERVAL '1 millisecond'
+      FROM generate_series(1, 20000) AS series("i")
+    `;
+    await runtime.prisma.video.update({
+      where: { id: video.id },
+      data: { commentCount: { increment: 40000 } },
+    });
+    await runtime.prisma.$executeRaw`ANALYZE "comments"`;
+
+    const rootCursor = await runtime.prisma.comment.findFirst({
+      where: {
+        videoId: video.id,
+        content: 'cursor-plan-root-19000',
+      },
+      select: {
+        createdAt: true,
+        id: true,
+      },
+    });
+    const replyCursor = await runtime.prisma.comment.findFirst({
+      where: {
+        videoId: video.id,
+        content: 'cursor-plan-reply-1000',
+      },
+      select: {
+        createdAt: true,
+        id: true,
+      },
+    });
+
+    if (!rootCursor || !replyCursor) {
+      throw new Error('Expected both cursor-plan boundary rows');
+    }
+
+    const rootPlan = await runtime.prisma.$queryRaw<ExplainPlanRow[]>`
+      EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+      SELECT c."id"
+      FROM "comments" AS c
+      WHERE c."video_id" = CAST(${video.id} AS UUID)
+        AND c."root_id" IS NULL
+        AND (
+          c."deleted_at" IS NULL
+          OR EXISTS (
+            SELECT 1
+            FROM "comments" AS reply
+            WHERE reply."video_id" = CAST(${video.id} AS UUID)
+              AND reply."root_id" IS NOT NULL
+              AND reply."root_id" = c."id"
+              AND reply."deleted_at" IS NULL
+          )
+        )
+        AND c."created_at" <= ${rootCursor.createdAt}
+        AND (
+          c."created_at" < ${rootCursor.createdAt}
+          OR (c."created_at" = ${rootCursor.createdAt} AND c."id" < CAST(${rootCursor.id} AS UUID))
+        )
+      ORDER BY c."created_at" DESC, c."id" DESC
+      LIMIT 101
+    `;
+    const replyPlan = await runtime.prisma.$queryRaw<ExplainPlanRow[]>`
+      EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+      SELECT c."id"
+      FROM "comments" AS c
+      WHERE c."video_id" = CAST(${video.id} AS UUID)
+        AND c."root_id" = CAST(${root.id} AS UUID)
+        AND c."deleted_at" IS NULL
+        AND c."created_at" >= ${replyCursor.createdAt}
+        AND (
+          c."created_at" > ${replyCursor.createdAt}
+          OR (c."created_at" = ${replyCursor.createdAt} AND c."id" > CAST(${replyCursor.id} AS UUID))
+        )
+      ORDER BY c."created_at" ASC, c."id" ASC
+      LIMIT 101
+    `;
+
+    expectBoundedCommentCursorPlan(rootPlan);
+    expectBoundedCommentCursorPlan(replyPlan);
+  });
+
+  test('soft-deletes author comments idempotently and projects placeholders only for live threads', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-delete-owner@example.com',
+      username: 'c_delete_owner',
+    });
+    const author = await createVerifiedSession(runtime, {
+      email: 'comment-delete-author@example.com',
+      username: 'c_delete_author',
+    });
+    const survivor = await createVerifiedSession(runtime, {
+      email: 'comment-delete-survivor@example.com',
+      username: 'c_delete_survivor',
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Comment soft deletion',
+      visibility: 'public',
+    });
+    const root = (
+      await runtime.videosService.createVideoComment({
+        publicId: video.publicId,
+        userId: author.userId,
+        content: 'Root that becomes a placeholder',
+      })
+    ).comment;
+    const survivingReply = (
+      await runtime.videosService.createVideoCommentReply({
+        publicId: video.publicId,
+        userId: survivor.userId,
+        rootCommentId: root.id,
+        content: 'This reply keeps the thread visible',
+      })
+    ).comment;
+    const deletedReply = (
+      await runtime.videosService.createVideoCommentReply({
+        publicId: video.publicId,
+        userId: author.userId,
+        rootCommentId: root.id,
+        content: 'This leaf must disappear',
+      })
+    ).comment;
+    const standaloneRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: video.publicId,
+        userId: author.userId,
+        content: 'This root must disappear',
+      })
+    ).comment;
+    const otherRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: video.publicId,
+        userId: survivor.userId,
+        content: 'An active root',
+      })
+    ).comment;
+
+    const concurrentDeletes = await Promise.all([
+      request(app)
+        .delete(`/videos/${video.publicId}/comments/${root.id}`)
+        .set('Authorization', `Bearer ${author.sessionKey}`),
+      request(app)
+        .delete(`/videos/${video.publicId}/comments/${root.id}`)
+        .set('Authorization', `Bearer ${author.sessionKey}`),
+    ]);
+    expect(concurrentDeletes.map(({ status }) => status)).toEqual([204, 204]);
+
+    await request(app)
+      .delete(`/videos/${video.publicId}/comments/${deletedReply.id}`)
+      .set('Authorization', `Bearer ${author.sessionKey}`)
+      .expect(204);
+    await request(app)
+      .delete(`/videos/${video.publicId}/comments/${standaloneRoot.id}`)
+      .set('Authorization', `Bearer ${author.sessionKey}`)
+      .expect(204);
+    await request(app)
+      .delete(`/videos/${video.publicId}/comments/${otherRoot.id}`)
+      .set('Authorization', `Bearer ${author.sessionKey}`)
+      .expect(404);
+
+    const rootRows = await runtime.prisma.comment.findMany({
+      where: {
+        id: {
+          in: [root.id, deletedReply.id, standaloneRoot.id, otherRoot.id],
+        },
+      },
+      select: {
+        id: true,
+        authorId: true,
+        content: true,
+        deletedAt: true,
+      },
+    });
+    const rowsById = new Map(rootRows.map((row) => [row.id, row]));
+    expect(rowsById.get(root.id)).toMatchObject({
+      authorId: author.userId,
+      content: null,
+      deletedAt: expect.any(Date),
+    });
+    expect(rowsById.get(deletedReply.id)).toMatchObject({ content: null });
+    expect(rowsById.get(standaloneRoot.id)).toMatchObject({ content: null });
+    expect(rowsById.get(otherRoot.id)).toMatchObject({
+      content: 'An active root',
+      deletedAt: null,
+    });
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: video.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 2 });
+
+    const rootsResponse = await request(app).get(`/videos/${video.publicId}/comments`).expect(200);
+    const placeholder = rootsResponse.body.comments.find(
+      ({ id }: { id: string }) => id === root.id,
+    );
+    expect(placeholder).toEqual({
+      id: root.id,
+      content: null,
+      isDeleted: true,
+      createdAt: expect.any(String),
+      rootCommentId: null,
+      replyingTo: null,
+      author: null,
+      replyCount: 1,
+    });
+    expect(rootsResponse.body.comments.map(({ id }: { id: string }) => id)).toEqual(
+      expect.arrayContaining([root.id, otherRoot.id]),
+    );
+    expect(rootsResponse.body.comments.map(({ id }: { id: string }) => id)).not.toContain(
+      standaloneRoot.id,
+    );
+
+    const repliesResponse = await request(app)
+      .get(`/videos/${video.publicId}/comments/${root.id}/replies`)
+      .expect(200);
+    expect(repliesResponse.body.replies.map(({ id }: { id: string }) => id)).toEqual([
+      survivingReply.id,
+    ]);
+  });
+
+  test('serializes author comment deletion with account deletion in both video-lock orders', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-account-delete-race-owner@example.com',
+      username: 'c_acct_del_owner',
+    });
+    const commentFirstAuthor = await createVerifiedSession(runtime, {
+      email: 'comment-delete-first-author@example.com',
+      username: 'c_delete_first',
+    });
+    const commentFirstVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Comment deletion locks before account deletion',
+      visibility: 'public',
+    });
+    const commentFirstRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: commentFirstVideo.publicId,
+        userId: commentFirstAuthor.userId,
+        content: 'Deleted first through the comment route.',
+      })
+    ).comment;
+    const commentDeletionLocked = Promise.withResolvers<void>();
+    const releaseCommentDeletion = Promise.withResolvers<void>();
+    const commentFirstService = createIntegrationVideosService(
+      createBarrierPrisma(runtime.prisma, {
+        transactionRawBarrier: {
+          call: 1,
+          after: async () => {
+            commentDeletionLocked.resolve();
+            await releaseCommentDeletion.promise;
+          },
+        },
+      }),
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+    );
+    const commentFirstApp = await createIntegrationApp(runtime, {
+      videosService: commentFirstService,
+    });
+    const commentDeletionResponsePromise = request(commentFirstApp)
+      .delete(`/videos/${commentFirstVideo.publicId}/comments/${commentFirstRoot.id}`)
+      .set('Authorization', `Bearer ${commentFirstAuthor.sessionKey}`)
+      .then((response) => response);
+
+    await commentDeletionLocked.promise;
+    const accountAfterCommentService = createIntegrationAuthService(
+      runtime.prisma,
+      runtime.objectStorage,
+      runtime.delivered,
+      runtime.userMediaExternalResources,
+    );
+    const accountAfterCommentPromise = accountAfterCommentService.deleteAccount({
+      userId: commentFirstAuthor.userId,
+      currentPassword: INITIAL_PASSWORD,
+    });
+
+    await waitForBlockedVideoQueries(runtime.prisma, 1);
+    releaseCommentDeletion.resolve();
+
+    const commentDeletionResponse = await commentDeletionResponsePromise;
+    expect(commentDeletionResponse.status).toBe(204);
+    await accountAfterCommentPromise;
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: commentFirstVideo.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 0 });
+    await expect(
+      runtime.prisma.comment.findUniqueOrThrow({
+        where: { id: commentFirstRoot.id },
+        select: { authorId: true, content: true, deletedAt: true },
+      }),
+    ).resolves.toEqual({
+      authorId: null,
+      content: null,
+      deletedAt: expect.any(Date),
+    });
+
+    const accountFirstAuthor = await createVerifiedSession(runtime, {
+      email: 'account-delete-first-author@example.com',
+      username: 'c_account_first',
+    });
+    const accountFirstVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Account deletion locks before comment deletion',
+      visibility: 'public',
+    });
+    const accountFirstRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: accountFirstVideo.publicId,
+        userId: accountFirstAuthor.userId,
+        content: 'Anonymized first through account deletion.',
+      })
+    ).comment;
+    const accountVideoLocked = Promise.withResolvers<void>();
+    const releaseAccountDeletion = Promise.withResolvers<void>();
+    const accountFirstService = createIntegrationAuthService(
+      createBarrierPrisma(runtime.prisma, {
+        transactionRawBarrier: {
+          call: 2,
+          after: async () => {
+            accountVideoLocked.resolve();
+            await releaseAccountDeletion.promise;
+          },
+        },
+      }),
+      runtime.objectStorage,
+      runtime.delivered,
+      runtime.userMediaExternalResources,
+    );
+    const accountFirstPromise = accountFirstService.deleteAccount({
+      userId: accountFirstAuthor.userId,
+      currentPassword: INITIAL_PASSWORD,
+    });
+
+    await accountVideoLocked.promise;
+    const accountFirstApp = await createIntegrationApp(runtime);
+    const commentAfterAccountResponsePromise = request(accountFirstApp)
+      .delete(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstRoot.id}`)
+      .set('Authorization', `Bearer ${accountFirstAuthor.sessionKey}`)
+      .then((response) => response);
+
+    await waitForBlockedVideoQueries(runtime.prisma, 1);
+    releaseAccountDeletion.resolve();
+
+    await accountFirstPromise;
+    const commentAfterAccountResponse = await commentAfterAccountResponsePromise;
+    expect(commentAfterAccountResponse.status).toBe(404);
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: accountFirstVideo.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 0 });
+    await expect(
+      runtime.prisma.comment.findUniqueOrThrow({
+        where: { id: accountFirstRoot.id },
+        select: { authorId: true, content: true, deletedAt: true },
+      }),
+    ).resolves.toEqual({
+      authorId: null,
+      content: null,
+      deletedAt: expect.any(Date),
+    });
+  });
+
+  test('orders targeted replies and target-author account deletion through the shared video lock', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-reply-account-race-owner@example.com',
+      username: 'c_reply_acct_owner',
+    });
+    const replier = await createVerifiedSession(runtime, {
+      email: 'comment-reply-account-race-replier@example.com',
+      username: 'c_reply_acct_replier',
+    });
+    const replyFirstAuthor = await createVerifiedSession(runtime, {
+      email: 'comment-reply-first-target@example.com',
+      username: 'c_reply_first_target',
+    });
+    const replyFirstVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Reply locks target before account deletion',
+      visibility: 'public',
+    });
+    const replyFirstRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: replyFirstVideo.publicId,
+        userId: replyFirstAuthor.userId,
+        content: 'Root targeted before its author is deleted.',
+      })
+    ).comment;
+    const replyTransactionPausedAfterRowLocks = Promise.withResolvers<void>();
+    const releaseReply = Promise.withResolvers<void>();
+    const replyFirstService = createIntegrationVideosService(
+      createBarrierPrisma(runtime.prisma, {
+        transactionRawBarrier: {
+          call: 2,
+          after: async () => {
+            replyTransactionPausedAfterRowLocks.resolve();
+            await releaseReply.promise;
+          },
+        },
+      }),
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+    );
+    const replyFirstApp = await createIntegrationApp(runtime, {
+      videosService: replyFirstService,
+    });
+    const replyFirstResponsePromise = request(replyFirstApp)
+      .post(`/videos/${replyFirstVideo.publicId}/comments/${replyFirstRoot.id}/replies`)
+      .set('Authorization', `Bearer ${replier.sessionKey}`)
+      .send({
+        content: 'The reply commits before target anonymization.',
+        replyingToCommentId: replyFirstRoot.id,
+      })
+      .then((response) => response);
+
+    await replyTransactionPausedAfterRowLocks.promise;
+    const accountAfterReplyService = createIntegrationAuthService(
+      runtime.prisma,
+      runtime.objectStorage,
+      runtime.delivered,
+      runtime.userMediaExternalResources,
+    );
+    const accountAfterReplyPromise = accountAfterReplyService.deleteAccount({
+      userId: replyFirstAuthor.userId,
+      currentPassword: INITIAL_PASSWORD,
+    });
+
+    await waitForBlockedVideoQueries(runtime.prisma, 1);
+    releaseReply.resolve();
+
+    const replyFirstResponse = await replyFirstResponsePromise;
+    expect(replyFirstResponse.status).toBe(201);
+    const committedReplyId = replyFirstResponse.body.comment.id as string;
+    await accountAfterReplyPromise;
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: replyFirstVideo.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 1 });
+    await expect(
+      runtime.prisma.comment.findUniqueOrThrow({
+        where: { id: committedReplyId },
+        select: { content: true, deletedAt: true, replyingToCommentId: true },
+      }),
+    ).resolves.toEqual({
+      content: 'The reply commits before target anonymization.',
+      deletedAt: null,
+      replyingToCommentId: replyFirstRoot.id,
+    });
+    const visibleReplies = await request(replyFirstApp)
+      .get(`/videos/${replyFirstVideo.publicId}/comments/${replyFirstRoot.id}/replies`)
+      .expect(200);
+    expect(visibleReplies.body.replies).toEqual([
+      expect.objectContaining({
+        id: committedReplyId,
+        replyingTo: null,
+      }),
+    ]);
+
+    const accountFirstAuthor = await createVerifiedSession(runtime, {
+      email: 'comment-account-first-target@example.com',
+      username: 'c_acct_first_target',
+    });
+    const accountFirstVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Account deletion locks target before reply',
+      visibility: 'public',
+    });
+    const accountFirstRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: accountFirstVideo.publicId,
+        userId: accountFirstAuthor.userId,
+        content: 'Root anonymized before the reply can lock it.',
+      })
+    ).comment;
+    const accountVideoLocked = Promise.withResolvers<void>();
+    const releaseAccount = Promise.withResolvers<void>();
+    const accountFirstService = createIntegrationAuthService(
+      createBarrierPrisma(runtime.prisma, {
+        transactionRawBarrier: {
+          call: 2,
+          after: async () => {
+            accountVideoLocked.resolve();
+            await releaseAccount.promise;
+          },
+        },
+      }),
+      runtime.objectStorage,
+      runtime.delivered,
+      runtime.userMediaExternalResources,
+    );
+    const accountFirstPromise = accountFirstService.deleteAccount({
+      userId: accountFirstAuthor.userId,
+      currentPassword: INITIAL_PASSWORD,
+    });
+
+    await accountVideoLocked.promise;
+    const accountFirstApp = await createIntegrationApp(runtime);
+    const replyAfterAccountResponsePromise = request(accountFirstApp)
+      .post(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstRoot.id}/replies`)
+      .set('Authorization', `Bearer ${replier.sessionKey}`)
+      .send({
+        content: 'Must not target an anonymized root.',
+        replyingToCommentId: accountFirstRoot.id,
+      })
+      .then((response) => response);
+
+    await waitForBlockedVideoQueries(runtime.prisma, 1);
+    releaseAccount.resolve();
+
+    await accountFirstPromise;
+    const replyAfterAccountResponse = await replyAfterAccountResponsePromise;
+    expect(replyAfterAccountResponse.status).toBe(404);
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: accountFirstVideo.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 0 });
+    await expect(
+      runtime.prisma.comment.count({
+        where: { videoId: accountFirstVideo.id, rootId: accountFirstRoot.id },
+      }),
+    ).resolves.toBe(0);
+  });
+
+  test("serializes account deletion with a user's first-ever comment in both snapshot orders", async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'first-comment-race-owner@example.com',
+      username: 'first_comment_owner',
+    });
+    const accountSnapshotFirstAuthor = await createVerifiedSession(runtime, {
+      email: 'account-snapshot-first@example.com',
+      username: 'acct_snapshot_first',
+    });
+    const accountSnapshotFirstVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Account snapshot precedes first comment',
+      visibility: 'public',
+    });
+    const accountSnapshotRead = Promise.withResolvers<void>();
+    const releaseAccountSnapshot = Promise.withResolvers<void>();
+    const accountSnapshotFirstService = createIntegrationAuthService(
+      createBarrierPrisma(runtime.prisma, {
+        transactionRawBarrier: {
+          call: 2,
+          after: async () => {
+            accountSnapshotRead.resolve();
+            await releaseAccountSnapshot.promise;
+          },
+        },
+      }),
+      runtime.objectStorage,
+      runtime.delivered,
+      runtime.userMediaExternalResources,
+    );
+    const accountSnapshotFirstPromise = accountSnapshotFirstService.deleteAccount({
+      userId: accountSnapshotFirstAuthor.userId,
+      currentPassword: INITIAL_PASSWORD,
+    });
+
+    await accountSnapshotRead.promise;
+    const accountSnapshotFirstApp = await createIntegrationApp(runtime);
+    const committedCommentResponse = await request(accountSnapshotFirstApp)
+      .post(`/videos/${accountSnapshotFirstVideo.publicId}/comments`)
+      .set('Authorization', `Bearer ${accountSnapshotFirstAuthor.sessionKey}`)
+      .send({ content: 'The first comment commits after the account snapshot.' })
+      .expect(201);
+    const committedCommentId = committedCommentResponse.body.comment.id as string;
+    releaseAccountSnapshot.resolve();
+
+    await accountSnapshotFirstPromise;
+    await expect(
+      runtime.prisma.user.findUnique({ where: { id: accountSnapshotFirstAuthor.userId } }),
+    ).resolves.toBeNull();
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: accountSnapshotFirstVideo.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 0 });
+    await expect(
+      runtime.prisma.comment.findUniqueOrThrow({
+        where: { id: committedCommentId },
+        select: { authorId: true, content: true, deletedAt: true },
+      }),
+    ).resolves.toEqual({
+      authorId: null,
+      content: null,
+      deletedAt: expect.any(Date),
+    });
+
+    const commentLockFirstAuthor = await createVerifiedSession(runtime, {
+      email: 'first-comment-lock-first@example.com',
+      username: 'comment_lock_first',
+    });
+    const commentLockFirstVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'First comment lock precedes account deletion',
+      visibility: 'public',
+    });
+    const commentVideoLocked = Promise.withResolvers<void>();
+    const releaseCommentTransaction = Promise.withResolvers<void>();
+    const commentLockFirstVideosService = createIntegrationVideosService(
+      createBarrierPrisma(runtime.prisma, {
+        transactionRawBarrier: {
+          call: 1,
+          after: async () => {
+            commentVideoLocked.resolve();
+            await releaseCommentTransaction.promise;
+          },
+        },
+      }),
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+    );
+    const commentLockFirstApp = await createIntegrationApp(runtime, {
+      videosService: commentLockFirstVideosService,
+    });
+    const commentAfterAccountPromise = request(commentLockFirstApp)
+      .post(`/videos/${commentLockFirstVideo.publicId}/comments`)
+      .set('Authorization', `Bearer ${commentLockFirstAuthor.sessionKey}`)
+      .send({ content: 'Must not become an orphan after account deletion.' })
+      .then((response) => response);
+
+    await commentVideoLocked.promise;
+    const accountAfterCommentLockService = createIntegrationAuthService(
+      runtime.prisma,
+      runtime.objectStorage,
+      runtime.delivered,
+      runtime.userMediaExternalResources,
+    );
+    await accountAfterCommentLockService.deleteAccount({
+      userId: commentLockFirstAuthor.userId,
+      currentPassword: INITIAL_PASSWORD,
+    });
+    releaseCommentTransaction.resolve();
+
+    const commentAfterAccountResponse = await commentAfterAccountPromise;
+    expect(commentAfterAccountResponse.status).toBe(404);
+    await expect(
+      runtime.prisma.comment.count({ where: { videoId: commentLockFirstVideo.id } }),
+    ).resolves.toBe(0);
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: commentLockFirstVideo.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 0 });
+  });
+
+  test('anonymizes active comments and subtracts exact aggregates before account deletion', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const app = await createIntegrationApp(runtime);
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-account-owner@example.com',
+      username: 'c_acct_owner',
+    });
+    const deletedAuthor = await createVerifiedSession(runtime, {
+      email: 'comment-account-deleted@example.com',
+      username: 'c_acct_deleted',
+    });
+    const survivor = await createVerifiedSession(runtime, {
+      email: 'comment-account-survivor@example.com',
+      username: 'c_acct_survivor',
+    });
+    const firstVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Account deletion comment thread',
+      visibility: 'public',
+    });
+    const secondVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Account deletion second video',
+      visibility: 'public',
+    });
+    const deletedRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: firstVideo.publicId,
+        userId: deletedAuthor.userId,
+        content: 'Root authored by the deleted account',
+      })
+    ).comment;
+    const survivingReply = (
+      await runtime.videosService.createVideoCommentReply({
+        publicId: firstVideo.publicId,
+        userId: survivor.userId,
+        rootCommentId: deletedRoot.id,
+        content: 'Reply preserved after account deletion',
+      })
+    ).comment;
+    const hiddenDeletedRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: secondVideo.publicId,
+        userId: deletedAuthor.userId,
+        content: 'Root with no surviving replies',
+      })
+    ).comment;
+    const survivingRoot = (
+      await runtime.videosService.createVideoComment({
+        publicId: secondVideo.publicId,
+        userId: survivor.userId,
+        content: 'Root preserved on the second video',
+      })
+    ).comment;
+
+    await runtime.authService.deleteAccount({
+      userId: deletedAuthor.userId,
+      currentPassword: INITIAL_PASSWORD,
+    });
+
+    const anonymized = await runtime.prisma.comment.findMany({
+      where: { id: { in: [deletedRoot.id, hiddenDeletedRoot.id] } },
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        authorId: true,
+        content: true,
+        deletedAt: true,
+      },
+    });
+    expect(anonymized).toHaveLength(2);
+    expect(anonymized).toEqual(
+      expect.arrayContaining([
+        {
+          id: deletedRoot.id,
+          authorId: null,
+          content: null,
+          deletedAt: expect.any(Date),
+        },
+        {
+          id: hiddenDeletedRoot.id,
+          authorId: null,
+          content: null,
+          deletedAt: expect.any(Date),
+        },
+      ]),
+    );
+    await expect(
+      runtime.prisma.video.findMany({
+        where: { id: { in: [firstVideo.id, secondVideo.id] } },
+        orderBy: { title: 'asc' },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual([{ commentCount: 1 }, { commentCount: 1 }]);
+
+    const firstRoots = await request(app)
+      .get(`/videos/${firstVideo.publicId}/comments`)
+      .expect(200);
+    expect(firstRoots.body.comments).toEqual([
+      expect.objectContaining({
+        id: deletedRoot.id,
+        isDeleted: true,
+        author: null,
+        replyCount: 1,
+      }),
+    ]);
+    const firstReplies = await request(app)
+      .get(`/videos/${firstVideo.publicId}/comments/${deletedRoot.id}/replies`)
+      .expect(200);
+    expect(firstReplies.body.replies).toEqual([
+      expect.objectContaining({
+        id: survivingReply.id,
+        replyingTo: null,
+      }),
+    ]);
+
+    const secondRoots = await request(app)
+      .get(`/videos/${secondVideo.publicId}/comments`)
+      .expect(200);
+    expect(secondRoots.body.comments.map(({ id }: { id: string }) => id)).toEqual([
+      survivingRoot.id,
+    ]);
+  });
+});

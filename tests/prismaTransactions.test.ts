@@ -1,9 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 import { Prisma, type PrismaClient } from '@prisma/client';
 
-import { runSerializableTransaction } from '../src/lib/prismaTransactions.js';
+import {
+  getSerializableTransactionRetryDelayMs,
+  runSerializableTransaction,
+} from '../src/lib/prismaTransactions.js';
 
 describe('Prisma transactions', () => {
+  test('provides capped exponential full jitter for contention retries', () => {
+    expect(getSerializableTransactionRetryDelayMs(1, () => 0)).toBe(0);
+    expect(getSerializableTransactionRetryDelayMs(1, () => 0.999)).toBe(5);
+    expect(getSerializableTransactionRetryDelayMs(2, () => 0.999)).toBe(10);
+    expect(getSerializableTransactionRetryDelayMs(6, () => 0.999)).toBe(160);
+    expect(getSerializableTransactionRetryDelayMs(7, () => 0.999)).toBe(250);
+    expect(getSerializableTransactionRetryDelayMs(20, () => 0.999)).toBe(250);
+  });
+
   test('retries transaction conflicts surfaced directly by the driver adapter', async () => {
     let attempts = 0;
     const conflict = Object.assign(new Error('TransactionWriteConflict'), {

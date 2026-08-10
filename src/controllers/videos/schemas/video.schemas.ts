@@ -3,6 +3,7 @@ import { VIDEO_LICENSES } from '../../../services/videos/videoLicenses.js';
 import { VIDEO_HLS_SEGMENT_NAME_PATTERN } from '../../../services/videos/videoObjectKeys.js';
 import { VIDEO_PUBLIC_ID_PATTERN } from '../../../services/videos/videoPublicId.js';
 import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
+import { VIDEO_COMMENT_MAX_LENGTH } from '../../../config/constants.js';
 
 const VIDEO_TITLE_MAX_LENGTH = 120;
 const VIDEO_DESCRIPTION_MAX_LENGTH = 5_000;
@@ -13,6 +14,8 @@ export const MY_VIDEOS_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorId must be provided together';
 export const PUBLIC_VIDEO_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorPublicId must be provided together';
+export const VIDEO_COMMENT_CURSOR_PAIR_MESSAGE =
+  'cursorCreatedAt and cursorId must be provided together';
 
 export const videoParamsSchema = z
   .object({
@@ -39,6 +42,22 @@ export const publicVideoIdParamsSchema = z
   .openapi('PublicVideoIdParams');
 
 export const videoRatingParamsSchema = publicVideoIdParamsSchema.openapi('VideoRatingParams');
+
+const videoCommentIdSchema = z.string().uuid('Comment id must be a valid UUID').openapi({
+  example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+});
+
+export const videoCommentReplyParamsSchema = publicVideoIdParamsSchema
+  .extend({
+    rootCommentId: videoCommentIdSchema,
+  })
+  .openapi('VideoCommentReplyParams');
+
+export const videoCommentParamsSchema = publicVideoIdParamsSchema
+  .extend({
+    commentId: videoCommentIdSchema,
+  })
+  .openapi('VideoCommentParams');
 
 export const videoHlsRenditionParamsSchema = publicVideoIdParamsSchema
   .extend({
@@ -115,6 +134,54 @@ export const rateVideoBodySchema = z
   })
   .strict()
   .openapi('RateVideoRequest');
+
+const videoCommentContentSchema = z
+  .string()
+  .trim()
+  .min(1, 'Comment content must not be empty')
+  .max(
+    VIDEO_COMMENT_MAX_LENGTH,
+    `Comment content must be at most ${VIDEO_COMMENT_MAX_LENGTH} characters`,
+  )
+  .refine((content) => !content.includes('\u0000'), {
+    message: 'Comment content must not contain NUL characters',
+  })
+  .refine(
+    (content) =>
+      content.replace(/[\p{White_Space}\p{Default_Ignorable_Code_Point}\p{Control}]/gu, '').length >
+      0,
+    {
+      message: 'Comment content must contain visible characters',
+    },
+  );
+
+export const createVideoCommentBodySchema = z
+  .object({
+    content: videoCommentContentSchema.openapi({ example: 'This is the first FairPlay video.' }),
+  })
+  .strict()
+  .openapi('CreateVideoCommentRequest');
+
+export const createVideoCommentReplyBodySchema = createVideoCommentBodySchema
+  .extend({
+    replyingToCommentId: videoCommentIdSchema.optional(),
+  })
+  .strict()
+  .openapi('CreateVideoCommentReplyRequest');
+
+export const videoCommentsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).optional().openapi({ example: 20 }),
+    cursorCreatedAt: z.string().datetime().optional().openapi({
+      example: '2026-01-01T00:00:00.000Z',
+    }),
+    cursorId: videoCommentIdSchema.optional(),
+  })
+  .strict()
+  .refine((query) => (query.cursorCreatedAt === undefined) === (query.cursorId === undefined), {
+    message: VIDEO_COMMENT_CURSOR_PAIR_MESSAGE,
+  })
+  .openapi('VideoCommentsQuery');
 
 export const myVideosQuerySchema = z
   .object({
@@ -355,6 +422,11 @@ const publicVideoDetailResponseBodySchema = publicVideoSearchSummaryResponseSche
   .extend({
     license: videoLicenseSchema.openapi({ example: 'all_rights_reserved' }),
     visibility: videoVisibilitySchema.openapi({ example: 'unlisted' }),
+    commentsOpen: z.boolean().openapi({
+      description:
+        'Whether new comments can currently be posted. Existing comments may remain readable when this is false.',
+      example: true,
+    }),
     creator: z.object({
       username: z.string().openapi({ example: 'jawed' }),
       displayName: z.string().nullable().openapi({ example: 'Jawed Karim' }),
@@ -362,6 +434,11 @@ const publicVideoDetailResponseBodySchema = publicVideoSearchSummaryResponseSche
     }),
     userRating: z.number().int().min(1).max(5).nullable().openapi({ example: 5 }),
     viewCount: z.number().int().nonnegative().openapi({ example: 128 }),
+    commentCount: z.number().int().nonnegative().openapi({
+      description:
+        'Number of active comments, including roots and replies but excluding tombstones.',
+      example: 42,
+    }),
     duration: z.number().int().positive().openapi({ example: 19 }),
     hlsMasterPath: relativeAssetPathSchema.openapi({
       example: '/videos/AbCdEf123_/hls/master.m3u8',
@@ -421,6 +498,84 @@ export const videoRatingResponseSchema = videoRatingAggregateResponseSchema
     userRating: z.number().int().min(1).max(5).nullable().openapi({ example: 5 }),
   })
   .openapi('VideoRatingResponse');
+
+const videoCommentResponseBodySchema = z.object({
+  id: videoCommentIdSchema,
+  content: z.string().openapi({ example: 'This is the first FairPlay video.' }),
+  isDeleted: z.literal(false),
+  createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
+  rootCommentId: videoCommentIdSchema.nullable(),
+  replyingTo: z
+    .object({
+      commentId: videoCommentIdSchema,
+      username: z.string().openapi({ example: 'jawed' }),
+    })
+    .nullable(),
+  author: z.object({
+    username: z.string().openapi({ example: 'fairplay_user' }),
+    displayName: z.string().nullable().openapi({ example: 'FairPlay User' }),
+    avatarUrl: relativeAssetPathSchema
+      .nullable()
+      .openapi({ example: '/profiles/fairplay_user/avatar' }),
+  }),
+});
+
+export const videoCommentResponseSchema = z
+  .object({
+    comment: videoCommentResponseBodySchema,
+  })
+  .openapi('VideoCommentResponse');
+
+const videoCommentReplyCountSchema = z.number().int().nonnegative().openapi({ example: 3 });
+
+const activeVideoCommentRootResponseSchema = videoCommentResponseBodySchema.extend({
+  rootCommentId: z.null(),
+  replyingTo: z.null(),
+  replyCount: videoCommentReplyCountSchema,
+});
+
+const deletedVideoCommentRootResponseSchema = z.object({
+  id: videoCommentIdSchema,
+  content: z.null(),
+  isDeleted: z.literal(true),
+  createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
+  rootCommentId: z.null(),
+  replyingTo: z.null(),
+  author: z.null(),
+  replyCount: videoCommentReplyCountSchema,
+});
+
+const videoCommentCursorResponseSchema = z
+  .object({
+    id: videoCommentIdSchema,
+    createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
+  })
+  .nullable();
+
+export const videoCommentsResponseSchema = z
+  .object({
+    comments: z.array(
+      z.union([activeVideoCommentRootResponseSchema, deletedVideoCommentRootResponseSchema]),
+    ),
+    total: z.number().int().nonnegative().openapi({
+      description:
+        'Number of visible root threads, including deleted-root placeholders that still have active replies. This differs from video detail commentCount, which counts every active root and reply.',
+    }),
+    nextCursor: videoCommentCursorResponseSchema,
+  })
+  .openapi('VideoCommentsResponse');
+
+export const videoCommentRepliesResponseSchema = z
+  .object({
+    replies: z.array(
+      videoCommentResponseBodySchema.extend({
+        rootCommentId: videoCommentIdSchema,
+      }),
+    ),
+    total: z.number().int().nonnegative(),
+    nextCursor: videoCommentCursorResponseSchema,
+  })
+  .openapi('VideoCommentRepliesResponse');
 
 const videoUploadSessionResponseBodySchema = z.object({
   id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
@@ -525,6 +680,30 @@ export const rateVideoSchema = z.object({
   body: rateVideoBodySchema,
 });
 
+export const createVideoCommentSchema = z.object({
+  params: publicVideoIdParamsSchema,
+  body: createVideoCommentBodySchema,
+});
+
+export const createVideoCommentReplySchema = z.object({
+  params: videoCommentReplyParamsSchema,
+  body: createVideoCommentReplyBodySchema,
+});
+
+export const listVideoCommentsSchema = z.object({
+  params: publicVideoIdParamsSchema,
+  query: videoCommentsQuerySchema,
+});
+
+export const listVideoCommentRepliesSchema = z.object({
+  params: videoCommentReplyParamsSchema,
+  query: videoCommentsQuerySchema,
+});
+
+export const deleteVideoCommentSchema = z.object({
+  params: videoCommentParamsSchema,
+});
+
 export type VideoParams = z.infer<typeof initVideoMultipartUploadSchema>['params'];
 export type PublicVideoIdParams = z.infer<typeof publicVideoIdParamsSchema>;
 export type VideoRatingParams = z.infer<typeof videoRatingParamsSchema>;
@@ -537,6 +716,11 @@ export type VideoMultipartUploadSessionParams = z.infer<
 >['params'];
 export type CreateVideoBody = z.infer<typeof createVideoSchema>['body'];
 export type RateVideoBody = z.infer<typeof rateVideoSchema>['body'];
+export type CreateVideoCommentBody = z.infer<typeof createVideoCommentSchema>['body'];
+export type CreateVideoCommentReplyBody = z.infer<typeof createVideoCommentReplySchema>['body'];
+export type VideoCommentReplyParams = z.infer<typeof videoCommentReplyParamsSchema>;
+export type VideoCommentParams = z.infer<typeof videoCommentParamsSchema>;
+export type ListVideoCommentsQuery = z.infer<typeof listVideoCommentsSchema>['query'];
 export type ListMyVideosQuery = z.infer<typeof listMyVideosSchema>['query'];
 export type ListPublicVideosQuery = z.infer<typeof listPublicVideosSchema>['query'];
 export type SearchPublicVideosQuery = z.infer<typeof searchPublicVideosSchema>['query'];

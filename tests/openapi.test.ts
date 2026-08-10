@@ -175,6 +175,9 @@ describe('OpenAPI generation', () => {
       '/videos/me',
       '/videos/search',
       '/videos/{publicId}',
+      '/videos/{publicId}/comments',
+      '/videos/{publicId}/comments/{commentId}',
+      '/videos/{publicId}/comments/{rootCommentId}/replies',
       '/videos/{publicId}/hls/master.m3u8',
       '/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8',
       '/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}',
@@ -422,6 +425,8 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/auth/me/export']?.post?.responses?.[400]).toBeDefined();
     expect(document.paths['/auth/me/export']?.post?.responses?.[401]).toBeDefined();
     expect(document.paths['/auth/me/export']?.post?.responses?.[404]).toBeDefined();
+    expect(document.paths['/auth/me/export']?.post?.responses?.[409]).toBeDefined();
+    expect(document.paths['/auth/me/export']?.post?.responses?.[503]).toBeDefined();
     const userDataExportSchema = JSON.stringify(
       document.components?.schemas?.UserDataExportResponse,
     );

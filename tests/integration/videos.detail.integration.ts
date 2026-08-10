@@ -205,6 +205,7 @@ describe('public video detail integration', () => {
         tags: ['zoo', 'elephants'],
         license: 'cc_by',
         visibility: 'public',
+        commentsOpen: true,
         createdAt: publicVideo.createdAt.toISOString(),
         publishedAt: publicVideo.publishedAt.toISOString(),
         thumbnailPath: `/videos/${publicVideo.publicId}/thumbnail`,
@@ -217,12 +218,15 @@ describe('public video detail integration', () => {
         ratingCount: 2,
         userRating: null,
         viewCount: 0,
+        commentCount: 0,
         duration: 19,
         hlsMasterPath: `/videos/${publicVideo.publicId}/hls/master.m3u8`,
       },
     });
     expect(Object.keys(response.body.video).sort()).toEqual(
       [
+        'commentsOpen',
+        'commentCount',
         'createdAt',
         'creator',
         'description',
@@ -259,6 +263,7 @@ describe('public video detail integration', () => {
     expect(unlisted.body.video.visibility).toBe('unlisted');
     expect(rejected.status).toBe(200);
     expect(rejected.body.video.title).toBe('Rejected but playable detail');
+    expect(rejected.body.video.commentsOpen).toBe(false);
     expect(rejected.body.video).not.toHaveProperty('moderationStatus');
   });
 
@@ -573,6 +578,8 @@ describe('public video detail integration', () => {
 
     expect(Object.keys(response.body.video).sort()).toEqual(
       [
+        'commentsOpen',
+        'commentCount',
         'createdAt',
         'creator',
         'description',

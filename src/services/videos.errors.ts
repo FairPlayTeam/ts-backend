@@ -2,6 +2,10 @@ export const VIDEO_NOT_FOUND_MESSAGE = 'Video not found';
 export const VIDEO_SELF_RATING_FORBIDDEN_MESSAGE = 'Video owners cannot rate their own videos';
 export const VIDEO_RATING_TEMPORARILY_UNAVAILABLE_MESSAGE =
   'Video rating is temporarily unavailable; please retry';
+export const VIDEO_COMMENTS_DISABLED_MESSAGE = 'Comments are disabled for this video';
+export const VIDEO_COMMENT_NOT_FOUND_MESSAGE = 'Comment not found';
+export const VIDEO_COMMENT_TEMPORARILY_UNAVAILABLE_MESSAGE =
+  'Video comments are temporarily unavailable; please retry';
 export const VIDEO_UPLOAD_SESSION_NOT_FOUND_MESSAGE = 'Video upload session not found';
 export const ACTIVE_VIDEO_UPLOAD_SESSION_EXISTS_MESSAGE =
   'An active upload session already exists for this video';
@@ -30,6 +34,27 @@ export class VideoRatingTemporarilyUnavailableError extends Error {
   constructor(options?: ErrorOptions) {
     super(VIDEO_RATING_TEMPORARILY_UNAVAILABLE_MESSAGE, options);
     this.name = 'VideoRatingTemporarilyUnavailableError';
+  }
+}
+
+export class VideoCommentsDisabledError extends Error {
+  constructor() {
+    super(VIDEO_COMMENTS_DISABLED_MESSAGE);
+    this.name = 'VideoCommentsDisabledError';
+  }
+}
+
+export class VideoCommentNotFoundError extends Error {
+  constructor() {
+    super(VIDEO_COMMENT_NOT_FOUND_MESSAGE);
+    this.name = 'VideoCommentNotFoundError';
+  }
+}
+
+export class VideoCommentTemporarilyUnavailableError extends Error {
+  constructor(options?: ErrorOptions) {
+    super(VIDEO_COMMENT_TEMPORARILY_UNAVAILABLE_MESSAGE, options);
+    this.name = 'VideoCommentTemporarilyUnavailableError';
   }
 }
 

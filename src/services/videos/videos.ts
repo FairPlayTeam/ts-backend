@@ -7,6 +7,7 @@ import {
 } from '../../config/constants.js';
 import { ObjectStorageUnavailableError } from '../../lib/objectStorage.js';
 import {
+  getSerializableTransactionRetryDelayMs,
   isSerializableTransactionConflictError,
   runSerializableTransaction,
 } from '../../lib/prismaTransactions.js';
@@ -57,8 +58,11 @@ import {
 import type {
   AbortVideoMultipartUploadInput,
   CompleteVideoMultipartUploadInput,
+  CreateVideoCommentInput,
+  CreateVideoCommentReplyInput,
   CreateVideoInput,
   CreateVideoResult,
+  DeleteVideoCommentInput,
   GetMyVideoRatingInput,
   GetPublicVideoDetailInput,
   GetPublicVideoDetailResult,
@@ -71,6 +75,10 @@ import type {
   InitVideoMultipartUploadInput,
   ListPublicVideosInput,
   ListPublicVideosResult,
+  ListVideoCommentRepliesInput,
+  ListVideoCommentRepliesResult,
+  ListVideoCommentsInput,
+  ListVideoCommentsResult,
   ListMyVideosInput,
   ListMyVideosResult,
   PublicVideoCursor,
@@ -91,7 +99,7 @@ import type {
   VideoUploadSessionResult,
   VideosService,
 } from './types/ports.types.js';
-import { calculateVideoRatingAverage, getVideoRatingRetryDelayMs } from './videoRating.js';
+import { calculateVideoRatingAverage } from './videoRating.js';
 import { recordVideoView, toUtcVideoViewDay } from './videoViews.js';
 import { buildVideoSearchFilter } from './videoSearch.js';
 import {
@@ -101,11 +109,22 @@ import {
   videoHlsMasterPath,
   videoThumbnailPath,
 } from '../assets/assetLinks.js';
-import { READABLE_VIDEO_SCOPE_SQL, readableVideoWhere } from './videoReadability.js';
+import {
+  isVideoWritableEngagement,
+  readableVideoWhere,
+  WRITABLE_VIDEO_ENGAGEMENT_SCOPE_SQL,
+} from './videoReadability.js';
 import {
   profileMediaAssetSelect,
   toProfileMediaUrl,
 } from '../userMedia/userMedia.profileAssets.js';
+import {
+  createVideoComment,
+  createVideoCommentReply,
+  deleteVideoComment,
+  listVideoCommentReplies,
+  listVideoComments,
+} from './videoComments.js';
 
 const ACTIVE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
   'initializing',
@@ -192,10 +211,14 @@ const publicVideoDetailSelect = {
   tags: true,
   license: true,
   visibility: true,
+  allowComments: true,
+  processingStatus: true,
+  moderationStatus: true,
   ratingSum: true,
   ratingCount: true,
   thumbnailObjectKey: true,
   viewCount: true,
+  commentCount: true,
   durationSeconds: true,
   publishedAt: true,
   createdAt: true,
@@ -597,6 +620,7 @@ const toPublicVideoDetail = (
   tags: video.tags,
   license: video.license,
   visibility: video.visibility,
+  commentsOpen: video.allowComments && isVideoWritableEngagement(video),
   createdAt: video.createdAt,
   publishedAt: video.publishedAt,
   thumbnailPath: resolveBestEffortLink(
@@ -610,6 +634,7 @@ const toPublicVideoDetail = (
   },
   ...toVideoRatingResult(video.ratingSum, video.ratingCount, userRating),
   viewCount: video.viewCount,
+  commentCount: video.commentCount,
   duration: requireReadyVideoDuration(video.durationSeconds),
   hlsMasterPath: videoHlsMasterPath(video.publicId),
 });
@@ -620,12 +645,6 @@ type LockedRatableVideo = {
   ratingSum: number;
   ratingCount: number;
 };
-
-const RATABLE_VIDEO_SCOPE_SQL = Prisma.sql`
-  v."processing_status" = 'ready'
-  AND v."moderation_status" <> 'rejected'
-  AND v."visibility" IN ('public', 'unlisted')
-`;
 
 const lockRatableVideo = async (
   tx: TransactionClient,
@@ -640,7 +659,7 @@ const lockRatableVideo = async (
         v."rating_count" AS "ratingCount"
       FROM "videos" AS v
       WHERE v."public_id" = ${publicId}
-        AND ${RATABLE_VIDEO_SCOPE_SQL}
+        AND ${WRITABLE_VIDEO_ENGAGEMENT_SCOPE_SQL}
       FOR UPDATE
     `,
   );
@@ -684,18 +703,26 @@ const deleteExpiredRejectedVideo = async (
         FOR UPDATE
       `,
     );
-    const eligibleVideos = await tx.$queryRaw<Array<{ id: string }>>(
+    const [lockedVideo] = await tx.$queryRaw<
+      Array<{ id: string; moderationStatus: string; rejectedAt: Date | null }>
+    >(
       Prisma.sql`
-        SELECT "id"::text AS "id"
+        SELECT
+          "id"::text AS "id",
+          "moderation_status" AS "moderationStatus",
+          "rejected_at" AS "rejectedAt"
         FROM "videos"
         WHERE "id" = CAST(${videoId} AS UUID)
-          AND "moderation_status" = 'rejected'
-          AND "rejected_at" < ${rejectedBefore}
         FOR UPDATE
       `,
     );
 
-    if (eligibleVideos.length === 0) {
+    if (
+      !lockedVideo ||
+      lockedVideo.moderationStatus !== 'rejected' ||
+      !lockedVideo.rejectedAt ||
+      lockedVideo.rejectedAt >= rejectedBefore
+    ) {
       return { deleted: false, targetsScheduled: 0 };
     }
 
@@ -1717,6 +1744,28 @@ const findPublicHlsRendition = async (
 };
 
 export const createVideosService = (deps: VideosDependencies): VideosService => ({
+  async createVideoComment(input: CreateVideoCommentInput) {
+    return createVideoComment(deps, input);
+  },
+
+  async createVideoCommentReply(input: CreateVideoCommentReplyInput) {
+    return createVideoCommentReply(deps, input);
+  },
+
+  async listVideoComments(input: ListVideoCommentsInput): Promise<ListVideoCommentsResult> {
+    return listVideoComments(deps, input);
+  },
+
+  async listVideoCommentReplies(
+    input: ListVideoCommentRepliesInput,
+  ): Promise<ListVideoCommentRepliesResult> {
+    return listVideoCommentReplies(deps, input);
+  },
+
+  async deleteVideoComment(input: DeleteVideoCommentInput): Promise<void> {
+    return deleteVideoComment(deps, input);
+  },
+
   async createVideo({
     allowComments,
     description,
@@ -1916,16 +1965,16 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
   },
 
   async getVideoRating({ publicId }: GetVideoRatingInput): Promise<VideoRatingAggregateResult> {
-    const [video] = await deps.prisma.$queryRaw<Array<{ ratingCount: number; ratingSum: number }>>(
-      Prisma.sql`
-        SELECT
-          v."rating_sum" AS "ratingSum",
-          v."rating_count" AS "ratingCount"
-        FROM "videos" AS v
-        WHERE v."public_id" = ${publicId}
-          AND ${READABLE_VIDEO_SCOPE_SQL}
-      `,
-    );
+    const video = await deps.prisma.video.findFirst({
+      where: {
+        publicId,
+        ...readableVideoWhere,
+      },
+      select: {
+        ratingSum: true,
+        ratingCount: true,
+      },
+    });
 
     if (!video) {
       throw new VideoNotFoundError();
@@ -1935,28 +1984,42 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
   },
 
   async getMyVideoRating({ publicId, userId }: GetMyVideoRatingInput): Promise<VideoRatingResult> {
-    const [video] = await deps.prisma.$queryRaw<
-      Array<{ ratingCount: number; ratingSum: number; userRating: number | null }>
-    >(
-      Prisma.sql`
-        SELECT
-          v."rating_sum" AS "ratingSum",
-          v."rating_count" AS "ratingCount",
-          vr."value" AS "userRating"
-        FROM "videos" AS v
-        LEFT JOIN "video_ratings" AS vr
-          ON vr."video_id" = v."id"
-          AND vr."user_id" = CAST(${userId} AS UUID)
-        WHERE v."public_id" = ${publicId}
-          AND ${READABLE_VIDEO_SCOPE_SQL}
-      `,
+    return deps.prisma.$transaction(
+      async (tx) => {
+        const video = await tx.video.findFirst({
+          where: {
+            publicId,
+            ...readableVideoWhere,
+          },
+          select: {
+            id: true,
+            ratingSum: true,
+            ratingCount: true,
+          },
+        });
+
+        if (!video) {
+          throw new VideoNotFoundError();
+        }
+
+        const rating = await tx.videoRating.findUnique({
+          where: {
+            userId_videoId: {
+              userId,
+              videoId: video.id,
+            },
+          },
+          select: {
+            value: true,
+          },
+        });
+
+        return toVideoRatingResult(video.ratingSum, video.ratingCount, rating?.value ?? null);
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      },
     );
-
-    if (!video) {
-      throw new VideoNotFoundError();
-    }
-
-    return toVideoRatingResult(video.ratingSum, video.ratingCount, video.userRating);
   },
 
   async rateVideo({ publicId, userId, value }: RateVideoInput): Promise<VideoRatingResult> {
@@ -2043,7 +2106,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
         },
         {
           maxAttempts: VIDEO_RATING_TRANSACTION_MAX_ATTEMPTS,
-          retryDelayMs: getVideoRatingRetryDelayMs,
+          retryDelayMs: getSerializableTransactionRetryDelayMs,
         },
       );
     } catch (err) {

@@ -64,7 +64,11 @@ export const notFoundHandler: RequestHandler = (req, _res, next) => {
 };
 
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
-  void _next;
+  if (res.headersSent) {
+    logger.error({ err }, 'Request failed after response headers were sent');
+    _next(err);
+    return;
+  }
 
   const httpError = toHttpError(err);
 

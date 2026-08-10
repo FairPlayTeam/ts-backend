@@ -15,6 +15,7 @@ import {
 import { createAuthenticateSession } from '../middleware/auth.js';
 import { createRouteProtector } from '../middleware/routeProtection.js';
 import { createSingleFileUpload } from '../middleware/upload.js';
+import type { UserAccountOperationGuard } from '../middleware/userAccountOperationGuard.js';
 import { validate } from '../middleware/validation.js';
 import {
   ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE,
@@ -36,6 +37,7 @@ type AuthRouterDependencies = {
   resetPasswordIdentifierLimiter: RequestHandler;
   resendVerificationEmailCooldown: RequestHandler;
   resendVerificationIdentifierLimiter: RequestHandler;
+  userAccountOperationGuard: UserAccountOperationGuard;
 };
 
 type ValidationSchema = Parameters<typeof validate>[0];
@@ -54,6 +56,7 @@ export const createRouter = ({
   resetPasswordIdentifierLimiter,
   resendVerificationEmailCooldown,
   resendVerificationIdentifierLimiter,
+  userAccountOperationGuard,
 }: AuthRouterDependencies) => {
   const router = Router();
   const {
@@ -132,7 +135,7 @@ export const createRouter = ({
     ...protectedValidatedRoute(
       sensitiveActionReauthenticationSchema,
       expensiveAuthMutationLimiter,
-      exportMe,
+      userAccountOperationGuard(exportMe),
     ),
   );
   router.delete(
@@ -140,7 +143,7 @@ export const createRouter = ({
     ...protectedValidatedRoute(
       sensitiveActionReauthenticationSchema,
       expensiveAuthMutationLimiter,
-      deleteMe,
+      userAccountOperationGuard(deleteMe),
     ),
   );
   router.patch('/me', ...protectedValidatedRoute(updateProfileSchema, updateMe));

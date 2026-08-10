@@ -22,6 +22,8 @@ import {
   RESEND_VERIFICATION_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
   VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MAX,
   VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_WINDOW_MS,
+  VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX,
+  VIDEO_COMMENT_MUTATION_RATE_LIMIT_WINDOW_MS,
 } from '../config/constants.js';
 import { hashRateLimitIdentifier } from './abuseProtection.js';
 import type { AuthenticatedRequest } from './auth.js';
@@ -32,6 +34,8 @@ export const PROFILE_MEDIA_UPLOAD_RATE_LIMIT_MESSAGE =
   'Too many media uploads, please try again after 15 minutes.';
 export const EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_MESSAGE =
   'Too many account actions, please try again after 15 minutes.';
+export const VIDEO_COMMENT_MUTATION_RATE_LIMIT_MESSAGE =
+  'Too many comment actions, please try again after 10 minutes.';
 export const REGISTRATION_IDENTIFIER_RATE_LIMIT_MESSAGE =
   'Too many registration attempts for this email, please try again later.';
 export const LOGIN_IDENTIFIER_RATE_LIMIT_MESSAGE =
@@ -182,6 +186,7 @@ export function createLimiters(deps: {
   const authStore = makeStore('rl:auth:', deps.redisClient);
   const profileMediaUploadStore = makeStore('rl:auth:media-upload:', deps.redisClient);
   const expensiveAuthMutationStore = makeStore('rl:auth:expensive-mutation:', deps.redisClient);
+  const videoCommentMutationStore = makeStore('rl:videos:comment-mutation:', deps.redisClient);
   const registrationIdentifierStore = makeStore('rl:auth:register-id:', deps.redisClient);
   const loginIdentifierStore = makeStore('rl:auth:login-id:', deps.redisClient);
   const verifyEmailIdentifierStore = makeStore('rl:auth:verify-email-id:', deps.redisClient);
@@ -227,6 +232,14 @@ export function createLimiters(deps: {
       keySecret: deps.rateLimitKeySecret,
       store: expensiveAuthMutationStore,
       message: EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_MESSAGE,
+    }),
+    videoCommentMutationLimiter: createAuthenticatedLimiter({
+      windowMs: VIDEO_COMMENT_MUTATION_RATE_LIMIT_WINDOW_MS,
+      limit: VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX,
+      keyPrefix: 'video-comment-mutation',
+      keySecret: deps.rateLimitKeySecret,
+      store: videoCommentMutationStore,
+      message: VIDEO_COMMENT_MUTATION_RATE_LIMIT_MESSAGE,
     }),
     registrationIdentifierLimiter: createIdentifierLimiter({
       windowMs: REGISTRATION_IDENTIFIER_RATE_LIMIT_WINDOW_MS,

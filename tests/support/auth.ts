@@ -58,6 +58,12 @@ const userSessionsResult = {
   total: 1,
 };
 
+const toAsyncIterable = <T>(values: readonly T[]): AsyncIterable<T> => ({
+  async *[Symbol.asyncIterator]() {
+    yield* values;
+  },
+});
+
 const userDataExportResult = {
   exportedAt: new Date('2026-01-01T00:00:00.000Z'),
   user: {
@@ -93,21 +99,32 @@ const userDataExportResult = {
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     },
   ],
-  videoRatings: [
+  videoRatings: toAsyncIterable([
     {
       videoId: '33333333-3333-4333-8333-333333333333',
       value: 5,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     },
-  ],
-  videoViews: [
+  ]),
+  videoViews: toAsyncIterable([
     {
       videoId: '33333333-3333-4333-8333-333333333333',
       viewedOn: new Date('2026-01-01T00:00:00.000Z'),
     },
-  ],
-  sessions: [
+  ]),
+  comments: toAsyncIterable([
+    {
+      id: '44444444-4444-4444-8444-444444444444',
+      videoId: '33333333-3333-4333-8333-333333333333',
+      content: 'An exported comment.',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      deletedAt: null,
+      rootId: null,
+      replyingToCommentId: null,
+    },
+  ]),
+  sessions: toAsyncIterable([
     {
       id: sessionResult.session.id,
       sessionKeySuffix: 'sion-key',
@@ -121,7 +138,7 @@ const userDataExportResult = {
       lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
       expiresAt: sessionResult.session.expiresAt,
     },
-  ],
+  ]),
   emailVerificationToken: null,
   passwordResetToken: null,
 };

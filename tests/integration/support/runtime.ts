@@ -365,6 +365,7 @@ export const resetState = async (runtime: TestRuntime): Promise<void> => {
   await runtime.prisma.emailVerificationToken.deleteMany();
   await runtime.prisma.session.deleteMany();
   await runtime.prisma.userFollow.deleteMany();
+  await runtime.prisma.comment.deleteMany();
   await runtime.prisma.user.deleteMany();
   await runtime.prisma.externalResourceTarget.deleteMany();
   await runtime.redisClient.call('flushdb');

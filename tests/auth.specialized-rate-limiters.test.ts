@@ -4,10 +4,12 @@ import { createApp } from '../src/app.js';
 import {
   EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_MAX,
   PROFILE_MEDIA_UPLOAD_RATE_LIMIT_MAX,
+  VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX,
 } from '../src/config/constants.js';
 import {
   EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_MESSAGE,
   PROFILE_MEDIA_UPLOAD_RATE_LIMIT_MESSAGE,
+  VIDEO_COMMENT_MUTATION_RATE_LIMIT_MESSAGE,
 } from '../src/middleware/limiters.js';
 import type { AuthPorts } from '../src/services/auth.types.js';
 import { createStubAdminService } from './support/admin.js';
@@ -56,7 +58,10 @@ const withTokenScopedUsers = (authService: AuthPorts): AuthPorts => ({
   },
 });
 
-const startAuthApp = async (authService: AuthPorts): Promise<TestServer> => {
+const startAuthApp = async (
+  authService: AuthPorts,
+  videosService = createStubVideosService(),
+): Promise<TestServer> => {
   const app = await createApp(
     {
       allowedOrigins: [],
@@ -71,7 +76,7 @@ const startAuthApp = async (authService: AuthPorts): Promise<TestServer> => {
       adminService: createStubAdminService(),
       authService,
       profilesService: createStubProfilesService(),
-      videosService: createStubVideosService(),
+      videosService,
     },
   );
   const server = app.listen(0);
@@ -185,6 +190,80 @@ describe('specialized auth rate limiters', () => {
 
       expect(otherUserResponse.status).toBe(200);
       expect(deleteAccountCalls).toBe(EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_MAX + 1);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('rate limits comment creation per authenticated user', async () => {
+    const server = await startAuthApp(withTokenScopedUsers(createStubAuthService()));
+    const createComment = (sessionKey: string) =>
+      fetch(`${server.baseUrl}/videos/AbCdEf123_/comments`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${sessionKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ content: 'A bounded comment.' }),
+      });
+
+    try {
+      for (let index = 0; index < VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX; index += 1) {
+        const response = await createComment('first-user-session-key');
+
+        expect(response.status).toBe(201);
+      }
+
+      const blockedResponse = await createComment('first-user-session-key');
+
+      expect(blockedResponse.status).toBe(429);
+      expect(await blockedResponse.json()).toEqual({
+        error: 'TooManyRequests',
+        message: VIDEO_COMMENT_MUTATION_RATE_LIMIT_MESSAGE,
+      });
+
+      await expect(createComment('second-user-session-key')).resolves.toMatchObject({
+        status: 201,
+      });
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('rate limits a burst of random comment deletions before calling the video service', async () => {
+    const baseVideosService = createStubVideosService();
+    let deleteCommentCalls = 0;
+    const server = await startAuthApp(withTokenScopedUsers(createStubAuthService()), {
+      ...baseVideosService,
+      deleteVideoComment: async () => {
+        deleteCommentCalls += 1;
+      },
+    });
+    const requestCount = VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX + 20;
+
+    try {
+      const responses = await Promise.all(
+        Array.from({ length: requestCount }, (_, index) => {
+          const commentId = `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
+
+          return fetch(`${server.baseUrl}/videos/AbCdEf123_/comments/${commentId}`, {
+            method: 'DELETE',
+            headers: {
+              authorization: 'Bearer first-user-session-key',
+            },
+          });
+        }),
+      );
+      const accepted = responses.filter(({ status }) => status === 204);
+      const rateLimited = responses.filter(({ status }) => status === 429);
+
+      expect(accepted).toHaveLength(VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX);
+      expect(rateLimited).toHaveLength(requestCount - VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX);
+      expect(deleteCommentCalls).toBe(VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX);
+      await expect(rateLimited[0]?.json()).resolves.toEqual({
+        error: 'TooManyRequests',
+        message: VIDEO_COMMENT_MUTATION_RATE_LIMIT_MESSAGE,
+      });
     } finally {
       await server.close();
     }

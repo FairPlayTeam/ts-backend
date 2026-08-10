@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { NextFunction, Request, Response as ExpressResponse } from 'express';
 import { createApp } from '../src/app.js';
 import { HttpError, REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
+import { logger } from '../src/lib/logger.js';
 import {
   INVALID_JSON_MESSAGE,
   REQUEST_BODY_TOO_LARGE_MESSAGE,
@@ -216,5 +217,27 @@ describe('error handling', () => {
       error: 'TooManyRequests',
       message: AUTH_RATE_LIMIT_MESSAGE,
     });
+  });
+
+  test('logs streaming failures structurally after response headers were sent', () => {
+    const error = new Error('database page failed during streaming');
+    const loggerError = spyOn(logger, 'error').mockImplementation(() => logger);
+    let forwardedError: unknown;
+
+    errorHandler(
+      error,
+      {} as Request,
+      { headersSent: true } as ExpressResponse,
+      ((err?: unknown) => {
+        forwardedError = err;
+      }) as NextFunction,
+    );
+
+    expect(loggerError).toHaveBeenCalledWith(
+      { err: error },
+      'Request failed after response headers were sent',
+    );
+    expect(forwardedError).toBe(error);
+    loggerError.mockRestore();
   });
 });

@@ -1,5 +1,9 @@
 import { z } from '../../../docs/zod.js';
-import { BIO_MAX_LENGTH, DISPLAY_NAME_MAX_LENGTH } from '../../../config/constants.js';
+import {
+  BIO_MAX_LENGTH,
+  DISPLAY_NAME_MAX_LENGTH,
+  VIDEO_COMMENT_MAX_LENGTH,
+} from '../../../config/constants.js';
 import {
   DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
@@ -74,6 +78,25 @@ const userDataExportVideoViewSchema = z.object({
   viewedOn: z.string().date().openapi({ example: '2026-01-01' }),
 });
 
+const userDataExportCommentSchema = z.object({
+  id: z.string().uuid().openapi({ example: '6bdb6ab4-f598-4e1d-a399-0e9c84c96bd7' }),
+  videoId: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
+  content: z
+    .string()
+    .min(1)
+    .max(VIDEO_COMMENT_MAX_LENGTH)
+    .nullable()
+    .openapi({ example: 'A thoughtful comment.' }),
+  createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+  deletedAt: nullableUserDataExportDateTimeSchema.openapi({ example: null }),
+  rootId: z.string().uuid().nullable().openapi({ example: '6bdb6ab4-f598-4e1d-a399-0e9c84c96bd7' }),
+  replyingToCommentId: z
+    .string()
+    .uuid()
+    .nullable()
+    .openapi({ example: '6bdb6ab4-f598-4e1d-a399-0e9c84c96bd7' }),
+});
+
 export const userDataExportResponseSchema = z
   .object({
     exportedAt: userDataExportDateTimeSchema.openapi({
@@ -100,6 +123,10 @@ export const userDataExportResponseSchema = z
     mediaAssets: z.array(userDataExportMediaAssetSchema),
     videoRatings: z.array(userDataExportVideoRatingSchema),
     videoViews: z.array(userDataExportVideoViewSchema),
+    comments: z.array(userDataExportCommentSchema).openapi({
+      description:
+        'All comments still attributed to the user, including active content and soft-deleted tombstones whose content is null.',
+    }),
     sessions: z.array(
       z.object({
         id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),

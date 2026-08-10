@@ -1,5 +1,7 @@
 import {
   completeVideoMultipartUploadBodySchema,
+  createVideoCommentBodySchema,
+  createVideoCommentReplyBodySchema,
   createVideoBodySchema,
   createVideoResponseSchema,
   publicVideoDetailResponseSchema,
@@ -11,6 +13,9 @@ import {
   publicVideoSearchResponseSchema,
   publicVideosQuerySchema,
   publicVideosResponseSchema,
+  videoCommentRepliesResponseSchema,
+  videoCommentsQuerySchema,
+  videoCommentsResponseSchema,
   rateVideoBodySchema,
   signedVideoUploadPartsResponseSchema,
   signVideoMultipartUploadPartsBodySchema,
@@ -18,6 +23,9 @@ import {
   uploadVideoSourceThumbnailResponseSchema,
   videoHlsRenditionParamsSchema,
   videoHlsSegmentParamsSchema,
+  videoCommentReplyParamsSchema,
+  videoCommentParamsSchema,
+  videoCommentResponseSchema,
   videoMultipartUploadSessionParamsSchema,
   videoParamsSchema,
   videoRatingAggregateResponseSchema,
@@ -83,6 +91,29 @@ const putVideoRatingResponses = {
   ...authenticatedVideoRatingResponses,
   403: jsonResponse('Video owners cannot rate their own videos', ApiErrorSchema),
   503: jsonResponse('Video rating temporarily unavailable', ApiErrorSchema),
+};
+
+const createVideoCommentResponses = {
+  400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+  401: jsonResponse('Authentication required', ApiErrorSchema),
+  404: jsonResponse('Video or comment not found or inaccessible', ApiErrorSchema),
+  409: jsonResponse('Comments are disabled', ApiErrorSchema),
+  429: jsonResponse('Too many requests', ApiErrorSchema),
+  500: jsonResponse('Internal server error', ApiErrorSchema),
+  503: jsonResponse('Comment creation temporarily unavailable', ApiErrorSchema),
+};
+
+const publicVideoCommentListResponses = {
+  400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+  404: jsonResponse('Video or comment not found or inaccessible', ApiErrorSchema),
+  429: jsonResponse('Too many requests', ApiErrorSchema),
+  500: jsonResponse('Internal server error', ApiErrorSchema),
+};
+
+const deleteVideoCommentResponses = {
+  ...publicVideoCommentListResponses,
+  401: jsonResponse('Authentication required', ApiErrorSchema),
+  503: jsonResponse('Comment deletion temporarily unavailable', ApiErrorSchema),
 };
 
 const hlsPlaylistResponse = (description: string) => ({
@@ -274,6 +305,82 @@ export const routeDocs = [
     responses: {
       200: jsonResponse('Updated video rating aggregate', videoRatingResponseSchema),
       ...putVideoRatingResponses,
+    },
+  },
+  {
+    method: 'get',
+    path: '/videos/{publicId}/comments',
+    summary: 'List root comment threads for a readable video',
+    tags: ['Videos'],
+    security: [],
+    request: {
+      params: publicVideoIdParamsSchema,
+      query: videoCommentsQuerySchema,
+    },
+    responses: {
+      200: jsonResponse('Paginated root video comments', videoCommentsResponseSchema),
+      ...publicVideoCommentListResponses,
+    },
+  },
+  {
+    method: 'get',
+    path: '/videos/{publicId}/comments/{rootCommentId}/replies',
+    summary: 'List replies in a one-level video comment thread',
+    tags: ['Videos'],
+    security: [],
+    request: {
+      params: videoCommentReplyParamsSchema,
+      query: videoCommentsQuerySchema,
+    },
+    responses: {
+      200: jsonResponse('Paginated video comment replies', videoCommentRepliesResponseSchema),
+      ...publicVideoCommentListResponses,
+    },
+  },
+  {
+    method: 'post',
+    path: '/videos/{publicId}/comments',
+    summary: 'Create a root comment under a video',
+    tags: ['Videos'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      params: publicVideoIdParamsSchema,
+      ...jsonRequest(createVideoCommentBodySchema),
+    },
+    responses: {
+      201: jsonResponse('Created video comment', videoCommentResponseSchema),
+      ...createVideoCommentResponses,
+    },
+  },
+  {
+    method: 'post',
+    path: '/videos/{publicId}/comments/{rootCommentId}/replies',
+    summary: 'Reply in a one-level video comment thread',
+    tags: ['Videos'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      params: videoCommentReplyParamsSchema,
+      ...jsonRequest(createVideoCommentReplyBodySchema),
+    },
+    responses: {
+      201: jsonResponse('Created video comment reply', videoCommentResponseSchema),
+      ...createVideoCommentResponses,
+    },
+  },
+  {
+    method: 'delete',
+    path: '/videos/{publicId}/comments/{commentId}',
+    summary: "Soft-delete the current user's own video comment",
+    tags: ['Videos'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      params: videoCommentParamsSchema,
+    },
+    responses: {
+      204: {
+        description: 'Comment deleted or already deleted',
+      },
+      ...deleteVideoCommentResponses,
     },
   },
   {

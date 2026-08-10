@@ -9,9 +9,8 @@ import type { AuthControllerDependencies } from './auth.controller.types.js';
 import {
   sendNoStoreJson,
   setNoStore,
-  toPrettyJson,
   toSessionResponse,
-  toUserDataExportResponse,
+  streamUserDataExportResponse,
 } from './auth.responses.js';
 
 export const createAuthProfileController = (deps: AuthControllerDependencies) => {
@@ -47,11 +46,15 @@ export const createAuthProfileController = (deps: AuthControllerDependencies) =>
       res.set('Content-Disposition', 'attachment; filename="fairplay-user-data-export.json"');
       setNoStore(res);
 
-      return res
-        .status(200)
-        .type('application/json')
-        .send(toPrettyJson(toUserDataExportResponse(result)));
+      await streamUserDataExportResponse(res, result);
+
+      return;
     } catch (err) {
+      if (res.headersSent) {
+        next(err);
+        return;
+      }
+
       next(toAuthHttpError(err));
     }
   };

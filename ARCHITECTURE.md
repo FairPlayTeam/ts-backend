@@ -405,7 +405,8 @@ value without probing media or object storage during a read.
 
 `GET /videos/:publicId` assembles the public playback-page detail in one short PostgreSQL
 `RepeatableRead` transaction. The video, owner, database presence of the owner's avatar, rating
-aggregate, view aggregate, and optional current-user rating therefore come from one snapshot.
+aggregate, view and comment aggregates, and optional current-user rating therefore come from one
+snapshot.
 Missing, malformed, expired, or revoked authentication degrades to an anonymous read, and the
 response is always `Cache-Control: no-store`. The response exposes only opaque same-origin avatar,
 thumbnail, and active-master paths; it performs no object-storage read while assembling the JSON.
@@ -422,6 +423,54 @@ inside the same serializable transaction used to repair rating aggregates. A use
 are included only in the authenticated `/auth/me/export`; public contracts expose the aggregate,
 never viewer identities or dates.
 
+`POST /auth/me/export` reads ratings, view facts, attributed comments (including soft-deleted
+tombstones), and sessions with bounded keyset cursors and streams every entry to the HTTP response.
+It never builds an unbounded fact array or pretty-prints the complete document in memory; HTTP
+backpressure limits production to the client's consumption rate. Only the bounded profile, media,
+and latest-token metadata are serialized before streaming starts. Each exported fact table has a
+composite index matching its user filter and stable cursor order. Cursor queries repeat the temporal
+lower bound outside their tie-break `OR`, allowing PostgreSQL to seek to that boundary instead of
+rescanning and sorting all earlier facts; only rows sharing the exact boundary value need the final
+tie-break filter. One per-user local mutex covers both export and account deletion in a process;
+when Redis is configured, the same lease is shared
+across instances and renewed until the controller's operation promise settles. A client disconnect
+after the operation starts does not release either lock while export generation or account deletion
+is still running. A disconnect during Redis acquisition prevents the operation from starting and
+immediately releases any lease acquired after that disconnect. An export and an account deletion
+therefore cannot overlap for the same user in either order while the local mutex and shared lease
+remain owned: the second attempt receives 409 rather than starting another scan or deleting rows
+underneath an active stream.
+
+The distributed account-operation lease uses a five-minute TTL and remains renewed while the
+controller promise is running. One rare composed failure remains accepted: if Redis renewal fails
+while an abnormally slow export or deletion continues beyond the last valid lease, another instance
+can acquire the key and accept a concurrent operation before the first one has actually finished.
+Lease loss is logged at `error` level and closes the affected HTTP response, but does not cancel an
+already-running Prisma query or transaction. Adding cross-instance fencing or true transaction
+cancellation would be disproportionate at the current scale; the longer TTL reduces the practical
+window without claiming to eliminate it.
+
+The export deliberately does not hold one long database snapshot across sections. Each keyset page
+sees database state at the time it is queried, so data created during generation can appear in a
+later section or page without appearing in an earlier one. This weak temporal consistency is an
+accepted availability and transaction-duration tradeoff for a machine-readable personal export.
+If a database error occurs after headers have been sent, the server logs it structurally and closes
+the chunked response without the final JSON delimiter; clients must treat the interrupted transport
+or invalid JSON as an incomplete export and retry.
+
+Authentication for a comment mutation linearizes when its bearer session is validated at the start
+of the HTTP request. An administrative ban marks the account banned and revokes its sessions for
+subsequent requests, but a mutation that already passed session validation may finish after the ban
+commits. Comment insertion deliberately does not re-read the user's ban state inside its video
+transaction: the remaining window is bounded to already-engaged requests, while adding a user-row
+check to every insertion would couple comment contention to account administration. This is an
+accepted request-authorization boundary, not a guarantee of immediate quiescence after a ban.
+
+Personal-export completeness remains a separate backlog item. The current contract does not yet
+include the account ban reason, following/follower relations, videos owned by the user, or multipart
+upload sessions and their parts. A dedicated completeness chantier must add and review those
+sections; they are intentionally not folded into the comments/export-memory work.
+
 `GET /videos/:publicId/thumbnail` applies the same readiness and visibility rule, without a stricter
 moderation rule, and requires an active generation. It rebuilds the generation thumbnail key from `buildVideoArtifactManifest`,
 checks the object with HEAD, and returns a non-cacheable temporary redirect to a freshly signed
@@ -432,6 +481,112 @@ search continues to require `public` + `approved` + `ready`. Rating reads use th
 scope as playback, so existing aggregates and the current user's previous rating remain visible on
 `rejected` videos. Rating writes retain the stricter scope and reject new or updated votes once a
 video is `rejected`.
+
+Video comments follow the same read/write distinction. Both public list routes use the centralized
+readability scope, so existing threads remain readable for a `ready` public or unlisted video even
+after rejection or after comments are disabled. Creating a root or reply uses the stricter shared
+engagement scope and additionally requires `allow_comments = true`. Root pages sort newest-first;
+reply pages sort oldest-first. Both use a bounded `(created_at, id)` cursor inside a short
+`RepeatableRead` transaction. Root `replyCount` values come from one grouped query for the whole
+page, never one query per root. Both cursor directions repeat the temporal boundary outside the
+tie-break `OR`. Reply pages use a partial
+`(video_id, root_id, created_at, id) WHERE root_id IS NOT NULL AND deleted_at IS NULL` index, while
+root pages use a partial `(video_id, created_at DESC, id DESC) WHERE root_id IS NULL` index. These
+exact paths avoid a bitmap scan/sort for active replies and avoid relying on the nullable `root_id`
+prefix of the general thread index for ordered root pagination.
+
+The public video-detail contract exposes `commentsOpen`, an effective write capability, rather than
+the owner's raw `allow_comments` preference. It is true only when that preference is enabled and the
+video currently satisfies the stricter engagement scope. A rejected video can therefore remain
+readable with its existing threads while correctly reporting `commentsOpen: false`.
+
+The database stores only one physical reply level: roots have neither `root_id` nor a reply target,
+while replies must have both identifiers and may not self-reference. PostgreSQL enforces that null
+pairing and the no-self-reference shape with a CHECK. Whether the referenced root and target belong
+to the same video and thread is a cross-row invariant that a CHECK cannot express; comment creation
+validates it while holding the relevant rows, and public root visibility, grouped reply counts, and
+reply pages repeat `video_id` predicates defensively. This same-video/same-thread guarantee therefore
+remains applicative rather than structural. A composite self-FK would cover only the same-video half,
+not same-thread membership, while complicating Prisma's shared self-relation fields and the target's
+partial `SET NULL` semantics; that disproportionate partial constraint is deliberately not added.
+`Comment.id` is deliberately also the public opaque comment identifier. This is an explicit exception
+to the repository's general rule against exposing internal UUIDs: every operation revalidates the
+comment against the requested video's public identifier and, for replies, against the expected thread,
+so possession of the UUID alone never grants direct access or authority. It must not be generalized to
+videos, accounts, storage objects, or any resource whose identifier would bypass those contextual
+checks.
+Another CHECK makes active comments require content, no
+deletion timestamp, and an author; soft-deleted comments require null content and a deletion
+timestamp. API DTOs expose deleted roots as author-free/content-free placeholders only while they
+still have active replies. Deleted leaves and deleted roots without active replies remain persisted
+but are absent from public lists.
+
+The HTTP comment schemas apply the 800-character bound with JavaScript string length, which counts
+UTF-16 code units, while PostgreSQL `VARCHAR(800)` counts Unicode code points. The API is therefore
+deliberately conservative for astral characters such as emoji; this is a contract precision, not a
+storage or security invariant. Presence validation ignores Unicode whitespace and all
+`Default_Ignorable_Code_Point` and `Control` characters, including zero-width joiners, variation
+selectors, combining grapheme joiners, and C0/C1 controls, only while deciding whether some visible
+content exists. It does not strip those characters from otherwise valid stored text, so legitimate
+joined emoji sequences and mixed visible/control content remain intact. The video-comment service
+port also assumes
+its UUIDs and normalized content have already crossed the HTTP validation boundary. A future job or administration script
+calling that port directly must reuse the same validation rules rather than treating the service as
+a runtime parser for arbitrary input.
+
+Root creation, replies, and author deletion share one authenticated per-user mutation rate limit.
+Deletion first performs an indexed ownership lookup without row locks, so random or unauthorized
+comment identifiers cannot contend on the video lock. A qualifying deletion then repeats the
+authorization check under the standard video-then-comment lock order. Comment creation and author
+deletion serialize by locking the video before comment rows. The engagement scope is part of the
+root-creation/reply `SELECT ... FOR UPDATE`, so an ineligible video is filtered before PostgreSQL
+attempts to lock it. Reply creation also performs an indexed root/video preflight before opening
+that transaction; random root UUIDs therefore never contend on the popular video's row, while the
+root and target are still revalidated under locks before insertion. Serializable contention retries
+share the same capped exponential full-jitter backoff used by rating writes. The
+denormalized `videos.comment_count` counts active comments only and is incremented or decremented in
+the same serializable transaction as the lifecycle change. The delete update itself requires
+`deleted_at IS NULL`, so retries and concurrent duplicate DELETE requests cannot decrement twice.
+Every future owner or moderator deletion route must reuse this exact soft-delete and aggregate
+protocol. A direct Prisma `comment.delete()` on a root would let the self-FK cascade erase its reply
+subtree while bypassing every corresponding `videos.comment_count` decrement, permanently drifting
+the denormalized aggregate.
+
+Before the separate extended-permissions chantier adds deletion by a video owner, moderator, or
+administrator, it must explicitly decide whether tombstones need a private deletion origin and/or
+actor for internal auditability. The current author-only route is unambiguous and therefore stores
+only `deleted_at`. Any future audit metadata must remain absent from public comment DTOs.
+This foundations commit must never be deployed alone to production without the immediately following
+extended-deletion-permissions chantier. Until that second chantier is present, banning an abusive
+comment author revokes their ability to delete the comment while neither the video owner nor a
+moderator/administrator has a removal route, leaving manual database intervention as the only remedy.
+Account deletion first locks every affected video in UUID order, subtracts the exact number of the
+user's still-active comments per video, and soft-deletes their content before deleting the user.
+The `author_id ON DELETE SET NULL` action can then anonymize those preserved rows without violating
+the lifecycle CHECK or destroying replies written by other accounts. This depends on the official
+account-deletion path soft-deleting active authored comments before deleting the user. A direct hard
+delete of an author would make `author_id SET NULL` conflict with the active lifecycle CHECK; likewise,
+a direct hard delete of a still-referenced reply target would make `replying_to_comment_id SET NULL`
+conflict with the thread-shape CHECK. Future code that touches either FK must preserve the same
+soft-delete/anonymization ordering rather than relying on the FK action alone.
+
+Three comment-volume risks are deliberately accepted for the current pre-production scale. Public
+root and reply pages calculate an exact `total` on every request, so their cost grows with the whole
+matching thread rather than the requested page size; the current indexes do not include
+`deleted_at`. Soft-deleted comments are tombstones and are never purged physically, so inactive rows
+continue to occupy the table and its indexes. Finally, deleting a video cascades all of its comments
+synchronously inside the current database transaction: this can make rejected-video maintenance or
+the owner's HTTP account-deletion transaction long-running for a very large thread. These choices
+must be reassessed before significant traffic or comment volume. Candidate changes are replacing an
+exact `total` with `hasMore`, adding partial indexes for active rows, and introducing an asynchronous
+purge or an explicit tombstone-retention policy.
+
+Global request-body admission is a separate infrastructure backlog item. `express.json` currently
+runs before the route-mounted API limiter, so an unauthenticated client can make the server read and
+allocate a body up to the configured 1 MiB limit before that request consumes rate-limit quota. This
+predates comments and is not corrected by their per-user mutation limits. A dedicated hardening
+change should place an inexpensive coarse admission limiter before body parsing while preserving the
+more specific authenticated and route-level limiters afterward.
 
 Playlist reads are capped at 512 KiB. URI lines are rewritten to API routes while all FFmpeg HLS
 tags remain untouched. Every object key is rebuilt from `buildVideoArtifactManifest`; rendition

@@ -4,12 +4,17 @@ import {
   abortVideoMultipartUploadSchema,
   completeVideoMultipartUploadSchema,
   createVideoSchema,
+  createVideoCommentReplySchema,
+  createVideoCommentSchema,
+  deleteVideoCommentSchema,
   getPublicVideoDetailSchema,
   getVideoMultipartUploadSessionSchema,
   getVideoRatingSchema,
   initVideoMultipartUploadSchema,
   listMyVideosSchema,
   listPublicVideosSchema,
+  listVideoCommentRepliesSchema,
+  listVideoCommentsSchema,
   rateVideoSchema,
   searchPublicVideosSchema,
   signVideoMultipartUploadPartsSchema,
@@ -27,6 +32,7 @@ type VideosRouterDependencies = {
   videosService: VideosRoutePort;
   profileMediaMaxUploadBytes: number;
   profileMediaUploadLimiter: RequestHandler;
+  videoCommentMutationLimiter: RequestHandler;
 };
 
 type ValidationSchema = Parameters<typeof validate>[0];
@@ -35,6 +41,7 @@ export const createRouter = ({
   authService,
   profileMediaMaxUploadBytes,
   profileMediaUploadLimiter,
+  videoCommentMutationLimiter,
   videosService,
 }: VideosRouterDependencies) => {
   const router = Router();
@@ -42,6 +49,9 @@ export const createRouter = ({
     abortMultipartUpload,
     completeMultipartUpload,
     createVideo,
+    createVideoComment,
+    createVideoCommentReply,
+    deleteVideoComment,
     getHlsMaster,
     getHlsRendition,
     getHlsSegment,
@@ -53,6 +63,8 @@ export const createRouter = ({
     initMultipartUpload,
     listPublicVideos,
     listMyVideos,
+    listVideoCommentReplies,
+    listVideoComments,
     rateVideo,
     searchPublicVideos,
     signMultipartUploadParts,
@@ -86,6 +98,36 @@ export const createRouter = ({
   );
   router.get('/:publicId/rating', validate(getVideoRatingSchema), getVideoRating);
   router.put('/:publicId/rating', ...protectedValidatedRoute(rateVideoSchema, rateVideo));
+  router.get('/:publicId/comments', validate(listVideoCommentsSchema), listVideoComments);
+  router.get(
+    '/:publicId/comments/:rootCommentId/replies',
+    validate(listVideoCommentRepliesSchema),
+    listVideoCommentReplies,
+  );
+  router.post(
+    '/:publicId/comments',
+    ...protectedValidatedRoute(
+      createVideoCommentSchema,
+      videoCommentMutationLimiter,
+      createVideoComment,
+    ),
+  );
+  router.post(
+    '/:publicId/comments/:rootCommentId/replies',
+    ...protectedValidatedRoute(
+      createVideoCommentReplySchema,
+      videoCommentMutationLimiter,
+      createVideoCommentReply,
+    ),
+  );
+  router.delete(
+    '/:publicId/comments/:commentId',
+    ...protectedValidatedRoute(
+      deleteVideoCommentSchema,
+      videoCommentMutationLimiter,
+      deleteVideoComment,
+    ),
+  );
   router.get('/:publicId/thumbnail', getThumbnail);
   router.get('/:publicId/hls/master.m3u8', getHlsMaster);
   router.get('/:publicId/hls/:generationId/:quality/index.m3u8', getHlsRendition);

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../src/app.js';
+import { VIDEO_COMMENT_MAX_LENGTH } from '../src/config/constants.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
 import { VideoNotFoundError } from '../src/services/videos.errors.js';
@@ -9,7 +10,10 @@ import { VIDEO_LICENSES } from '../src/services/videos/videoLicenses.js';
 import type {
   AbortVideoMultipartUploadInput,
   CompleteVideoMultipartUploadInput,
+  CreateVideoCommentInput,
+  CreateVideoCommentReplyInput,
   CreateVideoInput,
+  DeleteVideoCommentInput,
   GetMyVideoRatingInput,
   GetPublicVideoDetailInput,
   GetVideoRatingInput,
@@ -21,6 +25,8 @@ import type {
   InitVideoMultipartUploadInput,
   ListMyVideosInput,
   ListPublicVideosInput,
+  ListVideoCommentRepliesInput,
+  ListVideoCommentsInput,
   RateVideoInput,
   SearchPublicVideosInput,
   SignVideoMultipartUploadPartsInput,
@@ -48,6 +54,11 @@ let receivedPublicVideoDetailRequest: GetPublicVideoDetailInput | undefined;
 let receivedPublicRatingRequest: GetVideoRatingInput | undefined;
 let receivedMyRatingRequest: GetMyVideoRatingInput | undefined;
 let receivedRateVideoRequest: RateVideoInput | undefined;
+let receivedCreateCommentRequest: CreateVideoCommentInput | undefined;
+let receivedCreateCommentReplyRequest: CreateVideoCommentReplyInput | undefined;
+let receivedListCommentsRequest: ListVideoCommentsInput | undefined;
+let receivedListCommentRepliesRequest: ListVideoCommentRepliesInput | undefined;
+let receivedDeleteCommentRequest: DeleteVideoCommentInput | undefined;
 let receivedHlsMasterRequest: GetVideoHlsMasterInput | undefined;
 let receivedHlsRenditionRequest: GetVideoHlsRenditionInput | undefined;
 let receivedHlsSegmentRequest: GetVideoHlsSegmentInput | undefined;
@@ -145,6 +156,31 @@ describe('videos routes multipart uploads', () => {
             receivedRateVideoRequest = input;
 
             return videosService.rateVideo(input);
+          },
+          createVideoComment: async (input) => {
+            receivedCreateCommentRequest = input;
+
+            return videosService.createVideoComment(input);
+          },
+          createVideoCommentReply: async (input) => {
+            receivedCreateCommentReplyRequest = input;
+
+            return videosService.createVideoCommentReply(input);
+          },
+          listVideoComments: async (input) => {
+            receivedListCommentsRequest = input;
+
+            return videosService.listVideoComments(input);
+          },
+          listVideoCommentReplies: async (input) => {
+            receivedListCommentRepliesRequest = input;
+
+            return videosService.listVideoCommentReplies(input);
+          },
+          deleteVideoComment: async (input) => {
+            receivedDeleteCommentRequest = input;
+
+            return videosService.deleteVideoComment(input);
           },
           getHlsMaster: async (input) => {
             receivedHlsMasterRequest = input;
@@ -557,6 +593,7 @@ describe('videos routes multipart uploads', () => {
         tags: ['zoo', 'elephants'],
         license: 'all_rights_reserved',
         visibility: 'public',
+        commentsOpen: true,
         createdAt: '2026-01-01T00:00:00.000Z',
         publishedAt: '2026-01-01T00:00:00.000Z',
         thumbnailPath: `/videos/${publicId}/thumbnail`,
@@ -569,6 +606,7 @@ describe('videos routes multipart uploads', () => {
         ratingCount: 2,
         userRating: null,
         viewCount: 128,
+        commentCount: 0,
         duration: 19,
         hlsMasterPath: `/videos/${publicId}/hls/master.m3u8`,
       },
@@ -708,6 +746,274 @@ describe('videos routes multipart uploads', () => {
       error: 'ValidationError',
       message: REQUEST_VALIDATION_FAILED_MESSAGE,
     });
+  });
+
+  test('creates root comments and flattened replies through authenticated validated routes', async () => {
+    receivedCreateCommentRequest = undefined;
+    receivedCreateCommentReplyRequest = undefined;
+    const rootCommentId = '11111111-1111-4111-8111-111111111111';
+    const targetReplyId = '22222222-2222-4222-8222-222222222222';
+
+    const rootResponse = await fetch(`${baseUrl}/videos/${publicId}/comments`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer route-session-key',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content: '  A root comment.  ' }),
+    });
+
+    expect(rootResponse.status).toBe(201);
+    expect(rootResponse.headers.get('cache-control')).toBe('no-store');
+    expect(receivedCreateCommentRequest as CreateVideoCommentInput | undefined).toEqual({
+      publicId,
+      userId: authenticatedUserId,
+      content: 'A root comment.',
+    });
+    expect(await rootResponse.json()).toEqual({
+      comment: {
+        id: '11111111-1111-4111-8111-111111111111',
+        content: 'A root comment.',
+        isDeleted: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        rootCommentId: null,
+        replyingTo: null,
+        author: {
+          username: 'fairplay_user',
+          displayName: 'FairPlay User',
+          avatarUrl: null,
+        },
+      },
+    });
+
+    const replyResponse = await fetch(
+      `${baseUrl}/videos/${publicId}/comments/${rootCommentId}/replies`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer route-session-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: 'A reply to a reply.',
+          replyingToCommentId: targetReplyId,
+        }),
+      },
+    );
+
+    expect(replyResponse.status).toBe(201);
+    expect(receivedCreateCommentReplyRequest as CreateVideoCommentReplyInput | undefined).toEqual({
+      publicId,
+      userId: authenticatedUserId,
+      rootCommentId,
+      replyingToCommentId: targetReplyId,
+      content: 'A reply to a reply.',
+    });
+    expect(await replyResponse.json()).toEqual(
+      expect.objectContaining({
+        comment: expect.objectContaining({
+          rootCommentId,
+          replyingTo: {
+            commentId: targetReplyId,
+            username: 'jawed',
+          },
+        }),
+      }),
+    );
+
+    const maximumLengthContent = 'x'.repeat(VIDEO_COMMENT_MAX_LENGTH);
+    const maximumLengthResponse = await fetch(`${baseUrl}/videos/${publicId}/comments`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer route-session-key',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content: maximumLengthContent }),
+    });
+
+    expect(maximumLengthResponse.status).toBe(201);
+    expect(receivedCreateCommentRequest as CreateVideoCommentInput | undefined).toEqual({
+      publicId,
+      userId: authenticatedUserId,
+      content: maximumLengthContent,
+    });
+
+    const familyEmoji = '👨‍👩‍👧‍👦';
+    const emojiResponse = await fetch(`${baseUrl}/videos/${publicId}/comments`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer route-session-key',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content: familyEmoji }),
+    });
+
+    expect(emojiResponse.status).toBe(201);
+    expect(receivedCreateCommentRequest as CreateVideoCommentInput | undefined).toEqual({
+      publicId,
+      userId: authenticatedUserId,
+      content: familyEmoji,
+    });
+
+    const visibleContentWithControls = 'visible\u0007\u001f\u007f';
+    const visibleContentWithControlsResponse = await fetch(
+      `${baseUrl}/videos/${publicId}/comments`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer route-session-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content: visibleContentWithControls }),
+      },
+    );
+
+    expect(visibleContentWithControlsResponse.status).toBe(201);
+    expect(receivedCreateCommentRequest as CreateVideoCommentInput | undefined).toEqual({
+      publicId,
+      userId: authenticatedUserId,
+      content: visibleContentWithControls,
+    });
+
+    for (const invalidContent of [
+      'x'.repeat(VIDEO_COMMENT_MAX_LENGTH + 1),
+      `before\u0000after`,
+      '\u200b\u2060\u200d\u200e',
+      '\ufe0f',
+      '\u034f',
+      '\u0007',
+      '\u001f',
+      '\u007f',
+    ]) {
+      receivedCreateCommentRequest = undefined;
+      const invalidContentResponse = await fetch(`${baseUrl}/videos/${publicId}/comments`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer route-session-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ content: invalidContent }),
+      });
+
+      expect(invalidContentResponse.status).toBe(400);
+      expect(receivedCreateCommentRequest).toBeUndefined();
+    }
+
+    receivedCreateCommentRequest = undefined;
+    const anonymousResponse = await fetch(`${baseUrl}/videos/${publicId}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'Anonymous creation must fail.' }),
+    });
+
+    expect(anonymousResponse.status).toBe(401);
+    expect(receivedCreateCommentRequest).toBeUndefined();
+
+    for (const requestCase of [
+      {
+        path: `/videos/${publicId}/comments`,
+        body: { content: '   ' },
+      },
+      {
+        path: `/videos/${publicId}/comments/${rootCommentId}/replies`,
+        body: { content: 'valid', replyingToCommentId: 'not-a-uuid' },
+      },
+    ]) {
+      const invalidResponse = await fetch(`${baseUrl}${requestCase.path}`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer route-session-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestCase.body),
+      });
+
+      expect(invalidResponse.status).toBe(400);
+    }
+  });
+
+  test('lists comment threads publicly and soft-deletes through the authenticated route', async () => {
+    const rootCommentId = '11111111-1111-4111-8111-111111111111';
+    const cursorId = '33333333-3333-4333-8333-333333333333';
+    const cursorCreatedAt = '2026-01-02T00:00:00.000Z';
+    receivedListCommentsRequest = undefined;
+    receivedListCommentRepliesRequest = undefined;
+    receivedDeleteCommentRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const rootsResponse = await fetch(
+      `${baseUrl}/videos/${publicId}/comments?limit=2&cursorCreatedAt=${encodeURIComponent(cursorCreatedAt)}&cursorId=${cursorId}`,
+    );
+
+    expect(rootsResponse.status).toBe(200);
+    expect(rootsResponse.headers.get('cache-control')).toBe('no-store');
+    expect(receivedListCommentsRequest as ListVideoCommentsInput | undefined).toEqual({
+      publicId,
+      limit: 2,
+      cursor: {
+        createdAt: new Date(cursorCreatedAt),
+        id: cursorId,
+      },
+    });
+    expect(await rootsResponse.json()).toEqual({
+      comments: [
+        {
+          id: rootCommentId,
+          content: 'This is the first FairPlay video.',
+          isDeleted: false,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          rootCommentId: null,
+          replyingTo: null,
+          author: {
+            username: 'fairplay_user',
+            displayName: 'FairPlay User',
+            avatarUrl: null,
+          },
+          replyCount: 1,
+        },
+      ],
+      total: 1,
+      nextCursor: null,
+    });
+
+    const repliesResponse = await fetch(
+      `${baseUrl}/videos/${publicId}/comments/${rootCommentId}/replies?limit=5`,
+    );
+
+    expect(repliesResponse.status).toBe(200);
+    expect(receivedListCommentRepliesRequest as ListVideoCommentRepliesInput | undefined).toEqual({
+      publicId,
+      rootCommentId,
+      limit: 5,
+    });
+    const repliesBody = (await repliesResponse.json()) as { replies: unknown[] };
+    expect(repliesBody.replies).toHaveLength(1);
+    expect(receivedSessionKey).toBeUndefined();
+
+    const deleteResponse = await fetch(`${baseUrl}/videos/${publicId}/comments/${rootCommentId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: 'Bearer route-session-key',
+      },
+    });
+
+    expect(deleteResponse.status).toBe(204);
+    expect(deleteResponse.headers.get('cache-control')).toBe('no-store');
+    expect(receivedDeleteCommentRequest as DeleteVideoCommentInput | undefined).toEqual({
+      publicId,
+      commentId: rootCommentId,
+      userId: authenticatedUserId,
+    });
+
+    receivedDeleteCommentRequest = undefined;
+    await fetch(`${baseUrl}/videos/${publicId}/comments/${rootCommentId}`, {
+      method: 'DELETE',
+    }).then((response) => expect(response.status).toBe(401));
+    expect(receivedDeleteCommentRequest).toBeUndefined();
+
+    await fetch(
+      `${baseUrl}/videos/${publicId}/comments?cursorCreatedAt=${encodeURIComponent(cursorCreatedAt)}`,
+    ).then((response) => expect(response.status).toBe(400));
   });
 
   test('serves public HLS playlists and segment redirects without authentication', async () => {

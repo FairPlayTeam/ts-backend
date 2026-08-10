@@ -211,10 +211,12 @@ count, and duration in whole seconds. Both public lists use `Cache-Control: no-s
 
 `GET /videos/:publicId` returns the playback-page detail for a readable video. It combines video
 metadata including its persisted duration in whole seconds, creator identity, opaque avatar and
-thumbnail paths, rating and view aggregates, optional current-user rating, and the opaque
+thumbnail paths, rating, view, and comment aggregates, optional current-user rating, and the opaque
 master-playlist path in one short PostgreSQL `RepeatableRead` snapshot. The route accepts anonymous
 requests, treats invalid optional authentication as anonymous, and always sends
-`Cache-Control: no-store`.
+`Cache-Control: no-store`. Its `commentsOpen` field reports whether a new comment can currently be
+posted; it combines the owner's preference with the stricter engagement scope, while existing
+threads can remain readable when it is false.
 
 An authenticated non-owner load schedules one best-effort view per video and UTC day after the
 snapshot commits. Anonymous and owner loads never count. The write is deduplicated atomically and
@@ -226,6 +228,16 @@ account is deleted.
 Rating reads follow the same public/unlisted + ready policy as playback, including for `rejected`
 videos. `PUT /videos/:publicId/rating` remains stricter and refuses new or updated votes after
 rejection.
+
+Readable videos expose public paginated comment threads through
+`GET /videos/:publicId/comments` and
+`GET /videos/:publicId/comments/:rootCommentId/replies`. Root threads are newest-first, replies
+oldest-first, and both use a stable `(createdAt, id)` cursor. Creating a root or reply requires an
+authenticated user, enabled comments, and the stricter engagement scope that excludes rejected
+videos. Replies remain one level deep in storage while `replyingToCommentId` identifies the
+specific participant being addressed. Authors can soft-delete their own comments; a deleted root
+is returned as a content-free placeholder only while active replies still preserve its thread.
+All comment responses use `Cache-Control: no-store`.
 
 The public master URL is
 `GET /videos/:publicId/hls/master.m3u8`; it resolves the current active generation and needs no

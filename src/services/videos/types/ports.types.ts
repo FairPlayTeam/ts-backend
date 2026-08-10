@@ -136,6 +136,8 @@ export type PublicVideoDetail = Pick<
   };
   userRating: number | null;
   viewCount: number;
+  commentCount: number;
+  commentsOpen: boolean;
   duration: number;
   hlsMasterPath: string;
 };
@@ -311,6 +313,95 @@ export type VideoRatingResult = VideoRatingAggregateResult & {
   userRating: number | null;
 };
 
+export type VideoCommentAuthor = {
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+};
+
+type VideoCommentBase = {
+  id: string;
+  createdAt: Date;
+  rootCommentId: string | null;
+};
+
+export type ActiveVideoComment = VideoCommentBase & {
+  content: string;
+  isDeleted: false;
+  replyingTo: {
+    commentId: string;
+    username: string;
+  } | null;
+  author: VideoCommentAuthor;
+};
+
+export type DeletedVideoCommentPlaceholder = VideoCommentBase & {
+  content: null;
+  isDeleted: true;
+  rootCommentId: null;
+  replyingTo: null;
+  author: null;
+};
+
+export type VideoComment = ActiveVideoComment | DeletedVideoCommentPlaceholder;
+
+export type VideoCommentRoot = VideoComment & {
+  rootCommentId: null;
+  replyCount: number;
+};
+
+export type VideoCommentReply = ActiveVideoComment & {
+  rootCommentId: string;
+};
+
+export type VideoCommentCursor = {
+  createdAt: Date;
+  id: string;
+};
+
+export type CreateVideoCommentInput = {
+  publicId: string;
+  userId: string;
+  content: string;
+};
+
+export type CreateVideoCommentReplyInput = CreateVideoCommentInput & {
+  rootCommentId: string;
+  replyingToCommentId?: string;
+};
+
+export type CreateVideoCommentResult = {
+  comment: ActiveVideoComment;
+};
+
+export type ListVideoCommentsInput = {
+  publicId: string;
+  cursor?: VideoCommentCursor;
+  limit?: number;
+};
+
+export type ListVideoCommentRepliesInput = ListVideoCommentsInput & {
+  rootCommentId: string;
+};
+
+export type ListVideoCommentsResult = {
+  comments: VideoCommentRoot[];
+  total: number;
+  nextCursor: VideoCommentCursor | null;
+};
+
+export type ListVideoCommentRepliesResult = {
+  replies: VideoCommentReply[];
+  total: number;
+  nextCursor: VideoCommentCursor | null;
+};
+
+export type DeleteVideoCommentInput = {
+  publicId: string;
+  commentId: string;
+  userId: string;
+};
+
 export type VideosRoutePort = {
   createVideo(input: CreateVideoInput): Promise<CreateVideoResult>;
   listMyVideos(input: ListMyVideosInput): Promise<ListMyVideosResult>;
@@ -320,6 +411,13 @@ export type VideosRoutePort = {
   getVideoRating(input: GetVideoRatingInput): Promise<VideoRatingAggregateResult>;
   getMyVideoRating(input: GetMyVideoRatingInput): Promise<VideoRatingResult>;
   rateVideo(input: RateVideoInput): Promise<VideoRatingResult>;
+  createVideoComment(input: CreateVideoCommentInput): Promise<CreateVideoCommentResult>;
+  createVideoCommentReply(input: CreateVideoCommentReplyInput): Promise<CreateVideoCommentResult>;
+  listVideoComments(input: ListVideoCommentsInput): Promise<ListVideoCommentsResult>;
+  listVideoCommentReplies(
+    input: ListVideoCommentRepliesInput,
+  ): Promise<ListVideoCommentRepliesResult>;
+  deleteVideoComment(input: DeleteVideoCommentInput): Promise<void>;
   getThumbnail(input: GetVideoThumbnailInput): Promise<VideoThumbnailResult>;
   getHlsMaster(input: GetVideoHlsMasterInput): Promise<VideoHlsPlaylistResult>;
   getHlsRendition(input: GetVideoHlsRenditionInput): Promise<VideoHlsPlaylistResult>;

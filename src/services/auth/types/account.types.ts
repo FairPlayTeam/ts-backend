@@ -7,6 +7,42 @@ export type ExportUserDataInput = {
   currentPassword: string;
 };
 
+export type ExportUserCommentData = {
+  id: string;
+  videoId: string;
+  content: string | null;
+  createdAt: Date;
+  deletedAt: Date | null;
+  rootId: string | null;
+  replyingToCommentId: string | null;
+};
+
+export type ExportUserVideoRatingData = {
+  videoId: string;
+  value: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type ExportUserVideoViewData = {
+  videoId: string;
+  viewedOn: Date;
+};
+
+export type ExportUserSessionData = {
+  id: string;
+  sessionKeySuffix: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  deviceInfo: string | null;
+  isActive: boolean;
+  isCurrent: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  lastUsedAt: Date;
+  expiresAt: Date;
+};
+
 export type ExportUserDataResult = {
   exportedAt: Date;
   user: {
@@ -34,29 +70,10 @@ export type ExportUserDataResult = {
     createdAt: Date;
     updatedAt: Date;
   }[];
-  videoRatings: {
-    videoId: string;
-    value: number;
-    createdAt: Date;
-    updatedAt: Date;
-  }[];
-  videoViews: {
-    videoId: string;
-    viewedOn: Date;
-  }[];
-  sessions: {
-    id: string;
-    sessionKeySuffix: string | null;
-    ipAddress: string | null;
-    userAgent: string | null;
-    deviceInfo: string | null;
-    isActive: boolean;
-    isCurrent: boolean;
-    createdAt: Date;
-    updatedAt: Date;
-    lastUsedAt: Date;
-    expiresAt: Date;
-  }[];
+  videoRatings: AsyncIterable<ExportUserVideoRatingData>;
+  videoViews: AsyncIterable<ExportUserVideoViewData>;
+  comments: AsyncIterable<ExportUserCommentData>;
+  sessions: AsyncIterable<ExportUserSessionData>;
   emailVerificationToken: {
     id: string;
     createdAt: Date;

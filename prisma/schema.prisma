@@ -132,6 +132,7 @@ model User {
   videos                  Video[]
   videoRatings            VideoRating[]
   videoViews              VideoView[]
+  comments                Comment[]                @relation("CommentAuthor")
   videoUploadSessions     VideoUploadSession[]
 
   @@map("users")
@@ -196,6 +197,7 @@ model Video {
   viewCount                  Int                   @default(0) @map("view_count")
   ratingSum                  Int                   @default(0) @map("rating_sum")
   ratingCount                Int                   @default(0) @map("rating_count")
+  commentCount               Int                   @default(0) @map("comment_count")
   transcodeError             String?               @map("transcode_error") @db.VarChar(1000)
   publishedAt                DateTime?             @map("published_at")
   rejectedAt                 DateTime?             @map("rejected_at")
@@ -209,6 +211,7 @@ model Video {
   artifactGenerations      VideoArtifactGeneration[] @relation("VideoArtifactGenerations")
   ratings                  VideoRating[]
   views                    VideoView[]
+  comments                 Comment[]
   transcodeJobs            VideoTranscodeJob[]
   uploadSessions           VideoUploadSession[]      @relation("VideoUploadSessions")
 
@@ -230,6 +233,7 @@ model VideoRating {
 
   @@id([userId, videoId])
   @@index([videoId])
+  @@index([userId, createdAt, videoId])
   @@map("video_ratings")
 }
 
@@ -243,7 +247,33 @@ model VideoView {
 
   @@id([userId, videoId, viewedOn])
   @@index([videoId])
+  @@index([userId, viewedOn, videoId])
   @@map("video_views")
+}
+
+model Comment {
+  id                  String    @id @default(uuid()) @db.Uuid
+  authorId            String?   @map("author_id") @db.Uuid
+  videoId             String    @map("video_id") @db.Uuid
+  rootId              String?   @map("root_id") @db.Uuid
+  replyingToCommentId String?   @map("replying_to_comment_id") @db.Uuid
+  content             String?   @db.VarChar(800)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  deletedAt           DateTime? @map("deleted_at")
+
+  author            User?     @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  video             Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  root              Comment?  @relation("CommentThread", fields: [rootId], references: [id], onDelete: Cascade)
+  replies           Comment[] @relation("CommentThread")
+  replyingToComment Comment?  @relation("CommentReplyTarget", fields: [replyingToCommentId], references: [id], onDelete: SetNull)
+  addressedReplies  Comment[] @relation("CommentReplyTarget")
+
+  @@index([videoId, rootId, createdAt, id])
+  @@index([rootId, createdAt, id])
+  @@index([authorId])
+  @@index([authorId, createdAt, id])
+  @@index([replyingToCommentId])
+  @@map("comments")
 }
 
 model VideoRendition {
@@ -469,6 +499,7 @@ model Session {
   @@index([expiresAt])
   @@index([userId, isActive, expiresAt])
   @@index([userId, isActive, lastUsedAt, id])
+  @@index([userId, createdAt, id])
   @@index([isActive, updatedAt])
   @@map("sessions")
 }

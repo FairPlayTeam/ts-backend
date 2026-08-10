@@ -9,6 +9,7 @@ import {
   deleteAccountResponseSchema,
   userDataExportResponseSchema,
 } from '../../controllers/auth.schemas.js';
+import { ApiErrorSchema } from '../registry.js';
 
 export const accountRouteDocs = [
   {
@@ -24,6 +25,13 @@ export const accountRouteDocs = [
       ...sensitiveActionErrorResponses('Account is not allowed to export data'),
 
       ...currentUserNotFoundErrorResponse,
+
+      409: jsonResponse(
+        'A personal data export or account deletion is already in progress',
+        ApiErrorSchema,
+      ),
+
+      503: jsonResponse('Personal account operation coordination is unavailable', ApiErrorSchema),
     },
   },
   {
@@ -37,6 +45,13 @@ export const accountRouteDocs = [
       200: jsonResponse('Account deletion result', deleteAccountResponseSchema),
 
       ...sensitiveActionErrorResponses('Account is not allowed to delete account'),
+
+      409: jsonResponse(
+        'A personal data export or account deletion is already in progress',
+        ApiErrorSchema,
+      ),
+
+      503: jsonResponse('Personal account operation coordination is unavailable', ApiErrorSchema),
     },
   },
 ] satisfies RouteDoc[];

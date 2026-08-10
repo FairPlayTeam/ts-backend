@@ -243,8 +243,10 @@ describe('auth routes', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(response.headers.get('content-type')).toContain('application/json');
     const bodyText = await response.text();
-    expect(bodyText).toContain('\n  "exportedAt": "2026-01-01T00:00:00.000Z"');
+    expect(bodyText).toContain('"exportedAt":"2026-01-01T00:00:00.000Z"');
     expect(bodyText.endsWith('\n')).toBe(true);
+    expect(response.headers.get('content-length')).toBeNull();
+    expect(response.headers.get('transfer-encoding')).toBe('chunked');
     const body = JSON.parse(bodyText) as { [key: string]: unknown; mediaAssets: unknown[] };
     expect(body).toEqual({
       exportedAt: '2026-01-01T00:00:00.000Z',
@@ -298,6 +300,17 @@ describe('auth routes', () => {
         {
           videoId: '33333333-3333-4333-8333-333333333333',
           viewedOn: '2026-01-01',
+        },
+      ],
+      comments: [
+        {
+          id: '44444444-4444-4444-8444-444444444444',
+          videoId: '33333333-3333-4333-8333-333333333333',
+          content: 'An exported comment.',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          deletedAt: null,
+          rootId: null,
+          replyingToCommentId: null,
         },
       ],
       sessions: [

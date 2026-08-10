@@ -67,6 +67,12 @@ const sensitiveActionBody = {
   currentPassword: 'Password1!',
 };
 
+const toAsyncIterable = <T>(values: readonly T[]): AsyncIterable<T> => ({
+  async *[Symbol.asyncIterator]() {
+    yield* values;
+  },
+});
+
 const loginResult = {
   message: LOGIN_SUCCESS_MESSAGE,
   user: {
@@ -150,21 +156,32 @@ const userDataExportResult = {
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     },
   ],
-  videoRatings: [
+  videoRatings: toAsyncIterable([
     {
       videoId: '33333333-3333-4333-8333-333333333333',
       value: 5,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     },
-  ],
-  videoViews: [
+  ]),
+  videoViews: toAsyncIterable([
     {
       videoId: '33333333-3333-4333-8333-333333333333',
       viewedOn: new Date('2026-01-01T00:00:00.000Z'),
     },
-  ],
-  sessions: [
+  ]),
+  comments: toAsyncIterable([
+    {
+      id: '44444444-4444-4444-8444-444444444444',
+      videoId: '33333333-3333-4333-8333-333333333333',
+      content: 'An exported comment.',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      deletedAt: null,
+      rootId: null,
+      replyingToCommentId: null,
+    },
+  ]),
+  sessions: toAsyncIterable([
     {
       id: loginResult.session.id,
       sessionKeySuffix: 'sion-key',
@@ -178,7 +195,7 @@ const userDataExportResult = {
       lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
       expiresAt: loginResult.session.expiresAt,
     },
-  ],
+  ]),
   emailVerificationToken: null,
   passwordResetToken: null,
 };
@@ -269,13 +286,24 @@ const createMockResponse = () => {
   const state: {
     statusCode?: number;
     body?: unknown;
+    chunks: string[];
     headers: Record<string, string>;
     contentType?: string;
+    writableEnded: boolean;
   } = {
+    chunks: [],
     headers: {},
+    writableEnded: false,
   };
 
   const response = {
+    destroyed: false,
+    get headersSent() {
+      return state.chunks.length > 0;
+    },
+    get writableEnded() {
+      return state.writableEnded;
+    },
     set(name: string, value: string) {
       state.headers[name] = value;
       return response;
@@ -294,6 +322,19 @@ const createMockResponse = () => {
     },
     send(body: unknown) {
       state.body = body;
+      return response;
+    },
+    write(chunk: string) {
+      state.chunks.push(chunk);
+      return true;
+    },
+    end(chunk?: string) {
+      if (chunk) {
+        state.chunks.push(chunk);
+      }
+
+      state.body = state.chunks.join('');
+      state.writableEnded = true;
       return response;
     },
   } as unknown as Response;
@@ -630,8 +671,9 @@ describe('auth controller', () => {
     expect(state.contentType).toBe('application/json');
     expect(state.statusCode).toBe(200);
     expect(typeof state.body).toBe('string');
-    expect(state.body).toContain('\n  "exportedAt": "2026-01-01T00:00:00.000Z"');
+    expect(state.body).toContain('"exportedAt":"2026-01-01T00:00:00.000Z"');
     expect((state.body as string).endsWith('\n')).toBe(true);
+    expect(state.chunks.length).toBeGreaterThan(2);
     expect(JSON.parse(state.body as string)).toEqual({
       exportedAt: '2026-01-01T00:00:00.000Z',
       user: {
@@ -679,6 +721,17 @@ describe('auth controller', () => {
         {
           videoId: '33333333-3333-4333-8333-333333333333',
           viewedOn: '2026-01-01',
+        },
+      ],
+      comments: [
+        {
+          id: '44444444-4444-4444-8444-444444444444',
+          videoId: '33333333-3333-4333-8333-333333333333',
+          content: 'An exported comment.',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          deletedAt: null,
+          rootId: null,
+          replyingToCommentId: null,
         },
       ],
       sessions: [

@@ -9,6 +9,8 @@ export const bannerObjectKeyPattern =
   /^users\/user-id\/banner\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.webp$/;
 
 export type AuthServiceTestCalls = {
+  commentFindMany: unknown[];
+  commentUpdateMany: unknown;
   userFindUnique: unknown;
   userFindFirst: unknown;
   userCreate: unknown;
@@ -47,6 +49,8 @@ export type AuthServiceTestCalls = {
   sessionUpdate: unknown;
   sessionUpdateMany: unknown;
   sessionDeleteMany: unknown;
+  videoRatingFindMany: unknown[];
+  videoViewFindMany: unknown[];
   putObject: unknown;
   signedUrlObjectKey: unknown;
   signedUrlObjectKeys: string[];
@@ -57,6 +61,8 @@ export type AuthServiceTestCalls = {
 };
 
 export const createAuthServiceTestCalls = (): AuthServiceTestCalls => ({
+  commentFindMany: [],
+  commentUpdateMany: undefined,
   userFindUnique: undefined,
   userFindFirst: undefined,
   userCreate: undefined,
@@ -92,6 +98,8 @@ export const createAuthServiceTestCalls = (): AuthServiceTestCalls => ({
   sessionUpdate: undefined,
   sessionUpdateMany: undefined,
   sessionDeleteMany: undefined,
+  videoRatingFindMany: [],
+  videoViewFindMany: [],
   putObject: undefined,
   signedUrlObjectKey: undefined,
   signedUrlObjectKeys: [],
