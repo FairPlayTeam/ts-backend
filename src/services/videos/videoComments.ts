@@ -249,6 +249,30 @@ const nextCommentCursor = (
     : null;
 };
 
+const findViewerLikedCommentIds = async (
+  tx: Prisma.TransactionClient,
+  viewerUserId: string | undefined,
+  commentIds: readonly string[],
+): Promise<Set<string>> => {
+  if (!viewerUserId || commentIds.length === 0) {
+    return new Set<string>();
+  }
+
+  const viewerLikes = await tx.commentLike.findMany({
+    where: {
+      userId: viewerUserId,
+      commentId: {
+        in: [...commentIds],
+      },
+    },
+    select: {
+      commentId: true,
+    },
+  });
+
+  return new Set(viewerLikes.map(({ commentId }) => commentId));
+};
+
 const findReadableVideoId = async (
   tx: Prisma.TransactionClient,
   publicId: string,
@@ -644,20 +668,7 @@ export const listVideoComments = async (
               },
             });
       const total = await tx.comment.count({ where: rootWhere });
-      const viewerLikes = viewerUserId
-        ? await tx.commentLike.findMany({
-            where: {
-              userId: viewerUserId,
-              commentId: {
-                in: rootIds,
-              },
-            },
-            select: {
-              commentId: true,
-            },
-          })
-        : [];
-      const likedCommentIds = new Set(viewerLikes.map(({ commentId }) => commentId));
+      const likedCommentIds = await findViewerLikedCommentIds(tx, viewerUserId, rootIds);
       const replyCounts = new Map(
         groupedReplyCounts.map(({ _count, rootId }) => [rootId, _count._all]),
       );
@@ -718,20 +729,11 @@ export const listVideoCommentReplies = async (
         });
         const replies = queriedReplies.slice(0, pageSize);
         const total = await tx.comment.count({ where: repliesWhere });
-        const viewerLikes = viewerUserId
-          ? await tx.commentLike.findMany({
-              where: {
-                userId: viewerUserId,
-                commentId: {
-                  in: replies.map(({ id }) => id),
-                },
-              },
-              select: {
-                commentId: true,
-              },
-            })
-          : [];
-        const likedCommentIds = new Set(viewerLikes.map(({ commentId }) => commentId));
+        const likedCommentIds = await findViewerLikedCommentIds(
+          tx,
+          viewerUserId,
+          replies.map(({ id }) => id),
+        );
 
         return {
           replies: replies.map((reply) =>

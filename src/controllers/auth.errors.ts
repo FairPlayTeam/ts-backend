@@ -2,6 +2,7 @@ import { HttpError } from '../errors/http.js';
 import { ObjectStorageUnavailableError } from '../lib/objectStorage.js';
 import {
   AccountBannedError,
+  AccountDeletionTemporarilyUnavailableError,
   AuthenticatedUserNotFoundError,
   EmailNotVerifiedError,
   InvalidEmailVerificationTokenError,
@@ -20,6 +21,10 @@ import {
 } from '../services/userMedia/userMedia.errors.js';
 
 export function toAuthHttpError(err: unknown): Error {
+  if (err instanceof AccountDeletionTemporarilyUnavailableError) {
+    return new HttpError(503, 'ServiceUnavailable', err.message, { cause: err });
+  }
+
   if (err instanceof UserAlreadyExistsError) {
     return new HttpError(409, 'Conflict', err.message, { cause: err });
   }

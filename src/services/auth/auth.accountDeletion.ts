@@ -1,5 +1,10 @@
 import { Prisma } from '@prisma/client';
-import { runSerializableTransaction } from '../../lib/prismaTransactions.js';
+import {
+  getSerializableTransactionRetryDelayMs,
+  isSerializableTransactionConflictError,
+  runSerializableTransaction,
+} from '../../lib/prismaTransactions.js';
+import { AccountDeletionTemporarilyUnavailableError } from '../auth.errors.js';
 import { requestExternalResourceAbsence } from '../externalResources.js';
 import { softDeleteLockedVideoComments } from '../videos/videoCommentLifecycle.js';
 import type { AuthDependencies } from './auth.dependencies.js';
@@ -12,6 +17,8 @@ import type { AuthAccountPort, DeleteAccountInput } from './types/account.types.
 
 type AccountDeletionService = Pick<AuthAccountPort, 'deleteAccount'>;
 
+const ACCOUNT_DELETION_TRANSACTION_MAX_ATTEMPTS = 5;
+
 type LockedAccountComment = {
   id: string;
   isAuthored: boolean;
@@ -21,9 +28,11 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
   async deleteAccount({ userId, currentPassword }: DeleteAccountInput) {
     await reauthenticateSensitiveAction(deps, { userId, currentPassword });
     const requestedAt = deps.clock.now();
-    const targets = await runSerializableTransaction(deps.prisma, async (tx) => {
-      await tx.$queryRaw(
-        Prisma.sql`
+    const targets = await runSerializableTransaction(
+      deps.prisma,
+      async (tx) => {
+        await tx.$queryRaw(
+          Prisma.sql`
             SELECT "id"
             FROM "video_transcode_jobs"
             WHERE "video_id" IN (
@@ -33,12 +42,12 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
             )
             FOR UPDATE
           `,
-      );
+        );
 
-      // User-rating, user-view, and comment-author cascades do not maintain denormalized
-      // video aggregates. Lock every affected video in a stable order before applying deltas.
-      await tx.$queryRaw(
-        Prisma.sql`
+        // User-rating, user-view, and comment-author cascades do not maintain denormalized
+        // video aggregates. Lock every affected video in a stable order before applying deltas.
+        await tx.$queryRaw(
+          Prisma.sql`
           SELECT "id"
           FROM "videos"
           WHERE "owner_id" = CAST(${userId} AS UUID)
@@ -61,11 +70,11 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
           ORDER BY "id"
           FOR UPDATE
         `,
-      );
-      // Comment likes mutate a comment-owned aggregate and therefore lock comment rows directly.
-      // Keep account cleanup in the same stable order before changing emitted or received likes.
-      const lockedComments = await tx.$queryRaw<LockedAccountComment[]>(
-        Prisma.sql`
+        );
+        // Comment likes mutate a comment-owned aggregate and therefore lock comment rows directly.
+        // Keep account cleanup in the same stable order before changing emitted or received likes.
+        const lockedComments = await tx.$queryRaw<LockedAccountComment[]>(
+          Prisma.sql`
           SELECT
             c."id"::text AS "id",
             (c."author_id" = CAST(${userId} AS UUID) AND c."deleted_at" IS NULL) AS "isAuthored"
@@ -82,9 +91,12 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
           ORDER BY c."id"
           FOR UPDATE
         `,
-      );
-      await tx.$executeRaw(
-        Prisma.sql`
+        );
+        // These repairs need a source-derived delta that differs for each target row. Prisma
+        // updateMany can apply only one fixed delta and cannot express the grouped UPDATE ... FROM
+        // shape, so keep all four repairs set-based while their target rows are locked.
+        await tx.$executeRaw(
+          Prisma.sql`
           UPDATE "videos" AS v
           SET
             "rating_sum" = v."rating_sum" - vr."value",
@@ -93,9 +105,9 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
           WHERE vr."user_id" = CAST(${userId} AS UUID)
             AND vr."video_id" = v."id"
         `,
-      );
-      await tx.$executeRaw(
-        Prisma.sql`
+        );
+        await tx.$executeRaw(
+          Prisma.sql`
           UPDATE "videos" AS v
           SET "view_count" = v."view_count" - viewed."view_count"
           FROM (
@@ -108,11 +120,9 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
           ) AS viewed
           WHERE viewed."video_id" = v."id"
         `,
-      );
-      // Each video needs a different grouped decrement. Prisma updateMany supports only one fixed
-      // decrement value, so this remains one set-based UPDATE ... FROM under the video locks above.
-      await tx.$executeRaw(
-        Prisma.sql`
+        );
+        await tx.$executeRaw(
+          Prisma.sql`
           UPDATE "videos" AS v
           SET "comment_count" = v."comment_count" - authored."comment_count"
           FROM (
@@ -126,9 +136,9 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
           ) AS authored
           WHERE authored."video_id" = v."id"
         `,
-      );
-      await tx.$executeRaw(
-        Prisma.sql`
+        );
+        await tx.$executeRaw(
+          Prisma.sql`
           UPDATE "comments" AS c
           SET "like_count" = c."like_count" - emitted."like_count"
           FROM (
@@ -141,40 +151,51 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
           ) AS emitted
           WHERE emitted."comment_id" = c."id"
         `,
-      );
-      await tx.commentLike.deleteMany({
-        where: {
-          userId,
-        },
-      });
-      await softDeleteLockedVideoComments(tx, {
-        commentIds: lockedComments.filter(({ isAuthored }) => isAuthored).map(({ id }) => id),
-        deletedAt: requestedAt,
-        deletionOrigin: 'account_deletion',
-      });
-
-      const targets = await tx.externalResourceTarget.findMany({
-        where: {
-          userId,
-          state: {
-            not: 'confirmed_absent',
+        );
+        await tx.commentLike.deleteMany({
+          where: {
+            userId,
           },
-        },
-        select: {
-          id: true,
-          role: true,
-        },
-      });
+        });
+        await softDeleteLockedVideoComments(tx, {
+          commentIds: lockedComments.filter(({ isAuthored }) => isAuthored).map(({ id }) => id),
+          deletedAt: requestedAt,
+          deletionOrigin: 'account_deletion',
+        });
 
-      for (const target of targets) {
-        await requestExternalResourceAbsence(tx, target.id, requestedAt);
+        const targets = await tx.externalResourceTarget.findMany({
+          where: {
+            userId,
+            state: {
+              not: 'confirmed_absent',
+            },
+          },
+          select: {
+            id: true,
+            role: true,
+          },
+        });
+
+        for (const target of targets) {
+          await requestExternalResourceAbsence(tx, target.id, requestedAt);
+        }
+
+        await tx.user.deleteMany({
+          where: { id: userId },
+        });
+
+        return targets;
+      },
+      {
+        maxAttempts: ACCOUNT_DELETION_TRANSACTION_MAX_ATTEMPTS,
+        retryDelayMs: getSerializableTransactionRetryDelayMs,
+      },
+    ).catch((err: unknown) => {
+      if (isSerializableTransactionConflictError(err)) {
+        throw new AccountDeletionTemporarilyUnavailableError(err);
       }
 
-      await tx.user.deleteMany({
-        where: { id: userId },
-      });
-
-      return targets;
+      throw err;
     });
 
     await Promise.all(

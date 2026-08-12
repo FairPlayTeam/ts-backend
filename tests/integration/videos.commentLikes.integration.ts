@@ -208,7 +208,7 @@ describe('video comment likes integration', () => {
     await stopRuntime(runtime);
   });
 
-  test('enforces nonnegative comment like aggregates in PostgreSQL itself', async () => {
+  test('enforces comment like aggregate lifecycle checks in PostgreSQL itself', async () => {
     if (!runtime) throw new Error('Integration runtime was not started');
 
     const owner = await createUser(runtime, 'like_check_owner');
@@ -221,6 +221,17 @@ describe('video comment likes integration', () => {
         data: { likeCount: -1 },
       }),
     ).rejects.toThrow(/comments_like_count_nonnegative_check/);
+
+    await expect(
+      runtime.prisma.$executeRaw`
+        UPDATE "comments"
+        SET
+          "deleted_at" = CURRENT_TIMESTAMP,
+          "deletion_origin" = 'author',
+          "like_count" = 1
+        WHERE "id" = CAST(${comment.id} AS UUID)
+      `,
+    ).rejects.toThrow(/comments_deleted_like_count_zero_check/);
   });
 
   test('serializes duplicate PUT, duplicate DELETE, PUT/DELETE, and distinct likers on the comment row', async () => {

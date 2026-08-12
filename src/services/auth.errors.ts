@@ -10,6 +10,8 @@ const PASSWORD_RESET_STATE_CHANGED_MESSAGE =
   'Password state changed during reset. Please try again.';
 const AUTHENTICATED_USER_NOT_FOUND_MESSAGE = 'Authenticated user could not be found';
 export const PROFILE_UPDATE_EMPTY_MESSAGE = 'At least one profile field must be provided';
+export const ACCOUNT_DELETION_TEMPORARILY_UNAVAILABLE_MESSAGE =
+  'Account deletion is temporarily unavailable; please retry';
 
 export class UserAlreadyExistsError extends Error {
   constructor(cause?: unknown) {
@@ -78,5 +80,12 @@ export class AuthenticatedUserNotFoundError extends Error {
   constructor(cause?: unknown) {
     super(AUTHENTICATED_USER_NOT_FOUND_MESSAGE, { cause });
     this.name = 'AuthenticatedUserNotFoundError';
+  }
+}
+
+export class AccountDeletionTemporarilyUnavailableError extends Error {
+  constructor(cause?: unknown) {
+    super(ACCOUNT_DELETION_TEMPORARILY_UNAVAILABLE_MESSAGE, { cause });
+    this.name = 'AccountDeletionTemporarilyUnavailableError';
   }
 }

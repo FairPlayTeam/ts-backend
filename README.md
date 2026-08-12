@@ -243,7 +243,11 @@ specific participant being addressed. Authors can soft-delete their own comments
 owner and moderators or administrators can also soft-delete comments without depending on video
 readability or engagement state. A deleted root is returned as a content-free placeholder only while
 active replies still preserve its thread.
-All comment responses use `Cache-Control: no-store`.
+Authenticated users can idempotently add or remove a like with
+`PUT /videos/:publicId/comments/:commentId/like` and
+`DELETE /videos/:publicId/comments/:commentId/like`. Every root and reply DTO exposes the aggregate
+`likeCount` plus viewer-specific `viewerHasLiked`; anonymous readers receive `false`, and liker
+identities are never exposed. All comment responses use `Cache-Control: no-store`.
 
 The public master URL is
 `GET /videos/:publicId/hls/master.m3u8`; it resolves the current active generation and needs no

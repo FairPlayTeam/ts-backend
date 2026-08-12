@@ -4,7 +4,10 @@ import {
   DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
 } from '../src/services/auth/auth.messages.js';
-import { AuthenticatedUserNotFoundError } from '../src/services/auth.errors.js';
+import {
+  AccountDeletionTemporarilyUnavailableError,
+  AuthenticatedUserNotFoundError,
+} from '../src/services/auth.errors.js';
 import { createTestDeps, fixedNow } from './support/authService.js';
 import type { AuthDeps } from './support/authService.js';
 
@@ -19,6 +22,33 @@ const collectAsync = async <T>(values: AsyncIterable<T>): Promise<T[]> => {
 };
 
 describe('auth service account data', () => {
+  test('bounds account deletion serialization retries and exposes exhausted contention', async () => {
+    let transactionAttempts = 0;
+    const transactionConflict = {
+      name: 'DriverAdapterError',
+      cause: {
+        kind: 'TransactionWriteConflict',
+      },
+    };
+    const { deps } = createTestDeps({
+      prisma: {
+        $transaction: async () => {
+          transactionAttempts += 1;
+          throw transactionConflict;
+        },
+      },
+    });
+    const service = createAuthService(deps);
+
+    await expect(
+      service.deleteAccount({
+        userId: 'user-id',
+        currentPassword: 'Password1!',
+      }),
+    ).rejects.toBeInstanceOf(AccountDeletionTemporarilyUnavailableError);
+    expect(transactionAttempts).toBe(5);
+  });
+
   test('exports user data without selecting secret fields', async () => {
     const { deps, calls } = createTestDeps();
     const service = createAuthService(deps);

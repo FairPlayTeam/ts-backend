@@ -51,7 +51,10 @@ export const accountRouteDocs = [
         ApiErrorSchema,
       ),
 
-      503: jsonResponse('Personal account operation coordination is unavailable', ApiErrorSchema),
+      503: jsonResponse(
+        'Personal account operation coordination or deletion transaction is temporarily unavailable',
+        ApiErrorSchema,
+      ),
     },
   },
 ] satisfies RouteDoc[];

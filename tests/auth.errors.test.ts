@@ -4,6 +4,7 @@ import { HttpError } from '../src/errors/http.js';
 import { ObjectStorageUnavailableError } from '../src/lib/objectStorage.js';
 import {
   AccountBannedError,
+  AccountDeletionTemporarilyUnavailableError,
   AuthenticatedUserNotFoundError,
   InvalidEmailVerificationTokenError,
   InvalidCredentialsError,
@@ -19,6 +20,14 @@ import {
 } from '../src/services/userMedia/userMedia.errors.js';
 
 describe('auth error mapping', () => {
+  test('maps exhausted account deletion contention to service unavailable', () => {
+    const error = toAuthHttpError(new AccountDeletionTemporarilyUnavailableError());
+
+    expect(error).toBeInstanceOf(HttpError);
+    expect((error as HttpError).statusCode).toBe(503);
+    expect((error as HttpError).code).toBe('ServiceUnavailable');
+  });
+
   test('maps duplicate users to an HTTP conflict', () => {
     const error = toAuthHttpError(new UserAlreadyExistsError());
 

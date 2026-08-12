@@ -442,37 +442,12 @@ therefore cannot overlap for the same user in either order while the local mutex
 remain owned: the second attempt receives 409 rather than starting another scan or deleting rows
 underneath an active stream.
 
-The distributed account-operation lease uses a five-minute TTL and remains renewed while the
-controller promise is running. One rare composed failure remains accepted: if Redis renewal fails
-while an abnormally slow export or deletion continues beyond the last valid lease, another instance
-can acquire the key and accept a concurrent operation before the first one has actually finished.
-Lease loss is logged at `error` level and closes the affected HTTP response, but does not cancel an
-already-running Prisma query or transaction. Adding cross-instance fencing or true transaction
-cancellation would be disproportionate at the current scale; the longer TTL reduces the practical
-window without claiming to eliminate it.
-
-The export deliberately does not hold one long database snapshot across sections. Each keyset page
-sees database state at the time it is queried, so data created during generation can appear in a
-later section or page without appearing in an earlier one. This weak temporal consistency is an
-accepted availability and transaction-duration tradeoff for a machine-readable personal export.
 Comment likes are the exception to temporal cursor ordering: they page by stable `comment_id` under
 the `(user_id, comment_id)` primary key. An unlike/re-like therefore cannot move the same logical
 fact beyond an already-emitted cursor and duplicate it in the stream.
 If a database error occurs after headers have been sent, the server logs it structurally and closes
 the chunked response without the final JSON delimiter; clients must treat the interrupted transport
 or invalid JSON as an incomplete export and retry.
-
-Authentication and role authorization linearize when the bearer session is validated at the start
-of the HTTP request. An administrative ban or role downgrade applies to subsequent requests, but a
-comment mutation or video-moderation request that already passed session validation may finish after
-the administrative change commits. Comment insertion does not re-read the user's ban state, and a
-privileged comment deletion does not re-read the moderator/administrator role inside its video
-transaction: the remaining window is bounded to already-engaged requests, while adding a user-row
-check would couple comment contention to account administration. Unlike a reversible video-
-moderation decision, comment deletion permanently replaces the content with `NULL`; that higher
-impact is consciously accepted under the same request-authorization boundary rather than adding a
-second authorization instant inside the transaction. This boundary does not guarantee immediate
-quiescence after a ban or role downgrade.
 
 Personal-export completeness remains a separate backlog item. The current contract does not yet
 include the account ban reason, following/follower relations, videos owned by the user, or multipart
@@ -509,7 +484,10 @@ video currently satisfies the stricter engagement scope. A rejected video can th
 readable with its existing threads while correctly reporting `commentsOpen: false`.
 The preference is accepted as the optional `allowComments` boolean on `POST /videos`, defaults to
 `true` at both the HTTP and database boundaries, and is immutable through this API version: no
-post-upload comment-settings route exists.
+post-upload comment-settings route exists. This is the deliberately reduced initial contract, not
+an accidental omission. A later mutation would need its own owner-authorized endpoint plus explicit
+semantics for writes already in flight while the setting changes, so it is deferred until that
+contract can be designed independently.
 
 The database stores only one physical reply level: roots have neither `root_id` nor a reply target,
 while replies must have both identifiers and may not self-reference. PostgreSQL enforces that null
@@ -520,12 +498,11 @@ reply pages repeat `video_id` predicates defensively. This same-video/same-threa
 remains applicative rather than structural. A composite self-FK would cover only the same-video half,
 not same-thread membership, while complicating Prisma's shared self-relation fields and the target's
 partial `SET NULL` semantics; that disproportionate partial constraint is deliberately not added.
-`Comment.id` is deliberately also the public opaque comment identifier. This is an explicit exception
-to the repository's general rule against exposing internal UUIDs: every operation revalidates the
-comment against the requested video's public identifier and, for replies, against the expected thread,
-so possession of the UUID alone never grants direct access or authority. It must not be generalized to
-videos, accounts, storage objects, or any resource whose identifier would bypass those contextual
-checks.
+Replies are intentionally flattened onto that single root level instead of forming a recursive
+tree. Reads can page one ordered relation, `replyCount` remains a direct grouped count, and deletion
+can tombstone exactly one row without recursively traversing or rewriting descendants. The separate
+`replying_to_comment_id` retains the addressed-participant context without making pagination,
+counting, or lifecycle semantics recursive.
 Another CHECK makes active comments require content, no
 deletion timestamp, and an author; soft-deleted comments require null content and a deletion
 timestamp. API DTOs expose deleted roots as author-free/content-free placeholders only while they
@@ -546,29 +523,33 @@ calling that port directly must reuse the same validation rules rather than trea
 a runtime parser for arbitrary input.
 
 Root creation, replies, deletion, and both idempotent comment-like mutations share one authenticated
-per-user mutation rate limit of 30 actions per ten minutes. This is a deliberate abuse-control
-policy: comment likes consume the existing quota rather than silently inheriting or creating a
-separate limiter. Deletion first performs an indexed comment/video
-lookup without row locks, resolving permission in the order author, current video owner, then
-moderator/administrator role. Random or unauthorized comment identifiers therefore cannot contend on
-the video lock. A qualifying deletion repeats the same
-ordered authorization check against the locked video and comment rows under the standard
-video-then-comment lock order. Comment creation and deletion serialize by locking the video before
-comment rows. Deletion never applies the readability or engagement scope: the current video owner
-and moderator/administrator roles may remove a comment from rejected or non-ready videos. The
-engagement scope is part of the
-root-creation/reply `SELECT ... FOR UPDATE`, so an ineligible video is filtered before PostgreSQL
-attempts to lock it. Reply creation also performs an indexed root/video preflight before opening
-that transaction; random root UUIDs therefore never contend on the popular video's row, while the
-root and target are still revalidated under locks before insertion. Serializable contention retries
-share the same capped exponential full-jitter backoff used by rating writes. The
-denormalized `videos.comment_count` counts active comments only and is incremented or decremented in
-the same serializable transaction as the lifecycle change. The delete update itself requires
-`deleted_at IS NULL`, so retries and concurrent duplicate DELETE requests cannot decrement twice.
-Every deletion permission reuses this exact soft-delete and aggregate protocol. A direct Prisma
-`comment.delete()` on a root would let the self-FK cascade erase its reply
-subtree while bypassing every corresponding `videos.comment_count` decrement, permanently drifting
-the denormalized aggregate.
+per-user mutation rate limit of 30 actions per ten minutes. Their deliberately different
+anti-amplification and locking protocols form one consistent ownership model:
+
+| Operation    | Indexed preflight before transaction                                          | Row lock order                                 | Aggregate protected                           | Justification                                                                                                                                                                               |
+| ------------ | ----------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create root  | None beyond validated/authenticated input                                     | Video                                          | `videos.comment_count`                        | The video owns the aggregate and the locked query atomically checks engagement scope plus `allow_comments`.                                                                                 |
+| Create reply | Active root/target membership and video engagement scope                      | Video, then root/target comments in UUID order | `videos.comment_count`                        | Random comment UUIDs cannot contend on a popular video; the locked rows remain the final same-video/thread validation boundary.                                                             |
+| Soft-delete  | Exact comment/video membership and preliminary permission                     | Video, then comment                            | `videos.comment_count`, received-like cleanup | Unauthorized or random UUIDs never reach locks; locked rows repeat author, exact current video owner, then moderator/administrator authorization.                                           |
+| PUT like     | Exact active comment/video membership, engagement scope, and `allow_comments` | Comment only                                   | `comments.like_count`                         | The aggregate belongs to one comment; a video lock would serialize unrelated likes across a popular video. The transaction freshly rechecks video eligibility in its serializable snapshot. |
+| DELETE like  | Exact comment/video membership, without engagement or lifecycle filters       | Comment only                                   | `comments.like_count`                         | Unlike remains idempotent outside engagement scope and after soft deletion, without exposing whether a fact existed.                                                                        |
+
+Root and reply creation intentionally do not add a separate `allowComments` preflight, unlike PUT
+like. Reaching either path already requires authentication and a valid video public identifier (and
+for a reply, valid comment identifiers), and the shared mutation limiter bounds repeated attempts.
+The authoritative locked video query still checks `allow_comments` before any write; one additional
+read on every legitimate creation is not judged worthwhile for that narrower amplification window.
+
+Deletion never applies readability or engagement scope: the current video owner and
+moderator/administrator roles may remove a comment from rejected or non-ready videos. The
+denormalized `videos.comment_count` counts active comments only and changes in the same serializable
+transaction as the lifecycle transition. The delete update itself requires `deleted_at IS NULL`, so
+retries and concurrent duplicate DELETE requests cannot decrement twice. Every deletion permission
+reuses this exact soft-delete and aggregate protocol. A direct Prisma `comment.delete()` on a root
+would let the self-FK cascade erase its reply subtree while bypassing every corresponding
+`videos.comment_count` decrement, permanently drifting the denormalized aggregate. Serializable
+contention for comment mutations uses up to ten attempts with the shared capped exponential
+full-jitter backoff and becomes HTTP 503 if that budget is exhausted.
 
 Each new tombstone stores a private `deletion_origin`: author, current video owner, moderator,
 administrator, or account deletion. It records the permission category that won the lifecycle
@@ -583,23 +564,16 @@ personal-export pagination.
 that aggregate and a bounded current-viewer membership projection only; anonymous viewers always
 receive `viewerHasLiked: false`, and no liker identity or liker list crosses the response whitelist.
 
-`PUT /videos/:publicId/comments/:commentId/like` performs an indexed comment/video/engagement
-preflight before opening a transaction. Its serializable transaction revalidates the same scope and
-`allow_comments` state, locks only the target comment with `FOR UPDATE OF c`, then creates the fact
-and increments `like_count` only when the fact was absent. Comment-level granularity is intentional:
-the aggregate belongs to the comment, so locking the video would serialize likes on every unrelated
-comment under a popular video. Video moderation and comment deletion remain safe: the transaction
-reads the video scope in its serializable snapshot, while deletion follows video-then-comment and a
-like never requests the video lock after acquiring the comment lock. Serializable retries use the
-same capped exponential full-jitter helper as video ratings and other comment mutations.
+`PUT /videos/:publicId/comments/:commentId/like` creates the fact and increments `like_count` only
+when the fact was absent. Video moderation and comment deletion remain safe under the table's lock
+protocol: a like never requests the video lock after acquiring the comment lock.
 
-`DELETE /videos/:publicId/comments/:commentId/like` first performs an indexed contextual membership
-preflight, then locks the target comment without applying readability, moderation, lifecycle, or
-`allow_comments` filters. It removes the current user's fact and decrements only when that fact
-exists; absent, wrong-video, already-deleted, or already-unliked targets all converge on idempotent
-success without exposing resource state. Soft-deleting a comment uses one shared lifecycle helper
-that deletes every received like and resets `like_count` to zero in the same transaction before the
-tombstone becomes visible.
+`DELETE /videos/:publicId/comments/:commentId/like` removes the current user's fact and decrements
+only when that fact exists; absent, wrong-video, already-deleted, or already-unliked targets all
+converge on idempotent success without exposing resource state. Soft-deleting a comment uses one
+shared lifecycle helper that deletes every received like and resets `like_count` to zero in the same
+transaction before the tombstone becomes visible. PostgreSQL additionally requires every tombstone
+to have `like_count = 0`, so this invariant survives direct or future write paths.
 
 Account deletion first locks every affected video in UUID order, then every authored or liked
 comment in UUID order. It subtracts emitted likes from each target comment before deleting those
@@ -614,16 +588,28 @@ a direct hard delete of a still-referenced reply target would make `replying_to_
 conflict with the thread-shape CHECK. Future code that touches either FK must preserve the same
 soft-delete/anonymization ordering rather than relying on the FK action alone.
 
-Three comment-volume risks are deliberately accepted for the current pre-production scale. Public
-root and reply pages calculate an exact `total` on every request, so their cost grows with the whole
-matching thread rather than the requested page size; the current indexes do not include
-`deleted_at`. Soft-deleted comments are tombstones and are never purged physically, so inactive rows
-continue to occupy the table and its indexes. Finally, deleting a video cascades all of its comments
-synchronously inside the current database transaction: this can make rejected-video maintenance or
-the owner's HTTP account-deletion transaction long-running for a very large thread. These choices
-must be reassessed before significant traffic or comment volume. Candidate changes are replacing an
-exact `total` with `hasMore`, adding partial indexes for active rows, and introducing an asynchronous
-purge or an explicit tombstone-retention policy.
+Account deletion uses the same serializable full-jitter policy family as ratings and comments, with
+a five-attempt budget rather than the ten attempts used by short comment mutations. The lower but
+still robust budget limits how long this potentially heavy transaction can retain work across
+retries; an exhausted serialization-conflict budget is translated to HTTP 503 so clients can retry
+instead of receiving a generic 500.
+
+### Comment domain decision and risk register
+
+This is the single register for accepted comment-domain tradeoffs; the protocol descriptions above
+define normal behavior without silently claiming stronger guarantees.
+
+| Decision or residual risk          | Accepted boundary and revisit trigger                                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Exact `total` counts               | Root and reply pages count the full matching set, so cost grows beyond page size. Active replies do have a partial index containing `deleted_at IS NULL`; the root pagination index does not, and the visible-root predicate can still include tombstones with active replies. Revisit at material thread volume, potentially replacing `total` with `hasMore` or adding a workload-specific index. |
+| Permanent tombstones               | Soft-deleted rows are not physically purged and continue occupying table/index space. Define an explicit retention or asynchronous purge policy before material volume.                                                                                                                                                                                                                             |
+| Synchronous cascades               | Video deletion cascades comments and likes in the current transaction, so maintenance or owner account deletion can become long-running for a very large thread. Move large purges to bounded asynchronous work before material volume.                                                                                                                                                             |
+| Session-time authorization         | A ban or role downgrade affects subsequent requests, but an already-validated comment mutation may commit afterward. Privileged deletion permanently clears content, unlike reversible video moderation; this higher impact is consciously accepted to avoid coupling comment locks to account administration.                                                                                      |
+| Redis account-operation lease loss | If renewal fails and a slow export/deletion outlives the five-minute lease, another instance can start an overlapping operation. Lease loss is logged and closes the response but cannot cancel an in-flight Prisma transaction; fencing or true cancellation is deferred at current scale.                                                                                                         |
+| Multi-section export snapshots     | Export avoids one long database snapshot: every keyset page observes state when queried, so concurrent changes may appear in later sections/pages but not earlier ones. This weak temporal consistency is accepted for bounded transaction duration and availability.                                                                                                                               |
+| Like overlapping video rejection   | Serializable ordering is authoritative, not wall-clock commit order. A like whose transaction read the eligible video before a concurrent rejection may commit after the rejection's commit is observed; serialization may still order the like first. Preventing that visible ordering surprise would require a video lock that serializes unrelated comment likes.                                |
+| Shared mutation quota              | Root creation, replies, deletion, like, and unlike share 30 actions per user per ten minutes. This intentionally includes moderation deletions by moderators and administrators; operational moderation tooling may eventually require a consciously separate quota.                                                                                                                                |
+| Public `Comment.id` UUID           | Comment UUID is the opaque public identifier, an explicit exception to the repository convention. Every operation still revalidates exact video and thread context, so UUID possession grants no access or authority; never generalize this exception to resources lacking those checks.                                                                                                            |
 
 Global request-body admission is a separate infrastructure backlog item. `express.json` currently
 runs before the route-mounted API limiter, so an unauthenticated client can make the server read and
