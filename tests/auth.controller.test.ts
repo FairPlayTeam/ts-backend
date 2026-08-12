@@ -181,6 +181,12 @@ const userDataExportResult = {
       replyingToCommentId: null,
     },
   ]),
+  commentLikes: toAsyncIterable([
+    {
+      commentId: '44444444-4444-4444-8444-444444444444',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    },
+  ]),
   sessions: toAsyncIterable([
     {
       id: loginResult.session.id,
@@ -732,6 +738,12 @@ describe('auth controller', () => {
           deletedAt: null,
           rootId: null,
           replyingToCommentId: null,
+        },
+      ],
+      commentLikes: [
+        {
+          commentId: '44444444-4444-4444-8444-444444444444',
+          createdAt: '2026-01-01T00:00:00.000Z',
         },
       ],
       sessions: [

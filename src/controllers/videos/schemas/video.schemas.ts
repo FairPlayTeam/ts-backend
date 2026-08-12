@@ -505,6 +505,8 @@ const videoCommentResponseBodySchema = z.object({
   isDeleted: z.literal(false),
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
   rootCommentId: videoCommentIdSchema.nullable(),
+  likeCount: z.number().int().nonnegative().openapi({ example: 4 }),
+  viewerHasLiked: z.boolean().openapi({ example: true }),
   replyingTo: z
     .object({
       commentId: videoCommentIdSchema,
@@ -540,6 +542,8 @@ const deletedVideoCommentRootResponseSchema = z.object({
   isDeleted: z.literal(true),
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
   rootCommentId: z.null(),
+  likeCount: z.literal(0),
+  viewerHasLiked: z.literal(false),
   replyingTo: z.null(),
   author: z.null(),
   replyCount: videoCommentReplyCountSchema,
@@ -703,6 +707,8 @@ export const listVideoCommentRepliesSchema = z.object({
 export const deleteVideoCommentSchema = z.object({
   params: videoCommentParamsSchema,
 });
+
+export const mutateVideoCommentLikeSchema = deleteVideoCommentSchema;
 
 export type VideoParams = z.infer<typeof initVideoMultipartUploadSchema>['params'];
 export type PublicVideoIdParams = z.infer<typeof publicVideoIdParamsSchema>;

@@ -313,6 +313,12 @@ describe('auth routes', () => {
           replyingToCommentId: null,
         },
       ],
+      commentLikes: [
+        {
+          commentId: '44444444-4444-4444-8444-444444444444',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
       sessions: [
         {
           id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',

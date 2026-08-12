@@ -148,6 +148,8 @@ const listVideoCommentsResult = (): ListVideoCommentsResult => ({
       isDeleted: false,
       createdAt: fixedNow,
       rootCommentId: null,
+      likeCount: 0,
+      viewerHasLiked: false,
       replyingTo: null,
       author: {
         username: 'fairplay_user',
@@ -169,6 +171,8 @@ const listVideoCommentRepliesResult = (): ListVideoCommentRepliesResult => ({
       isDeleted: false,
       createdAt: fixedNow,
       rootCommentId: '11111111-1111-4111-8111-111111111111',
+      likeCount: 0,
+      viewerHasLiked: false,
       replyingTo: {
         commentId: '11111111-1111-4111-8111-111111111111',
         username: 'fairplay_user',
@@ -192,6 +196,8 @@ export const createStubVideosService = (): VideosPorts => ({
       isDeleted: false,
       createdAt: fixedNow,
       rootCommentId: null,
+      likeCount: 0,
+      viewerHasLiked: false,
       replyingTo: null,
       author: {
         username: 'fairplay_user',
@@ -207,6 +213,8 @@ export const createStubVideosService = (): VideosPorts => ({
       isDeleted: false,
       createdAt: fixedNow,
       rootCommentId: input.rootCommentId,
+      likeCount: 0,
+      viewerHasLiked: false,
       replyingTo: {
         commentId: input.replyingToCommentId ?? input.rootCommentId,
         username: 'jawed',
@@ -221,6 +229,8 @@ export const createStubVideosService = (): VideosPorts => ({
   listVideoComments: async () => listVideoCommentsResult(),
   listVideoCommentReplies: async () => listVideoCommentRepliesResult(),
   deleteVideoComment: async () => undefined,
+  likeVideoComment: async () => undefined,
+  unlikeVideoComment: async () => undefined,
   createVideo: async (input) =>
     createVideoResult({
       ownerId: input.userId,

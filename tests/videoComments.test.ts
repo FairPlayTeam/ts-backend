@@ -13,6 +13,7 @@ import {
   listVideoCommentReplies,
   listVideoComments,
   resolveVideoCommentDeletionOrigin,
+  resolveVideoCommentLikeMutation,
 } from '../src/services/videos/videoComments.js';
 import { toVideoCommentsResponse } from '../src/controllers/videos/videos.responses.js';
 import { VideoCommentNotFoundError } from '../src/services/videos.errors.js';
@@ -147,6 +148,9 @@ test('public comment DTOs whitelist fields independently of internal deletion me
     rootCommentId: null,
     replyingTo: null,
     replyCount: 0,
+    likeCount: 7,
+    viewerHasLiked: true,
+    likerIds: ['33333333-3333-4333-8333-333333333333'],
     authorId: '22222222-2222-4222-8222-222222222222',
     deletionOrigin: null,
     role: 'admin',
@@ -171,6 +175,8 @@ test('public comment DTOs whitelist fields independently of internal deletion me
         rootCommentId: null,
         replyingTo: null,
         replyCount: 0,
+        likeCount: 7,
+        viewerHasLiked: true,
         author: {
           username: 'comment_author',
           displayName: null,
@@ -180,6 +186,25 @@ test('public comment DTOs whitelist fields independently of internal deletion me
     ],
     total: 1,
     nextCursor: null,
+  });
+});
+
+test('comment like mutations are idempotent in both directions', () => {
+  expect(resolveVideoCommentLikeMutation('like', false)).toEqual({
+    changeFact: true,
+    likeCountDelta: 1,
+  });
+  expect(resolveVideoCommentLikeMutation('like', true)).toEqual({
+    changeFact: false,
+    likeCountDelta: 0,
+  });
+  expect(resolveVideoCommentLikeMutation('unlike', true)).toEqual({
+    changeFact: true,
+    likeCountDelta: -1,
+  });
+  expect(resolveVideoCommentLikeMutation('unlike', false)).toEqual({
+    changeFact: false,
+    likeCountDelta: 0,
   });
 });
 
@@ -371,6 +396,7 @@ test('root comment pages calculate every replyCount with one grouped query', asy
     rootId: null,
     createdAt,
     deletedAt: null,
+    likeCount: 2,
     author: {
       username: `user-${id}`,
       displayName: null,
@@ -400,6 +426,9 @@ test('root comment pages calculate every replyCount with one grouped query', asy
       },
       count: async () => 3,
     },
+    commentLike: {
+      findMany: async () => [{ commentId: firstRootId }],
+    },
   };
   const prisma = {
     $transaction: async (
@@ -414,7 +443,12 @@ test('root comment pages calculate every replyCount with one grouped query', asy
 
   const result = await listVideoComments(
     { prisma: prisma as never },
-    { publicId: 'AbCdEf123_', cursor, limit: 2 },
+    {
+      publicId: 'AbCdEf123_',
+      viewerUserId: '99999999-9999-4999-8999-999999999999',
+      cursor,
+      limit: 2,
+    },
   );
 
   expect(groupByCalls).toBe(1);
@@ -422,6 +456,16 @@ test('root comment pages calculate every replyCount with one grouped query', asy
   expect(result.comments.map(({ id, replyCount }) => ({ id, replyCount }))).toEqual([
     { id: firstRootId, replyCount: 2 },
     { id: secondRootId, replyCount: 1 },
+  ]);
+  expect(
+    result.comments.map(({ id, likeCount, viewerHasLiked }) => ({
+      id,
+      likeCount,
+      viewerHasLiked,
+    })),
+  ).toEqual([
+    { id: firstRootId, likeCount: 2, viewerHasLiked: true },
+    { id: secondRootId, likeCount: 2, viewerHasLiked: false },
   ]);
   expect(result.nextCursor).toEqual({ createdAt, id: secondRootId });
   expect(result.total).toBe(3);
@@ -464,6 +508,11 @@ test('reply pages add an ascending temporal index bound around the cursor tie-br
         return [];
       },
       count: async () => 0,
+    },
+    commentLike: {
+      findMany: async () => {
+        throw new Error('Anonymous comment pages must not query viewer likes');
+      },
     },
   };
   const prisma = {

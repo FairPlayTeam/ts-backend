@@ -3,6 +3,7 @@ import { reauthenticateSensitiveAction } from './auth.reauthentication.js';
 import type {
   AuthAccountPort,
   ExportUserCommentData,
+  ExportUserCommentLikeData,
   ExportUserSessionData,
   ExportUserVideoRatingData,
   ExportUserVideoViewData,
@@ -81,6 +82,29 @@ const createCommentExport = (
 
         return comments;
       }),
+  );
+
+const createCommentLikeExport = (
+  deps: AuthDependencies,
+  userId: string,
+): AsyncIterable<ExportUserCommentLikeData> =>
+  createPaginatedExport((cursor) =>
+    deps.prisma.commentLike.findMany({
+      where: {
+        userId,
+        ...(cursor
+          ? {
+              commentId: { gt: cursor.commentId },
+            }
+          : {}),
+      },
+      select: {
+        commentId: true,
+        createdAt: true,
+      },
+      orderBy: [{ commentId: 'asc' }],
+      take: USER_DATA_EXPORT_BATCH_SIZE,
+    }),
   );
 
 const createVideoRatingExport = (
@@ -260,6 +284,7 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
       videoRatings: createVideoRatingExport(deps, userId),
       videoViews: createVideoViewExport(deps, userId),
       comments: createCommentExport(deps, userId),
+      commentLikes: createCommentLikeExport(deps, userId),
       sessions: createSessionExport(deps, userId, currentSessionId),
       emailVerificationToken: emailVerificationTokens[0] ?? null,
       passwordResetToken,

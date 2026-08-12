@@ -416,6 +416,8 @@ describe('video comments integration', () => {
         isDeleted: false,
         createdAt: expect.any(String),
         rootCommentId: null,
+        likeCount: 0,
+        viewerHasLiked: false,
         replyingTo: null,
         author: {
           username: firstAuthorUsername,
@@ -1873,6 +1875,8 @@ describe('video comments integration', () => {
       isDeleted: true,
       createdAt: expect.any(String),
       rootCommentId: null,
+      likeCount: 0,
+      viewerHasLiked: false,
       replyingTo: null,
       author: null,
       replyCount: 1,

@@ -27,6 +27,7 @@ import type {
   ListPublicVideosInput,
   ListVideoCommentRepliesInput,
   ListVideoCommentsInput,
+  MutateVideoCommentLikeInput,
   RateVideoInput,
   SearchPublicVideosInput,
   SignVideoMultipartUploadPartsInput,
@@ -59,6 +60,8 @@ let receivedCreateCommentReplyRequest: CreateVideoCommentReplyInput | undefined;
 let receivedListCommentsRequest: ListVideoCommentsInput | undefined;
 let receivedListCommentRepliesRequest: ListVideoCommentRepliesInput | undefined;
 let receivedDeleteCommentRequest: DeleteVideoCommentInput | undefined;
+let receivedLikeCommentRequest: MutateVideoCommentLikeInput | undefined;
+let receivedUnlikeCommentRequest: MutateVideoCommentLikeInput | undefined;
 let receivedHlsMasterRequest: GetVideoHlsMasterInput | undefined;
 let receivedHlsRenditionRequest: GetVideoHlsRenditionInput | undefined;
 let receivedHlsSegmentRequest: GetVideoHlsSegmentInput | undefined;
@@ -181,6 +184,16 @@ describe('videos routes multipart uploads', () => {
             receivedDeleteCommentRequest = input;
 
             return videosService.deleteVideoComment(input);
+          },
+          likeVideoComment: async (input) => {
+            receivedLikeCommentRequest = input;
+
+            return videosService.likeVideoComment(input);
+          },
+          unlikeVideoComment: async (input) => {
+            receivedUnlikeCommentRequest = input;
+
+            return videosService.unlikeVideoComment(input);
           },
           getHlsMaster: async (input) => {
             receivedHlsMasterRequest = input;
@@ -777,6 +790,8 @@ describe('videos routes multipart uploads', () => {
         isDeleted: false,
         createdAt: '2026-01-01T00:00:00.000Z',
         rootCommentId: null,
+        likeCount: 0,
+        viewerHasLiked: false,
         replyingTo: null,
         author: {
           username: 'fairplay_user',
@@ -964,6 +979,8 @@ describe('videos routes multipart uploads', () => {
           isDeleted: false,
           createdAt: '2026-01-01T00:00:00.000Z',
           rootCommentId: null,
+          likeCount: 0,
+          viewerHasLiked: false,
           replyingTo: null,
           author: {
             username: 'fairplay_user',
@@ -976,6 +993,16 @@ describe('videos routes multipart uploads', () => {
       total: 1,
       nextCursor: null,
     });
+
+    await fetch(`${baseUrl}/videos/${publicId}/comments`, {
+      headers: { Authorization: 'Bearer route-session-key' },
+    }).then((response) => expect(response.status).toBe(200));
+    expect(receivedListCommentsRequest as ListVideoCommentsInput | undefined).toEqual({
+      publicId,
+      viewerUserId: authenticatedUserId,
+    });
+
+    receivedSessionKey = undefined;
 
     const repliesResponse = await fetch(
       `${baseUrl}/videos/${publicId}/comments/${rootCommentId}/replies?limit=5`,
@@ -1005,6 +1032,33 @@ describe('videos routes multipart uploads', () => {
       commentId: rootCommentId,
       userId: authenticatedUserId,
       actorRole: 'user',
+    });
+
+    receivedLikeCommentRequest = undefined;
+    const likeResponse = await fetch(
+      `${baseUrl}/videos/${publicId}/comments/${rootCommentId}/like`,
+      {
+        method: 'PUT',
+        headers: { Authorization: 'Bearer route-session-key' },
+      },
+    );
+    expect(likeResponse.status).toBe(204);
+    expect(likeResponse.headers.get('cache-control')).toBe('no-store');
+    expect(receivedLikeCommentRequest as MutateVideoCommentLikeInput | undefined).toEqual({
+      publicId,
+      commentId: rootCommentId,
+      userId: authenticatedUserId,
+    });
+
+    receivedUnlikeCommentRequest = undefined;
+    await fetch(`${baseUrl}/videos/${publicId}/comments/${rootCommentId}/like`, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer route-session-key' },
+    }).then((response) => expect(response.status).toBe(204));
+    expect(receivedUnlikeCommentRequest as MutateVideoCommentLikeInput | undefined).toEqual({
+      publicId,
+      commentId: rootCommentId,
+      userId: authenticatedUserId,
     });
 
     receivedDeleteCommentRequest = undefined;

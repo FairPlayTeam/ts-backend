@@ -84,6 +84,7 @@ type ListVideoCommentRepliesRequest = Request<
   ListVideoCommentsQuery
 >;
 type DeleteVideoCommentRequest = Request<VideoCommentParams>;
+type MutateVideoCommentLikeRequest = Request<VideoCommentParams>;
 type HlsMasterRequest = Request<PublicVideoIdParams>;
 type HlsRenditionRequest = Request<VideoHlsRenditionParams>;
 type HlsSegmentRequest = Request<VideoHlsSegmentParams>;
@@ -148,10 +149,14 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
 
   const listVideoComments: RequestHandler = async (req, res, next) => {
     try {
+      const optionallyAuthenticatedReq = req as OptionallyAuthenticatedRequest;
       const commentReq = req as ListVideoCommentsRequest;
       const { cursorCreatedAt, cursorId, limit } = commentReq.query;
       const result = await videosService.listVideoComments({
         publicId: commentReq.params.publicId,
+        ...(optionallyAuthenticatedReq.user
+          ? { viewerUserId: optionallyAuthenticatedReq.user.id }
+          : {}),
         ...(limit === undefined ? {} : { limit }),
         ...(cursorCreatedAt !== undefined && cursorId !== undefined
           ? {
@@ -171,11 +176,15 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
 
   const listVideoCommentReplies: RequestHandler = async (req, res, next) => {
     try {
+      const optionallyAuthenticatedReq = req as OptionallyAuthenticatedRequest;
       const commentReq = req as ListVideoCommentRepliesRequest;
       const { cursorCreatedAt, cursorId, limit } = commentReq.query;
       const result = await videosService.listVideoCommentReplies({
         publicId: commentReq.params.publicId,
         rootCommentId: commentReq.params.rootCommentId,
+        ...(optionallyAuthenticatedReq.user
+          ? { viewerUserId: optionallyAuthenticatedReq.user.id }
+          : {}),
         ...(limit === undefined ? {} : { limit }),
         ...(cursorCreatedAt !== undefined && cursorId !== undefined
           ? {
@@ -202,6 +211,38 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
         commentId: commentReq.params.commentId,
         userId: authenticatedReq.user.id,
         actorRole: authenticatedReq.user.role,
+      });
+
+      return setNoStore(res).status(204).send();
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const likeVideoComment: RequestHandler = async (req, res, next) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const commentReq = req as MutateVideoCommentLikeRequest;
+      await videosService.likeVideoComment({
+        publicId: commentReq.params.publicId,
+        commentId: commentReq.params.commentId,
+        userId: authenticatedReq.user.id,
+      });
+
+      return setNoStore(res).status(204).send();
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const unlikeVideoComment: RequestHandler = async (req, res, next) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const commentReq = req as MutateVideoCommentLikeRequest;
+      await videosService.unlikeVideoComment({
+        publicId: commentReq.params.publicId,
+        commentId: commentReq.params.commentId,
+        userId: authenticatedReq.user.id,
       });
 
       return setNoStore(res).status(204).send();
@@ -527,6 +568,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     createVideoComment,
     createVideoCommentReply,
     deleteVideoComment,
+    likeVideoComment,
     getHlsMaster,
     getHlsRendition,
     getHlsSegment,
@@ -544,5 +586,6 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     searchPublicVideos,
     signMultipartUploadParts,
     uploadSourceThumbnail,
+    unlikeVideoComment,
   };
 };

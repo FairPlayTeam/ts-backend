@@ -97,6 +97,11 @@ const userDataExportCommentSchema = z.object({
     .openapi({ example: '6bdb6ab4-f598-4e1d-a399-0e9c84c96bd7' }),
 });
 
+const userDataExportCommentLikeSchema = z.object({
+  commentId: z.string().uuid().openapi({ example: '6bdb6ab4-f598-4e1d-a399-0e9c84c96bd7' }),
+  createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+});
+
 export const userDataExportResponseSchema = z
   .object({
     exportedAt: userDataExportDateTimeSchema.openapi({
@@ -127,6 +132,7 @@ export const userDataExportResponseSchema = z
       description:
         'All comments still attributed to the user, including active content and soft-deleted tombstones whose content is null.',
     }),
+    commentLikes: z.array(userDataExportCommentLikeSchema),
     sessions: z.array(
       z.object({
         id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),

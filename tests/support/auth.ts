@@ -124,6 +124,12 @@ const userDataExportResult = {
       replyingToCommentId: null,
     },
   ]),
+  commentLikes: toAsyncIterable([
+    {
+      commentId: '44444444-4444-4444-8444-444444444444',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    },
+  ]),
   sessions: toAsyncIterable([
     {
       id: sessionResult.session.id,

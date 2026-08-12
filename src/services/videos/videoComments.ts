@@ -25,6 +25,7 @@ import type {
   ListVideoCommentRepliesResult,
   ListVideoCommentsInput,
   ListVideoCommentsResult,
+  MutateVideoCommentLikeInput,
   VideoCommentCursor,
   VideoCommentReply,
   VideoCommentRoot,
@@ -36,6 +37,7 @@ import {
   WRITABLE_VIDEO_ENGAGEMENT_SCOPE_SQL,
 } from './videoReadability.js';
 import type { VideosDependencies } from './videos.dependencies.js';
+import { softDeleteLockedVideoComments } from './videoCommentLifecycle.js';
 
 const VIDEO_COMMENT_TRANSACTION_MAX_ATTEMPTS = 10;
 const DEFAULT_VIDEO_COMMENTS_LIMIT = 20;
@@ -47,6 +49,7 @@ const commentMutationSelect = {
   videoId: true,
   rootId: true,
   createdAt: true,
+  likeCount: true,
   author: {
     select: {
       username: true,
@@ -86,6 +89,7 @@ const commentListSelect = {
   rootId: true,
   createdAt: true,
   deletedAt: true,
+  likeCount: true,
   author: {
     select: {
       username: true,
@@ -143,6 +147,30 @@ type LockedDeletableComment = {
   id: string;
   authorId: string | null;
   deletedAt: Date | null;
+};
+
+type LockedLikeableComment = {
+  id: string;
+  allowComments: boolean;
+};
+
+type LockedCommentLikeTarget = {
+  id: string;
+};
+
+export const resolveVideoCommentLikeMutation = (
+  operation: 'like' | 'unlike',
+  factExists: boolean,
+): { changeFact: boolean; likeCountDelta: -1 | 0 | 1 } => {
+  if (operation === 'like') {
+    return factExists
+      ? { changeFact: false, likeCountDelta: 0 }
+      : { changeFact: true, likeCountDelta: 1 };
+  }
+
+  return factExists
+    ? { changeFact: true, likeCountDelta: -1 }
+    : { changeFact: false, likeCountDelta: 0 };
 };
 
 export const resolveVideoCommentDeletionOrigin = ({
@@ -304,6 +332,8 @@ const toVideoCommentResult = (comment: CommentMutationRecord): CreateVideoCommen
       isDeleted: false,
       createdAt: comment.createdAt,
       rootCommentId: comment.rootId,
+      likeCount: comment.likeCount,
+      viewerHasLiked: false,
       replyingTo: toReplyingTo(comment),
       author: {
         username: comment.author.username,
@@ -318,7 +348,7 @@ const toVideoCommentResult = (comment: CommentMutationRecord): CreateVideoCommen
   };
 };
 
-const toActiveVideoComment = (comment: CommentListRecord) => {
+const toActiveVideoComment = (comment: CommentListRecord, viewerHasLiked: boolean) => {
   if (comment.deletedAt || !comment.content || !comment.author) {
     throw new Error('Active video comment violated its lifecycle invariant');
   }
@@ -329,6 +359,8 @@ const toActiveVideoComment = (comment: CommentListRecord) => {
     isDeleted: false as const,
     createdAt: comment.createdAt,
     rootCommentId: comment.rootId,
+    likeCount: comment.likeCount,
+    viewerHasLiked,
     replyingTo: toReplyingTo(comment),
     author: {
       username: comment.author.username,
@@ -342,13 +374,17 @@ const toActiveVideoComment = (comment: CommentListRecord) => {
   };
 };
 
-const toVideoCommentRoot = (comment: CommentListRecord, replyCount: number): VideoCommentRoot => {
+const toVideoCommentRoot = (
+  comment: CommentListRecord,
+  replyCount: number,
+  viewerHasLiked: boolean,
+): VideoCommentRoot => {
   if (comment.rootId !== null) {
     throw new Error('Root video comment unexpectedly references another root');
   }
 
   if (comment.deletedAt) {
-    if (comment.content !== null || replyCount < 1) {
+    if (comment.content !== null || comment.likeCount !== 0 || viewerHasLiked || replyCount < 1) {
       throw new Error('Deleted video comment placeholder violated its visibility invariant');
     }
 
@@ -358,6 +394,8 @@ const toVideoCommentRoot = (comment: CommentListRecord, replyCount: number): Vid
       isDeleted: true,
       createdAt: comment.createdAt,
       rootCommentId: null,
+      likeCount: comment.likeCount,
+      viewerHasLiked: false,
       replyingTo: null,
       author: null,
       replyCount,
@@ -365,19 +403,22 @@ const toVideoCommentRoot = (comment: CommentListRecord, replyCount: number): Vid
   }
 
   return {
-    ...toActiveVideoComment(comment),
+    ...toActiveVideoComment(comment, viewerHasLiked),
     rootCommentId: null,
     replyCount,
   };
 };
 
-const toVideoCommentReply = (comment: CommentListRecord): VideoCommentReply => {
+const toVideoCommentReply = (
+  comment: CommentListRecord,
+  viewerHasLiked: boolean,
+): VideoCommentReply => {
   if (comment.rootId === null) {
     throw new Error('Video comment reply is missing its root');
   }
 
   return {
-    ...toActiveVideoComment(comment),
+    ...toActiveVideoComment(comment, viewerHasLiked),
     rootCommentId: comment.rootId,
   };
 };
@@ -565,7 +606,7 @@ const visibleRootWhere = (videoId: string): Prisma.CommentWhereInput => ({
 
 export const listVideoComments = async (
   deps: Pick<VideosDependencies, 'prisma'>,
-  { cursor, limit, publicId }: ListVideoCommentsInput,
+  { cursor, limit, publicId, viewerUserId }: ListVideoCommentsInput,
 ): Promise<ListVideoCommentsResult> => {
   const pageSize = normalizeVideoCommentsLimit(limit);
 
@@ -603,12 +644,28 @@ export const listVideoComments = async (
               },
             });
       const total = await tx.comment.count({ where: rootWhere });
+      const viewerLikes = viewerUserId
+        ? await tx.commentLike.findMany({
+            where: {
+              userId: viewerUserId,
+              commentId: {
+                in: rootIds,
+              },
+            },
+            select: {
+              commentId: true,
+            },
+          })
+        : [];
+      const likedCommentIds = new Set(viewerLikes.map(({ commentId }) => commentId));
       const replyCounts = new Map(
         groupedReplyCounts.map(({ _count, rootId }) => [rootId, _count._all]),
       );
 
       return {
-        comments: roots.map((root) => toVideoCommentRoot(root, replyCounts.get(root.id) ?? 0)),
+        comments: roots.map((root) =>
+          toVideoCommentRoot(root, replyCounts.get(root.id) ?? 0, likedCommentIds.has(root.id)),
+        ),
         total,
         nextCursor: nextCommentCursor(roots, queriedRoots.length > pageSize),
       };
@@ -621,7 +678,7 @@ export const listVideoComments = async (
 
 export const listVideoCommentReplies = async (
   deps: Pick<VideosDependencies, 'prisma'>,
-  { cursor, limit, publicId, rootCommentId }: ListVideoCommentRepliesInput,
+  { cursor, limit, publicId, rootCommentId, viewerUserId }: ListVideoCommentRepliesInput,
 ): Promise<ListVideoCommentRepliesResult> => {
   const pageSize = normalizeVideoCommentsLimit(limit);
 
@@ -661,9 +718,25 @@ export const listVideoCommentReplies = async (
         });
         const replies = queriedReplies.slice(0, pageSize);
         const total = await tx.comment.count({ where: repliesWhere });
+        const viewerLikes = viewerUserId
+          ? await tx.commentLike.findMany({
+              where: {
+                userId: viewerUserId,
+                commentId: {
+                  in: replies.map(({ id }) => id),
+                },
+              },
+              select: {
+                commentId: true,
+              },
+            })
+          : [];
+        const likedCommentIds = new Set(viewerLikes.map(({ commentId }) => commentId));
 
         return {
-          replies: replies.map(toVideoCommentReply),
+          replies: replies.map((reply) =>
+            toVideoCommentReply(reply, likedCommentIds.has(reply.id)),
+          ),
           total,
           nextCursor: nextCommentCursor(replies, queriedReplies.length > pageSize),
         };
@@ -770,20 +843,13 @@ export const deleteVideoComment = async (
       return;
     }
 
-    const deleted = await tx.comment.updateMany({
-      where: {
-        id: comment.id,
-        videoId: video.id,
-        deletedAt: null,
-      },
-      data: {
-        content: null,
-        deletedAt: deps.clock.now(),
-        deletionOrigin,
-      },
+    const deletedCount = await softDeleteLockedVideoComments(tx, {
+      commentIds: [comment.id],
+      deletedAt: deps.clock.now(),
+      deletionOrigin,
     });
 
-    if (deleted.count === 0) {
+    if (deletedCount === 0) {
       return;
     }
 
@@ -805,4 +871,216 @@ export const deleteVideoComment = async (
       throw new Error('Active video comment is missing from the denormalized aggregate');
     }
   });
+};
+
+const findLikeableCommentCandidate = async (
+  deps: Pick<VideosDependencies, 'prisma'>,
+  { commentId, publicId }: Pick<MutateVideoCommentLikeInput, 'commentId' | 'publicId'>,
+): Promise<{ allowComments: boolean }> => {
+  const candidate = await deps.prisma.comment.findFirst({
+    where: {
+      id: commentId,
+      deletedAt: null,
+      video: {
+        publicId,
+        ...writableVideoEngagementWhere,
+      },
+    },
+    select: {
+      video: {
+        select: {
+          allowComments: true,
+        },
+      },
+    },
+  });
+
+  if (!candidate) {
+    throw new VideoCommentNotFoundError();
+  }
+
+  return candidate.video;
+};
+
+const lockLikeableComment = async (
+  tx: Prisma.TransactionClient,
+  publicId: string,
+  commentId: string,
+): Promise<LockedLikeableComment> => {
+  // Likes mutate only a comment-owned aggregate. Locking the target comment preserves the
+  // delete/like ordering without serializing unrelated comments from the same popular video.
+  const [comment] = await tx.$queryRaw<LockedLikeableComment[]>(
+    Prisma.sql`
+      SELECT
+        c."id"::text AS "id",
+        v."allow_comments" AS "allowComments"
+      FROM "comments" AS c
+      INNER JOIN "videos" AS v ON v."id" = c."video_id"
+      WHERE c."id" = CAST(${commentId} AS UUID)
+        AND c."deleted_at" IS NULL
+        AND v."public_id" = ${publicId}
+        AND ${WRITABLE_VIDEO_ENGAGEMENT_SCOPE_SQL}
+      FOR UPDATE OF c
+    `,
+  );
+
+  if (!comment) {
+    throw new VideoCommentNotFoundError();
+  }
+
+  if (!comment.allowComments) {
+    throw new VideoCommentsDisabledError();
+  }
+
+  return comment;
+};
+
+export const likeVideoComment = async (
+  deps: Pick<VideosDependencies, 'prisma'>,
+  { commentId, publicId, userId }: MutateVideoCommentLikeInput,
+): Promise<void> => {
+  const candidate = await findLikeableCommentCandidate(deps, { commentId, publicId });
+
+  if (!candidate.allowComments) {
+    throw new VideoCommentsDisabledError();
+  }
+
+  try {
+    await runVideoCommentTransaction(deps, async (tx) => {
+      const comment = await lockLikeableComment(tx, publicId, commentId);
+      const currentLike = await tx.commentLike.findUnique({
+        where: {
+          userId_commentId: {
+            userId,
+            commentId: comment.id,
+          },
+        },
+        select: {
+          commentId: true,
+        },
+      });
+      const mutation = resolveVideoCommentLikeMutation('like', currentLike !== null);
+
+      if (!mutation.changeFact) {
+        return;
+      }
+
+      await tx.commentLike.create({
+        data: {
+          userId,
+          commentId: comment.id,
+        },
+      });
+      const incremented = await tx.comment.updateMany({
+        where: {
+          id: comment.id,
+          deletedAt: null,
+        },
+        data: {
+          likeCount: {
+            increment: mutation.likeCountDelta,
+          },
+        },
+      });
+
+      if (incremented.count !== 1) {
+        throw new Error('Inserted comment like is missing from its active comment aggregate');
+      }
+    });
+  } catch (err) {
+    if (err instanceof VideoNotFoundError) {
+      throw new VideoCommentNotFoundError();
+    }
+
+    throw err;
+  }
+};
+
+export const unlikeVideoComment = async (
+  deps: Pick<VideosDependencies, 'prisma'>,
+  { commentId, publicId, userId }: MutateVideoCommentLikeInput,
+): Promise<void> => {
+  const candidate = await deps.prisma.comment.findFirst({
+    where: {
+      id: commentId,
+      video: {
+        publicId,
+      },
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!candidate) {
+    return;
+  }
+
+  try {
+    await runVideoCommentTransaction(deps, async (tx) => {
+      const [comment] = await tx.$queryRaw<LockedCommentLikeTarget[]>(
+        Prisma.sql`
+          SELECT c."id"::text AS "id"
+          FROM "comments" AS c
+          INNER JOIN "videos" AS v ON v."id" = c."video_id"
+          WHERE c."id" = CAST(${commentId} AS UUID)
+            AND v."public_id" = ${publicId}
+          FOR UPDATE OF c
+        `,
+      );
+
+      if (!comment) {
+        return;
+      }
+
+      const currentLike = await tx.commentLike.findUnique({
+        where: {
+          userId_commentId: {
+            userId,
+            commentId: comment.id,
+          },
+        },
+        select: {
+          commentId: true,
+        },
+      });
+      const mutation = resolveVideoCommentLikeMutation('unlike', currentLike !== null);
+
+      if (!mutation.changeFact) {
+        return;
+      }
+
+      await tx.commentLike.delete({
+        where: {
+          userId_commentId: {
+            userId,
+            commentId: comment.id,
+          },
+        },
+      });
+      const decremented = await tx.comment.updateMany({
+        where: {
+          id: comment.id,
+          likeCount: {
+            gt: 0,
+          },
+        },
+        data: {
+          likeCount: {
+            decrement: 1,
+          },
+        },
+      });
+
+      if (decremented.count !== 1) {
+        throw new Error('Deleted comment like is missing from its comment aggregate');
+      }
+    });
+  } catch (err) {
+    if (err instanceof VideoNotFoundError) {
+      return;
+    }
+
+    throw err;
+  }
 };

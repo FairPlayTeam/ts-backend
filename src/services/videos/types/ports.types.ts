@@ -324,6 +324,8 @@ type VideoCommentBase = {
   id: string;
   createdAt: Date;
   rootCommentId: string | null;
+  likeCount: number;
+  viewerHasLiked: boolean;
 };
 
 export type ActiveVideoComment = VideoCommentBase & {
@@ -377,6 +379,7 @@ export type CreateVideoCommentResult = {
 
 export type ListVideoCommentsInput = {
   publicId: string;
+  viewerUserId?: string;
   cursor?: VideoCommentCursor;
   limit?: number;
 };
@@ -404,6 +407,12 @@ export type DeleteVideoCommentInput = {
   actorRole: AuthRole;
 };
 
+export type MutateVideoCommentLikeInput = {
+  publicId: string;
+  commentId: string;
+  userId: string;
+};
+
 export type VideosRoutePort = {
   createVideo(input: CreateVideoInput): Promise<CreateVideoResult>;
   listMyVideos(input: ListMyVideosInput): Promise<ListMyVideosResult>;
@@ -420,6 +429,8 @@ export type VideosRoutePort = {
     input: ListVideoCommentRepliesInput,
   ): Promise<ListVideoCommentRepliesResult>;
   deleteVideoComment(input: DeleteVideoCommentInput): Promise<void>;
+  likeVideoComment(input: MutateVideoCommentLikeInput): Promise<void>;
+  unlikeVideoComment(input: MutateVideoCommentLikeInput): Promise<void>;
   getThumbnail(input: GetVideoThumbnailInput): Promise<VideoThumbnailResult>;
   getHlsMaster(input: GetVideoHlsMasterInput): Promise<VideoHlsPlaylistResult>;
   getHlsRendition(input: GetVideoHlsRenditionInput): Promise<VideoHlsPlaylistResult>;

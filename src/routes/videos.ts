@@ -7,6 +7,7 @@ import {
   createVideoCommentReplySchema,
   createVideoCommentSchema,
   deleteVideoCommentSchema,
+  mutateVideoCommentLikeSchema,
   getPublicVideoDetailSchema,
   getVideoMultipartUploadSessionSchema,
   getVideoRatingSchema,
@@ -52,6 +53,7 @@ export const createRouter = ({
     createVideoComment,
     createVideoCommentReply,
     deleteVideoComment,
+    likeVideoComment,
     getHlsMaster,
     getHlsRendition,
     getHlsSegment,
@@ -69,6 +71,7 @@ export const createRouter = ({
     searchPublicVideos,
     signMultipartUploadParts,
     uploadSourceThumbnail,
+    unlikeVideoComment,
   } = createVideosController({ videosService });
   const protect = createRouteProtector({ authService });
   const optionalAuthenticate = createOptionalAuthenticateSession({ authService });
@@ -98,10 +101,16 @@ export const createRouter = ({
   );
   router.get('/:publicId/rating', validate(getVideoRatingSchema), getVideoRating);
   router.put('/:publicId/rating', ...protectedValidatedRoute(rateVideoSchema, rateVideo));
-  router.get('/:publicId/comments', validate(listVideoCommentsSchema), listVideoComments);
+  router.get(
+    '/:publicId/comments',
+    validate(listVideoCommentsSchema),
+    optionalAuthenticate,
+    listVideoComments,
+  );
   router.get(
     '/:publicId/comments/:rootCommentId/replies',
     validate(listVideoCommentRepliesSchema),
+    optionalAuthenticate,
     listVideoCommentReplies,
   );
   router.post(
@@ -126,6 +135,22 @@ export const createRouter = ({
       deleteVideoCommentSchema,
       videoCommentMutationLimiter,
       deleteVideoComment,
+    ),
+  );
+  router.put(
+    '/:publicId/comments/:commentId/like',
+    ...protectedValidatedRoute(
+      mutateVideoCommentLikeSchema,
+      videoCommentMutationLimiter,
+      likeVideoComment,
+    ),
+  );
+  router.delete(
+    '/:publicId/comments/:commentId/like',
+    ...protectedValidatedRoute(
+      mutateVideoCommentLikeSchema,
+      videoCommentMutationLimiter,
+      unlikeVideoComment,
     ),
   );
   router.get('/:publicId/thumbnail', getThumbnail);

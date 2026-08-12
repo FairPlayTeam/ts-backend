@@ -79,6 +79,7 @@ import type {
   ListVideoCommentRepliesResult,
   ListVideoCommentsInput,
   ListVideoCommentsResult,
+  MutateVideoCommentLikeInput,
   ListMyVideosInput,
   ListMyVideosResult,
   PublicVideoCursor,
@@ -122,8 +123,10 @@ import {
   createVideoComment,
   createVideoCommentReply,
   deleteVideoComment,
+  likeVideoComment,
   listVideoCommentReplies,
   listVideoComments,
+  unlikeVideoComment,
 } from './videoComments.js';
 
 const ACTIVE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
@@ -1764,6 +1767,14 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
 
   async deleteVideoComment(input: DeleteVideoCommentInput): Promise<void> {
     return deleteVideoComment(deps, input);
+  },
+
+  async likeVideoComment(input: MutateVideoCommentLikeInput): Promise<void> {
+    return likeVideoComment(deps, input);
+  },
+
+  async unlikeVideoComment(input: MutateVideoCommentLikeInput): Promise<void> {
+    return unlikeVideoComment(deps, input);
   },
 
   async createVideo({

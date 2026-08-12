@@ -11,6 +11,8 @@ export const bannerObjectKeyPattern =
 export type AuthServiceTestCalls = {
   commentFindMany: unknown[];
   commentUpdateMany: unknown;
+  commentLikeFindMany: unknown[];
+  commentLikeDeleteMany: unknown[];
   userFindUnique: unknown;
   userFindFirst: unknown;
   userCreate: unknown;
@@ -63,6 +65,8 @@ export type AuthServiceTestCalls = {
 export const createAuthServiceTestCalls = (): AuthServiceTestCalls => ({
   commentFindMany: [],
   commentUpdateMany: undefined,
+  commentLikeFindMany: [],
+  commentLikeDeleteMany: [],
   userFindUnique: undefined,
   userFindFirst: undefined,
   userCreate: undefined,

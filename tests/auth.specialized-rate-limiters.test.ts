@@ -230,6 +230,55 @@ describe('specialized auth rate limiters', () => {
     }
   });
 
+  test('shares one authenticated quota across comment creation, like, and unlike', async () => {
+    const server = await startAuthApp(withTokenScopedUsers(createStubAuthService()));
+    const commentId = '11111111-1111-4111-8111-111111111111';
+
+    try {
+      for (let index = 1; index < VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX; index += 1) {
+        const response = await fetch(`${server.baseUrl}/videos/AbCdEf123_/comments`, {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer first-user-session-key',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ content: 'A shared-quota comment.' }),
+        });
+
+        expect(response.status).toBe(201);
+      }
+
+      await expect(
+        fetch(`${server.baseUrl}/videos/AbCdEf123_/comments/${commentId}/like`, {
+          method: 'PUT',
+          headers: { authorization: 'Bearer first-user-session-key' },
+        }),
+      ).resolves.toMatchObject({ status: 204 });
+
+      const blockedUnlike = await fetch(
+        `${server.baseUrl}/videos/AbCdEf123_/comments/${commentId}/like`,
+        {
+          method: 'DELETE',
+          headers: { authorization: 'Bearer first-user-session-key' },
+        },
+      );
+
+      expect(blockedUnlike.status).toBe(429);
+      await expect(blockedUnlike.json()).resolves.toEqual({
+        error: 'TooManyRequests',
+        message: VIDEO_COMMENT_MUTATION_RATE_LIMIT_MESSAGE,
+      });
+      await expect(
+        fetch(`${server.baseUrl}/videos/AbCdEf123_/comments/${commentId}/like`, {
+          method: 'DELETE',
+          headers: { authorization: 'Bearer second-user-session-key' },
+        }),
+      ).resolves.toMatchObject({ status: 204 });
+    } finally {
+      await server.close();
+    }
+  });
+
   test('rate limits a burst of random comment deletions before calling the video service', async () => {
     const baseVideosService = createStubVideosService();
     let deleteCommentCalls = 0;

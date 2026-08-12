@@ -32,6 +32,8 @@ const toVideoCommentResponseBody = (comment: VideoComment) =>
         isDeleted: true as const,
         createdAt: toIsoString(comment.createdAt),
         rootCommentId: null,
+        likeCount: comment.likeCount,
+        viewerHasLiked: comment.viewerHasLiked,
         replyingTo: null,
         author: null,
       }
@@ -41,6 +43,8 @@ const toVideoCommentResponseBody = (comment: VideoComment) =>
         isDeleted: comment.isDeleted,
         createdAt: toIsoString(comment.createdAt),
         rootCommentId: comment.rootCommentId,
+        likeCount: comment.likeCount,
+        viewerHasLiked: comment.viewerHasLiked,
         replyingTo: comment.replyingTo
           ? {
               commentId: comment.replyingTo.commentId,

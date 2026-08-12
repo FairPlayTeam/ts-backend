@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import type {
   AuthSessionResult,
   ExportUserCommentData,
+  ExportUserCommentLikeData,
   ExportUserDataResult,
   ExportUserSessionData,
   ExportUserVideoRatingData,
@@ -72,6 +73,7 @@ const toUserDataExportTokenResponse = (token: UserDataExportToken | null) =>
     : null;
 
 const toUserDataExportBaseResponse = ({
+  commentLikes: _commentLikes,
   comments: _comments,
   sessions: _sessions,
   videoRatings: _videoRatings,
@@ -99,6 +101,11 @@ const toUserDataExportCommentResponse = (comment: ExportUserCommentData) => ({
   ...comment,
   createdAt: toIsoString(comment.createdAt),
   deletedAt: toNullableIsoString(comment.deletedAt),
+});
+
+const toUserDataExportCommentLikeResponse = (like: ExportUserCommentLikeData) => ({
+  ...like,
+  createdAt: toIsoString(like.createdAt),
 });
 
 const toUserDataExportVideoRatingResponse = (rating: ExportUserVideoRatingData) => ({
@@ -200,6 +207,7 @@ export const streamUserDataExportResponse = async (
     !(await writeArray('videoRatings', result.videoRatings, toUserDataExportVideoRatingResponse)) ||
     !(await writeArray('videoViews', result.videoViews, toUserDataExportVideoViewResponse)) ||
     !(await writeArray('comments', result.comments, toUserDataExportCommentResponse)) ||
+    !(await writeArray('commentLikes', result.commentLikes, toUserDataExportCommentLikeResponse)) ||
     !(await writeArray('sessions', result.sessions, toUserDataExportSessionResponse))
   ) {
     return;

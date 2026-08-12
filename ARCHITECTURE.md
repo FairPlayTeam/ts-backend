@@ -424,7 +424,8 @@ are included only in the authenticated `/auth/me/export`; public contracts expos
 never viewer identities or dates.
 
 `POST /auth/me/export` reads ratings, view facts, attributed comments (including soft-deleted
-tombstones), and sessions with bounded keyset cursors and streams every entry to the HTTP response.
+tombstones), personal comment likes, and sessions with bounded keyset cursors and streams every
+entry to the HTTP response.
 It never builds an unbounded fact array or pretty-prints the complete document in memory; HTTP
 backpressure limits production to the client's consumption rate. Only the bounded profile, media,
 and latest-token metadata are serialized before streaming starts. Each exported fact table has a
@@ -454,6 +455,9 @@ The export deliberately does not hold one long database snapshot across sections
 sees database state at the time it is queried, so data created during generation can appear in a
 later section or page without appearing in an earlier one. This weak temporal consistency is an
 accepted availability and transaction-duration tradeoff for a machine-readable personal export.
+Comment likes are the exception to temporal cursor ordering: they page by stable `comment_id` under
+the `(user_id, comment_id)` primary key. An unlike/re-like therefore cannot move the same logical
+fact beyond an already-emitted cursor and duplicate it in the stream.
 If a database error occurs after headers have been sent, the server logs it structurally and closes
 the chunked response without the final JSON delimiter; clients must treat the interrupted transport
 or invalid JSON as an incomplete export and retry.
@@ -538,9 +542,10 @@ its UUIDs and normalized content have already crossed the HTTP validation bounda
 calling that port directly must reuse the same validation rules rather than treating the service as
 a runtime parser for arbitrary input.
 
-Root creation, replies, and deletion share one authenticated per-user mutation rate limit. The likes
-chantier must explicitly decide whether its mutations consume this same quota or use a separate one;
-it must not inherit either policy accidentally. Deletion first performs an indexed comment/video
+Root creation, replies, deletion, and both idempotent comment-like mutations share one authenticated
+per-user mutation rate limit of 30 actions per ten minutes. This is a deliberate abuse-control
+policy: comment likes consume the existing quota rather than silently inheriting or creating a
+separate limiter. Deletion first performs an indexed comment/video
 lookup without row locks, resolving permission in the order author, current video owner, then
 moderator/administrator role. Random or unauthorized comment identifiers therefore cannot contend on
 the video lock. A qualifying deletion repeats the same
@@ -568,8 +573,36 @@ transition, not an actor identifier, and remains absent from public comment DTOs
 exports. Tombstones predating the metadata are backfilled as `legacy_unknown` because author
 deletion and account anonymization cannot be distinguished retrospectively. A bidirectional database
 CHECK requires active comments to have no origin and every deleted comment to have an origin.
-Account deletion first locks every affected video in UUID order, subtracts the exact number of the
-user's still-active comments per video, and soft-deletes their content before deleting the user.
+`comment_likes` stores one mutable fact per `(user_id, comment_id)`, with an index for received-like
+counting and cleanup. Its composite primary key also provides the stable user/comment order used by
+personal-export pagination.
+`comments.like_count` is a nonnegative denormalized aggregate. Public root and reply DTOs expose
+that aggregate and a bounded current-viewer membership projection only; anonymous viewers always
+receive `viewerHasLiked: false`, and no liker identity or liker list crosses the response whitelist.
+
+`PUT /videos/:publicId/comments/:commentId/like` performs an indexed comment/video/engagement
+preflight before opening a transaction. Its serializable transaction revalidates the same scope and
+`allow_comments` state, locks only the target comment with `FOR UPDATE OF c`, then creates the fact
+and increments `like_count` only when the fact was absent. Comment-level granularity is intentional:
+the aggregate belongs to the comment, so locking the video would serialize likes on every unrelated
+comment under a popular video. Video moderation and comment deletion remain safe: the transaction
+reads the video scope in its serializable snapshot, while deletion follows video-then-comment and a
+like never requests the video lock after acquiring the comment lock. Serializable retries use the
+same capped exponential full-jitter helper as video ratings and other comment mutations.
+
+`DELETE /videos/:publicId/comments/:commentId/like` first performs an indexed contextual membership
+preflight, then locks the target comment without applying readability, moderation, lifecycle, or
+`allow_comments` filters. It removes the current user's fact and decrements only when that fact
+exists; absent, wrong-video, already-deleted, or already-unliked targets all converge on idempotent
+success without exposing resource state. Soft-deleting a comment uses one shared lifecycle helper
+that deletes every received like and resets `like_count` to zero in the same transaction before the
+tombstone becomes visible.
+
+Account deletion first locks every affected video in UUID order, then every authored or liked
+comment in UUID order. It subtracts emitted likes from each target comment before deleting those
+facts, subtracts the exact number of the user's still-active comments per video, and reuses the same
+soft-delete helper to remove received likes and clear authored comment content before deleting the
+user.
 The `author_id ON DELETE SET NULL` action can then anonymize those preserved rows without violating
 the lifecycle CHECK or destroying replies written by other accounts. This depends on the official
 account-deletion path soft-deleting active authored comments before deleting the user. A direct hard

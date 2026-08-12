@@ -142,6 +142,7 @@ model User {
   videoRatings            VideoRating[]
   videoViews              VideoView[]
   comments                Comment[]                @relation("CommentAuthor")
+  commentLikes            CommentLike[]
   videoUploadSessions     VideoUploadSession[]
 
   @@map("users")
@@ -270,6 +271,7 @@ model Comment {
   createdAt           DateTime               @default(now()) @map("created_at")
   deletedAt           DateTime?              @map("deleted_at")
   deletionOrigin      CommentDeletionOrigin? @map("deletion_origin")
+  likeCount           Int                    @default(0) @map("like_count")
 
   author            User?     @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   video             Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
@@ -277,6 +279,7 @@ model Comment {
   replies           Comment[] @relation("CommentThread")
   replyingToComment Comment?  @relation("CommentReplyTarget", fields: [replyingToCommentId], references: [id], onDelete: SetNull)
   addressedReplies  Comment[] @relation("CommentReplyTarget")
+  likes              CommentLike[]
 
   @@index([videoId, rootId, createdAt, id])
   @@index([rootId, createdAt, id])
@@ -284,6 +287,19 @@ model Comment {
   @@index([authorId, createdAt, id])
   @@index([replyingToCommentId])
   @@map("comments")
+}
+
+model CommentLike {
+  userId    String   @map("user_id") @db.Uuid
+  commentId String   @map("comment_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@id([userId, commentId])
+  @@index([commentId])
+  @@map("comment_likes")
 }
 
 model VideoRendition {

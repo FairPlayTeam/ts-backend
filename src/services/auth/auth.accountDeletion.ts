@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { runSerializableTransaction } from '../../lib/prismaTransactions.js';
 import { requestExternalResourceAbsence } from '../externalResources.js';
+import { softDeleteLockedVideoComments } from '../videos/videoCommentLifecycle.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
   DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
@@ -10,6 +11,11 @@ import { reauthenticateSensitiveAction } from './auth.reauthentication.js';
 import type { AuthAccountPort, DeleteAccountInput } from './types/account.types.js';
 
 type AccountDeletionService = Pick<AuthAccountPort, 'deleteAccount'>;
+
+type LockedAccountComment = {
+  id: string;
+  isAuthored: boolean;
+};
 
 export const createAccountDeletionService = (deps: AuthDependencies): AccountDeletionService => ({
   async deleteAccount({ userId, currentPassword }: DeleteAccountInput) {
@@ -53,6 +59,27 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
                 AND "deleted_at" IS NULL
             )
           ORDER BY "id"
+          FOR UPDATE
+        `,
+      );
+      // Comment likes mutate a comment-owned aggregate and therefore lock comment rows directly.
+      // Keep account cleanup in the same stable order before changing emitted or received likes.
+      const lockedComments = await tx.$queryRaw<LockedAccountComment[]>(
+        Prisma.sql`
+          SELECT
+            c."id"::text AS "id",
+            (c."author_id" = CAST(${userId} AS UUID) AND c."deleted_at" IS NULL) AS "isAuthored"
+          FROM "comments" AS c
+          WHERE (
+              c."author_id" = CAST(${userId} AS UUID)
+              AND c."deleted_at" IS NULL
+            )
+            OR c."id" IN (
+              SELECT "comment_id"
+              FROM "comment_likes"
+              WHERE "user_id" = CAST(${userId} AS UUID)
+            )
+          ORDER BY c."id"
           FOR UPDATE
         `,
       );
@@ -100,16 +127,30 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
           WHERE authored."video_id" = v."id"
         `,
       );
-      await tx.comment.updateMany({
+      await tx.$executeRaw(
+        Prisma.sql`
+          UPDATE "comments" AS c
+          SET "like_count" = c."like_count" - emitted."like_count"
+          FROM (
+            SELECT
+              "comment_id",
+              COUNT(*)::integer AS "like_count"
+            FROM "comment_likes"
+            WHERE "user_id" = CAST(${userId} AS UUID)
+            GROUP BY "comment_id"
+          ) AS emitted
+          WHERE emitted."comment_id" = c."id"
+        `,
+      );
+      await tx.commentLike.deleteMany({
         where: {
-          authorId: userId,
-          deletedAt: null,
+          userId,
         },
-        data: {
-          content: null,
-          deletedAt: requestedAt,
-          deletionOrigin: 'account_deletion',
-        },
+      });
+      await softDeleteLockedVideoComments(tx, {
+        commentIds: lockedComments.filter(({ isAuthored }) => isAuthored).map(({ id }) => id),
+        deletedAt: requestedAt,
+        deletionOrigin: 'account_deletion',
       });
 
       const targets = await tx.externalResourceTarget.findMany({

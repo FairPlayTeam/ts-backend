@@ -177,6 +177,7 @@ describe('OpenAPI generation', () => {
       '/videos/{publicId}',
       '/videos/{publicId}/comments',
       '/videos/{publicId}/comments/{commentId}',
+      '/videos/{publicId}/comments/{commentId}/like',
       '/videos/{publicId}/comments/{rootCommentId}/replies',
       '/videos/{publicId}/hls/master.m3u8',
       '/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8',
@@ -229,6 +230,45 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/videos/{publicId}']?.get?.responses?.[200]).toBeDefined();
     expect(document.paths['/videos/{publicId}']?.get?.responses?.[404]).toBeDefined();
     expect(document.paths['/videos/{publicId}']?.get?.responses?.[401]).toBeUndefined();
+    expect(document.paths['/videos/{publicId}/comments']?.get?.security).toEqual([
+      {},
+      { bearerAuth: [] },
+    ]);
+    expect(document.paths['/videos/{publicId}/comments']?.get).toMatchObject({
+      summary: 'List public comment threads for a video',
+      description: expect.stringContaining('Authentication is optional'),
+    });
+    expect(
+      document.paths['/videos/{publicId}/comments/{rootCommentId}/replies']?.get?.security,
+    ).toEqual([{}, { bearerAuth: [] }]);
+    expect(
+      document.paths['/videos/{publicId}/comments/{rootCommentId}/replies']?.get,
+    ).toMatchObject({
+      summary: 'List public replies to a video comment',
+      description: expect.stringContaining('Authentication is optional'),
+    });
+    expect(
+      document.paths['/videos/{publicId}/comments/{commentId}/like']?.put?.responses?.[503]
+        ?.description,
+    ).toBe('Comment like mutation temporarily unavailable');
+    expect(document.paths['/videos/{publicId}/comments/{commentId}/like']?.put).toMatchObject({
+      summary: 'Like a video comment',
+      description: expect.stringContaining('idempotent'),
+      responses: {
+        204: {
+          description: 'The comment is liked by the current user',
+        },
+      },
+    });
+    expect(document.paths['/videos/{publicId}/comments/{commentId}/like']?.delete).toMatchObject({
+      summary: 'Unlike a video comment',
+      description: expect.stringContaining('remains available'),
+      responses: {
+        204: {
+          description: "The current user's like was removed or was already absent",
+        },
+      },
+    });
     expect(document.paths['/videos/{publicId}/rating']?.get?.security).toEqual([]);
     expect(document.paths['/videos/{publicId}/rating']?.get?.responses?.[401]).toBeUndefined();
     expect(document.paths['/videos/{publicId}/rating']?.get?.responses?.[403]).toBeUndefined();

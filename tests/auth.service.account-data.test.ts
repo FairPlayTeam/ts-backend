@@ -57,6 +57,12 @@ describe('auth service account data', () => {
       },
     ]);
     const comments = await collectAsync(result.comments);
+    expect(await collectAsync(result.commentLikes)).toEqual([
+      {
+        commentId: '44444444-4444-4444-8444-444444444444',
+        createdAt: fixedNow,
+      },
+    ]);
 
     expect(comments).toEqual([
       {
@@ -297,6 +303,96 @@ describe('auth service account data', () => {
     );
   });
 
+  test('iterates comment-like exports through the shared bounded keyset pattern', async () => {
+    const exportedLikes = Array.from({ length: 501 }, (_, index) => ({
+      commentId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      createdAt: fixedNow,
+    }));
+    const likeQueries: unknown[] = [];
+    let offset = 0;
+    const { deps } = createTestDeps({
+      prisma: {
+        commentLike: {
+          findMany: async (args: unknown) => {
+            likeQueries.push(args);
+            const page = exportedLikes.slice(offset, offset + 250);
+            offset += page.length;
+            return page;
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+    const result = await service.exportUserData({
+      userId: 'user-id',
+      currentSessionId: 'session-id',
+      currentPassword: 'Password1!',
+    });
+
+    expect(await collectAsync(result.commentLikes)).toEqual(exportedLikes);
+    expect(likeQueries).toHaveLength(3);
+    expect(likeQueries[1]).toEqual(
+      expect.objectContaining({
+        where: {
+          userId: 'user-id',
+          commentId: { gt: exportedLikes[249]?.commentId },
+        },
+        orderBy: [{ commentId: 'asc' }],
+        take: 250,
+      }),
+    );
+  });
+
+  test('does not duplicate a comment like recreated after its export page was emitted', async () => {
+    const initialLikes = Array.from({ length: 251 }, (_, index) => ({
+      commentId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      createdAt: fixedNow,
+    }));
+    const firstInitialLike = initialLikes[0];
+    if (!firstInitialLike) {
+      throw new Error('The comment-like export fixture was unexpectedly empty');
+    }
+    const recreatedLike = {
+      ...firstInitialLike,
+      createdAt: new Date('2026-01-01T01:00:00.000Z'),
+    };
+    let currentLikes = [...initialLikes];
+    let queryCount = 0;
+    const { deps } = createTestDeps({
+      prisma: {
+        commentLike: {
+          findMany: async (args: unknown) => {
+            queryCount += 1;
+
+            if (queryCount === 2) {
+              currentLikes = [recreatedLike, ...initialLikes.slice(1)];
+            }
+
+            const cursor = (args as { where: { commentId?: { gt?: string } } }).where.commentId?.gt;
+
+            return currentLikes
+              .filter(({ commentId }) => cursor === undefined || commentId > cursor)
+              .sort((first, second) => first.commentId.localeCompare(second.commentId))
+              .slice(0, 250);
+          },
+        },
+      } as unknown as AuthDeps['prisma'],
+    });
+    const service = createAuthService(deps);
+    const result = await service.exportUserData({
+      userId: 'user-id',
+      currentSessionId: 'session-id',
+      currentPassword: 'Password1!',
+    });
+    const exportedLikes = await collectAsync(result.commentLikes);
+
+    expect(exportedLikes).toHaveLength(initialLikes.length);
+    expect(new Set(exportedLikes.map(({ commentId }) => commentId)).size).toBe(initialLikes.length);
+    expect(exportedLikes.filter(({ commentId }) => commentId === recreatedLike.commentId)).toEqual([
+      firstInitialLike,
+    ]);
+  });
+
   test('rejects data exports when the authenticated user disappeared after reauthentication', async () => {
     const { deps } = createTestDeps({
       prisma: {
@@ -347,13 +443,16 @@ describe('auth service account data', () => {
     });
     expect(calls.commentUpdateMany).toEqual({
       where: {
-        authorId: 'user-id',
+        id: {
+          in: ['44444444-4444-4444-8444-444444444444'],
+        },
         deletedAt: null,
       },
       data: {
         content: null,
         deletedAt: fixedNow,
         deletionOrigin: 'account_deletion',
+        likeCount: 0,
       },
     });
     expect(calls.sessionDeleteMany).toBeUndefined();

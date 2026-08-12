@@ -7,6 +7,7 @@ type Prisma = Pick<
   PrismaClient,
   | '$transaction'
   | 'comment'
+  | 'commentLike'
   | 'emailVerificationToken'
   | 'externalResourceTarget'
   | 'passwordResetToken'

@@ -55,10 +55,20 @@ const createUserMediaAssetStore = (calls: AuthServiceTestCalls) => ({
 
 const createAuthTransaction = (calls: AuthServiceTestCalls) => ({
   $executeRaw: async () => 0,
-  $queryRaw: async () => [],
+  $queryRaw: async (query: { strings?: readonly string[] }) =>
+    query.strings?.join('').includes('FROM "comments" AS c')
+      ? [{ id: '44444444-4444-4444-8444-444444444444', isAuthored: true }]
+      : [],
   comment: {
     updateMany: async (args: unknown) => {
       calls.commentUpdateMany = args;
+
+      return { count: 1 };
+    },
+  },
+  commentLike: {
+    deleteMany: async (args: unknown) => {
+      calls.commentLikeDeleteMany.push(args);
 
       return { count: 1 };
     },
@@ -202,6 +212,13 @@ const exportableVideoRatings = [
   },
 ];
 
+const exportableCommentLikes = [
+  {
+    commentId: '44444444-4444-4444-8444-444444444444',
+    createdAt: fixedNow,
+  },
+];
+
 const exportableVideoViews = [
   {
     videoId: '33333333-3333-4333-8333-333333333333',
@@ -300,6 +317,13 @@ export const createBaseAuthPrisma = (calls: AuthServiceTestCalls): AuthDeps['pri
         calls.commentFindMany.push(args);
 
         return calls.commentFindMany.length === 1 ? exportableComments : [];
+      },
+    },
+    commentLike: {
+      findMany: async (args: unknown) => {
+        calls.commentLikeFindMany.push(args);
+
+        return exportableCommentLikes;
       },
     },
     videoRating: {

@@ -17,6 +17,11 @@ export type ExportUserCommentData = {
   replyingToCommentId: string | null;
 };
 
+export type ExportUserCommentLikeData = {
+  commentId: string;
+  createdAt: Date;
+};
+
 export type ExportUserVideoRatingData = {
   videoId: string;
   value: number;
@@ -73,6 +78,7 @@ export type ExportUserDataResult = {
   videoRatings: AsyncIterable<ExportUserVideoRatingData>;
   videoViews: AsyncIterable<ExportUserVideoViewData>;
   comments: AsyncIterable<ExportUserCommentData>;
+  commentLikes: AsyncIterable<ExportUserCommentLikeData>;
   sessions: AsyncIterable<ExportUserSessionData>;
   emailVerificationToken: {
     id: string;
