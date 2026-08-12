@@ -700,6 +700,16 @@ describe('OpenAPI generation', () => {
       default: 'all_rights_reserved',
       example: 'all_rights_reserved',
     });
+    expect(document.components?.schemas?.CreateVideoRequest?.properties?.allowComments).toEqual({
+      type: 'boolean',
+      description:
+        'Whether comments are allowed on this video. Defaults to true and is fixed at creation in this API version.',
+      default: true,
+      example: true,
+    });
+    expect(document.components?.schemas?.CreateVideoRequest?.required ?? []).not.toContain(
+      'allowComments',
+    );
     expect(document.components?.schemas?.CreateVideoResponse).toBeDefined();
     expect(document.components?.schemas?.MyVideosResponse).toBeDefined();
     expect(document.components?.schemas?.VideoUploadSessionResponse).toBeDefined();

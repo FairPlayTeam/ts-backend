@@ -164,6 +164,10 @@ and an immutable source key before S3 is contacted. Each session writes below
 previous object. Replaced or ambiguously written sources continue to count toward the per-user
 quota until object storage reconciliation confirms their absence.
 
+`POST /videos` accepts an optional `allowComments` boolean when creating the video metadata. It
+defaults to `true` and is fixed for that video at creation in this API version; there is no
+post-upload comment-settings route.
+
 Before completing a multipart source session, a client may upload or replace an optional thumbnail
 with `PUT /videos/:videoId/upload/multipart/:uploadSessionId/thumbnail` using the multipart field
 `thumbnail`. JPEG, PNG, and WebP inputs are signature-validated and normalized to a center-cropped

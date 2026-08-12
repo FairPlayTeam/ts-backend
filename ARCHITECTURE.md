@@ -507,6 +507,9 @@ The public video-detail contract exposes `commentsOpen`, an effective write capa
 the owner's raw `allow_comments` preference. It is true only when that preference is enabled and the
 video currently satisfies the stricter engagement scope. A rejected video can therefore remain
 readable with its existing threads while correctly reporting `commentsOpen: false`.
+The preference is accepted as the optional `allowComments` boolean on `POST /videos`, defaults to
+`true` at both the HTTP and database boundaries, and is immutable through this API version: no
+post-upload comment-settings route exists.
 
 The database stores only one physical reply level: roots have neither `root_id` nor a reply target,
 while replies must have both identifiers and may not self-reference. PostgreSQL enforces that null

@@ -327,6 +327,39 @@ describe('videos routes multipart uploads', () => {
     });
   });
 
+  test('accepts explicit true and defaults an omitted comment preference to true', async () => {
+    for (const [title, body] of [
+      [
+        'Explicitly enabled comments',
+        { title: 'Explicitly enabled comments', allowComments: true },
+      ],
+      ['Default enabled comments', { title: 'Default enabled comments' }],
+    ] as const) {
+      receivedCreateRequest = undefined;
+
+      const response = await fetch(`${baseUrl}/videos`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer route-session-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      expect(response.status).toBe(201);
+      expect(receivedCreateRequest).toMatchObject({
+        title,
+        allowComments: true,
+      });
+      expect(await response.json()).toMatchObject({
+        video: {
+          title,
+          allowComments: true,
+        },
+      });
+    }
+  });
+
   test('accepts every supported video license', async () => {
     for (const license of VIDEO_LICENSES) {
       receivedCreateRequest = undefined;

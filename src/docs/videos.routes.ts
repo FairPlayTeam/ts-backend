@@ -253,6 +253,8 @@ export const routeDocs = [
     method: 'post',
     path: '/videos',
     summary: 'Create video metadata',
+    description:
+      'Creates draft video metadata. The optional allowComments preference defaults to true and cannot be changed through this API version after creation.',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
     request: jsonRequest(createVideoBodySchema),

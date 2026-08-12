@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import type { AuthPorts } from '../../src/services/auth.types.js';
 import type { VideosService } from '../../src/services/videos.types.js';
-import { createPng, createVerifiedSession } from './support/fixtures.js';
+import { createPng, createVerifiedSession, uploadVideoSource } from './support/fixtures.js';
 import { createPlayableVideo, type PlayableVideo } from './support/playableVideo.js';
 import { seedHlsGeneration } from './support/videoArtifacts.js';
 import {
@@ -610,5 +610,81 @@ describe('public video detail integration', () => {
       ratingAverage: detail.body.video.ratingAverage,
       ratingCount: detail.body.video.ratingCount,
     }).toEqual(rating.body);
+  });
+
+  test('persists the upload-time comment preference and exposes its effective public state', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const cases = [
+      { title: 'Upload comments explicitly enabled', requestValue: true, expected: true },
+      { title: 'Upload comments explicitly disabled', requestValue: false, expected: false },
+      { title: 'Upload comments default enabled', requestValue: undefined, expected: true },
+    ] as const;
+
+    for (const testCase of cases) {
+      const createResponse = await request(app)
+        .post('/videos')
+        .set('Authorization', `Bearer ${owner.sessionKey}`)
+        .send({
+          title: testCase.title,
+          visibility: 'public',
+          ...(testCase.requestValue === undefined ? {} : { allowComments: testCase.requestValue }),
+        })
+        .expect(201);
+      const created = createResponse.body.video as {
+        allowComments: boolean;
+        id: string;
+        publicId: string;
+      };
+
+      expect(created.allowComments).toBe(testCase.expected);
+
+      const source = await uploadVideoSource(runtime.videosService, {
+        body: Buffer.from(`source for ${testCase.title}`),
+        userId: owner.userId,
+        videoId: created.id,
+      });
+      const job = await runtime.prisma.videoTranscodeJob.findFirstOrThrow({
+        where: {
+          videoId: created.id,
+          sourceObjectKey: source.uploadSession.objectKey,
+        },
+        select: { id: true },
+      });
+      const generation = await seedHlsGeneration(runtime, {
+        segmentBody: Buffer.from(`segment for ${testCase.title}`),
+        sourceUploadSessionId: source.uploadSession.id,
+        state: 'active',
+        transcodeJobId: job.id,
+        userId: owner.userId,
+        videoId: created.id,
+      });
+      await runtime.prisma.video.update({
+        where: { id: created.id },
+        data: {
+          activeArtifactGenerationId: generation.generationId,
+          hlsMasterObjectKey: generation.manifest.master.objectKey,
+          thumbnailObjectKey: generation.manifest.thumbnail.objectKey,
+          processingStatus: 'ready',
+          moderationStatus: 'approved',
+          visibility: 'public',
+          publishedAt: new Date('2026-06-01T12:00:00.000Z'),
+          durationSeconds: 19,
+        },
+      });
+
+      const [persisted, detail] = await Promise.all([
+        runtime.prisma.video.findUniqueOrThrow({
+          where: { id: created.id },
+          select: { allowComments: true },
+        }),
+        request(app).get(`/videos/${created.publicId}`).expect(200),
+      ]);
+
+      expect(persisted.allowComments).toBe(testCase.expected);
+      expect(detail.body.video.commentsOpen).toBe(testCase.expected);
+    }
   });
 });

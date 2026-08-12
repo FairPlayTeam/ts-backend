@@ -123,7 +123,11 @@ export const createVideoBodySchema = z
       .default('all_rights_reserved')
       .openapi({ example: 'all_rights_reserved' }),
     visibility: videoVisibilitySchema.default('unlisted').openapi({ example: 'public' }),
-    allowComments: z.boolean().default(true).openapi({ example: true }),
+    allowComments: z.boolean().default(true).openapi({
+      description:
+        'Whether comments are allowed on this video. Defaults to true and is fixed at creation in this API version.',
+      example: true,
+    }),
   })
   .strict()
   .openapi('CreateVideoRequest');
@@ -356,7 +360,11 @@ const videoResponseBodySchema = z.object({
   tags: z.array(z.string()).openapi({ example: ['zoo', 'elephants'] }),
   license: videoLicenseSchema.openapi({ example: 'all_rights_reserved' }),
   visibility: videoVisibilitySchema.openapi({ example: 'unlisted' }),
-  allowComments: z.boolean().openapi({ example: true }),
+  allowComments: z.boolean().openapi({
+    description:
+      'Persisted comment preference selected at creation; this API version does not expose an update route.',
+    example: true,
+  }),
   processingStatus: z
     .enum(['draft', 'uploading', 'queued', 'processing', 'ready', 'failed'])
     .openapi({
