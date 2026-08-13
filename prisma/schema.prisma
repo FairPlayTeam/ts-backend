@@ -84,6 +84,7 @@ enum VideoArtifactGenerationState {
 }
 
 enum VideoRenditionQuality {
+  p240  @map("240p")
   p480  @map("480p")
   p720  @map("720p")
   p1080 @map("1080p")

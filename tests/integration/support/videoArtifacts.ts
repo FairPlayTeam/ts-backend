@@ -24,6 +24,13 @@ export const hlsProfileForQuality = (
   bandwidth: number;
 } => {
   switch (quality) {
+    case '240p':
+      return {
+        persistedQuality: 'p240',
+        width: 426,
+        height: 240,
+        bandwidth: 700_000,
+      };
     case '480p':
       return {
         persistedQuality: 'p480',

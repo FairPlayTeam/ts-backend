@@ -27,7 +27,13 @@ export const createPng = async (width = 800, height = 600): Promise<Buffer> =>
     .png()
     .toBuffer();
 
-export const createTranscodeTestVideo = async (): Promise<Buffer> => {
+export const createTranscodeTestVideo = async ({
+  height = 480,
+  width = 640,
+}: {
+  height?: number;
+  width?: number;
+} = {}): Promise<Buffer> => {
   const directory = await mkdtemp(resolve(tmpdir(), 'fairplay-integration-video-'));
   const outputPath = resolve(directory, 'source.mp4');
 
@@ -42,7 +48,7 @@ export const createTranscodeTestVideo = async (): Promise<Buffer> => {
         '-f',
         'lavfi',
         '-i',
-        'testsrc=size=640x480:rate=24',
+        `testsrc=size=${width}x${height}:rate=24`,
         '-f',
         'lavfi',
         '-i',

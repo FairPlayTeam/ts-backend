@@ -78,6 +78,25 @@ describe('video object keys', () => {
     });
   });
 
+  test('builds the standard immutable rendition keys for 240p', () => {
+    const manifest = buildVideoArtifactManifest(userId, videoId, 'generation-240', [
+      {
+        quality: '240p',
+        width: 426,
+        height: 240,
+        bandwidth: 700_000,
+      },
+    ]);
+
+    expect(manifest.renditions[0]).toMatchObject({
+      quality: '240p',
+      playlistObjectKey: 'user-123/video-456/generations/generation-240/hls/240p/index.m3u8',
+      playlistRelativePath: 'hls/240p/index.m3u8',
+      segmentPrefix: 'user-123/video-456/generations/generation-240/hls/240p/segments/',
+      segmentRelativeDirectory: 'hls/240p/segments',
+    });
+  });
+
   test('rejects path separators and empty dynamic key segments', () => {
     expect(() => videoOriginalKey(userId, videoId, 'nested/upload')).toThrow('uploadSessionId');
     expect(() => buildVideoArtifactManifest(userId, videoId, 'nested\\generation', [])).toThrow(

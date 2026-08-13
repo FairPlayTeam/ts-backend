@@ -64,7 +64,7 @@ export const videoHlsRenditionParamsSchema = publicVideoIdParamsSchema
     generationId: z.string().uuid().openapi({
       example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
     }),
-    quality: z.enum(['480p', '720p', '1080p']).openapi({ example: '720p' }),
+    quality: z.enum(['240p', '480p', '720p', '1080p']).openapi({ example: '720p' }),
   })
   .openapi('VideoHlsRenditionParams');
 

@@ -13,6 +13,7 @@ const PROCESS_ABORT_KILL_DELAY_MS = 5_000;
 const HLS_SEGMENT_DURATION_SECONDS = 6;
 
 const TRANSCODE_PROFILES = [
+  { quality: '240p', height: 240, bandwidth: 700_000 },
   { quality: '480p', height: 480, bandwidth: 1_400_000 },
   { quality: '720p', height: 720, bandwidth: 2_800_000 },
   { quality: '1080p', height: 1080, bandwidth: 5_000_000 },
@@ -53,6 +54,13 @@ class VideoProcessExecutionError extends Error {
       }`,
     );
     this.name = 'VideoProcessExecutionError';
+  }
+}
+
+export class VideoSourceResolutionTooLowError extends Error {
+  constructor(height: number) {
+    super(`Source video height ${height}px is below the minimum supported height of 240px`);
+    this.name = 'VideoSourceResolutionTooLowError';
   }
 }
 
@@ -245,11 +253,21 @@ const evenWidthForHeight = (
 export const selectVideoTranscodeProfiles = ({
   height,
   width,
-}: Pick<VideoProbe, 'height' | 'width'>): VideoArtifactProfile[] =>
-  TRANSCODE_PROFILES.filter((profile) => profile.height <= height).map((profile) => ({
+}: Pick<VideoProbe, 'height' | 'width'>): VideoArtifactProfile[] => {
+  if (height < 240) {
+    throw new VideoSourceResolutionTooLowError(height);
+  }
+
+  const selectedProfiles =
+    height < 480
+      ? TRANSCODE_PROFILES.slice(0, 1)
+      : TRANSCODE_PROFILES.slice(1).filter((profile) => profile.height <= height);
+
+  return selectedProfiles.map((profile) => ({
     ...profile,
     width: evenWidthForHeight(width, height, profile.height),
   }));
+};
 
 const localArtifactPath = (outputDirectory: string, relativePath: string): string =>
   resolve(outputDirectory, ...relativePath.split('/'));
@@ -285,7 +303,7 @@ export const buildVideoFfmpegArguments = ({
   threads: number;
 }): string[] => {
   if (manifest.renditions.length === 0) {
-    throw new Error('Source video is smaller than every supported rendition');
+    throw new Error('Video artifact manifest must include at least one rendition');
   }
 
   const inputLabels = manifest.renditions.map((_, index) => `[rendition${index}in]`);

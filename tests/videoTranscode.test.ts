@@ -3,6 +3,7 @@ import {
   buildVideoFfmpegArguments,
   parseVideoProbeOutput,
   selectVideoTranscodeProfiles,
+  VideoSourceResolutionTooLowError,
 } from '../src/services/videos/videoTranscode.js';
 import {
   getAvailableVideoTranscodeSlots,
@@ -11,13 +12,48 @@ import {
 import { buildVideoArtifactManifest } from '../src/services/videos/videoObjectKeys.js';
 
 describe('video transcode profiles', () => {
-  test('never upscales and keeps output dimensions even', () => {
+  test('selects the exact ladder at every source-height boundary', () => {
+    expect(() =>
+      selectVideoTranscodeProfiles({
+        width: 426,
+        height: 239,
+      }),
+    ).toThrow(VideoSourceResolutionTooLowError);
+
+    const cases = [
+      { height: 240, qualities: ['240p'] },
+      { height: 479, qualities: ['240p'] },
+      { height: 480, qualities: ['480p'] },
+      { height: 719, qualities: ['480p'] },
+      { height: 720, qualities: ['480p', '720p'] },
+      { height: 1079, qualities: ['480p', '720p'] },
+      { height: 1080, qualities: ['480p', '720p', '1080p'] },
+    ] as const;
+
+    for (const { height, qualities } of cases) {
+      expect(
+        selectVideoTranscodeProfiles({ width: 1920, height }).map(({ quality }) => quality),
+      ).toEqual([...qualities]);
+    }
+  });
+
+  test('downscales an intermediate 280p source to 240p without adding 480p', () => {
     expect(
       selectVideoTranscodeProfiles({
-        width: 640,
-        height: 479,
+        width: 498,
+        height: 280,
       }),
-    ).toEqual([]);
+    ).toEqual([
+      {
+        quality: '240p',
+        width: 426,
+        height: 240,
+        bandwidth: 700_000,
+      },
+    ]);
+  });
+
+  test('keeps existing rendition selection unchanged and output dimensions even', () => {
     expect(
       selectVideoTranscodeProfiles({
         width: 853,
@@ -49,6 +85,16 @@ describe('video transcode profiles', () => {
         height: 720,
         bandwidth: 2_800_000,
       },
+    ]);
+    expect(
+      selectVideoTranscodeProfiles({
+        width: 1920,
+        height: 1080,
+      }).map(({ quality, height, bandwidth }) => ({ quality, height, bandwidth })),
+    ).toEqual([
+      { quality: '480p', height: 480, bandwidth: 1_400_000 },
+      { quality: '720p', height: 720, bandwidth: 2_800_000 },
+      { quality: '1080p', height: 1080, bandwidth: 5_000_000 },
     ]);
   });
 

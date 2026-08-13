@@ -307,6 +307,20 @@ describe('OpenAPI generation', () => {
         ?.responses?.[307],
     ).toBeDefined();
     expect(
+      document.paths['/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8']?.get?.parameters,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          in: 'path',
+          name: 'quality',
+          required: true,
+          schema: expect.objectContaining({
+            enum: ['240p', '480p', '720p', '1080p'],
+          }),
+        }),
+      ]),
+    );
+    expect(
       document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}/thumbnail']?.put
         ?.requestBody?.content?.['multipart/form-data'],
     ).toBeDefined();

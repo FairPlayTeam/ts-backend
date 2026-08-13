@@ -143,7 +143,12 @@ const createReadableVideoAssetHarness = () => {
 
 describe('public video HLS helpers', () => {
   test('accepts only persisted rendition names and exact generated segment names', () => {
-    expect(['480p', '720p', '1080p'].map(parseVideoHlsQuality)).toEqual(['480p', '720p', '1080p']);
+    expect(['240p', '480p', '720p', '1080p'].map(parseVideoHlsQuality)).toEqual([
+      '240p',
+      '480p',
+      '720p',
+      '1080p',
+    ]);
     expect(parseVideoHlsSegmentName('segment-00000.ts')).toBe('segment-00000.ts');
 
     for (const quality of ['p480', '480P', '../480p', '/480p', '480p/extra', '']) {
@@ -163,6 +168,32 @@ describe('public video HLS helpers', () => {
     ]) {
       expect(parseVideoHlsSegmentName(segment)).toBeNull();
     }
+  });
+
+  test('rewrites a 240p master and rendition playlist without changing their metadata', () => {
+    const masterPlaylist =
+      '#EXTM3U\n' +
+      '#EXT-X-STREAM-INF:BANDWIDTH=700000,RESOLUTION=426x240,CODECS="avc1.4d401f,mp4a.40.2"\n' +
+      '240p/index.m3u8\n';
+
+    expect(
+      rewriteVideoHlsMasterPlaylist(masterPlaylist, {
+        publicId,
+        generationId,
+        qualities: ['240p'],
+      }),
+    ).toBe(
+      '#EXTM3U\n' +
+        '#EXT-X-STREAM-INF:BANDWIDTH=700000,RESOLUTION=426x240,CODECS="avc1.4d401f,mp4a.40.2"\n' +
+        `/videos/${publicId}/hls/${generationId}/240p/index.m3u8\n`,
+    );
+    expect(
+      rewriteVideoHlsRenditionPlaylist('#EXTM3U\nsegments/segment-00000.ts\n', {
+        publicId,
+        generationId,
+        quality: '240p',
+      }),
+    ).toBe(`#EXTM3U\n/videos/${publicId}/hls/${generationId}/240p/segments/segment-00000.ts\n`);
   });
 
   test('rewrites only master URI lines and preserves FFmpeg variant metadata byte-for-byte', () => {

@@ -8,10 +8,10 @@ export const VIDEO_HLS_SEGMENT_REDIRECT_CACHE_CONTROL = 'no-store';
 export const VIDEO_THUMBNAIL_REDIRECT_CACHE_CONTROL = 'no-store';
 export const VIDEO_HLS_CONTENT_TYPE = 'application/vnd.apple.mpegurl';
 
-const VIDEO_HLS_QUALITY_PATTERN = /^(?:480p|720p|1080p)$/u;
+const VIDEO_HLS_QUALITY_PATTERN = /^(?:240p|480p|720p|1080p)$/u;
 const VIDEO_HLS_GENERATION_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const MASTER_RENDITION_URI_PATTERN = /^(480p|720p|1080p)\/index\.m3u8$/u;
+const MASTER_RENDITION_URI_PATTERN = /^(240p|480p|720p|1080p)\/index\.m3u8$/u;
 const RENDITION_SEGMENT_URI_PATTERN = /^segments\/([^/]+)$/u;
 
 export const parseVideoHlsQuality = (value: string): VideoObjectKeyQuality | null =>
@@ -25,6 +25,8 @@ export const isVideoHlsGenerationId = (value: string): boolean =>
 
 export const toVideoObjectKeyQuality = (quality: VideoRenditionQuality): VideoObjectKeyQuality => {
   switch (quality) {
+    case 'p240':
+      return '240p';
     case 'p480':
       return '480p';
     case 'p720':
@@ -36,6 +38,8 @@ export const toVideoObjectKeyQuality = (quality: VideoRenditionQuality): VideoOb
 
 export const toVideoRenditionQuality = (quality: VideoObjectKeyQuality): VideoRenditionQuality => {
   switch (quality) {
+    case '240p':
+      return 'p240';
     case '480p':
       return 'p480';
     case '720p':

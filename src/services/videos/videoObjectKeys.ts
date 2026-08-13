@@ -1,4 +1,4 @@
-export type VideoObjectKeyQuality = '480p' | '720p' | '1080p';
+export type VideoObjectKeyQuality = '240p' | '480p' | '720p' | '1080p';
 
 export const VIDEO_HLS_SEGMENT_NAME_PATTERN = /^segment-\d{5}\.ts$/u;
 

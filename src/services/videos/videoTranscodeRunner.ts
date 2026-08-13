@@ -16,6 +16,7 @@ import {
   probeVideo,
   selectVideoTranscodeProfiles,
   transcodeVideoArtifacts,
+  VideoSourceResolutionTooLowError,
   type GeneratedVideoArtifacts,
   type VideoProbe,
 } from './videoTranscode.js';
@@ -1080,7 +1081,8 @@ const processClaimedJob = async (
       deps,
       job,
       error,
-      error instanceof VideoTranscodeSourceNotCurrentError,
+      error instanceof VideoTranscodeSourceNotCurrentError ||
+        error instanceof VideoSourceResolutionTooLowError,
     ).catch((updateError: unknown) => {
       if (!(updateError instanceof VideoTranscodeOwnershipLostError)) {
         throw updateError;

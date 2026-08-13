@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjectKeys.js';
 import {
@@ -16,7 +17,13 @@ import {
 } from './support/fixtures.js';
 import { waitForTranscodeJob } from './support/videoArtifacts.js';
 import { VIDEO_OBJECT_STORAGE_BUCKET } from './support/infrastructure.js';
-import { resetState, startRuntime, stopRuntime, type TestRuntime } from './support/runtime.js';
+import {
+  createIntegrationApp,
+  resetState,
+  startRuntime,
+  stopRuntime,
+  type TestRuntime,
+} from './support/runtime.js';
 
 describe('videos transcoding integration', () => {
   let runtime: TestRuntime | null = null;
@@ -35,6 +42,206 @@ describe('videos transcoding integration', () => {
 
   afterAll(async () => {
     await stopRuntime(runtime);
+  });
+
+  test('transcodes an intermediate 280p source into a 240p-only HLS generation and serves it', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'transcode-240p@example.com',
+      username: 'transcode_240p',
+    });
+    const created = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Intermediate source for 240p',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    const source = await uploadVideoSource(runtime.videosService, {
+      body: await createTranscodeTestVideo({ width: 498, height: 280 }),
+      userId: owner.userId,
+      videoId: created.video.id,
+    });
+    const job = await runtime.prisma.videoTranscodeJob.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+        sourceObjectKey: source.uploadSession.objectKey,
+      },
+      select: { id: true },
+    });
+    const runnerErrors: object[] = [];
+    const runner = createVideoTranscodeRunner({
+      prisma: runtime.prisma,
+      objectStorage: runtime.videoObjectStorage,
+      clock: { now: () => new Date() },
+      config: {
+        maxConcurrentJobs: 1,
+        threadsPerJob: 1,
+      },
+      logger: {
+        info: () => undefined,
+        warn: () => undefined,
+        error: (data) => {
+          runnerErrors.push(data);
+        },
+      },
+    });
+
+    runner.start();
+
+    try {
+      await expect(waitForTranscodeJob(runtime.prisma, job.id)).resolves.toMatchObject({
+        status: 'completed',
+        lastError: null,
+      });
+    } finally {
+      await runner.stop();
+    }
+
+    const activeGeneration = await runtime.prisma.videoArtifactGeneration.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+        state: 'active',
+      },
+      include: {
+        renditions: true,
+      },
+    });
+    expect(activeGeneration.renditions).toEqual([
+      expect.objectContaining({
+        quality: 'p240',
+        width: 426,
+        height: 240,
+        bitrate: 700_000,
+      }),
+    ]);
+    if (!activeGeneration.hlsMasterObjectKey) {
+      throw new Error('Active 240p generation has no master playlist object key');
+    }
+    const masterPlaylist = await readStoredObject(
+      runtime.videoObjectStorage,
+      VIDEO_OBJECT_STORAGE_BUCKET,
+      activeGeneration.hlsMasterObjectKey,
+    );
+    expect(masterPlaylist).toContain('#EXT-X-STREAM-INF:BANDWIDTH=700000,RESOLUTION=426x240');
+    expect(masterPlaylist).toContain('240p/index.m3u8');
+    expect(masterPlaylist).not.toContain('480p/index.m3u8');
+
+    const app = await createIntegrationApp(runtime);
+    const renditionPath = `/videos/${created.video.publicId}/hls/${activeGeneration.id}/240p/index.m3u8`;
+    await request(app)
+      .get(`/videos/${created.video.publicId}/hls/master.m3u8`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.text).toContain(renditionPath);
+        expect(response.text).not.toContain('/480p/index.m3u8');
+      });
+    await request(app)
+      .get(renditionPath)
+      .expect(200)
+      .expect((response) => {
+        expect(response.text).toMatch(
+          new RegExp(`${renditionPath.replace('/index.m3u8', '')}/segments/segment-\\d+\\.ts`, 'u'),
+        );
+      });
+    expect(runnerErrors).toEqual([]);
+  });
+
+  test('fails a source below 240p permanently on its first transcode attempt', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'transcode-too-small@example.com',
+      username: 'transcode_too_small',
+    });
+    const created = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Permanently unsupported source',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    const source = await uploadVideoSource(runtime.videosService, {
+      body: await createTranscodeTestVideo({ width: 426, height: 238 }),
+      userId: owner.userId,
+      videoId: created.video.id,
+    });
+    const job = await runtime.prisma.videoTranscodeJob.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+        sourceObjectKey: source.uploadSession.objectKey,
+      },
+      select: { id: true, maxAttempts: true },
+    });
+    expect(job.maxAttempts).toBeGreaterThan(1);
+
+    const runner = createVideoTranscodeRunner({
+      prisma: runtime.prisma,
+      objectStorage: runtime.videoObjectStorage,
+      clock: { now: () => new Date() },
+      config: {
+        maxConcurrentJobs: 1,
+        threadsPerJob: 1,
+      },
+      logger: {
+        info: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+      },
+    });
+
+    runner.start();
+
+    try {
+      await expect(waitForTranscodeJob(runtime.prisma, job.id)).resolves.toMatchObject({
+        status: 'failed',
+        lastError: expect.stringContaining('below the minimum supported height of 240px'),
+      });
+    } finally {
+      await runner.stop();
+    }
+
+    await expect(
+      runtime.prisma.videoTranscodeJob.findUniqueOrThrow({
+        where: { id: job.id },
+        select: {
+          attempts: true,
+          failedAt: true,
+          status: true,
+        },
+      }),
+    ).resolves.toEqual({
+      attempts: 1,
+      failedAt: expect.any(Date),
+      status: 'failed',
+    });
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: created.video.id },
+        select: {
+          processingStatus: true,
+          transcodeError: true,
+        },
+      }),
+    ).resolves.toEqual({
+      processingStatus: 'failed',
+      transcodeError: expect.stringContaining('below the minimum supported height of 240px'),
+    });
+    await expect(
+      claimNextVideoTranscodeJob({
+        prisma: runtime.prisma,
+        clock: { now: () => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) },
+      }),
+    ).resolves.toBeNull();
   });
 
   test('takes over a stale transcode into a complete generation, uses the ffmpeg thumbnail fallback, and retires the previous generation atomically', async () => {

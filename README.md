@@ -190,10 +190,11 @@ the complete download, probe, encode, upload, verification, and publication cycl
 `VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=0` keeps a replica from claiming work.
 
 Every execution reserves a durable `writing` generation and its cleanup prefixes before creating
-or uploading artifacts. FFmpeg creates only the 480p, 720p, and 1080p H.264 renditions that fit
-within the source resolution, plus six-second HLS VOD segments, optional AAC audio, and a WebP
-thumbnail. All artifacts use an immutable generation namespace and are checked in object storage
-before publication.
+or uploading artifacts. FFmpeg creates a 240p-only rendition for sources from 240p through 479p;
+sources at 480p and above keep the 480p, 720p, and 1080p ladder entries that fit without upscaling.
+Sources below 240p fail permanently. Renditions use six-second HLS VOD segments, optional AAC
+audio, and a WebP thumbnail. All artifacts use an immutable generation namespace and are checked
+in object storage before publication.
 
 A confirmed custom thumbnail replaces the local FFmpeg poster before upload, so the final bytes
 are copied into each generation's own immutable thumbnail key. Its temporary source object becomes

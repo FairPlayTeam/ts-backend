@@ -352,9 +352,11 @@ Heartbeats retain job ownership. A stale `processing` job can be reclaimed with 
 Shutdown stops polling, aborts local processes, requeues jobs still owned by the process, and waits
 for every local slot to drain.
 
-FFprobe metadata is validated before encoding. A single direct FFmpeg process emits H.264/CRF 24
-HLS VOD renditions at 480p, 720p, and 1080p without upscaling, with even dimensions, six-second
-segments, AAC 128k audio when the source has audio, and a WebP fallback thumbnail. When the
+FFprobe metadata is validated before encoding. Sources below 240p fail permanently; sources from
+240p through 479p emit only 240p, while sources at 480p and above emit the fitting 480p, 720p, and
+1080p ladder entries. A single direct FFmpeg process creates those H.264/CRF 24 HLS VOD renditions
+without upscaling, with even dimensions, six-second segments, AAC 128k audio when the source has
+audio, and a WebP fallback thumbnail. When the
 completed source session has a confirmed custom thumbnail, the runner replaces that local
 fallback before artifact enumeration and uploads the bytes to the generation's own immutable
 `thumbnail/poster.webp` key. Different generations never reference the shared source object.
