@@ -357,12 +357,11 @@ export const requestPasswordReset = async (
         id: true,
         email: true,
         isActive: true,
-        isVerified: true,
         isBanned: true,
       },
     });
 
-    if (!user || !user.isActive || user.isBanned || !user.isVerified) {
+    if (!user || !user.isActive || user.isBanned) {
       res.json(PASSWORD_RESET_REQUEST_GENERIC_RESPONSE);
       return;
     }
