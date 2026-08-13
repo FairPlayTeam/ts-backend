@@ -22,6 +22,8 @@ import {
   readRequiredEnv,
 } from '../src/config/env.parsers.js';
 import {
+  DEFAULT_OBJECT_STORAGE_BUCKET,
+  DEFAULT_OBJECT_STORAGE_TIMEOUT_MS,
   DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET,
   DEFAULT_VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS,
   DEFAULT_VIDEO_TRANSCODE_THREADS_PER_JOB,
@@ -30,13 +32,17 @@ import {
   DEFAULT_VIDEO_UPLOAD_PART_SIZE_BYTES,
   DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
   DEFAULT_VIDEO_USER_STORAGE_QUOTA_BYTES,
-  DEFAULT_OBJECT_STORAGE_TIMEOUT_MS,
   DEFAULT_SMTP_TIMEOUT_MS,
   SESSION_CLEANUP_INACTIVE_RETENTION_MS,
   SESSION_CLEANUP_INTERVAL_MS,
 } from '../src/config/constants.js';
 
 describe('env parsers', () => {
+  test('keeps the official object storage bucket defaults', () => {
+    expect(DEFAULT_OBJECT_STORAGE_BUCKET).toBe('user-media');
+    expect(DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET).toBe('videos');
+  });
+
   test('rejects missing required values', () => {
     expect(() => readRequiredEnv('', 'DATABASE_URL')).toThrow(ServerConfigurationError);
   });
@@ -319,7 +325,7 @@ describe('env parsers', () => {
       endpoint: 'http://localhost:9000',
       publicUrl: 'http://localhost:9000',
       region: 'us-east-1',
-      bucket: 'fairplay-user-media',
+      bucket: 'user-media',
       accessKey: 'fairplay',
       secretKey: 'fairplay-minio-secret',
       signedUrlTtlSeconds: 900,
@@ -422,7 +428,7 @@ describe('env parsers', () => {
 
     expect(
       parseVideoUploadConfig({
-        objectStorageBucket: 'fairplay-videos',
+        objectStorageBucket: 'videos',
         partSizeBytes: String(95 * 1024 * 1024),
         maxPartCount: '5000',
         maxUploadBytes: String(4 * 1024 * 1024 * 1024),
@@ -430,7 +436,7 @@ describe('env parsers', () => {
         sessionTtlSeconds: '3600',
       }),
     ).toEqual({
-      objectStorageBucket: 'fairplay-videos',
+      objectStorageBucket: 'videos',
       partSizeBytes: 95 * 1024 * 1024,
       maxPartCount: 5000,
       maxUploadBytes: 4 * 1024 * 1024 * 1024,

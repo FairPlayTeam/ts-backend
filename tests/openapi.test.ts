@@ -139,7 +139,7 @@ describe('OpenAPI generation', () => {
     const document = response.body;
 
     expect(JSON.stringify(document)).not.toContain('thumbnailObjectKey');
-    expect(JSON.stringify(document)).not.toContain('fairplay-user-media/users/');
+    expect(JSON.stringify(document)).not.toContain('user-media/users/');
 
     expect(Object.keys(document.paths).sort()).toEqual([
       '/',

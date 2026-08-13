@@ -71,7 +71,7 @@ const createDeps = ({
   followingTotal = 3,
   maxProxyBytes = { avatar: 10, banner: 20 },
   profileMedia = {
-    bucket: 'fairplay-user-media',
+    bucket: 'user-media',
     objectKey: 'users/user-id/avatar/current-avatar.webp',
     mimeType: 'image/webp',
     sizeBytes: 12,
@@ -224,7 +224,7 @@ describe('profiles service', () => {
     ]);
     expect(calls.readObjectInputs).toEqual([
       {
-        bucket: 'fairplay-user-media',
+        bucket: 'user-media',
         objectKey: 'users/user-id/avatar/current-avatar.webp',
         maxBytes: 10,
       },
@@ -235,7 +235,7 @@ describe('profiles service', () => {
   test('uses the media-kind ceiling even when the persisted banner size is larger', async () => {
     const { calls, deps } = createDeps({
       profileMedia: {
-        bucket: 'fairplay-user-media',
+        bucket: 'user-media',
         objectKey: 'users/user-id/banner/current-banner.webp',
         mimeType: 'image/webp',
         sizeBytes: 30,
@@ -249,7 +249,7 @@ describe('profiles service', () => {
 
     expect(calls.readObjectInputs).toEqual([
       {
-        bucket: 'fairplay-user-media',
+        bucket: 'user-media',
         objectKey: 'users/user-id/banner/current-banner.webp',
         maxBytes: 20,
       },

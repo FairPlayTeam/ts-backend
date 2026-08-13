@@ -43,7 +43,7 @@ const createUserMediaAssetStore = (calls: AuthServiceTestCalls) => ({
 
     return {
       objectKey: data?.objectKey ?? 'users/user-id/avatar/test-avatar.webp',
-      bucket: data?.bucket ?? 'fairplay-user-media',
+      bucket: data?.bucket ?? 'user-media',
       mimeType: data?.mimeType ?? 'image/webp',
       sizeBytes: data?.sizeBytes ?? 6,
       width: data?.width ?? 512,
@@ -271,7 +271,7 @@ const createExportableUser = () => ({
       id: '11111111-1111-4111-8111-111111111111',
       kind: 'avatar',
       objectKey: 'users/user-id/avatar/current-avatar.webp',
-      bucket: 'fairplay-user-media',
+      bucket: 'user-media',
       mimeType: 'image/webp',
       sizeBytes: 1234,
       width: 512,
@@ -283,7 +283,7 @@ const createExportableUser = () => ({
       id: '22222222-2222-4222-8222-222222222222',
       kind: 'banner',
       objectKey: 'users/user-id/banner/current-banner.webp',
-      bucket: 'fairplay-user-media',
+      bucket: 'user-media',
       mimeType: 'image/webp',
       sizeBytes: 2345,
       width: 1500,

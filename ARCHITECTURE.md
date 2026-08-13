@@ -96,7 +96,7 @@ of PostgreSQL and Redis:
 - managed S3-compatible storage is still the shared store for profile media, immutable video
   sources, and generated video artifacts
 - every backend instance must point to the same PostgreSQL and Redis services
-- every backend instance must point to the same user-media and video object storage buckets
+- every backend instance must point to the same `user-media` and `videos` object storage buckets
 - migrations should use the provider's direct database connection when both pooled and direct
   PostgreSQL URLs are available
 - Redis provider URLs should use the provider's Redis-compatible endpoint, with TLS enabled when

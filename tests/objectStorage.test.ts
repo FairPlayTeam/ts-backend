@@ -15,7 +15,7 @@ const createConfig = (overrides: Partial<ObjectStorageConfig> = {}): ObjectStora
   endpoint: 'http://minio:9000',
   publicUrl: 'http://localhost:9000',
   region: 'us-east-1',
-  bucket: 'fairplay-user-media',
+  bucket: 'user-media',
   accessKey: 'fairplay',
   secretKey: 'fairplay-minio-secret',
   signedUrlTtlSeconds: 900,
@@ -83,14 +83,14 @@ describe('object storage', () => {
     const signedUrl = await storage.getSignedUrl('users/user-id/avatar/current-avatar.webp');
 
     expect(signedUrl).toBe(
-      'http://localhost:9000/fairplay-user-media/users/user-id/avatar/current-avatar.webp?signature=test',
+      'http://localhost:9000/user-media/users/user-id/avatar/current-avatar.webp?signature=test',
     );
     expect(calls).toEqual([
-      ['bucketExists', 'fairplay-user-media'],
-      ['makeBucket', 'fairplay-user-media', 'us-east-1'],
+      ['bucketExists', 'user-media'],
+      ['makeBucket', 'user-media', 'us-east-1'],
       [
         'putObject',
-        'fairplay-user-media',
+        'user-media',
         'users/user-id/avatar/current-avatar.webp',
         'avatar',
         6,
@@ -99,12 +99,7 @@ describe('object storage', () => {
           'Cache-Control': 'private, max-age=900',
         },
       ],
-      [
-        'signer.presignedGetObject',
-        'fairplay-user-media',
-        'users/user-id/avatar/current-avatar.webp',
-        900,
-      ],
+      ['signer.presignedGetObject', 'user-media', 'users/user-id/avatar/current-avatar.webp', 900],
     ]);
     expect(
       logs.map(({ level, data, message }) => ({ level, operation: data.operation, message })),
@@ -127,7 +122,7 @@ describe('object storage', () => {
     ]);
     expect(logs[1]).toMatchObject({
       data: {
-        bucket: 'fairplay-user-media',
+        bucket: 'user-media',
         contentType: 'image/webp',
         objectKey: 'users/user-id/avatar/current-avatar.webp',
         outcome: 'success',
@@ -476,7 +471,7 @@ describe('object storage', () => {
       level: 'warn',
       message: 'Object storage operation failed',
       data: {
-        bucket: 'fairplay-user-media',
+        bucket: 'user-media',
         objectKey: 'users/user-id/avatar/current-avatar.webp',
         operation: 'objectStorage.putObject',
         outcome: 'failure',

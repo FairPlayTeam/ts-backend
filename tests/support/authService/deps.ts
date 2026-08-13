@@ -43,7 +43,7 @@ export function createTestDeps(overrides: AuthDepsOverrides = {}) {
       },
     },
     objectStorage: {
-      bucket: 'fairplay-user-media',
+      bucket: 'user-media',
       putObject: async (input: unknown) => {
         calls.putObject = input;
       },

@@ -80,6 +80,7 @@ a reverse proxy or load balancer. Production requires shared PostgreSQL, Redis, 
 instances, SMTP configuration, and a strong `RATE_LIMIT_KEY_SECRET`.
 Use a separate strong `AUTH_CODE_PEPPER` for email verification and password reset code hashing.
 For a fully public Bearer-token API, set `CORS_ORIGINS=*`.
+Profile media uses the `user-media` bucket, while video sources and artifacts use `videos`.
 
 Managed PostgreSQL, Redis, and S3-compatible object storage providers are supported. For example,
 Neon can provide PostgreSQL, Upstash can provide Redis, and Infomaniak Object Storage or another

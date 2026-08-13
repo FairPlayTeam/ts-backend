@@ -21,7 +21,7 @@ describe('auth service media', () => {
     const events: string[] = [];
     const { deps, calls } = createTestDeps({
       objectStorage: {
-        bucket: 'fairplay-user-media',
+        bucket: 'user-media',
         putObject: async (input: unknown) => {
           events.push('put');
           calls.putObject = input;
@@ -50,7 +50,7 @@ describe('auth service media', () => {
       data: {
         userId: 'user-id',
         videoId: null,
-        bucket: 'fairplay-user-media',
+        bucket: 'user-media',
         selector: objectKey,
         selectorKind: 'exact',
         role: 'user_media',
@@ -82,7 +82,7 @@ describe('auth service media', () => {
       },
       update: {
         objectKey,
-        bucket: 'fairplay-user-media',
+        bucket: 'user-media',
         externalResourceTargetId: 'target-id',
         mimeType: 'image/webp',
         sizeBytes: 6,
@@ -93,7 +93,7 @@ describe('auth service media', () => {
         userId: 'user-id',
         kind: 'avatar',
         objectKey,
-        bucket: 'fairplay-user-media',
+        bucket: 'user-media',
         externalResourceTargetId: 'target-id',
         mimeType: 'image/webp',
         sizeBytes: 6,
@@ -171,7 +171,7 @@ describe('auth service media', () => {
     let transactionNumber = 0;
     const { deps } = createTestDeps({
       objectStorage: {
-        bucket: 'fairplay-user-media',
+        bucket: 'user-media',
         putObject: async () => {
           throw putError;
         },

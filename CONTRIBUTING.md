@@ -245,7 +245,7 @@ The full Swagger UI documentation will be available at /docs.
 - `OBJECT_STORAGE_PUBLIC_URL` optional public HTTP(S) origin used when generating signed media URLs.
   If omitted, `OBJECT_STORAGE_ENDPOINT` is used.
 - `OBJECT_STORAGE_REGION` S3 region. Defaults to `us-east-1`.
-- `OBJECT_STORAGE_BUCKET` bucket for profile media. Defaults to `fairplay-user-media`.
+- `OBJECT_STORAGE_BUCKET` bucket for profile media. Defaults to `user-media`.
 - `OBJECT_STORAGE_ACCESS_KEY` and `OBJECT_STORAGE_SECRET_KEY` object storage credentials.
 - `OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS` lifetime of signed media URLs. Defaults to `900`.
 - `OBJECT_STORAGE_TIMEOUT_MS` timeout for each object storage operation. Defaults to `5000` and
