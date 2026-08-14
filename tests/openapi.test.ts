@@ -31,7 +31,7 @@ type ExpressWithRouterStack = {
 };
 
 type OpenApiDocument = {
-  paths?: Record<string, Record<string, unknown>>;
+  paths?: Record<string, Record<string, { operationId?: unknown }>>;
 };
 
 const createOpenApiTestApp = () =>
@@ -130,6 +130,13 @@ const getOpenApiRouteOperations = (document: OpenApiDocument): string[] =>
         .map((method) => formatRouteOperation(method, path)),
     )
     .sort();
+
+const getOpenApiOperationIds = (document: OpenApiDocument): unknown[] =>
+  Object.values(document.paths ?? {}).flatMap((pathItem) =>
+    Object.entries(pathItem)
+      .filter(([method]) => documentedHttpMethods.has(method))
+      .map(([, operation]) => operation.operationId),
+  );
 
 describe('OpenAPI generation', () => {
   test('includes auto-loaded routes and Zod request schemas', async () => {
@@ -787,11 +794,26 @@ describe('OpenAPI generation', () => {
     );
   });
 
+  test('exposes a unique camel-case operationId for every documented operation', async () => {
+    const app = await createOpenApiTestApp();
+    const response = await request(app).get('/openapi.json').expect(200);
+    const document = response.body as OpenApiDocument;
+    const operationIds = getOpenApiOperationIds(document);
+
+    expect(operationIds).toHaveLength(getOpenApiRouteOperations(document).length);
+    expect(operationIds.every((operationId) => typeof operationId === 'string')).toBe(true);
+    expect(
+      operationIds.every((operationId) => /^[a-z][A-Za-z0-9]*$/.test(String(operationId))),
+    ).toBe(true);
+    expect(new Set(operationIds).size).toBe(operationIds.length);
+  });
+
   test('does not leak route docs between generated documents', () => {
     const isolatedRouteDocs = [
       {
         method: 'get',
         path: '/isolated',
+        operationId: 'getIsolatedResource',
         responses: {
           200: jsonResponse(
             'Isolated response',

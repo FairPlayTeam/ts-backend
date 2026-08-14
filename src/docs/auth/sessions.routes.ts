@@ -25,6 +25,7 @@ export const sessionRouteDocs = [
   {
     method: 'get',
     path: '/auth/sessions',
+    operationId: 'listCurrentUserSessions',
     summary: 'Get current user active sessions',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
@@ -42,6 +43,7 @@ export const sessionRouteDocs = [
   {
     method: 'delete',
     path: '/auth/sessions/all',
+    operationId: 'logoutAllUserSessions',
     summary: 'Logout from all sessions including current',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
@@ -55,6 +57,7 @@ export const sessionRouteDocs = [
   {
     method: 'delete',
     path: '/auth/sessions/others/all',
+    operationId: 'logoutOtherUserSessions',
     summary: 'Logout from other sessions while keeping the current session',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
@@ -68,6 +71,7 @@ export const sessionRouteDocs = [
   {
     method: 'delete',
     path: '/auth/sessions/{sessionId}',
+    operationId: 'logoutUserSession',
     summary: 'Logout from a specific session',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],

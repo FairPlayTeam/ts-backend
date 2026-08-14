@@ -25,6 +25,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/',
+    operationId: 'getApiMetadata',
     summary: 'API metadata',
     tags: ['System'],
     responses: {

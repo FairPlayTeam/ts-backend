@@ -150,6 +150,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos',
+    operationId: 'listPublicVideos',
     summary: 'List the public video feed',
     tags: ['Videos'],
     security: [],
@@ -164,6 +165,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos/search',
+    operationId: 'searchPublicVideos',
     summary: 'Search public videos',
     tags: ['Videos'],
     security: [],
@@ -178,6 +180,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos/{publicId}',
+    operationId: 'getPublicVideo',
     summary: 'Get a playable public video detail',
     tags: ['Videos'],
     security: [{}, { bearerAuth: [] }],
@@ -192,6 +195,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos/{publicId}/thumbnail',
+    operationId: 'getVideoThumbnail',
     summary: 'Redirect to the active public video thumbnail',
     tags: ['Videos'],
     security: [],
@@ -208,6 +212,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos/{publicId}/hls/master.m3u8',
+    operationId: 'getVideoHlsMasterPlaylist',
     summary: 'Get the public HLS master playlist',
     tags: ['Videos'],
     security: [],
@@ -222,6 +227,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8',
+    operationId: 'getVideoHlsRenditionPlaylist',
     summary: 'Get an immutable public HLS rendition playlist',
     tags: ['Videos'],
     security: [],
@@ -236,6 +242,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}',
+    operationId: 'getVideoHlsSegment',
     summary: 'Redirect to a signed immutable HLS segment',
     tags: ['Videos'],
     security: [],
@@ -252,6 +259,7 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/videos',
+    operationId: 'createVideo',
     summary: 'Create video metadata',
     description:
       'Creates draft video metadata. The optional allowComments preference defaults to true and cannot be changed through this API version after creation.',
@@ -266,6 +274,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos/me',
+    operationId: 'listCurrentUserVideos',
     summary: 'List videos owned by the current user',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
@@ -280,6 +289,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos/{publicId}/rating',
+    operationId: 'getVideoRating',
     summary: 'Get the public rating aggregate for a video',
     tags: ['Videos'],
     security: [],
@@ -294,6 +304,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos/{publicId}/rating/me',
+    operationId: 'getCurrentUserVideoRating',
     summary: "Get the current user's rating for a video",
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
@@ -311,6 +322,7 @@ export const routeDocs = [
   {
     method: 'put',
     path: '/videos/{publicId}/rating',
+    operationId: 'rateVideo',
     summary: 'Create or update the current user rating for a video',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
@@ -326,6 +338,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos/{publicId}/comments',
+    operationId: 'listVideoComments',
     summary: 'List public comment threads for a video',
     description:
       'Public endpoint. Authentication is optional and is used only to calculate viewerHasLiked for the current viewer; anonymous viewers can read comments and receive viewerHasLiked=false.',
@@ -343,6 +356,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos/{publicId}/comments/{rootCommentId}/replies',
+    operationId: 'listVideoCommentReplies',
     summary: 'List public replies to a video comment',
     description:
       'Public endpoint. Authentication is optional and is used only to calculate viewerHasLiked for the current viewer; anonymous viewers can read replies and receive viewerHasLiked=false.',
@@ -360,6 +374,7 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/videos/{publicId}/comments',
+    operationId: 'createVideoComment',
     summary: 'Create a root comment under a video',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
@@ -375,6 +390,7 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/videos/{publicId}/comments/{rootCommentId}/replies',
+    operationId: 'createVideoCommentReply',
     summary: 'Reply in a one-level video comment thread',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
@@ -390,6 +406,7 @@ export const routeDocs = [
   {
     method: 'delete',
     path: '/videos/{publicId}/comments/{commentId}',
+    operationId: 'deleteVideoComment',
     summary: 'Soft-delete a video comment when permitted',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
@@ -406,6 +423,7 @@ export const routeDocs = [
   {
     method: 'put',
     path: '/videos/{publicId}/comments/{commentId}/like',
+    operationId: 'likeVideoComment',
     summary: 'Like a video comment',
     description:
       "Adds the current user's like to an active comment. The operation is idempotent: liking an already liked comment succeeds without changing its like count.",
@@ -424,6 +442,7 @@ export const routeDocs = [
   {
     method: 'delete',
     path: '/videos/{publicId}/comments/{commentId}/like',
+    operationId: 'unlikeVideoComment',
     summary: 'Unlike a video comment',
     description:
       "Removes the current user's like from a comment. The operation is idempotent and remains available when the video is no longer eligible for engagement or the comment has been deleted.",
@@ -442,6 +461,7 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/videos/{videoId}/upload/multipart/init',
+    operationId: 'initializeVideoMultipartUpload',
     summary: 'Initialize a multipart video upload',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
@@ -457,6 +477,7 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/videos/{videoId}/upload/multipart/{uploadSessionId}/parts/sign',
+    operationId: 'signVideoMultipartUploadParts',
     summary: 'Sign multipart video upload parts',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
@@ -472,6 +493,7 @@ export const routeDocs = [
   {
     method: 'put',
     path: '/videos/{videoId}/upload/multipart/{uploadSessionId}/thumbnail',
+    operationId: 'uploadVideoSourceThumbnail',
     summary: 'Upload or replace a source-bound video thumbnail',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
@@ -490,6 +512,7 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/videos/{videoId}/upload/multipart/{uploadSessionId}/complete',
+    operationId: 'completeVideoMultipartUpload',
     summary: 'Complete a multipart video upload',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
@@ -505,6 +528,7 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/videos/{videoId}/upload/multipart/{uploadSessionId}/abort',
+    operationId: 'abortVideoMultipartUpload',
     summary: 'Schedule a multipart video upload for durable abort',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
@@ -519,6 +543,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/videos/{videoId}/upload/multipart/{uploadSessionId}',
+    operationId: 'getVideoMultipartUpload',
     summary: 'Get a multipart video upload session',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],

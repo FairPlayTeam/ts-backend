@@ -18,6 +18,7 @@ export const profileRouteDocs = [
   {
     method: 'get',
     path: '/auth/me',
+    operationId: 'getCurrentUser',
     summary: 'Get current user profile data',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
@@ -34,6 +35,7 @@ export const profileRouteDocs = [
   {
     method: 'patch',
     path: '/auth/me',
+    operationId: 'updateCurrentUser',
     summary: 'Update current user profile',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],

@@ -2,7 +2,7 @@ import { OpenAPIRegistry, type RouteConfig } from '@asteasolutions/zod-to-openap
 import { API_ERROR_CODES, REQUEST_VALIDATION_FAILED_MESSAGE } from '../errors/http.js';
 import { z } from './zod.js';
 
-export type RouteDoc = RouteConfig;
+export type RouteDoc = RouteConfig & { operationId: string };
 
 export const ApiErrorSchema = z
   .object({
@@ -47,6 +47,7 @@ const registerSharedComponents = (registry: OpenAPIRegistry): void => {
 export const createOpenApiRegistry = (routeDocs: readonly RouteDoc[]): OpenAPIRegistry => {
   const registry = new OpenAPIRegistry();
   const registeredPaths = new Set<string>();
+  const registeredOperationIds = new Set<string>();
 
   registerSharedComponents(registry);
 
@@ -57,7 +58,12 @@ export const createOpenApiRegistry = (routeDocs: readonly RouteDoc[]): OpenAPIRe
       throw new Error(`OpenAPI route already registered: ${key}`);
     }
 
+    if (registeredOperationIds.has(doc.operationId)) {
+      throw new Error(`OpenAPI operationId already registered: ${doc.operationId}`);
+    }
+
     registeredPaths.add(key);
+    registeredOperationIds.add(doc.operationId);
     registry.registerPath(doc);
   }
 

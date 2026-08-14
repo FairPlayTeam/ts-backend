@@ -122,6 +122,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/health/live',
+    operationId: 'getLiveness',
     summary: 'Liveness probe',
     tags: ['System'],
     responses: {
@@ -131,6 +132,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/health/ready',
+    operationId: 'getReadiness',
     summary: 'Readiness probe',
     tags: ['System'],
     responses: {
@@ -141,6 +143,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/health',
+    operationId: 'getHealth',
     summary: 'Health check',
     tags: ['System'],
     responses: {

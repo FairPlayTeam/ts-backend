@@ -22,6 +22,7 @@ export const credentialsRouteDocs = [
   {
     method: 'post',
     path: '/auth/register',
+    operationId: 'registerUser',
     summary: 'Register a new user',
     tags: ['Auth'],
     request: jsonRequest(registerBodySchema),
@@ -38,6 +39,7 @@ export const credentialsRouteDocs = [
   {
     method: 'post',
     path: '/auth/login',
+    operationId: 'loginUser',
     summary: 'Log in with an email or username',
     tags: ['Auth'],
     request: jsonRequest(loginBodySchema),
@@ -55,6 +57,7 @@ export const credentialsRouteDocs = [
   {
     method: 'post',
     path: '/auth/verify-email',
+    operationId: 'verifyUserEmail',
     summary: 'Verify an email address',
     tags: ['Auth'],
     request: jsonRequest(verifyEmailBodySchema),
@@ -71,6 +74,7 @@ export const credentialsRouteDocs = [
   {
     method: 'post',
     path: '/auth/resend-verification',
+    operationId: 'resendUserEmailVerification',
     summary: 'Resend an email verification code',
     tags: ['Auth'],
     request: jsonRequest(resendVerificationBodySchema),

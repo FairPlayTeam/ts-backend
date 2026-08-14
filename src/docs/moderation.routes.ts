@@ -21,6 +21,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/moderation/videos',
+    operationId: 'listVideosForModeration',
     summary: 'List videos awaiting or having received moderation',
     tags: ['Moderation'],
     security: [{ bearerAuth: [] }],
@@ -35,6 +36,7 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/moderation/videos/{videoId}/moderation',
+    operationId: 'moderateVideo',
     summary: 'Approve or reject a video',
     tags: ['Moderation'],
     security: [{ bearerAuth: [] }],

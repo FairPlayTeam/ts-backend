@@ -21,6 +21,7 @@ export const adminAccountRouteDocs = [
   {
     method: 'get',
     path: '/admin/users',
+    operationId: 'listAdminUserAccounts',
     summary: 'List user accounts for administrators',
     tags: ['Admin'],
     security: [{ bearerAuth: [] }],
@@ -44,6 +45,7 @@ export const adminAccountRouteDocs = [
   {
     method: 'post',
     path: '/admin/users/{userId}/ban',
+    operationId: 'banUserAccount',
     summary: 'Ban a user account',
     tags: ['Admin'],
     security: [{ bearerAuth: [] }],
@@ -75,6 +77,7 @@ export const adminAccountRouteDocs = [
   {
     method: 'post',
     path: '/admin/users/{userId}/unban',
+    operationId: 'unbanUserAccount',
     summary: 'Unban a user account',
     tags: ['Admin'],
     security: [{ bearerAuth: [] }],
@@ -105,6 +108,7 @@ export const adminAccountRouteDocs = [
   {
     method: 'patch',
     path: '/admin/users/{userId}/role',
+    operationId: 'updateUserAccountRole',
     summary: 'Update a user account role',
     tags: ['Admin'],
     security: [{ bearerAuth: [] }],

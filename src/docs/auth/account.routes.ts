@@ -15,6 +15,7 @@ export const accountRouteDocs = [
   {
     method: 'post',
     path: '/auth/me/export',
+    operationId: 'exportCurrentUserData',
     summary: 'Export current user data',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
@@ -37,6 +38,7 @@ export const accountRouteDocs = [
   {
     method: 'delete',
     path: '/auth/me',
+    operationId: 'deleteCurrentUserAccount',
     summary: 'Delete current user account',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],

@@ -23,6 +23,7 @@ export const mediaRouteDocs = [
   {
     method: 'put',
     path: '/auth/me/avatar',
+    operationId: 'uploadCurrentUserAvatar',
     summary: 'Upload or replace current user avatar',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
@@ -32,6 +33,7 @@ export const mediaRouteDocs = [
   {
     method: 'delete',
     path: '/auth/me/avatar',
+    operationId: 'deleteCurrentUserAvatar',
     summary: 'Delete current user avatar',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
@@ -40,6 +42,7 @@ export const mediaRouteDocs = [
   {
     method: 'put',
     path: '/auth/me/banner',
+    operationId: 'uploadCurrentUserBanner',
     summary: 'Upload or replace current user banner',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],
@@ -49,6 +52,7 @@ export const mediaRouteDocs = [
   {
     method: 'delete',
     path: '/auth/me/banner',
+    operationId: 'deleteCurrentUserBanner',
     summary: 'Delete current user banner',
     tags: ['Auth'],
     security: [{ bearerAuth: [] }],

@@ -23,6 +23,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/profiles/me/following',
+    operationId: 'listCurrentUserFollowingProfiles',
     summary: 'List profiles followed by the current user',
     tags: ['Profiles'],
     security: [{ bearerAuth: [] }],
@@ -44,6 +45,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/profiles/{username}/avatar',
+    operationId: 'getProfileAvatar',
     summary: 'Proxy a user avatar through the API',
     tags: ['Profiles'],
     security: [],
@@ -62,6 +64,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/profiles/{username}/banner',
+    operationId: 'getProfileBanner',
     summary: 'Proxy a user banner through the API',
     tags: ['Profiles'],
     security: [],
@@ -80,6 +83,7 @@ export const routeDocs = [
   {
     method: 'get',
     path: '/profiles/{username}',
+    operationId: 'getPublicProfile',
     summary: 'Get a public user profile',
     tags: ['Profiles'],
     request: {
@@ -100,6 +104,7 @@ export const routeDocs = [
   {
     method: 'post',
     path: '/profiles/{username}/follow',
+    operationId: 'followPublicProfile',
     summary: 'Follow a public user profile',
     tags: ['Profiles'],
     security: [{ bearerAuth: [] }],
@@ -123,6 +128,7 @@ export const routeDocs = [
   {
     method: 'delete',
     path: '/profiles/{username}/follow',
+    operationId: 'unfollowPublicProfile',
     summary: 'Unfollow a public user profile',
     tags: ['Profiles'],
     security: [{ bearerAuth: [] }],

@@ -16,6 +16,7 @@ export const passwordResetRouteDocs = [
   {
     method: 'post',
     path: '/auth/forgot-password',
+    operationId: 'requestUserPasswordReset',
     summary: 'Request a password reset code',
     tags: ['Auth'],
     request: jsonRequest(requestPasswordResetBodySchema),
@@ -32,6 +33,7 @@ export const passwordResetRouteDocs = [
   {
     method: 'post',
     path: '/auth/reset-password',
+    operationId: 'resetUserPassword',
     summary: 'Reset account password using an emailed code',
     tags: ['Auth'],
     request: jsonRequest(resetPasswordBodySchema),
