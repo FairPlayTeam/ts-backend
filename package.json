@@ -11,6 +11,7 @@
     "dev": "bun --watch scripts/dev.ts",
     "build": "bun scripts/build.ts",
     "start": "bun dist/index.js",
+    "openapi:snapshot": "bun scripts/write-openapi-snapshot.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun run test:unit",
     "test:unit": "bun scripts/run-with-sharp-concurrency.ts bun test",
