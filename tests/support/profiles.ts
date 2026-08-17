@@ -13,6 +13,7 @@ const publicProfile = {
   bannerUrl: '/profiles/fairplay_user/banner',
   followerCount: 12,
   followingCount: 3,
+  isFollowing: false,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
@@ -37,11 +38,12 @@ export const createStubProfilesService = (): ProfilesPorts => ({
     profile: {
       ...publicProfile,
       followerCount: publicProfile.followerCount + 1,
+      isFollowing: true,
     },
   }),
   unfollowPublicProfile: async () => ({
     message: UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
-    profile: publicProfile,
+    profile: { ...publicProfile, isFollowing: false },
   }),
   listFollowingProfiles: async () => ({
     profiles: [followingProfile],

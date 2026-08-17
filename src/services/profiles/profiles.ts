@@ -12,6 +12,7 @@ import {
 } from '../profiles.errors.js';
 import { readForProxy } from '../assets/assetLinks.js';
 import type { ProfilesDependencies } from './profiles.dependencies.js';
+import { PUBLIC_PROFILE_VISIBILITY_SCOPE } from './publicProfileVisibility.js';
 import {
   FOLLOW_PROFILE_SUCCESS_MESSAGE,
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
@@ -100,17 +101,15 @@ const findPublicProfileRecord = (
   prisma.user.findFirst({
     where: {
       ...where,
-      isVerified: true,
-      isBanned: false,
+      ...PUBLIC_PROFILE_VISIBILITY_SCOPE,
     },
     select: publicProfileSelect,
   });
 
-const toPublicProfile = ({
-  _count,
-  mediaAssets,
-  ...profile
-}: PublicProfileRecord): PublicProfile => {
+const toPublicProfile = (
+  { _count, mediaAssets, ...profile }: PublicProfileRecord,
+  isFollowing = false,
+): PublicProfile => {
   const { avatarUrl, bannerUrl } = toProfileMediaUrls(profile.username, mediaAssets);
 
   return {
@@ -119,6 +118,7 @@ const toPublicProfile = ({
     bannerUrl,
     followerCount: _count.followers,
     followingCount: _count.following,
+    isFollowing,
   };
 };
 
@@ -137,6 +137,7 @@ const mutatePublicProfileFollow = async (
   deps: ProfilesDependencies,
   { actorUserId, username }: FollowPublicProfileInput,
   mutate: PublicProfileFollowMutation,
+  isFollowing: boolean,
 ): Promise<PublicProfile> => {
   const normalizedUsername = normalizeUsername(username);
   const profile = await deps.prisma.$transaction(async (tx) => {
@@ -161,7 +162,7 @@ const mutatePublicProfileFollow = async (
     return updatedTarget;
   });
 
-  return toPublicProfile(profile);
+  return toPublicProfile(profile, isFollowing);
 };
 
 export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort => ({
@@ -201,7 +202,10 @@ export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort 
     };
   },
 
-  async getPublicProfile({ username }: GetPublicProfileInput): Promise<GetPublicProfileResult> {
+  async getPublicProfile({
+    username,
+    viewerUserId,
+  }: GetPublicProfileInput): Promise<GetPublicProfileResult> {
     const profile = await findPublicProfileRecord(deps.prisma, {
       username: normalizeUsername(username),
     });
@@ -210,9 +214,22 @@ export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort 
       throw new PublicProfileNotFoundError();
     }
 
-    return {
-      profile: toPublicProfile(profile),
-    };
+    const isFollowing =
+      viewerUserId !== undefined && viewerUserId !== profile.id
+        ? Boolean(
+            await deps.prisma.userFollow.findUnique({
+              where: {
+                followerId_followingId: {
+                  followerId: viewerUserId,
+                  followingId: profile.id,
+                },
+              },
+              select: { followingId: true },
+            }),
+          )
+        : false;
+
+    return { profile: toPublicProfile(profile, isFollowing) };
   },
 
   async followPublicProfile(input: FollowPublicProfileInput): Promise<FollowPublicProfileResult> {
@@ -234,6 +251,7 @@ export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort 
           update: {},
         });
       },
+      true,
     );
 
     return {
@@ -305,6 +323,7 @@ export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort 
           },
         });
       },
+      false,
     );
 
     return {

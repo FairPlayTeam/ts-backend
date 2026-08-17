@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import sharp from '../../src/lib/sharp.js';
+import {
+  Prisma,
+  type PrismaClient,
+  type VideoModerationStatus,
+  type VideoProcessingStatus,
+  type VideoVisibility,
+} from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { ObjectStorageUnavailableError } from '../../src/lib/objectStorage.js';
 import { OperationTimeoutError } from '../../src/lib/operationMetrics.js';
@@ -13,16 +20,85 @@ import {
   FOLLOW_PROFILE_SUCCESS_MESSAGE,
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
 } from '../../src/services/profiles/profiles.messages.js';
+import type { VideosService } from '../../src/services/videos.types.js';
 import { createPng, createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import { OBJECT_STORAGE_BUCKET } from './support/infrastructure.js';
 import {
   createIntegrationApp,
+  createIntegrationVideosService,
   expectIntegrationReadinessOk,
   resetState,
   startRuntime,
   stopRuntime,
   type TestRuntime,
 } from './support/runtime.js';
+
+const createProfileCatalogVideo = async (
+  runtime: TestRuntime,
+  {
+    createdAt,
+    moderationStatus = 'approved',
+    ownerId,
+    processingStatus = 'ready',
+    title,
+    visibility = 'public',
+  }: {
+    createdAt: Date;
+    moderationStatus?: VideoModerationStatus;
+    ownerId: string;
+    processingStatus?: VideoProcessingStatus;
+    title: string;
+    visibility?: VideoVisibility;
+  },
+) => {
+  const created = await runtime.videosService.createVideo({
+    userId: ownerId,
+    title,
+    description: 'Internal catalog description that must not leak.',
+    tags: ['internal-profile-catalog-tag'],
+    license: 'all_rights_reserved',
+    visibility: 'unlisted',
+    allowComments: true,
+  });
+
+  return runtime.prisma.video.update({
+    where: { id: created.video.id },
+    data: {
+      createdAt,
+      moderationStatus,
+      processingStatus,
+      ...(processingStatus === 'ready' ? { durationSeconds: 19 } : {}),
+      visibility,
+    },
+    select: {
+      publicId: true,
+    },
+  });
+};
+
+const createCatalogTransactionBarrierService = (
+  runtime: TestRuntime,
+  beforeTransaction: (options?: {
+    isolationLevel?: Prisma.TransactionIsolationLevel;
+  }) => Promise<void>,
+): VideosService => {
+  const barrierPrisma = {
+    $transaction: async <T>(
+      run: (tx: Prisma.TransactionClient) => Promise<T>,
+      options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
+    ): Promise<T> => {
+      await beforeTransaction(options);
+
+      return runtime.prisma.$transaction(run, options);
+    },
+  } as unknown as PrismaClient;
+
+  return createIntegrationVideosService(
+    barrierPrisma,
+    runtime.videoObjectStorage,
+    runtime.videoExternalResources,
+  );
+};
 
 describe('profiles integration', () => {
   let runtime: TestRuntime | null = null;
@@ -87,6 +163,14 @@ describe('profiles integration', () => {
             }),
           }),
         );
+      });
+
+    await request(app)
+      .get('/profiles/profile_creator')
+      .set('Authorization', `Bearer ${follower.sessionKey}`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.profile.isFollowing).toBe(true);
       });
 
     await expect(
@@ -162,6 +246,14 @@ describe('profiles integration', () => {
         );
       });
 
+    await request(app)
+      .get('/profiles/profile_creator')
+      .set('Authorization', `Bearer ${follower.sessionKey}`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.profile.isFollowing).toBe(false);
+      });
+
     await expect(runtime.prisma.userFollow.count()).resolves.toBe(0);
 
     await request(app)
@@ -173,6 +265,282 @@ describe('profiles integration', () => {
         total: 0,
         nextCursor: null,
       });
+  });
+
+  test('lists only one creator public catalog with stable pagination and the feed DTO', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'profile-video-owner@example.com',
+      username: 'profile_video_owner',
+    });
+    const otherOwner = await createVerifiedSession(runtime, {
+      email: 'profile-video-other@example.com',
+      username: 'profile_video_other',
+    });
+    await runtime.prisma.user.update({
+      where: { id: owner.userId },
+      data: { displayName: 'Profile Video Owner' },
+    });
+    const dates = [
+      new Date('2026-07-01T00:00:00.000Z'),
+      new Date('2026-07-02T00:00:00.000Z'),
+      new Date('2026-07-03T00:00:00.000Z'),
+    ] as const;
+    const [oldest, middle, newest, other] = await Promise.all([
+      createProfileCatalogVideo(runtime, {
+        ownerId: owner.userId,
+        title: 'Profile oldest',
+        createdAt: dates[0],
+      }),
+      createProfileCatalogVideo(runtime, {
+        ownerId: owner.userId,
+        title: 'Profile middle',
+        createdAt: dates[1],
+      }),
+      createProfileCatalogVideo(runtime, {
+        ownerId: owner.userId,
+        title: 'Profile newest',
+        createdAt: dates[2],
+      }),
+      createProfileCatalogVideo(runtime, {
+        ownerId: otherOwner.userId,
+        title: 'Other creator video',
+        createdAt: new Date('2026-07-04T00:00:00.000Z'),
+      }),
+    ]);
+    const hidden = await Promise.all([
+      createProfileCatalogVideo(runtime, {
+        ownerId: owner.userId,
+        title: 'Hidden rejected',
+        createdAt: new Date('2026-07-05T00:00:00.000Z'),
+        moderationStatus: 'rejected',
+      }),
+      createProfileCatalogVideo(runtime, {
+        ownerId: owner.userId,
+        title: 'Hidden unlisted',
+        createdAt: new Date('2026-07-06T00:00:00.000Z'),
+        visibility: 'unlisted',
+      }),
+      createProfileCatalogVideo(runtime, {
+        ownerId: owner.userId,
+        title: 'Hidden pending',
+        createdAt: new Date('2026-07-07T00:00:00.000Z'),
+        moderationStatus: 'pending',
+      }),
+      createProfileCatalogVideo(runtime, {
+        ownerId: owner.userId,
+        title: 'Hidden non-ready',
+        createdAt: new Date('2026-07-08T00:00:00.000Z'),
+        processingStatus: 'processing',
+      }),
+    ]);
+    const app = await createIntegrationApp(runtime);
+    const firstPage = await request(app)
+      .get('/profiles/profile_video_owner/videos')
+      .query({ limit: 2 })
+      .expect(200);
+
+    expect(firstPage.headers['cache-control']).toBe('no-store');
+    expect(firstPage.body.total).toBe(3);
+    expect(firstPage.body.videos.map(({ publicId }: { publicId: string }) => publicId)).toEqual([
+      newest.publicId,
+      middle.publicId,
+    ]);
+    expect(firstPage.body.nextCursor).toEqual({
+      createdAt: dates[1].toISOString(),
+      publicId: middle.publicId,
+    });
+
+    const secondPage = await request(app)
+      .get('/profiles/profile_video_owner/videos')
+      .query({
+        limit: 2,
+        cursorCreatedAt: firstPage.body.nextCursor.createdAt,
+        cursorPublicId: firstPage.body.nextCursor.publicId,
+      })
+      .expect(200);
+
+    expect(secondPage.body).toEqual({
+      videos: [
+        {
+          publicId: oldest.publicId,
+          title: 'Profile oldest',
+          createdAt: dates[0].toISOString(),
+          thumbnailPath: null,
+          creator: {
+            username: 'profile_video_owner',
+            displayName: 'Profile Video Owner',
+          },
+          viewCount: 0,
+          duration: 19,
+        },
+      ],
+      total: 3,
+      nextCursor: null,
+    });
+
+    const returnedPublicIds = [
+      ...firstPage.body.videos.map(({ publicId }: { publicId: string }) => publicId),
+      ...secondPage.body.videos.map(({ publicId }: { publicId: string }) => publicId),
+    ];
+    expect(returnedPublicIds).not.toContain(other.publicId);
+    for (const hiddenVideo of hidden) {
+      expect(returnedPublicIds).not.toContain(hiddenVideo.publicId);
+    }
+
+    const card = firstPage.body.videos[0] as Record<string, unknown>;
+    expect(Object.keys(card).sort()).toEqual(
+      [
+        'createdAt',
+        'creator',
+        'duration',
+        'publicId',
+        'thumbnailPath',
+        'title',
+        'viewCount',
+      ].sort(),
+    );
+    expect(Object.keys(card.creator as Record<string, unknown>).sort()).toEqual(
+      ['displayName', 'username'].sort(),
+    );
+    for (const forbidden of [
+      'id',
+      'ownerId',
+      'moderationStatus',
+      'processingStatus',
+      'ratingSum',
+      'ratingCount',
+      'thumbnailObjectKey',
+      'hlsMasterObjectKey',
+      'objectKey',
+    ]) {
+      expect(card).not.toHaveProperty(forbidden);
+    }
+
+    const feed = await request(app).get('/videos').query({ limit: 100 }).expect(200);
+    const matchingFeedCard = (
+      feed.body.videos as Array<Record<string, unknown> & { publicId: string }>
+    ).find(({ publicId }) => publicId === newest.publicId);
+    expect(matchingFeedCard).toEqual(card);
+  });
+
+  test('returns the same 404 as the profile for missing, unverified, and banned creators', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const unverified = await createVerifiedSession(runtime, {
+      email: 'profile-videos-unverified@example.com',
+      username: 'profile_vid_unver',
+    });
+    const banned = await createVerifiedSession(runtime, {
+      email: 'profile-videos-banned@example.com',
+      username: 'profile_vid_banned',
+    });
+    await Promise.all([
+      createProfileCatalogVideo(runtime, {
+        ownerId: unverified.userId,
+        title: 'Unverified creator public video',
+        createdAt: new Date('2026-07-01T00:00:00.000Z'),
+      }),
+      createProfileCatalogVideo(runtime, {
+        ownerId: banned.userId,
+        title: 'Banned creator public video',
+        createdAt: new Date('2026-07-02T00:00:00.000Z'),
+      }),
+    ]);
+    await Promise.all([
+      runtime.prisma.user.update({
+        where: { id: unverified.userId },
+        data: { isVerified: false },
+      }),
+      runtime.prisma.user.update({
+        where: { id: banned.userId },
+        data: { isBanned: true, bannedAt: new Date('2026-07-03T00:00:00.000Z') },
+      }),
+    ]);
+    const app = await createIntegrationApp(runtime);
+
+    for (const username of ['profile_vid_missing', 'profile_vid_unver', 'profile_vid_banned']) {
+      const profile = await request(app).get(`/profiles/${username}`).expect(404);
+      const videos = await request(app).get(`/profiles/${username}/videos`).expect(404);
+
+      expect(videos.body).toEqual(profile.body);
+      expect(videos.body).toEqual({
+        error: 'NotFound',
+        message: 'Public profile not found',
+      });
+    }
+  });
+
+  test('revalidates profile visibility after resolution and before the catalog snapshot', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    for (const stateChange of ['delete', 'ban', 'unverify'] as const) {
+      const username = `race_${stateChange}`;
+      const owner = await createVerifiedSession(runtime, {
+        email: `race-${stateChange}@example.com`,
+        username,
+      });
+      await createProfileCatalogVideo(runtime, {
+        ownerId: owner.userId,
+        title: `Profile visibility ${stateChange} race`,
+        createdAt: new Date('2026-07-04T00:00:00.000Z'),
+      });
+      const transactionStarted = Promise.withResolvers<
+        Prisma.TransactionIsolationLevel | undefined
+      >();
+      const releaseTransaction = Promise.withResolvers<void>();
+      const barrierService = createCatalogTransactionBarrierService(runtime, async (options) => {
+        transactionStarted.resolve(options?.isolationLevel);
+        await releaseTransaction.promise;
+      });
+      const app = await createIntegrationApp(runtime, { videosService: barrierService });
+      const pendingResponse = request(app)
+        .get(`/profiles/${username}/videos`)
+        .then((response) => response);
+
+      const isolationLevel = await transactionStarted.promise;
+      try {
+        if (stateChange === 'delete') {
+          await runtime.prisma.user.delete({ where: { id: owner.userId } });
+        } else if (stateChange === 'ban') {
+          await runtime.prisma.user.update({
+            where: { id: owner.userId },
+            data: {
+              isBanned: true,
+              bannedAt: new Date('2026-07-04T01:00:00.000Z'),
+            },
+          });
+        } else {
+          await runtime.prisma.user.update({
+            where: { id: owner.userId },
+            data: { isVerified: false },
+          });
+        }
+      } finally {
+        releaseTransaction.resolve();
+      }
+
+      const response = await pendingResponse;
+
+      expect(isolationLevel).toBe(Prisma.TransactionIsolationLevel.RepeatableRead);
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({
+        error: 'NotFound',
+        message: 'Public profile not found',
+      });
+      if (stateChange !== 'delete') {
+        await expect(
+          runtime.prisma.video.count({ where: { ownerId: owner.userId } }),
+        ).resolves.toBe(1);
+      }
+    }
   });
 
   test('stores uploaded profile media in MinIO and proxies it through opaque profile paths', async () => {

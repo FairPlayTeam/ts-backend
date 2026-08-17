@@ -69,6 +69,7 @@ const createFollowingRecord = ({
 
 const createDeps = ({
   followingTotal = 3,
+  followingLookup = null,
   maxProxyBytes = { avatar: 10, banner: 20 },
   profileMedia = {
     bucket: 'user-media',
@@ -97,6 +98,7 @@ const createDeps = ({
   ],
 }: {
   followingTotal?: number;
+  followingLookup?: { followingId: string } | null;
   maxProxyBytes?: ProfilesDependencies['maxProxyBytes'];
   profileMedia?: unknown;
   profiles?: unknown[] | unknown | null;
@@ -112,6 +114,7 @@ const createDeps = ({
     userFollowCount?: unknown;
     userFollowDeleteMany?: unknown;
     userFollowFindMany?: unknown;
+    userFollowFindUnique?: unknown;
     userFollowUpsert?: unknown;
   } = {
     readObjectInputs: [],
@@ -130,6 +133,11 @@ const createDeps = ({
       },
     },
     userFollow: {
+      findUnique: async (args: unknown) => {
+        calls.userFollowFindUnique = args;
+
+        return followingLookup;
+      },
       findMany: async (args: unknown) => {
         calls.userFollowFindMany = args;
 
@@ -299,6 +307,7 @@ describe('profiles service', () => {
         bannerUrl: '/profiles/fairplay_user/banner',
         followerCount: 12,
         followingCount: 3,
+        isFollowing: false,
         createdAt: profileCreatedAt,
       },
     });
@@ -335,6 +344,32 @@ describe('profiles service', () => {
       },
     });
     expect(calls.readObjectInputs).toEqual([]);
+    expect(calls.userFollowFindUnique).toBeUndefined();
+  });
+
+  test('returns the authenticated viewer follow state without changing public access', async () => {
+    const targetId = '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f';
+    const { calls, deps } = createDeps({
+      followingLookup: { followingId: targetId },
+    });
+
+    await expect(
+      createProfilesService(deps).getPublicProfile({
+        username: 'fairplay_user',
+        viewerUserId: followerUserId,
+      }),
+    ).resolves.toMatchObject({
+      profile: { isFollowing: true },
+    });
+    expect(calls.userFollowFindUnique).toEqual({
+      where: {
+        followerId_followingId: {
+          followerId: followerUserId,
+          followingId: targetId,
+        },
+      },
+      select: { followingId: true },
+    });
   });
 
   test('returns null profile media urls when no public media exists', async () => {
@@ -490,6 +525,7 @@ describe('profiles service', () => {
         bannerUrl: '/profiles/fairplay_user/banner',
         followerCount: 13,
         followingCount: 3,
+        isFollowing: true,
         createdAt: profileCreatedAt,
       },
     });

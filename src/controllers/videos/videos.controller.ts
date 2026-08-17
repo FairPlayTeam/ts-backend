@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { sendNoStoreJson, setNoStore } from '../http.responses.js';
+import { allowPublicCrossOriginMedia, sendNoStoreJson, setNoStore } from '../http.responses.js';
 import { toVideosHttpError } from '../videos.errors.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import type { OptionallyAuthenticatedRequest } from '../../middleware/auth.js';
@@ -499,7 +499,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
         publicId: hlsReq.params.publicId,
       });
 
-      return res
+      return allowPublicCrossOriginMedia(res)
         .status(200)
         .set('Cache-Control', VIDEO_HLS_MASTER_CACHE_CONTROL)
         .set('Content-Type', VIDEO_HLS_CONTENT_TYPE)
@@ -518,7 +518,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
         quality: hlsReq.params.quality,
       });
 
-      return res
+      return allowPublicCrossOriginMedia(res)
         .status(200)
         .set('Cache-Control', VIDEO_HLS_RENDITION_CACHE_CONTROL)
         .set('Content-Type', VIDEO_HLS_CONTENT_TYPE)
@@ -538,7 +538,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
         segment: hlsReq.params.segment,
       });
 
-      return res
+      return allowPublicCrossOriginMedia(res)
         .set('Cache-Control', VIDEO_HLS_SEGMENT_REDIRECT_CACHE_CONTROL)
         .redirect(307, result.url);
     } catch (err) {
@@ -553,7 +553,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
         publicId: thumbnailReq.params.publicId,
       });
 
-      return res
+      return allowPublicCrossOriginMedia(res)
         .set('Cache-Control', VIDEO_THUMBNAIL_REDIRECT_CACHE_CONTROL)
         .redirect(307, result.url);
     } catch (err) {

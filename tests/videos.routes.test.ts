@@ -1115,6 +1115,7 @@ describe('videos routes multipart uploads', () => {
 
     expect(masterResponse.status).toBe(200);
     expect(masterResponse.headers.get('cache-control')).toBe('no-cache');
+    expect(masterResponse.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect(masterResponse.headers.get('content-type')).toContain('application/vnd.apple.mpegurl');
     const observedMasterRequest = receivedHlsMasterRequest as GetVideoHlsMasterInput | undefined;
     expect(observedMasterRequest).toEqual({ publicId });
@@ -1126,6 +1127,7 @@ describe('videos routes multipart uploads', () => {
 
     expect(renditionResponse.status).toBe(200);
     expect(renditionResponse.headers.get('cache-control')).toBe('no-cache');
+    expect(renditionResponse.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect(renditionResponse.headers.get('content-type')).toContain(
       'application/vnd.apple.mpegurl',
     );
@@ -1147,6 +1149,7 @@ describe('videos routes multipart uploads', () => {
 
     expect(segmentResponse.status).toBe(307);
     expect(segmentResponse.headers.get('cache-control')).toBe('no-store');
+    expect(segmentResponse.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect(segmentResponse.headers.get('location')).toBe(
       'http://localhost:9000/videos/segment-00000.ts?signature=test',
     );
@@ -1170,6 +1173,7 @@ describe('videos routes multipart uploads', () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect(response.headers.get('location')).toBe(
       'http://localhost:9000/videos/thumbnail/poster.webp?signature=test',
     );

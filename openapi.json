@@ -737,6 +737,7 @@
               },
               "followerCount": { "type": "integer", "minimum": 0, "example": 128 },
               "followingCount": { "type": "integer", "minimum": 0, "example": 42 },
+              "isFollowing": { "type": "boolean", "example": true },
               "createdAt": {
                 "type": "string",
                 "format": "date-time",
@@ -752,6 +753,7 @@
               "bannerUrl",
               "followerCount",
               "followingCount",
+              "isFollowing",
               "createdAt"
             ]
           }
@@ -1154,6 +1156,7 @@
               },
               "followerCount": { "type": "integer", "minimum": 0, "example": 128 },
               "followingCount": { "type": "integer", "minimum": 0, "example": 42 },
+              "isFollowing": { "type": "boolean", "example": true },
               "createdAt": {
                 "type": "string",
                 "format": "date-time",
@@ -1169,6 +1172,7 @@
               "bannerUrl",
               "followerCount",
               "followingCount",
+              "isFollowing",
               "createdAt"
             ]
           }
@@ -1770,6 +1774,7 @@
               },
               "followerCount": { "type": "integer", "minimum": 0, "example": 128 },
               "followingCount": { "type": "integer", "minimum": 0, "example": 42 },
+              "isFollowing": { "type": "boolean", "example": true },
               "createdAt": {
                 "type": "string",
                 "format": "date-time",
@@ -1785,6 +1790,7 @@
               "bannerUrl",
               "followerCount",
               "followingCount",
+              "isFollowing",
               "createdAt"
             ]
           }
@@ -4337,11 +4343,96 @@
         }
       }
     },
+    "/profiles/{username}/videos": {
+      "get": {
+        "operationId": "listPublicProfileVideos",
+        "summary": "List public videos from a creator profile",
+        "tags": ["Profiles", "Videos"],
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 20,
+              "pattern": "^[A-Za-z0-9_]+$",
+              "example": "fairplay_creator"
+            },
+            "required": true,
+            "name": "username",
+            "in": "path"
+          },
+          {
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "example": "2026-01-01T00:00:00.000Z"
+            },
+            "required": false,
+            "name": "cursorCreatedAt",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_]{10}$",
+              "example": "AbCdEf123_"
+            },
+            "required": false,
+            "name": "cursorPublicId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated creator public video list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PublicVideosResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiOrValidationError" }
+              }
+            }
+          },
+          "404": {
+            "description": "Public profile not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          }
+        }
+      }
+    },
     "/profiles/{username}": {
       "get": {
         "operationId": "getPublicProfile",
         "summary": "Get a public user profile",
         "tags": ["Profiles"],
+        "security": [{}, { "bearerAuth": [] }],
         "parameters": [
           {
             "schema": {

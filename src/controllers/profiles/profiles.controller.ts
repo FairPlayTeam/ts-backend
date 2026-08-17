@@ -3,20 +3,32 @@ import type {
   FollowPublicProfileParams,
   GetProfileMediaParams,
   GetPublicProfileParams,
+  ListPublicProfileVideosParams,
+  ListPublicProfileVideosQuery,
   ListFollowingProfilesQuery,
   UnfollowPublicProfileParams,
 } from '../profiles.schemas.js';
-import { sendNoStoreJson } from '../http.responses.js';
+import { allowPublicCrossOriginMedia, sendNoStoreJson } from '../http.responses.js';
 import { toProfilesHttpError } from '../profiles.errors.js';
-import type { AuthenticatedRequest } from '../../middleware/auth.js';
+import type {
+  AuthenticatedRequest,
+  OptionallyAuthenticatedRequest,
+} from '../../middleware/auth.js';
 import type { ProfilesControllerDependencies } from './profiles.controller.types.js';
 import {
   toFollowingProfilesResponse,
   toFollowPublicProfileResponse,
   toPublicProfileResponse,
 } from './profiles.responses.js';
+import { toPublicVideosResponse } from '../videos/videos.responses.js';
 
 type GetPublicProfileRequest = Request<GetPublicProfileParams>;
+type ListPublicProfileVideosRequest = Request<
+  ListPublicProfileVideosParams,
+  unknown,
+  unknown,
+  ListPublicProfileVideosQuery
+>;
 type GetProfileMediaRequest = Request<GetProfileMediaParams>;
 type FollowPublicProfileRequest = Request<FollowPublicProfileParams>;
 type ListFollowingProfilesRequest = Request<unknown, unknown, unknown, ListFollowingProfilesQuery>;
@@ -33,7 +45,7 @@ export const createProfilesController = (deps: ProfilesControllerDependencies) =
           kind,
         });
 
-        return res
+        return allowPublicCrossOriginMedia(res)
           .status(200)
           .set('Cache-Control', 'private, no-cache')
           .set('Content-Length', String(result.body.length))
@@ -52,11 +64,42 @@ export const createProfilesController = (deps: ProfilesControllerDependencies) =
     next: NextFunction,
   ) => {
     try {
+      const optionallyAuthenticatedReq = req as GetPublicProfileRequest &
+        OptionallyAuthenticatedRequest;
       const result = await deps.profilesService.getPublicProfile({
         username: req.params.username,
+        ...(optionallyAuthenticatedReq.user
+          ? { viewerUserId: optionallyAuthenticatedReq.user.id }
+          : {}),
       });
 
       return sendNoStoreJson(res, 200, toPublicProfileResponse(result));
+    } catch (err) {
+      next(toProfilesHttpError(err));
+    }
+  };
+
+  const listPublicProfileVideos: RequestHandler = async (req, res, next) => {
+    try {
+      const listReq = req as ListPublicProfileVideosRequest;
+      const { cursorCreatedAt, cursorPublicId, limit } = listReq.query;
+      const { profile } = await deps.profilesService.getPublicProfile({
+        username: listReq.params.username,
+      });
+      const result = await deps.videosService.listPublicProfileVideos({
+        ownerId: profile.id,
+        ...(limit === undefined ? {} : { limit }),
+        ...(cursorCreatedAt !== undefined && cursorPublicId !== undefined
+          ? {
+              cursor: {
+                createdAt: new Date(cursorCreatedAt),
+                publicId: cursorPublicId,
+              },
+            }
+          : {}),
+      });
+
+      return sendNoStoreJson(res, 200, toPublicVideosResponse(result));
     } catch (err) {
       next(toProfilesHttpError(err));
     }
@@ -121,6 +164,7 @@ export const createProfilesController = (deps: ProfilesControllerDependencies) =
     getAvatar,
     getBanner,
     getPublicProfile,
+    listPublicProfileVideos,
     listFollowingProfiles,
     unfollowPublicProfile,
   };

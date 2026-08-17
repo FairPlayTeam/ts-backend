@@ -21,6 +21,7 @@ import type {
   ListFollowingProfilesInput,
   ProfilesPorts,
 } from '../src/services/profiles.types.js';
+import type { ListPublicProfileVideosInput } from '../src/services/videos.types.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
@@ -30,6 +31,7 @@ let server: Server;
 let baseUrl: string;
 let receivedProfileMediaRequest: GetProfileMediaInput | undefined;
 let receivedProfileRequest: GetPublicProfileInput | undefined;
+let receivedPublicProfileVideosRequest: ListPublicProfileVideosInput | undefined;
 let receivedFollowProfileRequest: FollowPublicProfileInput | undefined;
 let receivedFollowingProfilesRequest: ListFollowingProfilesInput | undefined;
 let receivedUnfollowProfileRequest: FollowPublicProfileInput | undefined;
@@ -41,6 +43,7 @@ describe('profiles routes', () => {
   beforeAll(async () => {
     const authService = createStubAuthService();
     const profilesService = createStubProfilesService();
+    const videosService = createStubVideosService();
     const app = await createApp(
       {
         allowedOrigins: [],
@@ -109,7 +112,14 @@ describe('profiles routes', () => {
             return profilesService.unfollowPublicProfile(input);
           },
         } satisfies ProfilesPorts,
-        videosService: createStubVideosService(),
+        videosService: {
+          ...videosService,
+          listPublicProfileVideos: async (input) => {
+            receivedPublicProfileVideosRequest = input;
+
+            return videosService.listPublicProfileVideos(input);
+          },
+        },
       },
     );
 
@@ -157,8 +167,106 @@ describe('profiles routes', () => {
         bannerUrl: '/profiles/fairplay_user/banner',
         followerCount: 12,
         followingCount: 3,
+        isFollowing: false,
         createdAt: '2026-01-01T00:00:00.000Z',
       },
+    });
+  });
+
+  test('returns the current viewer follow state when a valid session is provided', async () => {
+    receivedProfileRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const response = await fetch(`${baseUrl}/profiles/FairPlay_User`, {
+      headers: { Authorization: 'Bearer route-session-key' },
+    });
+
+    expect(response.status).toBe(200);
+    const observedSessionKey = receivedSessionKey as string | undefined;
+    const observedProfileRequest = receivedProfileRequest as GetPublicProfileInput | undefined;
+    expect(observedSessionKey).toBe('route-session-key');
+    expect(observedProfileRequest).toEqual({
+      username: 'fairplay_user',
+      viewerUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+    });
+  });
+
+  test('lists public profile videos anonymously with the feed cursor and response DTO', async () => {
+    receivedProfileRequest = undefined;
+    receivedPublicProfileVideosRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const response = await fetch(
+      `${baseUrl}/profiles/FairPlay_User/videos?limit=2&cursorCreatedAt=2026-01-02T00%3A00%3A00.000Z&cursorPublicId=AbCdEf123_`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(receivedSessionKey).toBeUndefined();
+    const observedProfileRequest = receivedProfileRequest as GetPublicProfileInput | undefined;
+    const observedVideosRequest = receivedPublicProfileVideosRequest as
+      | ListPublicProfileVideosInput
+      | undefined;
+    expect(observedProfileRequest).toEqual({ username: 'fairplay_user' });
+    expect(observedVideosRequest).toEqual({
+      ownerId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+      limit: 2,
+      cursor: {
+        createdAt: new Date('2026-01-02T00:00:00.000Z'),
+        publicId: 'AbCdEf123_',
+      },
+    });
+    expect(await response.json()).toEqual({
+      videos: [
+        {
+          publicId: 'AbCdEf123_',
+          title: 'Me at the zoo',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          thumbnailPath: '/videos/AbCdEf123_/thumbnail',
+          creator: {
+            username: 'jawed',
+            displayName: 'Jawed Karim',
+          },
+          viewCount: 128,
+          duration: 19,
+        },
+      ],
+      total: 1,
+      nextCursor: null,
+    });
+  });
+
+  test('rejects invalid public profile video pagination before resolving the profile', async () => {
+    for (const query of [
+      '?limit=0',
+      '?cursorCreatedAt=2026-01-02T00%3A00%3A00.000Z',
+      '?cursorPublicId=AbCdEf123_',
+      '?cursorCreatedAt=invalid&cursorPublicId=AbCdEf123_',
+    ]) {
+      receivedProfileRequest = undefined;
+      receivedPublicProfileVideosRequest = undefined;
+
+      const response = await fetch(`${baseUrl}/profiles/fairplay_user/videos${query}`);
+
+      expect(response.status).toBe(400);
+      expect(receivedProfileRequest).toBeUndefined();
+      expect(receivedPublicProfileVideosRequest).toBeUndefined();
+    }
+  });
+
+  test('does not query videos when the public profile is missing', async () => {
+    receivedProfileRequest = undefined;
+    receivedPublicProfileVideosRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/profiles/missing_user/videos`);
+
+    expect(response.status).toBe(404);
+    const observedProfileRequest = receivedProfileRequest as GetPublicProfileInput | undefined;
+    expect(observedProfileRequest).toEqual({ username: 'missing_user' });
+    expect(receivedPublicProfileVideosRequest).toBeUndefined();
+    expect(await response.json()).toEqual({
+      error: 'NotFound',
+      message: 'Public profile not found',
     });
   });
 
@@ -171,6 +279,7 @@ describe('profiles routes', () => {
     expect(avatarResponse.headers.get('content-type')).toBe('image/webp');
     expect(avatarResponse.headers.get('content-length')).toBe('12');
     expect(avatarResponse.headers.get('cache-control')).toBe('private, no-cache');
+    expect(avatarResponse.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect(avatarResponse.headers.get('location')).toBeNull();
     expect(Buffer.from(await avatarResponse.arrayBuffer())).toEqual(Buffer.from('avatar-bytes'));
     const observedAvatarRequest = receivedProfileMediaRequest as GetProfileMediaInput | undefined;
@@ -185,6 +294,7 @@ describe('profiles routes', () => {
     expect(bannerResponse.headers.get('content-type')).toBe('image/webp');
     expect(bannerResponse.headers.get('content-length')).toBe('12');
     expect(bannerResponse.headers.get('cache-control')).toBe('private, no-cache');
+    expect(bannerResponse.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
     expect(bannerResponse.headers.get('location')).toBeNull();
     expect(Buffer.from(await bannerResponse.arrayBuffer())).toEqual(Buffer.from('banner-bytes'));
     const observedBannerRequest = receivedProfileMediaRequest as GetProfileMediaInput | undefined;
@@ -292,6 +402,7 @@ describe('profiles routes', () => {
         bannerUrl: '/profiles/fairplay_user/banner',
         followerCount: 13,
         followingCount: 3,
+        isFollowing: true,
         createdAt: '2026-01-01T00:00:00.000Z',
       },
     });
@@ -329,6 +440,7 @@ describe('profiles routes', () => {
         bannerUrl: '/profiles/fairplay_user/banner',
         followerCount: 12,
         followingCount: 3,
+        isFollowing: false,
         createdAt: '2026-01-01T00:00:00.000Z',
       },
     });

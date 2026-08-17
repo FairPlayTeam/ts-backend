@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
 import type { VideosDependencies } from '../src/services/videos/videos.dependencies.js';
 import { createVideosService } from '../src/services/videos.service.js';
+import { PublicProfileNotFoundError } from '../src/services/profiles.errors.js';
 
 const createdAt = [
   new Date('2026-01-03T00:00:00.000Z'),
@@ -36,19 +37,31 @@ const records = createdAt.map((recordCreatedAt, index) => ({
   objectKey: 'internal-object-key',
 }));
 
-const createDeps = () => {
+const createDeps = ({ visibleOwner = true }: { visibleOwner?: boolean } = {}) => {
   const calls: {
     count?: unknown;
     findMany?: unknown;
+    operationOrder: string[];
     transactionOptions?: unknown;
-  } = {};
+    userFindFirst?: unknown;
+  } = { operationOrder: [] };
   const tx = {
+    user: {
+      findFirst: async (args: unknown) => {
+        calls.operationOrder.push('user.findFirst');
+        calls.userFindFirst = args;
+
+        return visibleOwner ? { id: '11111111-1111-4111-8111-111111111111' } : null;
+      },
+    },
     video: {
       findMany: async (args: unknown) => {
+        calls.operationOrder.push('video.findMany');
         calls.findMany = args;
         return records;
       },
       count: async (args: unknown) => {
+        calls.operationOrder.push('video.count');
         calls.count = args;
         return records.length;
       },
@@ -153,6 +166,80 @@ describe('public video feed service', () => {
     expect(result.nextCursor).toEqual({
       createdAt: createdAt[1],
       publicId: 'PublicVid02_',
+    });
+  });
+
+  test('filters a creator page by owner and preserves the feed card mapping', async () => {
+    const feed = createDeps();
+    const creator = createDeps();
+    const ownerId = '11111111-1111-4111-8111-111111111111';
+    const feedResult = await createVideosService(feed.deps).listPublicVideos({});
+    const creatorResult = await createVideosService(creator.deps).listPublicProfileVideos({
+      ownerId,
+    });
+    const publicScope = {
+      visibility: 'public',
+      moderationStatus: 'approved',
+      processingStatus: 'ready',
+    };
+
+    expect(creator.calls.findMany).toEqual(
+      expect.objectContaining({
+        where: { AND: [publicScope, { ownerId }] },
+        orderBy: [{ createdAt: 'desc' }, { publicId: 'desc' }],
+        take: 21,
+      }),
+    );
+    expect(creator.calls.count).toEqual({
+      where: { AND: [publicScope, { ownerId }] },
+    });
+    expect(creator.calls.transactionOptions).toEqual({
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    });
+    expect(creator.calls.userFindFirst).toEqual({
+      where: {
+        id: ownerId,
+        isVerified: true,
+        isBanned: false,
+      },
+      select: { id: true },
+    });
+    expect(creator.calls.operationOrder).toEqual([
+      'user.findFirst',
+      'video.findMany',
+      'video.count',
+    ]);
+    expect(creatorResult).toEqual(feedResult);
+
+    for (const forbidden of [
+      'id',
+      'ownerId',
+      'ratingSum',
+      'ratingCount',
+      'moderationStatus',
+      'processingStatus',
+      'thumbnailObjectKey',
+      'hlsMasterObjectKey',
+      'bucket',
+      'objectKey',
+    ]) {
+      expect(creatorResult.videos[0]).not.toHaveProperty(forbidden);
+    }
+  });
+
+  test('rejects an owner that becomes ineligible before reading any catalog rows', async () => {
+    const { calls, deps } = createDeps({ visibleOwner: false });
+
+    await expect(
+      createVideosService(deps).listPublicProfileVideos({
+        ownerId: '11111111-1111-4111-8111-111111111111',
+      }),
+    ).rejects.toBeInstanceOf(PublicProfileNotFoundError);
+    expect(calls.operationOrder).toEqual(['user.findFirst']);
+    expect(calls.findMany).toBeUndefined();
+    expect(calls.count).toBeUndefined();
+    expect(calls.transactionOptions).toEqual({
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
     });
   });
 });

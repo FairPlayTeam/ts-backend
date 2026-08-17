@@ -242,6 +242,7 @@ export const createStubVideosService = (): VideosPorts => ({
     }),
   listMyVideos: async () => listMyVideosResult(),
   listPublicVideos: async () => listPublicVideosResult(),
+  listPublicProfileVideos: async () => listPublicVideosResult(),
   searchPublicVideos: async () => searchPublicVideosResult(),
   getPublicVideoDetail: async () => getPublicVideoDetailResult(),
   getVideoRating: async () => ({

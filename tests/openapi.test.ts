@@ -178,6 +178,7 @@ describe('OpenAPI generation', () => {
       '/profiles/{username}/avatar',
       '/profiles/{username}/banner',
       '/profiles/{username}/follow',
+      '/profiles/{username}/videos',
       '/videos',
       '/videos/me',
       '/videos/search',
@@ -233,6 +234,15 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/videos/search']?.get?.responses?.[200]).toBeDefined();
     expect(document.paths['/videos/search']?.get?.responses?.[400]).toBeDefined();
     expect(document.paths['/videos/search']?.get?.responses?.[401]).toBeUndefined();
+    expect(document.paths['/profiles/{username}/videos']?.get?.security).toEqual([]);
+    expect(document.paths['/profiles/{username}/videos']?.get?.responses?.[404]).toBeDefined();
+    expect(
+      document.paths['/profiles/{username}/videos']?.get?.responses?.[200]?.content?.[
+        'application/json'
+      ]?.schema,
+    ).toEqual(
+      document.paths['/videos']?.get?.responses?.[200]?.content?.['application/json']?.schema,
+    );
     expect(document.paths['/videos/{publicId}']?.get?.security).toEqual([{}, { bearerAuth: [] }]);
     expect(document.paths['/videos/{publicId}']?.get?.responses?.[200]).toBeDefined();
     expect(document.paths['/videos/{publicId}']?.get?.responses?.[404]).toBeDefined();
@@ -588,7 +598,7 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/profiles/me/following']?.get?.responses?.[401]).toBeDefined();
     expect(document.paths['/profiles/me/following']?.get?.responses?.[503]).toBeUndefined();
     expect(document.paths['/profiles/{username}']?.get?.requestBody).toBeUndefined();
-    expect(document.paths['/profiles/{username}']?.get?.security).toBeUndefined();
+    expect(document.paths['/profiles/{username}']?.get?.security).toEqual([{}, { bearerAuth: [] }]);
     expect(document.paths['/profiles/{username}']?.get?.parameters).toEqual([
       expect.objectContaining({
         name: 'username',

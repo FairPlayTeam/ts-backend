@@ -261,12 +261,12 @@ redirect to a freshly signed object-storage URL.
 and returns a temporary signed redirect to the active generation poster. Thumbnail and segment
 redirect responses use `Cache-Control: no-store` because the embedded signature expires.
 
-Because the browser follows that redirect to a different origin, configure CORS on the video
-bucket in MinIO/S3 as well as on the API. Allow each player origin to issue `GET` and `HEAD`, allow
-the `Range` header (or all request headers if required by the provider), and expose
-`Accept-Ranges`, `Content-Length`, `Content-Range`, and `ETag`. The bucket remains private and the
-signed URL supplies authorization. `CORS_ORIGINS` configures Express only; it does not cover the
-redirected MinIO/S3 request.
+Because the browser follows that redirect and sends multipart parts to a different origin,
+configure CORS on the video bucket in MinIO/S3 as well as on the API. Allow each frontend origin to
+issue `GET`, `HEAD`, and `PUT`; allow `Range` and `Content-Type` (or all request headers if required
+by the provider); and expose `Accept-Ranges`, `Content-Length`, `Content-Range`, and `ETag`. The
+bucket remains private and the signed URL supplies authorization. `CORS_ORIGINS` configures Express
+only; it does not cover redirected reads or presigned multipart uploads to MinIO/S3.
 
 ## Maintenance and runtime lifecycle
 

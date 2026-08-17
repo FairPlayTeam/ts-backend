@@ -43,6 +43,8 @@ import {
   type ExternalResourceReconciliationHandler,
 } from '../externalResources.js';
 import { isPrismaForeignKeyConstraintError } from '../auth/auth.prismaErrors.js';
+import { PublicProfileNotFoundError } from '../profiles.errors.js';
+import { PUBLIC_PROFILE_VISIBILITY_SCOPE } from '../profiles/publicProfileVisibility.js';
 import {
   ActiveVideoUploadSessionExistsError,
   InvalidVideoUploadSessionStateError,
@@ -73,6 +75,7 @@ import type {
   GetVideoMultipartUploadSessionInput,
   GetVideoThumbnailInput,
   InitVideoMultipartUploadInput,
+  ListPublicProfileVideosInput,
   ListPublicVideosInput,
   ListPublicVideosResult,
   ListVideoCommentRepliesInput,
@@ -550,6 +553,7 @@ const PUBLIC_VIDEO_CATALOG_SCOPE = {
 } satisfies Prisma.VideoWhereInput;
 
 type PublicVideoCatalogPageInput = {
+  beforeCatalogRead?: (tx: Prisma.TransactionClient) => Promise<void>;
   cursor?: PublicVideoCursor;
   filter?: Prisma.VideoWhereInput;
   limit?: number;
@@ -562,9 +566,19 @@ type PublicVideoCatalogPage = {
   nextCursor: PublicVideoCursor | null;
 };
 
+const toPublicVideoFeedResult = ({
+  nextCursor,
+  total,
+  videos,
+}: PublicVideoCatalogPage): ListPublicVideosResult => ({
+  videos: videos.map(toPublicVideoFeedCard),
+  total,
+  nextCursor,
+});
+
 const queryPublicVideoCatalogPage = async (
   prisma: VideosDependencies['prisma'],
-  { cursor, filter, limit, sort = 'newest' }: PublicVideoCatalogPageInput,
+  { beforeCatalogRead, cursor, filter, limit, sort = 'newest' }: PublicVideoCatalogPageInput,
 ): Promise<PublicVideoCatalogPage> => {
   const pageSize = normalizePublicVideoListLimit(limit);
   const direction = sort === 'oldest' ? 'asc' : 'desc';
@@ -587,6 +601,10 @@ const queryPublicVideoCatalogPage = async (
 
   const [queriedVideos, total] = await prisma.$transaction(
     async (tx) => {
+      if (beforeCatalogRead) {
+        await beforeCatalogRead(tx);
+      }
+
       const queriedVideos = await tx.video.findMany({
         where: pageFilter,
         select: publicVideoCatalogSelect,
@@ -1865,11 +1883,34 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
       ...(limit === undefined ? {} : { limit }),
     });
 
-    return {
-      videos: page.videos.map(toPublicVideoFeedCard),
-      total: page.total,
-      nextCursor: page.nextCursor,
-    };
+    return toPublicVideoFeedResult(page);
+  },
+
+  async listPublicProfileVideos({
+    cursor,
+    limit,
+    ownerId,
+  }: ListPublicProfileVideosInput): Promise<ListPublicVideosResult> {
+    const page = await queryPublicVideoCatalogPage(deps.prisma, {
+      beforeCatalogRead: async (tx) => {
+        const visibleOwner = await tx.user.findFirst({
+          where: {
+            id: ownerId,
+            ...PUBLIC_PROFILE_VISIBILITY_SCOPE,
+          },
+          select: { id: true },
+        });
+
+        if (!visibleOwner) {
+          throw new PublicProfileNotFoundError();
+        }
+      },
+      filter: { ownerId },
+      ...(cursor ? { cursor } : {}),
+      ...(limit === undefined ? {} : { limit }),
+    });
+
+    return toPublicVideoFeedResult(page);
   },
 
   async searchPublicVideos({

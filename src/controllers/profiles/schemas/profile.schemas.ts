@@ -5,6 +5,7 @@ import {
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
 } from '../../../services/profiles/profiles.messages.js';
 import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
+import { publicVideosQuerySchema } from '../../videos/schemas/video.schemas.js';
 
 export const FOLLOWING_PROFILES_CURSOR_PAIR_MESSAGE =
   'cursorFollowedAt and cursorId must be provided together';
@@ -18,6 +19,11 @@ export const publicProfileParamsSchema = z
 
 export const getPublicProfileSchema = z.object({
   params: publicProfileParamsSchema,
+});
+
+export const listPublicProfileVideosSchema = z.object({
+  params: publicProfileParamsSchema,
+  query: publicVideosQuerySchema,
 });
 
 export const getProfileMediaSchema = z.object({
@@ -71,6 +77,7 @@ const publicProfileSchema = z.object({
   }),
   followerCount: z.number().int().nonnegative().openapi({ example: 128 }),
   followingCount: z.number().int().nonnegative().openapi({ example: 42 }),
+  isFollowing: z.boolean().openapi({ example: true }),
   createdAt: publicProfileDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
 
@@ -122,6 +129,8 @@ export const followingProfilesResponseSchema = z
   .openapi('FollowingProfilesResponse');
 
 export type GetPublicProfileParams = z.infer<typeof getPublicProfileSchema>['params'];
+export type ListPublicProfileVideosParams = z.infer<typeof listPublicProfileVideosSchema>['params'];
+export type ListPublicProfileVideosQuery = z.infer<typeof listPublicProfileVideosSchema>['query'];
 export type GetProfileMediaParams = z.infer<typeof getProfileMediaSchema>['params'];
 export type FollowPublicProfileParams = z.infer<typeof followPublicProfileSchema>['params'];
 export type UnfollowPublicProfileParams = z.infer<typeof unfollowPublicProfileSchema>['params'];

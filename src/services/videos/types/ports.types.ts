@@ -90,6 +90,10 @@ export type ListPublicVideosInput = {
   limit?: number;
 };
 
+export type ListPublicProfileVideosInput = ListPublicVideosInput & {
+  ownerId: string;
+};
+
 export type PublicVideoSearchSummary = {
   publicId: string;
   title: string;
@@ -417,6 +421,7 @@ export type VideosRoutePort = {
   createVideo(input: CreateVideoInput): Promise<CreateVideoResult>;
   listMyVideos(input: ListMyVideosInput): Promise<ListMyVideosResult>;
   listPublicVideos(input: ListPublicVideosInput): Promise<ListPublicVideosResult>;
+  listPublicProfileVideos(input: ListPublicProfileVideosInput): Promise<ListPublicVideosResult>;
   searchPublicVideos(input: SearchPublicVideosInput): Promise<SearchPublicVideosResult>;
   getPublicVideoDetail(input: GetPublicVideoDetailInput): Promise<GetPublicVideoDetailResult>;
   getVideoRating(input: GetVideoRatingInput): Promise<VideoRatingAggregateResult>;

@@ -6,6 +6,10 @@ import {
   publicProfileResponseSchema,
   unfollowPublicProfileResponseSchema,
 } from '../controllers/profiles.schemas.js';
+import {
+  publicVideosQuerySchema,
+  publicVideosResponseSchema,
+} from '../controllers/videos.schemas.js';
 import { jsonResponse } from './openapi.helpers.js';
 import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from './registry.js';
 import { z } from './zod.js';
@@ -82,10 +86,34 @@ export const routeDocs = [
   },
   {
     method: 'get',
+    path: '/profiles/{username}/videos',
+    operationId: 'listPublicProfileVideos',
+    summary: 'List public videos from a creator profile',
+    tags: ['Profiles', 'Videos'],
+    security: [],
+    request: {
+      params: publicProfileParamsSchema,
+      query: publicVideosQuerySchema,
+    },
+    responses: {
+      200: jsonResponse('Paginated creator public video list', publicVideosResponseSchema),
+
+      400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+
+      404: jsonResponse('Public profile not found', ApiErrorSchema),
+
+      429: jsonResponse('Too many requests', ApiErrorSchema),
+
+      500: jsonResponse('Internal server error', ApiErrorSchema),
+    },
+  },
+  {
+    method: 'get',
     path: '/profiles/{username}',
     operationId: 'getPublicProfile',
     summary: 'Get a public user profile',
     tags: ['Profiles'],
+    security: [{}, { bearerAuth: [] }],
     request: {
       params: publicProfileParamsSchema,
     },

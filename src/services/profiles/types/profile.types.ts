@@ -2,6 +2,7 @@ import type { UserMediaKind } from '../../userMedia/userMedia.types.js';
 
 export type GetPublicProfileInput = {
   username: string;
+  viewerUserId?: string;
 };
 
 export type GetProfileMediaInput = GetPublicProfileInput & {
@@ -36,6 +37,7 @@ export type PublicProfile = {
   bannerUrl: string | null;
   followerCount: number;
   followingCount: number;
+  isFollowing: boolean;
   createdAt: Date;
 };
 
