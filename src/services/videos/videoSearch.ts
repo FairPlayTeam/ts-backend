@@ -1,35 +1,60 @@
-type VideoIlikeTextCondition = {
-  contains: string;
-  mode: 'insensitive';
+import type { Prisma } from '@prisma/client';
+
+export const PUBLIC_CREATOR_SEARCH_LIMIT = 10;
+
+export const normalizePublicSearchTerm = (search: string | undefined): string | undefined => {
+  const normalizedSearch = search?.trim();
+
+  return normalizedSearch ? normalizedSearch : undefined;
 };
 
-type VideoSearchFilter = {
-  OR: [
-    { title: VideoIlikeTextCondition },
-    { description: VideoIlikeTextCondition },
-    { tags: { has: string } },
-  ];
-};
-
-export const escapeVideoSearchTermForIlike = (search: string): string =>
+export const escapeSearchTermForIlike = (search: string): string =>
   search.replace(/[\\%_]/g, '\\$&');
+
+export const buildLiteralInsensitiveContains = (search: string): Prisma.StringFilter => ({
+  contains: escapeSearchTermForIlike(search),
+  mode: 'insensitive',
+});
 
 export const buildVideoSearchFilter = (
   search: string | undefined,
-): VideoSearchFilter | undefined => {
-  const normalizedSearch = search?.trim();
+): Prisma.VideoWhereInput | undefined => {
+  const normalizedSearch = normalizePublicSearchTerm(search);
 
   if (!normalizedSearch) {
     return undefined;
   }
 
-  const literalSearch = escapeVideoSearchTermForIlike(normalizedSearch);
-
   return {
     OR: [
-      { title: { contains: literalSearch, mode: 'insensitive' } },
-      { description: { contains: literalSearch, mode: 'insensitive' } },
+      { title: buildLiteralInsensitiveContains(normalizedSearch) },
+      { description: buildLiteralInsensitiveContains(normalizedSearch) },
       { tags: { has: normalizedSearch } },
     ],
+  };
+};
+
+export const buildPublicCreatorSearchCriteria = (
+  search: string | undefined,
+):
+  | {
+      exactUsername: string;
+      partialFilter: Prisma.UserWhereInput;
+    }
+  | undefined => {
+  const normalizedSearch = normalizePublicSearchTerm(search);
+
+  if (!normalizedSearch) {
+    return undefined;
+  }
+
+  return {
+    exactUsername: normalizedSearch.toLowerCase(),
+    partialFilter: {
+      OR: [
+        { username: buildLiteralInsensitiveContains(normalizedSearch) },
+        { displayName: buildLiteralInsensitiveContains(normalizedSearch) },
+      ],
+    },
   };
 };

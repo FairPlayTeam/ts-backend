@@ -28,12 +28,15 @@ export type ListFollowingProfilesInput = {
   limit?: number;
 };
 
-export type PublicProfile = {
-  id: string;
+export type PublicProfileIdentity = {
   username: string;
   displayName: string | null;
-  bio: string | null;
   avatarUrl: string | null;
+};
+
+export type PublicProfile = PublicProfileIdentity & {
+  id: string;
+  bio: string | null;
   bannerUrl: string | null;
   followerCount: number;
   followingCount: number;
@@ -41,11 +44,8 @@ export type PublicProfile = {
   createdAt: Date;
 };
 
-export type FollowingProfile = {
+export type FollowingProfile = PublicProfileIdentity & {
   id: string;
-  username: string;
-  displayName: string | null;
-  avatarUrl: string | null;
   followedAt: Date;
 };
 

@@ -166,14 +166,17 @@ export const routeDocs = [
     method: 'get',
     path: '/videos/search',
     operationId: 'searchPublicVideos',
-    summary: 'Search public videos',
+    summary: 'Search public videos and creators',
     tags: ['Videos'],
     security: [],
     request: {
       query: publicVideoSearchQuerySchema,
     },
     responses: {
-      200: jsonResponse('Paginated public video search results', publicVideoSearchResponseSchema),
+      200: jsonResponse(
+        'Paginated public video results with bounded creator matches',
+        publicVideoSearchResponseSchema,
+      ),
       ...publicVideoSearchResponses,
     },
   },

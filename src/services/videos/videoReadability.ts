@@ -27,6 +27,12 @@ export const readableVideoWhere = {
   },
 } satisfies Prisma.VideoWhereInput;
 
+export const publicVideoCatalogWhere = {
+  visibility: 'public',
+  moderationStatus: 'approved',
+  processingStatus: 'ready',
+} satisfies Prisma.VideoWhereInput;
+
 export const READABLE_VIDEO_SCOPE_SQL = Prisma.sql`
   v."processing_status" = 'ready'
   AND v."visibility" IN ('public', 'unlisted')

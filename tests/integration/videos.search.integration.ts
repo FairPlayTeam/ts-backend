@@ -1,5 +1,12 @@
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import type { Prisma } from '@prisma/client';
+import {
+  searchPublicCreators,
+  type PublicCreatorSearchReader,
+  type PublicCreatorSearchTransactionOptions,
+  type PublicCreatorSearchTransactionRunner,
+} from '../../src/services/videos/publicCreatorSearch.js';
 import { createVerifiedSession } from './support/fixtures.js';
 import {
   createIntegrationApp,
@@ -9,6 +16,30 @@ import {
   stopRuntime,
   type TestRuntime,
 } from './support/runtime.js';
+
+const createCreatorSearchReadBarrierRunner = (
+  runtime: TestRuntime,
+  afterExactMatchRead: () => Promise<void>,
+): PublicCreatorSearchTransactionRunner => ({
+  run: <T>(
+    callback: (reader: PublicCreatorSearchReader) => Promise<T>,
+    options: PublicCreatorSearchTransactionOptions,
+  ): Promise<T> =>
+    runtime.prisma.$transaction(async (tx) => {
+      const transactionReader: Pick<Prisma.TransactionClient, 'user'> = tx;
+      const reader: PublicCreatorSearchReader = {
+        findExact: async (args) => {
+          const exactMatch = await transactionReader.user.findFirst(args);
+          await afterExactMatchRead();
+
+          return exactMatch;
+        },
+        findPartial: (args) => transactionReader.user.findMany(args),
+      };
+
+      return callback(reader);
+    }, options),
+});
 
 describe('videos search integration', () => {
   let runtime: TestRuntime | null = null;
@@ -93,7 +124,7 @@ describe('videos search integration', () => {
     }
 
     const activeRuntime = runtime;
-    const app = await createIntegrationApp(runtime);
+    const app = await createIntegrationApp(activeRuntime);
     const owner = await createVerifiedSession(runtime, {
       email: 'public-video-search@example.com',
       username: 'public_search_owner',
@@ -183,6 +214,7 @@ describe('videos search integration', () => {
       .expect(200);
     const emptySearchResponse = {
       videos: [],
+      creators: [],
       total: 0,
       nextCursor: null,
     };
@@ -213,6 +245,7 @@ describe('videos search integration', () => {
           tags: ['discoverable-tag'],
         }),
       ],
+      creators: [],
       total: 1,
       nextCursor: null,
     });
@@ -290,6 +323,217 @@ describe('videos search integration', () => {
     ]);
     expect(secondPage.body.total).toBe(3);
     expect(secondPage.body.nextCursor).toBeNull();
+  });
+
+  test('searches visible creators by username and display name without leaking account fields', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const activeRuntime = runtime;
+    const app = await createIntegrationApp(activeRuntime);
+    const createCreator = async ({
+      displayName,
+      isBanned = false,
+      isVerified = true,
+      username,
+    }: {
+      displayName: string | null;
+      isBanned?: boolean;
+      isVerified?: boolean;
+      username: string;
+    }) => {
+      const account = await createVerifiedSession(activeRuntime, {
+        email: `${username}@example.com`,
+        username,
+      });
+
+      const user = await activeRuntime.prisma.user.update({
+        where: { id: account.userId },
+        data: {
+          displayName,
+          isBanned,
+          isVerified,
+        },
+      });
+
+      return {
+        ...account,
+        createdAt: user.createdAt,
+      };
+    };
+
+    const exactCreator = await createCreator({ username: 'needle', displayName: 'Exact creator' });
+    const usernameCreator = await createCreator({ username: 'alpha_needle', displayName: null });
+    const displayNameCreator = await createCreator({
+      username: 'display_match',
+      displayName: 'Needle display match',
+    });
+    await createCreator({ username: 'banned_needle', displayName: 'Banned match', isBanned: true });
+    await createCreator({
+      username: 'unverified_needle',
+      displayName: 'Unverified match',
+      isVerified: false,
+    });
+    const percentCreator = await createCreator({
+      username: 'percent_creator',
+      displayName: 'Budget 50% creator',
+    });
+    await createCreator({ username: 'nonliteral_creator', displayName: 'Budget 500 creator' });
+    const follower = await createCreator({ username: 'search_follower', displayName: null });
+
+    await activeRuntime.prisma.userFollow.create({
+      data: {
+        followerId: follower.userId,
+        followingId: exactCreator.userId,
+      },
+    });
+    const publicVideo = await activeRuntime.videosService.createVideo({
+      userId: exactCreator.userId,
+      title: 'Unrelated public creator video',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+    await activeRuntime.prisma.video.update({
+      where: { id: publicVideo.video.id },
+      data: {
+        visibility: 'public',
+        moderationStatus: 'approved',
+        processingStatus: 'ready',
+        durationSeconds: 19,
+        publishedAt: new Date('2026-04-01T00:00:00.000Z'),
+      },
+    });
+    await activeRuntime.videosService.createVideo({
+      userId: exactCreator.userId,
+      title: 'Hidden creator draft',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      visibility: 'unlisted',
+      allowComments: true,
+    });
+
+    const creatorSearch = await request(app)
+      .get('/videos/search')
+      .query({ search: 'NEEDLE' })
+      .expect(200);
+
+    expect(creatorSearch.body).toEqual({
+      videos: [],
+      creators: [
+        {
+          username: 'needle',
+          displayName: 'Exact creator',
+          avatarUrl: null,
+          followerCount: 1,
+          videoCount: 1,
+          createdAt: exactCreator.createdAt.toISOString(),
+        },
+        {
+          username: 'alpha_needle',
+          displayName: null,
+          avatarUrl: null,
+          followerCount: 0,
+          videoCount: 0,
+          createdAt: usernameCreator.createdAt.toISOString(),
+        },
+        {
+          username: 'display_match',
+          displayName: 'Needle display match',
+          avatarUrl: null,
+          followerCount: 0,
+          videoCount: 0,
+          createdAt: displayNameCreator.createdAt.toISOString(),
+        },
+      ],
+      total: 0,
+      nextCursor: null,
+    });
+    for (const creator of creatorSearch.body.creators) {
+      expect(Object.keys(creator).sort()).toEqual([
+        'avatarUrl',
+        'createdAt',
+        'displayName',
+        'followerCount',
+        'username',
+        'videoCount',
+      ]);
+      expect(creator).not.toHaveProperty('id');
+      expect(creator).not.toHaveProperty('email');
+      expect(creator).not.toHaveProperty('role');
+      expect(creator).not.toHaveProperty('isBanned');
+      expect(creator).not.toHaveProperty('isVerified');
+    }
+
+    for (const hiddenExactUsername of ['banned_needle', 'unverified_needle']) {
+      const hiddenExactSearch = await request(app)
+        .get('/videos/search')
+        .query({ search: hiddenExactUsername })
+        .expect(200);
+      expect(hiddenExactSearch.body.creators).toEqual([]);
+    }
+
+    const literalWildcardSearch = await request(app)
+      .get('/videos/search')
+      .query({ search: '50%' })
+      .expect(200);
+    expect(literalWildcardSearch.body.creators).toEqual([
+      {
+        username: 'percent_creator',
+        displayName: 'Budget 50% creator',
+        avatarUrl: null,
+        followerCount: 0,
+        videoCount: 0,
+        createdAt: percentCreator.createdAt.toISOString(),
+      },
+    ]);
+  });
+
+  test('reads exact and partial creator matches from one RepeatableRead snapshot', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const activeRuntime = runtime;
+    await createVerifiedSession(activeRuntime, {
+      email: 'creator-snapshot-exact@example.com',
+      username: 'creator_snapshot',
+    });
+    const partialCreator = await createVerifiedSession(activeRuntime, {
+      email: 'creator-snapshot-partial@example.com',
+      username: 'creator_snapshot_alt',
+    });
+    const exactMatchRead = Promise.withResolvers<void>();
+    const releaseExactMatchRead = Promise.withResolvers<void>();
+    const transactionRunner = createCreatorSearchReadBarrierRunner(activeRuntime, async () => {
+      exactMatchRead.resolve();
+      await releaseExactMatchRead.promise;
+    });
+    const pendingSearch = searchPublicCreators(transactionRunner, 'creator_snapshot');
+
+    await exactMatchRead.promise;
+    try {
+      await activeRuntime.prisma.user.update({
+        where: { id: partialCreator.userId },
+        data: { isBanned: true },
+      });
+    } finally {
+      releaseExactMatchRead.resolve();
+    }
+    const snapshotSearch = await pendingSearch;
+
+    expect(snapshotSearch.map(({ username }) => username)).toEqual([
+      'creator_snapshot',
+      'creator_snapshot_alt',
+    ]);
+    const currentSearch = await activeRuntime.videosService.searchPublicVideos({
+      search: 'creator_snapshot',
+    });
+    expect(currentSearch.creators.map(({ username }) => username)).toEqual(['creator_snapshot']);
   });
 
   test('rejects NUL search terms before they reach PostgreSQL', async () => {

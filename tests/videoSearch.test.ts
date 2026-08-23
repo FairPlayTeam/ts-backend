@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  buildLiteralInsensitiveContains,
+  buildPublicCreatorSearchCriteria,
   buildVideoSearchFilter,
-  escapeVideoSearchTermForIlike,
+  escapeSearchTermForIlike,
+  normalizePublicSearchTerm,
 } from '../src/services/videos/videoSearch.js';
 
 describe('video search filter', () => {
@@ -17,7 +20,11 @@ describe('video search filter', () => {
     ] as const;
 
     for (const { expected, input } of cases) {
-      expect(escapeVideoSearchTermForIlike(input)).toBe(expected);
+      expect(escapeSearchTermForIlike(input)).toBe(expected);
+      expect(buildLiteralInsensitiveContains(input)).toEqual({
+        contains: expected,
+        mode: 'insensitive',
+      });
       expect(() => buildVideoSearchFilter(input)).not.toThrow();
       expect(buildVideoSearchFilter(input)).toEqual({
         OR: [
@@ -38,6 +45,7 @@ describe('video search filter', () => {
   });
 
   test('normalizes surrounding whitespace and searches exact tags', () => {
+    expect(normalizePublicSearchTerm('  Launch recap  ')).toBe('Launch recap');
     expect(buildVideoSearchFilter('  Launch recap  ')).toEqual({
       OR: [
         { title: { contains: 'Launch recap', mode: 'insensitive' } },
@@ -47,5 +55,29 @@ describe('video search filter', () => {
     });
     expect(buildVideoSearchFilter('   ')).toBeUndefined();
     expect(buildVideoSearchFilter(undefined)).toBeUndefined();
+  });
+
+  test('applies the same literal ILIKE discipline to public creator fields', () => {
+    expect(buildPublicCreatorSearchCriteria(String.raw`  50%_off\sale  `)).toEqual({
+      exactUsername: String.raw`50%_off\sale`,
+      partialFilter: {
+        OR: [
+          {
+            username: {
+              contains: String.raw`50\%\_off\\sale`,
+              mode: 'insensitive',
+            },
+          },
+          {
+            displayName: {
+              contains: String.raw`50\%\_off\\sale`,
+              mode: 'insensitive',
+            },
+          },
+        ],
+      },
+    });
+    expect(buildPublicCreatorSearchCriteria('   ')).toBeUndefined();
+    expect(buildPublicCreatorSearchCriteria(undefined)).toBeUndefined();
   });
 });

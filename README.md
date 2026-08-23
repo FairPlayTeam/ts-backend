@@ -215,6 +215,14 @@ cannot publish.
 contain only the public id, title, creation time, opaque thumbnail path, creator identity, view
 count, and duration in whole seconds. Both public lists use `Cache-Control: no-store`.
 
+`GET /videos/search` also returns up to ten creators whose verified, non-banned public profiles
+match the term on username or display name. A case-insensitive exact username match comes first;
+the remaining partial matches are ordered by username and exclude that exact account. Creator
+cards expose only public identity and opaque avatar data, follower and publicly discoverable video
+counts, and account creation time. The exact and partial creator reads share one short PostgreSQL
+`RepeatableRead` snapshot, independent from the video catalog snapshot assembled by the same
+request.
+
 `GET /videos/:publicId` returns the playback-page detail for a readable video. It combines video
 metadata including its persisted duration in whole seconds, creator identity, opaque avatar and
 thumbnail paths, rating, view, and comment aggregates, optional current-user rating, and the opaque

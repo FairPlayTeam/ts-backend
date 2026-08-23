@@ -1,6 +1,9 @@
 import type { Prisma } from '@prisma/client';
 import type { AdminDependencies } from './admin.dependencies.js';
-import { toProfileMediaUrl } from '../userMedia/userMedia.profileAssets.js';
+import {
+  profileAvatarMediaAssetsSelection,
+  toProfileMediaUrl,
+} from '../userMedia/userMedia.profileAssets.js';
 import { banAdminAccount } from './admin.accountBan.js';
 import {
   DEFAULT_ADMIN_ACCOUNT_BAN_STATUS,
@@ -36,15 +39,7 @@ const adminAccountSelect = {
   createdAt: true,
   updatedAt: true,
   lastLogin: true,
-  mediaAssets: {
-    where: {
-      kind: 'avatar',
-    },
-    select: {
-      id: true,
-    },
-    take: 1,
-  },
+  mediaAssets: profileAvatarMediaAssetsSelection,
 } satisfies Prisma.UserSelect;
 
 type AccountRecord = Prisma.UserGetPayload<{ select: typeof adminAccountSelect }>;

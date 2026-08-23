@@ -391,6 +391,43 @@ feed always sorts newest first and omits the search-only text filter. Their outp
 distinct whitelists because feed cards intentionally exclude descriptions, tags, ratings, avatars,
 and playback data. Both routes return `Cache-Control: no-store`.
 
+The search response composes that video page with a separate, fixed-size creator section. Creator
+eligibility reuses the public-profile scope (`is_verified = true` and `is_banned = false`) and never
+serializes either status. At most ten creators are returned: a case-insensitive exact username match
+comes first, then username/display-name partial matches ordered by username. The partial query
+explicitly excludes the exact username, and a final username-based guard keeps the public list
+duplicate-free. Both creator reads run in one short `RepeatableRead` transaction, so their profile
+visibility and aggregates come from one snapshot; this creator snapshot remains intentionally
+independent from the video catalog snapshot assembled concurrently for the same response.
+
+Account status and video-content moderation are deliberately independent policy axes. Banning an
+account does not withdraw that account's already approved videos from the public feed, video search,
+direct detail, thumbnail, or HLS playback. Those surfaces continue to apply their established video
+discoverability or readability predicates without adding `owner.is_banned` or
+`owner.is_verified`. The same banned account is excluded from creator-search results and public
+profile lookup by the public-profile visibility scope. This asymmetry is intentional, not an omitted
+owner filter: banning controls account access and public-profile visibility, while every video
+surface remains governed solely by its established video moderation and lifecycle predicates.
+
+Known security backlog — public profile responses predate the current rule against exposing
+internal UUIDs. `GET /profiles/:username`, followed-profile entries, and the current
+`(followedAt, id)` pagination cursor still serialize database account identifiers. The creator
+section of `GET /videos/search` does not repeat that exposure, but the existing profile contract
+must be addressed in a separate, explicitly planned breaking-change chantier: inventory frontend
+consumers, replace response serialization with field whitelists, remove account UUIDs, and design an
+opaque replacement for the followed-profile cursor before updating OpenAPI and generated clients.
+It is intentionally not changed as part of the creator-search extension.
+
+Video title/description search and partial creator username/display-name search currently use
+escaped literal `ILIKE` contains predicates without trigram indexes. Page and creator limits bound
+the response size but not the rows PostgreSQL may inspect: video search can scan a significant part
+of `videos`, and creator search can scan a significant part of `users` before applying its limit of
+ten. The project deliberately does not enable `pg_trgm` without production-volume evidence that
+justifies the extension and write/index cost. Re-evaluate both query plans and workload-specific
+trigram indexes when real cardinality or latency makes that cost concrete. A dedicated
+`/videos/search` rate limiter is a separate defense-in-depth option to evaluate at that point; it is
+not a substitute for an appropriate query plan and is not part of the current design.
+
 The catalog deliberately relies on the publication invariant that a `ready` video has an active,
 usable artifact generation instead of duplicating the playback-generation predicate in the
 discoverability scope. A database drift that removed an active generation without updating the

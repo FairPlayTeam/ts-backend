@@ -13,6 +13,17 @@ import type {
   VideoUploadSessionResult,
   VideoComment,
 } from '../../services/videos.types.js';
+import type { PublicProfileIdentity } from '../../services/profiles.types.js';
+
+const toPublicProfileIdentityResponse = ({
+  avatarUrl,
+  displayName,
+  username,
+}: PublicProfileIdentity) => ({
+  username,
+  displayName,
+  avatarUrl,
+});
 
 const toVideoResponse = (video: CreateVideoResult['video']) => ({
   ...video,
@@ -51,11 +62,7 @@ const toVideoCommentResponseBody = (comment: VideoComment) =>
               username: comment.replyingTo.username,
             }
           : null,
-        author: {
-          username: comment.author.username,
-          displayName: comment.author.displayName,
-          avatarUrl: comment.author.avatarUrl,
-        },
+        author: toPublicProfileIdentityResponse(comment.author),
       };
 
 export const toVideoCommentResponse = ({ comment }: CreateVideoCommentResult) => ({
@@ -105,6 +112,7 @@ export const toMyVideosResponse = ({ nextCursor, total, videos }: ListMyVideosRe
 });
 
 export const toPublicVideoSearchResponse = ({
+  creators,
   nextCursor,
   total,
   videos,
@@ -113,6 +121,12 @@ export const toPublicVideoSearchResponse = ({
     ...video,
     publishedAt: toNullableIsoString(video.publishedAt),
     createdAt: toIsoString(video.createdAt),
+  })),
+  creators: creators.map((creator) => ({
+    ...toPublicProfileIdentityResponse(creator),
+    followerCount: creator.followerCount,
+    videoCount: creator.videoCount,
+    createdAt: toIsoString(creator.createdAt),
   })),
   total,
   nextCursor: nextCursor
@@ -157,11 +171,7 @@ export const toPublicVideoDetailResponse = ({ video }: GetPublicVideoDetailResul
     createdAt: toIsoString(video.createdAt),
     publishedAt: toNullableIsoString(video.publishedAt),
     thumbnailPath: video.thumbnailPath,
-    creator: {
-      username: video.creator.username,
-      displayName: video.creator.displayName,
-      avatarUrl: video.creator.avatarUrl,
-    },
+    creator: toPublicProfileIdentityResponse(video.creator),
     ratingAverage: video.ratingAverage,
     ratingCount: video.ratingCount,
     userRating: video.userRating,

@@ -3,7 +3,10 @@ import { VIDEO_LICENSES } from '../../../services/videos/videoLicenses.js';
 import { VIDEO_HLS_SEGMENT_NAME_PATTERN } from '../../../services/videos/videoObjectKeys.js';
 import { VIDEO_PUBLIC_ID_PATTERN } from '../../../services/videos/videoPublicId.js';
 import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
+import { publicProfileIdentityResponseSchema } from '../../shared/profile.schemas.js';
+import { publicVideoSearchTextSchema } from '../../shared/search.schemas.js';
 import { VIDEO_COMMENT_MAX_LENGTH } from '../../../config/constants.js';
+import { PUBLIC_CREATOR_SEARCH_LIMIT } from '../../../services/videos/videoSearch.js';
 
 const VIDEO_TITLE_MAX_LENGTH = 120;
 const VIDEO_DESCRIPTION_MAX_LENGTH = 5_000;
@@ -233,19 +236,11 @@ export const publicVideosQuerySchema = z
 export const publicVideoSearchQuerySchema = z
   .object({
     ...publicVideoPaginationQueryShape,
-    search: z
-      .string()
-      .trim()
-      .min(2, 'Video search must be at least 2 characters')
-      .max(254, 'Video search must be at most 254 characters')
-      .refine((search) => !search.includes('\u0000'), {
-        message: 'Video search must not contain NUL characters',
-      })
-      .openapi({
-        example: 'launch recap',
-        description:
-          'Case-insensitive literal substring search over public video titles and descriptions, plus exact tag matching.',
-      }),
+    search: publicVideoSearchTextSchema.openapi({
+      example: 'launch recap',
+      description:
+        "Runs two independent searches: videos match case-insensitive literal title/description substrings or an exact tag, while creators match case-insensitive literal username/display-name substrings. Creator matches never add that creator's videos to the videos section.",
+    }),
     sort: z.enum(['newest', 'oldest']).optional().openapi({
       example: 'newest',
       description: 'Sort by creation time. Defaults to newest.',
@@ -415,6 +410,14 @@ const publicVideoSearchSummaryResponseSchema = z.object({
   createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
 
+const publicCreatorSearchSummaryResponseSchema = publicProfileIdentityResponseSchema
+  .extend({
+    followerCount: z.number().int().nonnegative().openapi({ example: 128 }),
+    videoCount: z.number().int().nonnegative().openapi({ example: 24 }),
+    createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
+  })
+  .openapi('PublicCreatorSearchSummary');
+
 const publicVideoDetailResponseBodySchema = publicVideoSearchSummaryResponseSchema
   .pick({
     publicId: true,
@@ -435,11 +438,7 @@ const publicVideoDetailResponseBodySchema = publicVideoSearchSummaryResponseSche
         'Whether new comments can currently be posted. Existing comments may remain readable when this is false.',
       example: true,
     }),
-    creator: z.object({
-      username: z.string().openapi({ example: 'jawed' }),
-      displayName: z.string().nullable().openapi({ example: 'Jawed Karim' }),
-      avatarUrl: relativeAssetPathSchema.nullable().openapi({ example: '/profiles/jawed/avatar' }),
-    }),
+    creator: publicProfileIdentityResponseSchema,
     userRating: z.number().int().min(1).max(5).nullable().openapi({ example: 5 }),
     viewCount: z.number().int().nonnegative().openapi({ example: 128 }),
     commentCount: z.number().int().nonnegative().openapi({
@@ -469,8 +468,19 @@ const publicVideoNextCursorResponseSchema = z
 export const publicVideoSearchResponseSchema = z
   .object({
     videos: z.array(publicVideoSearchSummaryResponseSchema),
-    total: z.number().int().nonnegative().openapi({ example: 42 }),
-    nextCursor: publicVideoNextCursorResponseSchema,
+    creators: z
+      .array(publicCreatorSearchSummaryResponseSchema)
+      .max(PUBLIC_CREATOR_SEARCH_LIMIT)
+      .openapi({
+        description: `Up to ${PUBLIC_CREATOR_SEARCH_LIMIT} matching public creators. Exact username matches appear first, followed by partial matches ordered by username.`,
+      }),
+    total: z.number().int().nonnegative().openapi({
+      description: 'Total number of matching videos. Creator matches are not included.',
+      example: 42,
+    }),
+    nextCursor: publicVideoNextCursorResponseSchema.openapi({
+      description: 'Cursor for the next page of videos. Creator matches are not paginated.',
+    }),
   })
   .openapi('PublicVideoSearchResponse');
 
@@ -481,10 +491,7 @@ const publicVideoFeedCardResponseSchema = z.object({
   thumbnailPath: relativeAssetPathSchema
     .nullable()
     .openapi({ example: '/videos/AbCdEf123_/thumbnail' }),
-  creator: z.object({
-    username: z.string().openapi({ example: 'jawed' }),
-    displayName: z.string().nullable().openapi({ example: 'Jawed Karim' }),
-  }),
+  creator: publicProfileIdentityResponseSchema.omit({ avatarUrl: true }),
   viewCount: z.number().int().nonnegative().openapi({ example: 128 }),
   duration: z.number().int().positive().openapi({ example: 19 }),
 });
@@ -521,13 +528,7 @@ const videoCommentResponseBodySchema = z.object({
       username: z.string().openapi({ example: 'jawed' }),
     })
     .nullable(),
-  author: z.object({
-    username: z.string().openapi({ example: 'fairplay_user' }),
-    displayName: z.string().nullable().openapi({ example: 'FairPlay User' }),
-    avatarUrl: relativeAssetPathSchema
-      .nullable()
-      .openapi({ example: '/profiles/fairplay_user/avatar' }),
-  }),
+  author: publicProfileIdentityResponseSchema,
 });
 
 export const videoCommentResponseSchema = z

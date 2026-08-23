@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import {
+  profileAvatarMediaAssetsSelection,
   profileMediaAssetSelect,
   profileMediaAssetWhere,
   toProfileMediaUrl,
@@ -69,13 +70,7 @@ const followingProfileSelect = {
       id: true,
       username: true,
       displayName: true,
-      mediaAssets: {
-        where: {
-          kind: 'avatar',
-        },
-        select: profileMediaAssetSelect,
-        take: 1,
-      },
+      mediaAssets: profileAvatarMediaAssetsSelection,
     },
   },
 } satisfies Prisma.UserFollowSelect;

@@ -105,7 +105,12 @@ import type {
 } from './types/ports.types.js';
 import { calculateVideoRatingAverage } from './videoRating.js';
 import { recordVideoView, toUtcVideoViewDay } from './videoViews.js';
-import { buildVideoSearchFilter } from './videoSearch.js';
+import { publicVideoCatalogWhere } from './videoReadability.js';
+import {
+  createPublicCreatorSearchTransactionRunner,
+  searchPublicCreators,
+} from './publicCreatorSearch.js';
+import { searchPublicVideoCatalog } from './publicVideoSearch.js';
 import {
   readForProxy,
   resolveBestEffortLink,
@@ -119,7 +124,7 @@ import {
   WRITABLE_VIDEO_ENGAGEMENT_SCOPE_SQL,
 } from './videoReadability.js';
 import {
-  profileMediaAssetSelect,
+  profileAvatarMediaAssetsSelection,
   toProfileMediaUrl,
 } from '../userMedia/userMedia.profileAssets.js';
 import {
@@ -232,13 +237,7 @@ const publicVideoDetailSelect = {
     select: {
       username: true,
       displayName: true,
-      mediaAssets: {
-        where: {
-          kind: 'avatar',
-        },
-        select: profileMediaAssetSelect,
-        take: 1,
-      },
+      mediaAssets: profileAvatarMediaAssetsSelection,
     },
   },
   activeArtifactGeneration: {
@@ -546,12 +545,6 @@ const toPublicVideoFeedCard = ({
   duration: requireReadyVideoDuration(durationSeconds),
 });
 
-const PUBLIC_VIDEO_CATALOG_SCOPE = {
-  visibility: 'public',
-  moderationStatus: 'approved',
-  processingStatus: 'ready',
-} satisfies Prisma.VideoWhereInput;
-
 type PublicVideoCatalogPageInput = {
   beforeCatalogRead?: (tx: Prisma.TransactionClient) => Promise<void>;
   cursor?: PublicVideoCursor;
@@ -584,8 +577,8 @@ const queryPublicVideoCatalogPage = async (
   const direction = sort === 'oldest' ? 'asc' : 'desc';
   const cursorOperator = sort === 'oldest' ? 'gt' : 'lt';
   const resultFilter = filter
-    ? ({ AND: [PUBLIC_VIDEO_CATALOG_SCOPE, filter] } satisfies Prisma.VideoWhereInput)
-    : PUBLIC_VIDEO_CATALOG_SCOPE;
+    ? ({ AND: [publicVideoCatalogWhere, filter] } satisfies Prisma.VideoWhereInput)
+    : publicVideoCatalogWhere;
   const cursorFilter: Prisma.VideoWhereInput = cursor
     ? {
         OR: [
@@ -1913,34 +1906,23 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     return toPublicVideoFeedResult(page);
   },
 
-  async searchPublicVideos({
-    cursor,
-    limit,
-    search,
-    sort = 'newest',
-  }: SearchPublicVideosInput): Promise<SearchPublicVideosResult> {
-    const searchFilter = buildVideoSearchFilter(search);
+  async searchPublicVideos(input: SearchPublicVideosInput): Promise<SearchPublicVideosResult> {
+    return searchPublicVideoCatalog(
+      {
+        queryVideoPage: async (input) => {
+          const page = await queryPublicVideoCatalogPage(deps.prisma, input);
 
-    if (!searchFilter) {
-      return {
-        videos: [],
-        total: 0,
-        nextCursor: null,
-      };
-    }
-
-    const page = await queryPublicVideoCatalogPage(deps.prisma, {
-      filter: searchFilter,
-      sort,
-      ...(cursor ? { cursor } : {}),
-      ...(limit === undefined ? {} : { limit }),
-    });
-
-    return {
-      videos: page.videos.map(toPublicVideoSearchSummary),
-      total: page.total,
-      nextCursor: page.nextCursor,
-    };
+          return {
+            videos: page.videos.map(toPublicVideoSearchSummary),
+            total: page.total,
+            nextCursor: page.nextCursor,
+          };
+        },
+        searchCreators: (searchTerm) =>
+          searchPublicCreators(createPublicCreatorSearchTransactionRunner(deps.prisma), searchTerm),
+      },
+      input,
+    );
   },
 
   async getPublicVideoDetail({

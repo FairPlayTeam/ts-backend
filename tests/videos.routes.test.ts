@@ -533,6 +533,16 @@ describe('videos routes multipart uploads', () => {
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       ],
+      creators: [
+        {
+          username: 'jawed',
+          displayName: 'Jawed Karim',
+          avatarUrl: '/profiles/jawed/avatar',
+          followerCount: 128,
+          videoCount: 24,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
       total: 1,
       nextCursor: null,
     });

@@ -1,6 +1,7 @@
 import { z } from '../../../docs/zod.js';
 import { VIDEO_REJECTION_REASON_MAX_LENGTH } from '../../../config/constants.js';
 import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
+import { videoSearchTextSchema } from '../../shared/search.schemas.js';
 
 export const ADMIN_VIDEOS_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorId must be provided together';
@@ -25,19 +26,11 @@ export const adminVideosQuerySchema = z
       example: 'newest',
       description: 'Sort by creation time. Defaults to newest.',
     }),
-    search: z
-      .string()
-      .trim()
-      .max(254)
-      .refine((search) => !search.includes('\u0000'), {
-        message: 'Video search must not contain NUL characters',
-      })
-      .optional()
-      .openapi({
-        example: 'launch recap',
-        description:
-          'Case-insensitive literal substring search over video titles and descriptions, plus exact tag matching.',
-      }),
+    search: videoSearchTextSchema.optional().openapi({
+      example: 'launch recap',
+      description:
+        'Case-insensitive literal substring search over video titles and descriptions, plus exact tag matching.',
+    }),
     cursorCreatedAt: z.string().datetime().optional().openapi({
       example: '2026-01-01T00:00:00.000Z',
     }),

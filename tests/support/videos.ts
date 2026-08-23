@@ -90,6 +90,16 @@ const searchPublicVideosResult = (): SearchPublicVideosResult => ({
       createdAt: fixedNow,
     },
   ],
+  creators: [
+    {
+      username: 'jawed',
+      displayName: 'Jawed Karim',
+      avatarUrl: '/profiles/jawed/avatar',
+      followerCount: 128,
+      videoCount: 24,
+      createdAt: fixedNow,
+    },
+  ],
   total: 1,
   nextCursor: null,
 });

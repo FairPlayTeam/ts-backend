@@ -234,6 +234,42 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/videos/search']?.get?.responses?.[200]).toBeDefined();
     expect(document.paths['/videos/search']?.get?.responses?.[400]).toBeDefined();
     expect(document.paths['/videos/search']?.get?.responses?.[401]).toBeUndefined();
+    expect(document.components.schemas.PublicProfileIdentity).toMatchObject({
+      type: 'object',
+      required: ['username', 'displayName', 'avatarUrl'],
+    });
+    expect(
+      Object.keys(document.components.schemas.PublicProfileIdentity.properties).sort(),
+    ).toEqual(['avatarUrl', 'displayName', 'username']);
+    expect(document.components.schemas.PublicCreatorSearchSummary.allOf[0]).toEqual({
+      $ref: '#/components/schemas/PublicProfileIdentity',
+    });
+    expect(
+      Object.keys(
+        document.components.schemas.PublicCreatorSearchSummary.allOf[1].properties,
+      ).sort(),
+    ).toEqual(['createdAt', 'followerCount', 'videoCount']);
+    expect(document.components.schemas.PublicProfileIdentity.properties.displayName).toMatchObject({
+      type: 'string',
+      nullable: true,
+    });
+    expect(document.components.schemas.PublicVideoSearchResponse.properties.creators).toMatchObject(
+      {
+        type: 'array',
+        maxItems: 10,
+        items: {
+          $ref: '#/components/schemas/PublicCreatorSearchSummary',
+        },
+      },
+    );
+    expect(document.components.schemas.PublicVideoSearchResponse.properties.total).toMatchObject({
+      description: 'Total number of matching videos. Creator matches are not included.',
+    });
+    expect(
+      document.components.schemas.PublicVideoSearchResponse.properties.nextCursor,
+    ).toMatchObject({
+      description: 'Cursor for the next page of videos. Creator matches are not paginated.',
+    });
     expect(document.paths['/profiles/{username}/videos']?.get?.security).toEqual([]);
     expect(document.paths['/profiles/{username}/videos']?.get?.responses?.[404]).toBeDefined();
     expect(

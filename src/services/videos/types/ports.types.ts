@@ -1,5 +1,6 @@
 import type { VideoLicense } from '../videoLicenses.js';
 import type { AuthRole } from '../../auth.roles.js';
+import type { PublicProfileIdentity } from '../../profiles/types/profile.types.js';
 
 export type VideoUploadSessionStatus =
   | 'initializing'
@@ -107,15 +108,18 @@ export type PublicVideoSearchSummary = {
   createdAt: Date;
 };
 
+export type PublicCreatorSearchSummary = PublicProfileIdentity & {
+  followerCount: number;
+  videoCount: number;
+  createdAt: Date;
+};
+
 export type PublicVideoFeedCard = {
   publicId: string;
   title: string;
   createdAt: Date;
   thumbnailPath: string | null;
-  creator: {
-    username: string;
-    displayName: string | null;
-  };
+  creator: Omit<PublicProfileIdentity, 'avatarUrl'>;
   viewCount: number;
   duration: number;
 };
@@ -134,11 +138,7 @@ export type PublicVideoDetail = Pick<
 > & {
   license: VideoLicense;
   visibility: VideoVisibility;
-  creator: {
-    username: string;
-    displayName: string | null;
-    avatarUrl: string | null;
-  };
+  creator: PublicProfileIdentity;
   userRating: number | null;
   viewCount: number;
   commentCount: number;
@@ -158,6 +158,7 @@ export type GetPublicVideoDetailResult = {
 
 export type SearchPublicVideosResult = {
   videos: PublicVideoSearchSummary[];
+  creators: PublicCreatorSearchSummary[];
   total: number;
   nextCursor: PublicVideoCursor | null;
 };
@@ -318,11 +319,7 @@ export type VideoRatingResult = VideoRatingAggregateResult & {
   userRating: number | null;
 };
 
-export type VideoCommentAuthor = {
-  username: string;
-  displayName: string | null;
-  avatarUrl: string | null;
-};
+export type VideoCommentAuthor = PublicProfileIdentity;
 
 type VideoCommentBase = {
   id: string;

@@ -5,6 +5,7 @@ import {
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
 } from '../../../services/profiles/profiles.messages.js';
 import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
+import { publicProfileIdentityResponseSchema } from '../../shared/profile.schemas.js';
 import { publicVideosQuerySchema } from '../../videos/schemas/video.schemas.js';
 
 export const FOLLOWING_PROFILES_CURSOR_PAIR_MESSAGE =
@@ -62,15 +63,10 @@ export const listFollowingProfilesSchema = z.object({
 
 const publicProfileDateTimeSchema = z.string().datetime();
 
-const publicProfileSchema = z.object({
+const publicProfileSchema = publicProfileIdentityResponseSchema.extend({
   id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
-  username: z.string().openapi({ example: 'fairplay_creator' }),
-  displayName: z.string().nullable().openapi({ example: 'FairPlay Creator' }),
   bio: z.string().nullable().openapi({
     example: 'Sharing project updates with my subscribers.',
-  }),
-  avatarUrl: relativeAssetPathSchema.nullable().openapi({
-    example: '/profiles/fairplay_creator/avatar',
   }),
   bannerUrl: relativeAssetPathSchema.nullable().openapi({
     example: '/profiles/fairplay_creator/banner',
@@ -81,13 +77,8 @@ const publicProfileSchema = z.object({
   createdAt: publicProfileDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
 
-const followingProfileSchema = z.object({
+const followingProfileSchema = publicProfileIdentityResponseSchema.extend({
   id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
-  username: z.string().openapi({ example: 'fairplay_creator' }),
-  displayName: z.string().nullable().openapi({ example: 'FairPlay Creator' }),
-  avatarUrl: relativeAssetPathSchema.nullable().openapi({
-    example: '/profiles/fairplay_creator/avatar',
-  }),
   followedAt: publicProfileDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
 

@@ -17,6 +17,16 @@ export const profileMediaAssetSelect = {
   kind: true,
 } satisfies Prisma.UserMediaAssetSelect;
 
+export const profileAvatarMediaAssetsSelection = {
+  where: {
+    kind: 'avatar',
+  },
+  select: {
+    id: true,
+  },
+  take: 1,
+} satisfies Prisma.UserMediaAssetFindManyArgs;
+
 export type ProfileMediaAsset = Prisma.UserMediaAssetGetPayload<{
   select: typeof profileMediaAssetSelect;
 }>;

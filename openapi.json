@@ -651,32 +651,25 @@
           "profiles": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "format": "uuid",
-                  "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
-                },
-                "username": { "type": "string", "example": "fairplay_creator" },
-                "displayName": {
-                  "type": "string",
-                  "nullable": true,
-                  "example": "FairPlay Creator"
-                },
-                "avatarUrl": {
-                  "type": "string",
-                  "nullable": true,
-                  "pattern": "^\\/(?!\\/)[^\\s]*$",
-                  "example": "/profiles/fairplay_creator/avatar"
-                },
-                "followedAt": {
-                  "type": "string",
-                  "format": "date-time",
-                  "example": "2026-01-01T00:00:00.000Z"
+              "allOf": [
+                { "$ref": "#/components/schemas/PublicProfileIdentity" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
+                    },
+                    "followedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "example": "2026-01-01T00:00:00.000Z"
+                    }
+                  },
+                  "required": ["id", "followedAt"]
                 }
-              },
-              "required": ["id", "username", "displayName", "avatarUrl", "followedAt"]
+              ]
             }
           },
           "total": { "type": "integer", "minimum": 0, "example": 42 },
@@ -709,52 +702,46 @@
             "example": "Profile followed successfully"
           },
           "profile": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "format": "uuid",
-                "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
-              },
-              "username": { "type": "string", "example": "fairplay_creator" },
-              "displayName": { "type": "string", "nullable": true, "example": "FairPlay Creator" },
-              "bio": {
-                "type": "string",
-                "nullable": true,
-                "example": "Sharing project updates with my subscribers."
-              },
-              "avatarUrl": {
-                "type": "string",
-                "nullable": true,
-                "pattern": "^\\/(?!\\/)[^\\s]*$",
-                "example": "/profiles/fairplay_creator/avatar"
-              },
-              "bannerUrl": {
-                "type": "string",
-                "nullable": true,
-                "pattern": "^\\/(?!\\/)[^\\s]*$",
-                "example": "/profiles/fairplay_creator/banner"
-              },
-              "followerCount": { "type": "integer", "minimum": 0, "example": 128 },
-              "followingCount": { "type": "integer", "minimum": 0, "example": 42 },
-              "isFollowing": { "type": "boolean", "example": true },
-              "createdAt": {
-                "type": "string",
-                "format": "date-time",
-                "example": "2026-01-01T00:00:00.000Z"
+            "allOf": [
+              { "$ref": "#/components/schemas/PublicProfileIdentity" },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
+                  },
+                  "bio": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "Sharing project updates with my subscribers."
+                  },
+                  "bannerUrl": {
+                    "type": "string",
+                    "nullable": true,
+                    "pattern": "^\\/(?!\\/)[^\\s]*$",
+                    "example": "/profiles/fairplay_creator/banner"
+                  },
+                  "followerCount": { "type": "integer", "minimum": 0, "example": 128 },
+                  "followingCount": { "type": "integer", "minimum": 0, "example": 42 },
+                  "isFollowing": { "type": "boolean", "example": true },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-01-01T00:00:00.000Z"
+                  }
+                },
+                "required": [
+                  "id",
+                  "bio",
+                  "bannerUrl",
+                  "followerCount",
+                  "followingCount",
+                  "isFollowing",
+                  "createdAt"
+                ]
               }
-            },
-            "required": [
-              "id",
-              "username",
-              "displayName",
-              "bio",
-              "avatarUrl",
-              "bannerUrl",
-              "followerCount",
-              "followingCount",
-              "isFollowing",
-              "createdAt"
             ]
           }
         },
@@ -1124,56 +1111,82 @@
         },
         "required": ["videos", "total", "nextCursor"]
       },
-      "PublicProfileResponse": {
-        "type": "object",
-        "properties": {
-          "profile": {
+      "PublicCreatorSearchSummary": {
+        "allOf": [
+          { "$ref": "#/components/schemas/PublicProfileIdentity" },
+          {
             "type": "object",
             "properties": {
-              "id": {
-                "type": "string",
-                "format": "uuid",
-                "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
-              },
-              "username": { "type": "string", "example": "fairplay_creator" },
-              "displayName": { "type": "string", "nullable": true, "example": "FairPlay Creator" },
-              "bio": {
-                "type": "string",
-                "nullable": true,
-                "example": "Sharing project updates with my subscribers."
-              },
-              "avatarUrl": {
-                "type": "string",
-                "nullable": true,
-                "pattern": "^\\/(?!\\/)[^\\s]*$",
-                "example": "/profiles/fairplay_creator/avatar"
-              },
-              "bannerUrl": {
-                "type": "string",
-                "nullable": true,
-                "pattern": "^\\/(?!\\/)[^\\s]*$",
-                "example": "/profiles/fairplay_creator/banner"
-              },
               "followerCount": { "type": "integer", "minimum": 0, "example": 128 },
-              "followingCount": { "type": "integer", "minimum": 0, "example": 42 },
-              "isFollowing": { "type": "boolean", "example": true },
+              "videoCount": { "type": "integer", "minimum": 0, "example": 24 },
               "createdAt": {
                 "type": "string",
                 "format": "date-time",
                 "example": "2026-01-01T00:00:00.000Z"
               }
             },
-            "required": [
-              "id",
-              "username",
-              "displayName",
-              "bio",
-              "avatarUrl",
-              "bannerUrl",
-              "followerCount",
-              "followingCount",
-              "isFollowing",
-              "createdAt"
+            "required": ["followerCount", "videoCount", "createdAt"]
+          }
+        ]
+      },
+      "PublicProfileIdentity": {
+        "type": "object",
+        "properties": {
+          "username": { "type": "string", "example": "fairplay_creator" },
+          "displayName": { "type": "string", "nullable": true, "example": "FairPlay Creator" },
+          "avatarUrl": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\/(?!\\/)[^\\s]*$",
+            "example": "/profiles/fairplay_creator/avatar"
+          }
+        },
+        "required": ["username", "displayName", "avatarUrl"]
+      },
+      "PublicProfileResponse": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "allOf": [
+              { "$ref": "#/components/schemas/PublicProfileIdentity" },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
+                  },
+                  "bio": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "Sharing project updates with my subscribers."
+                  },
+                  "bannerUrl": {
+                    "type": "string",
+                    "nullable": true,
+                    "pattern": "^\\/(?!\\/)[^\\s]*$",
+                    "example": "/profiles/fairplay_creator/banner"
+                  },
+                  "followerCount": { "type": "integer", "minimum": 0, "example": 128 },
+                  "followingCount": { "type": "integer", "minimum": 0, "example": 42 },
+                  "isFollowing": { "type": "boolean", "example": true },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-01-01T00:00:00.000Z"
+                  }
+                },
+                "required": [
+                  "id",
+                  "bio",
+                  "bannerUrl",
+                  "followerCount",
+                  "followingCount",
+                  "isFollowing",
+                  "createdAt"
+                ]
+              }
             ]
           }
         },
@@ -1246,20 +1259,7 @@
                 "description": "Whether new comments can currently be posted. Existing comments may remain readable when this is false.",
                 "example": true
               },
-              "creator": {
-                "type": "object",
-                "properties": {
-                  "username": { "type": "string", "example": "jawed" },
-                  "displayName": { "type": "string", "nullable": true, "example": "Jawed Karim" },
-                  "avatarUrl": {
-                    "type": "string",
-                    "nullable": true,
-                    "pattern": "^\\/(?!\\/)[^\\s]*$",
-                    "example": "/profiles/jawed/avatar"
-                  }
-                },
-                "required": ["username", "displayName", "avatarUrl"]
-              },
+              "creator": { "$ref": "#/components/schemas/PublicProfileIdentity" },
               "userRating": {
                 "type": "integer",
                 "nullable": true,
@@ -1371,7 +1371,18 @@
               ]
             }
           },
-          "total": { "type": "integer", "minimum": 0, "example": 42 },
+          "creators": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PublicCreatorSearchSummary" },
+            "maxItems": 10,
+            "description": "Up to 10 matching public creators. Exact username matches appear first, followed by partial matches ordered by username."
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of matching videos. Creator matches are not included.",
+            "example": 42
+          },
           "nextCursor": {
             "type": "object",
             "nullable": true,
@@ -1387,10 +1398,11 @@
                 "example": "AbCdEf123_"
               }
             },
-            "required": ["createdAt", "publicId"]
+            "required": ["createdAt", "publicId"],
+            "description": "Cursor for the next page of videos. Creator matches are not paginated."
           }
         },
-        "required": ["videos", "total", "nextCursor"]
+        "required": ["videos", "creators", "total", "nextCursor"]
       },
       "PublicVideosResponse": {
         "type": "object",
@@ -1420,8 +1432,12 @@
                 "creator": {
                   "type": "object",
                   "properties": {
-                    "username": { "type": "string", "example": "jawed" },
-                    "displayName": { "type": "string", "nullable": true, "example": "Jawed Karim" }
+                    "username": { "type": "string", "example": "fairplay_creator" },
+                    "displayName": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "FairPlay Creator"
+                    }
                   },
                   "required": ["username", "displayName"]
                 },
@@ -1746,52 +1762,46 @@
             "example": "Profile unfollowed successfully"
           },
           "profile": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "format": "uuid",
-                "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
-              },
-              "username": { "type": "string", "example": "fairplay_creator" },
-              "displayName": { "type": "string", "nullable": true, "example": "FairPlay Creator" },
-              "bio": {
-                "type": "string",
-                "nullable": true,
-                "example": "Sharing project updates with my subscribers."
-              },
-              "avatarUrl": {
-                "type": "string",
-                "nullable": true,
-                "pattern": "^\\/(?!\\/)[^\\s]*$",
-                "example": "/profiles/fairplay_creator/avatar"
-              },
-              "bannerUrl": {
-                "type": "string",
-                "nullable": true,
-                "pattern": "^\\/(?!\\/)[^\\s]*$",
-                "example": "/profiles/fairplay_creator/banner"
-              },
-              "followerCount": { "type": "integer", "minimum": 0, "example": 128 },
-              "followingCount": { "type": "integer", "minimum": 0, "example": 42 },
-              "isFollowing": { "type": "boolean", "example": true },
-              "createdAt": {
-                "type": "string",
-                "format": "date-time",
-                "example": "2026-01-01T00:00:00.000Z"
+            "allOf": [
+              { "$ref": "#/components/schemas/PublicProfileIdentity" },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
+                  },
+                  "bio": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "Sharing project updates with my subscribers."
+                  },
+                  "bannerUrl": {
+                    "type": "string",
+                    "nullable": true,
+                    "pattern": "^\\/(?!\\/)[^\\s]*$",
+                    "example": "/profiles/fairplay_creator/banner"
+                  },
+                  "followerCount": { "type": "integer", "minimum": 0, "example": 128 },
+                  "followingCount": { "type": "integer", "minimum": 0, "example": 42 },
+                  "isFollowing": { "type": "boolean", "example": true },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-01-01T00:00:00.000Z"
+                  }
+                },
+                "required": [
+                  "id",
+                  "bio",
+                  "bannerUrl",
+                  "followerCount",
+                  "followingCount",
+                  "isFollowing",
+                  "createdAt"
+                ]
               }
-            },
-            "required": [
-              "id",
-              "username",
-              "displayName",
-              "bio",
-              "avatarUrl",
-              "bannerUrl",
-              "followerCount",
-              "followingCount",
-              "isFollowing",
-              "createdAt"
             ]
           }
         },
@@ -2577,24 +2587,7 @@
                   },
                   "required": ["commentId", "username"]
                 },
-                "author": {
-                  "type": "object",
-                  "properties": {
-                    "username": { "type": "string", "example": "fairplay_user" },
-                    "displayName": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "FairPlay User"
-                    },
-                    "avatarUrl": {
-                      "type": "string",
-                      "nullable": true,
-                      "pattern": "^\\/(?!\\/)[^\\s]*$",
-                      "example": "/profiles/fairplay_user/avatar"
-                    }
-                  },
-                  "required": ["username", "displayName", "avatarUrl"]
-                }
+                "author": { "$ref": "#/components/schemas/PublicProfileIdentity" }
               },
               "required": [
                 "id",
@@ -2669,20 +2662,7 @@
                 },
                 "required": ["commentId", "username"]
               },
-              "author": {
-                "type": "object",
-                "properties": {
-                  "username": { "type": "string", "example": "fairplay_user" },
-                  "displayName": { "type": "string", "nullable": true, "example": "FairPlay User" },
-                  "avatarUrl": {
-                    "type": "string",
-                    "nullable": true,
-                    "pattern": "^\\/(?!\\/)[^\\s]*$",
-                    "example": "/profiles/fairplay_user/avatar"
-                  }
-                },
-                "required": ["username", "displayName", "avatarUrl"]
-              }
+              "author": { "$ref": "#/components/schemas/PublicProfileIdentity" }
             },
             "required": [
               "id",
@@ -2725,24 +2705,7 @@
                     "likeCount": { "type": "integer", "minimum": 0, "example": 4 },
                     "viewerHasLiked": { "type": "boolean", "example": true },
                     "replyingTo": { "nullable": true },
-                    "author": {
-                      "type": "object",
-                      "properties": {
-                        "username": { "type": "string", "example": "fairplay_user" },
-                        "displayName": {
-                          "type": "string",
-                          "nullable": true,
-                          "example": "FairPlay User"
-                        },
-                        "avatarUrl": {
-                          "type": "string",
-                          "nullable": true,
-                          "pattern": "^\\/(?!\\/)[^\\s]*$",
-                          "example": "/profiles/fairplay_user/avatar"
-                        }
-                      },
-                      "required": ["username", "displayName", "avatarUrl"]
-                    },
+                    "author": { "$ref": "#/components/schemas/PublicProfileIdentity" },
                     "replyCount": { "type": "integer", "minimum": 0, "example": 3 }
                   },
                   "required": [
@@ -4729,7 +4692,7 @@
     "/videos/search": {
       "get": {
         "operationId": "searchPublicVideos",
-        "summary": "Search public videos",
+        "summary": "Search public videos and creators",
         "tags": ["Videos"],
         "security": [],
         "parameters": [
@@ -4765,10 +4728,10 @@
               "minLength": 2,
               "maxLength": 254,
               "example": "launch recap",
-              "description": "Case-insensitive literal substring search over public video titles and descriptions, plus exact tag matching."
+              "description": "Runs two independent searches: videos match case-insensitive literal title/description substrings or an exact tag, while creators match case-insensitive literal username/display-name substrings. Creator matches never add that creator's videos to the videos section."
             },
             "required": true,
-            "description": "Case-insensitive literal substring search over public video titles and descriptions, plus exact tag matching.",
+            "description": "Runs two independent searches: videos match case-insensitive literal title/description substrings or an exact tag, while creators match case-insensitive literal username/display-name substrings. Creator matches never add that creator's videos to the videos section.",
             "name": "search",
             "in": "query"
           },
@@ -4787,7 +4750,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Paginated public video search results",
+            "description": "Paginated public video results with bounded creator matches",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/PublicVideoSearchResponse" }

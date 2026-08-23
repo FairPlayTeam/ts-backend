@@ -456,7 +456,6 @@ describe('profiles service', () => {
               },
               select: {
                 id: true,
-                kind: true,
               },
               take: 1,
             },

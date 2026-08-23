@@ -6,7 +6,7 @@ import {
 } from '../../lib/prismaTransactions.js';
 import { isPrismaForeignKeyConstraintError } from '../auth/auth.prismaErrors.js';
 import {
-  profileMediaAssetSelect,
+  profileAvatarMediaAssetsSelection,
   toProfileMediaUrl,
 } from '../userMedia/userMedia.profileAssets.js';
 import {
@@ -54,13 +54,7 @@ const commentMutationSelect = {
     select: {
       username: true,
       displayName: true,
-      mediaAssets: {
-        where: {
-          kind: 'avatar',
-        },
-        select: profileMediaAssetSelect,
-        take: 1,
-      },
+      mediaAssets: profileAvatarMediaAssetsSelection,
     },
   },
   replyingToComment: {
@@ -94,13 +88,7 @@ const commentListSelect = {
     select: {
       username: true,
       displayName: true,
-      mediaAssets: {
-        where: {
-          kind: 'avatar',
-        },
-        select: profileMediaAssetSelect,
-        take: 1,
-      },
+      mediaAssets: profileAvatarMediaAssetsSelection,
     },
   },
   replyingToComment: {
