@@ -104,14 +104,11 @@ These overrides should be reviewed periodically and removed once the parent depe
 Current overrides:
 
 - `@hono/node-server@2.0.10`, pulled in by Prisma through `@prisma/dev`
-- `brace-expansion@5.0.9`, pulled in by `minimatch`
-- `fast-uri@3.1.5`, pulled in by Ajv
-- `hono@4.13.0`, pulled in by Prisma through `@prisma/dev`
-- `ip-address@10.4.0`, pulled in by `express-rate-limit`
-- `minimatch@10.2.6`, pulled in by ESLint, typescript-eslint, and Testcontainers
-- `postcss@8.5.25`, pulled in by Vite
-- `undici@8.10.0`, pulled in by Testcontainers
+- `deepmerge-ts@8.0.0`, pulled in by Prisma through `@prisma/config`
 - `valibot@1.4.2`, pulled in by Prisma through `@prisma/dev`
+
+Other patched transitive dependencies, including `nanoid`, resolve through their parent package's
+declared semver range and therefore do not require an override.
 
 See https://bun.sh/docs/pm/overrides for more details about overrides.
 
