@@ -7,11 +7,15 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 FROM deps AS build
-COPY tsconfig.json tsconfig.build.json prisma.config.ts ./
+COPY prisma.config.ts ./
 COPY prisma ./prisma
-COPY src ./src
 
 RUN DATABASE_URL="postgresql://user:password@localhost:5432/fairplay" bun run prisma:generate
+
+COPY tsconfig.json tsconfig.build.json ./
+COPY scripts/build.ts ./scripts/build.ts
+COPY src ./src
+
 RUN bun run build
 
 FROM deps AS migrator
@@ -24,7 +28,7 @@ FROM oven/bun:1.3.10-debian AS prod-deps
 WORKDIR /app
 
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile --production
+RUN bun install --frozen-lockfile --production --omit=peer
 
 FROM oven/bun:1.3.10-debian AS runtime
 WORKDIR /app
