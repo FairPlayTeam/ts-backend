@@ -1,7 +1,14 @@
 import { Prisma } from '@prisma/client';
-import { VIDEO_REJECTION_REASON_MAX_LENGTH } from '../../config/constants.js';
 import {
+  VIDEO_DELETION_REASON_MAX_LENGTH,
+  VIDEO_REJECTION_REASON_MAX_LENGTH,
+} from '../../config/constants.js';
+import {
+  AdminVideoDeletionReasonInvalidError,
   AdminVideoRejectionReasonInvalidError,
+  ADMIN_VIDEO_DELETION_REASON_NUL_MESSAGE,
+  ADMIN_VIDEO_DELETION_REASON_REQUIRED_MESSAGE,
+  ADMIN_VIDEO_DELETION_REASON_TOO_LONG_MESSAGE,
   ADMIN_VIDEO_REJECTION_REASON_NUL_MESSAGE,
   ADMIN_VIDEO_REJECTION_REASON_REQUIRED_MESSAGE,
   ADMIN_VIDEO_REJECTION_REASON_TOO_LONG_MESSAGE,
@@ -18,6 +25,8 @@ import type {
   ListAdminVideosResult,
   ModerateAdminVideoInput,
   ModerateAdminVideoResult,
+  RequestAdminVideoDeletionInput,
+  RequestAdminVideoDeletionResult,
 } from './types/videos.types.js';
 
 const DEFAULT_ADMIN_VIDEOS_LIMIT = 20;
@@ -36,6 +45,9 @@ const adminVideoSelect = {
   publishedAt: true,
   rejectedAt: true,
   rejectionReason: true,
+  deletionRequestedAt: true,
+  deletionReason: true,
+  deletionOrigin: true,
   owner: {
     select: {
       username: true,
@@ -45,11 +57,48 @@ const adminVideoSelect = {
 
 type AdminVideoRecord = Prisma.VideoGetPayload<{ select: typeof adminVideoSelect }>;
 
-type LockedModerationVideo = Pick<
+type LockedAdminVideo = Pick<
   AdminVideoRecord,
-  'moderationStatus' | 'publishedAt' | 'rejectedAt' | 'rejectionReason' | 'title'
+  | 'moderationStatus'
+  | 'publishedAt'
+  | 'rejectedAt'
+  | 'rejectionReason'
+  | 'deletionRequestedAt'
+  | 'deletionReason'
+  | 'deletionOrigin'
+  | 'title'
 > & {
   ownerEmail: string;
+};
+
+const lockAdminVideo = async (
+  tx: Prisma.TransactionClient,
+  videoId: string,
+): Promise<LockedAdminVideo> => {
+  const [video] = await tx.$queryRaw<Array<LockedAdminVideo>>(
+    Prisma.sql`
+      SELECT
+        v."moderation_status" AS "moderationStatus",
+        v."published_at" AS "publishedAt",
+        v."rejected_at" AS "rejectedAt",
+        v."rejection_reason" AS "rejectionReason",
+        v."deletion_requested_at" AS "deletionRequestedAt",
+        v."deletion_reason" AS "deletionReason",
+        v."deletion_origin" AS "deletionOrigin",
+        v."title",
+        u."email" AS "ownerEmail"
+      FROM "videos" AS v
+      INNER JOIN "users" AS u ON u."id" = v."owner_id"
+      WHERE v."id" = CAST(${videoId} AS UUID)
+      FOR UPDATE OF v
+    `,
+  );
+
+  if (!video) {
+    throw new VideoNotFoundError();
+  }
+
+  return video;
 };
 
 const normalizeVideoRejectionReason = (reason: string): string => {
@@ -65,6 +114,24 @@ const normalizeVideoRejectionReason = (reason: string): string => {
 
   if (normalizedReason.includes('\u0000')) {
     throw new AdminVideoRejectionReasonInvalidError(ADMIN_VIDEO_REJECTION_REASON_NUL_MESSAGE);
+  }
+
+  return normalizedReason;
+};
+
+const normalizeVideoDeletionReason = (reason: string): string => {
+  const normalizedReason = reason.trim();
+
+  if (!normalizedReason) {
+    throw new AdminVideoDeletionReasonInvalidError(ADMIN_VIDEO_DELETION_REASON_REQUIRED_MESSAGE);
+  }
+
+  if (normalizedReason.length > VIDEO_DELETION_REASON_MAX_LENGTH) {
+    throw new AdminVideoDeletionReasonInvalidError(ADMIN_VIDEO_DELETION_REASON_TOO_LONG_MESSAGE);
+  }
+
+  if (normalizedReason.includes('\u0000')) {
+    throw new AdminVideoDeletionReasonInvalidError(ADMIN_VIDEO_DELETION_REASON_NUL_MESSAGE);
   }
 
   return normalizedReason;
@@ -151,25 +218,7 @@ const moderateAdminVideo = async (
     decision === 'rejected' ? normalizeVideoRejectionReason(input.reason) : null;
   const now = deps.clock.now();
   const { rejectionNotification, video } = await deps.prisma.$transaction(async (tx) => {
-    const [currentVideo] = await tx.$queryRaw<Array<LockedModerationVideo>>(
-      Prisma.sql`
-        SELECT
-          v."moderation_status" AS "moderationStatus",
-          v."published_at" AS "publishedAt",
-          v."rejected_at" AS "rejectedAt",
-          v."rejection_reason" AS "rejectionReason",
-          v."title",
-          u."email" AS "ownerEmail"
-        FROM "videos" AS v
-        INNER JOIN "users" AS u ON u."id" = v."owner_id"
-        WHERE v."id" = CAST(${videoId} AS UUID)
-        FOR UPDATE OF v
-      `,
-    );
-
-    if (!currentVideo) {
-      throw new VideoNotFoundError();
-    }
+    const currentVideo = await lockAdminVideo(tx, videoId);
 
     const isNewRejection = decision === 'rejected' && currentVideo.moderationStatus !== 'rejected';
     const updatedVideo = await tx.video.update({
@@ -178,7 +227,7 @@ const moderateAdminVideo = async (
         decision === 'approved'
           ? {
               moderationStatus: 'approved',
-              visibility: 'public',
+              visibility: currentVideo.deletionRequestedAt === null ? 'public' : 'unlisted',
               publishedAt: currentVideo.publishedAt ?? now,
               rejectedAt: null,
               rejectionReason: null,
@@ -226,7 +275,62 @@ const moderateAdminVideo = async (
   };
 };
 
+const requestAdminVideoDeletion = async (
+  deps: AdminDependencies,
+  { actorRole, reason, videoId }: RequestAdminVideoDeletionInput,
+): Promise<RequestAdminVideoDeletionResult> => {
+  const normalizedReason = normalizeVideoDeletionReason(reason);
+  const now = deps.clock.now();
+  const { deletionNotification, video } = await deps.prisma.$transaction(async (tx) => {
+    const currentVideo = await lockAdminVideo(tx, videoId);
+
+    const isNewDeletionRequest = currentVideo.deletionRequestedAt === null;
+    const updatedVideo = await tx.video.update({
+      where: { id: videoId },
+      data: {
+        visibility: 'unlisted',
+        deletionRequestedAt: isNewDeletionRequest ? now : currentVideo.deletionRequestedAt,
+        deletionReason: isNewDeletionRequest ? normalizedReason : currentVideo.deletionReason,
+        deletionOrigin: isNewDeletionRequest ? actorRole : currentVideo.deletionOrigin,
+      },
+      select: adminVideoSelect,
+    });
+
+    return {
+      video: updatedVideo,
+      deletionNotification: isNewDeletionRequest
+        ? {
+            email: currentVideo.ownerEmail,
+            reason: normalizedReason,
+            title: currentVideo.title,
+          }
+        : null,
+    };
+  });
+
+  if (deletionNotification) {
+    try {
+      await deps.mailer.sendVideoDeletionScheduledEmail(
+        deletionNotification.email,
+        deletionNotification.title,
+        deletionNotification.reason,
+      );
+    } catch (err) {
+      await handleExpectedMailerError({
+        err,
+        logger: deps.logger,
+        warningMessage: `Video deletion notification email could not be sent for video ${video.id}`,
+      });
+    }
+  }
+
+  return {
+    video: toAdminVideoSummary(video),
+  };
+};
+
 export const createAdminVideosService = (deps: AdminDependencies): AdminVideosPort => ({
   listVideos: (input) => listAdminVideos(deps, input),
   moderateVideo: (input) => moderateAdminVideo(deps, input),
+  requestVideoDeletion: (input) => requestAdminVideoDeletion(deps, input),
 });

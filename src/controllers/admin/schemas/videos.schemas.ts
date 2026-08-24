@@ -1,5 +1,8 @@
 import { z } from '../../../docs/zod.js';
-import { VIDEO_REJECTION_REASON_MAX_LENGTH } from '../../../config/constants.js';
+import {
+  VIDEO_DELETION_REASON_MAX_LENGTH,
+  VIDEO_REJECTION_REASON_MAX_LENGTH,
+} from '../../../config/constants.js';
 import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
 import { videoSearchTextSchema } from '../../shared/search.schemas.js';
 
@@ -16,6 +19,7 @@ const videoProcessingStatusSchema = z.enum([
   'failed',
 ]);
 const videoVisibilitySchema = z.enum(['public', 'unlisted']);
+const videoDeletionOriginSchema = z.enum(['moderator', 'admin']);
 
 export const adminVideosQuerySchema = z
   .object({
@@ -94,6 +98,31 @@ export const moderateAdminVideoSchema = z.object({
   body: moderateAdminVideoRequestSchema,
 });
 
+export const requestAdminVideoDeletionRequestSchema = z
+  .object({
+    reason: z
+      .string()
+      .trim()
+      .min(1, 'Video deletion reason is required')
+      .max(
+        VIDEO_DELETION_REASON_MAX_LENGTH,
+        `Video deletion reason must be at most ${VIDEO_DELETION_REASON_MAX_LENGTH} characters`,
+      )
+      .refine((reason) => !reason.includes('\u0000'), {
+        message: 'Video deletion reason must not contain NUL characters',
+      })
+      .openapi({
+        example: 'This published video violates the platform safety policy.',
+      }),
+  })
+  .strict()
+  .openapi('RequestAdminVideoDeletionRequest');
+
+export const requestAdminVideoDeletionSchema = z.object({
+  params: adminVideoParamsSchema,
+  body: requestAdminVideoDeletionRequestSchema,
+});
+
 const nullableVideoDateTimeSchema = z.string().datetime().nullable();
 
 const adminVideoSummaryResponseSchema = z.object({
@@ -115,6 +144,12 @@ const adminVideoSummaryResponseSchema = z.object({
     .string()
     .nullable()
     .openapi({ example: 'The video contains content that violates the publishing guidelines.' }),
+  deletionRequestedAt: nullableVideoDateTimeSchema.openapi({ example: null }),
+  deletionReason: z
+    .string()
+    .nullable()
+    .openapi({ example: 'This published video violates the platform safety policy.' }),
+  deletionOrigin: videoDeletionOriginSchema.nullable().openapi({ example: null }),
 });
 
 export const adminVideosResponseSchema = z
@@ -136,6 +171,13 @@ export const moderateAdminVideoResponseSchema = z
   })
   .openapi('ModerateAdminVideoResponse');
 
+export const requestAdminVideoDeletionResponseSchema = z
+  .object({
+    video: adminVideoSummaryResponseSchema,
+  })
+  .openapi('RequestAdminVideoDeletionResponse');
+
 export type AdminVideosQuery = z.infer<typeof adminVideosSchema>['query'];
 export type AdminVideoParams = z.infer<typeof moderateAdminVideoSchema>['params'];
 export type ModerateAdminVideoBody = z.infer<typeof moderateAdminVideoSchema>['body'];
+export type RequestAdminVideoDeletionBody = z.infer<typeof requestAdminVideoDeletionSchema>['body'];

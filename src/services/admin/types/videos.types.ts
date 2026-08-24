@@ -5,6 +5,7 @@ import type {
 } from '../../videos.types.js';
 
 export type AdminVideoSort = 'newest' | 'oldest';
+export type VideoDeletionOrigin = 'moderator' | 'admin';
 
 export type ListAdminVideosInput = {
   cursor?: {
@@ -32,6 +33,9 @@ export type AdminVideoSummary = {
   publishedAt: Date | null;
   rejectedAt: Date | null;
   rejectionReason: string | null;
+  deletionRequestedAt: Date | null;
+  deletionReason: string | null;
+  deletionOrigin: VideoDeletionOrigin | null;
 };
 
 export type ListAdminVideosResult = {
@@ -58,7 +62,20 @@ export type ModerateAdminVideoResult = {
   video: AdminVideoSummary;
 };
 
+export type RequestAdminVideoDeletionInput = {
+  actorRole: VideoDeletionOrigin;
+  reason: string;
+  videoId: string;
+};
+
+export type RequestAdminVideoDeletionResult = {
+  video: AdminVideoSummary;
+};
+
 export type AdminVideosPort = {
   listVideos(input: ListAdminVideosInput): Promise<ListAdminVideosResult>;
   moderateVideo(input: ModerateAdminVideoInput): Promise<ModerateAdminVideoResult>;
+  requestVideoDeletion(
+    input: RequestAdminVideoDeletionInput,
+  ): Promise<RequestAdminVideoDeletionResult>;
 };

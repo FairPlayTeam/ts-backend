@@ -6,6 +6,7 @@ import {
   createVideoSchema,
   createVideoCommentReplySchema,
   createVideoCommentSchema,
+  deleteVideoSchema,
   deleteVideoCommentSchema,
   mutateVideoCommentLikeSchema,
   getPublicVideoDetailSchema,
@@ -52,6 +53,7 @@ export const createRouter = ({
     createVideo,
     createVideoComment,
     createVideoCommentReply,
+    deleteVideo,
     deleteVideoComment,
     likeVideoComment,
     getHlsMaster,
@@ -86,6 +88,7 @@ export const createRouter = ({
   ];
 
   router.post('/', ...protectedValidatedRoute(createVideoSchema, createVideo));
+  router.delete('/:publicId', ...protectedValidatedRoute(deleteVideoSchema, deleteVideo));
   router.get('/', validate(listPublicVideosSchema), listPublicVideos);
   router.get('/me', ...protectedValidatedRoute(listMyVideosSchema, listMyVideos));
   router.get('/search', validate(searchPublicVideosSchema), searchPublicVideos);

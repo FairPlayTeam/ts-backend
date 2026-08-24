@@ -4,6 +4,8 @@ import {
   adminVideosResponseSchema,
   moderateAdminVideoRequestSchema,
   moderateAdminVideoResponseSchema,
+  requestAdminVideoDeletionRequestSchema,
+  requestAdminVideoDeletionResponseSchema,
 } from '../controllers/admin.schemas.js';
 import { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../middleware/routeProtection.js';
 import { jsonRequest, jsonResponse } from './openapi.helpers.js';
@@ -46,6 +48,26 @@ export const routeDocs = [
     },
     responses: {
       200: jsonResponse('Moderation decision applied', moderateAdminVideoResponseSchema),
+      ...commonModerationVideoResponses,
+      404: jsonResponse('Video not found', ApiErrorSchema),
+    },
+  },
+  {
+    method: 'post',
+    path: '/moderation/videos/{videoId}/deletion',
+    operationId: 'requestVideoDeletionByModeration',
+    summary: 'Schedule administrative deletion of a video after seven days',
+    tags: ['Moderation'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      params: adminVideoParamsSchema,
+      ...jsonRequest(requestAdminVideoDeletionRequestSchema),
+    },
+    responses: {
+      200: jsonResponse(
+        'Administrative deletion scheduled or existing request returned',
+        requestAdminVideoDeletionResponseSchema,
+      ),
       ...commonModerationVideoResponses,
       404: jsonResponse('Video not found', ApiErrorSchema),
     },

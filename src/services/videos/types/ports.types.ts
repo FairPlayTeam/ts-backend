@@ -71,6 +71,11 @@ export type CreateVideoInput = {
   allowComments: boolean;
 };
 
+export type DeleteVideoInput = {
+  publicId: string;
+  userId: string;
+};
+
 export type ListMyVideosInput = {
   userId: string;
   cursor?: VideoPaginationCursor;
@@ -416,6 +421,7 @@ export type MutateVideoCommentLikeInput = {
 
 export type VideosRoutePort = {
   createVideo(input: CreateVideoInput): Promise<CreateVideoResult>;
+  deleteVideo(input: DeleteVideoInput): Promise<void>;
   listMyVideos(input: ListMyVideosInput): Promise<ListMyVideosResult>;
   listPublicVideos(input: ListPublicVideosInput): Promise<ListPublicVideosResult>;
   listPublicProfileVideos(input: ListPublicProfileVideosInput): Promise<ListPublicVideosResult>;
@@ -468,9 +474,9 @@ export type VideoMaintenancePort = {
     redirectedAbsent: number;
     failed: number;
   }>;
-  deleteExpiredRejectedVideos(input: { observedAt: Date; rejectedBefore: Date }): Promise<{
-    rejectedVideosDeleted: number;
-    rejectedVideoTargetsScheduled: number;
+  deleteExpiredVideosPendingPurge(input: { observedAt: Date; purgeBefore: Date }): Promise<{
+    videosPendingPurgeDeleted: number;
+    videoPendingPurgeTargetsScheduled: number;
   }>;
 };
 

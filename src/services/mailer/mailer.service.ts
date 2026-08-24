@@ -3,7 +3,7 @@ import {
   APP_PRODUCT_NAME,
   EMAIL_VERIFICATION_CODE_TTL_MINUTES,
   PASSWORD_RESET_CODE_TTL_MINUTES,
-  REJECTED_VIDEO_RETENTION_DAYS,
+  VIDEO_PENDING_PURGE_RETENTION_DAYS,
 } from '../../config/constants.js';
 import {
   buildNoticeEmailHtml,
@@ -44,7 +44,7 @@ type SmtpTransportOptions = {
   };
 };
 
-type NoticeMailerTemplate = 'account-ban' | 'video-rejection';
+type NoticeMailerTemplate = 'account-ban' | 'video-deletion' | 'video-rejection';
 type CodeMailerTemplate = 'password-reset' | 'verification';
 type MailerTemplate = CodeMailerTemplate | NoticeMailerTemplate;
 
@@ -272,10 +272,27 @@ export const createMailerService = (deps: MailerDependencies) => {
         details: reason,
         detailsLabel: 'Reason provided by the moderation team',
         footerText: `This message was sent to notify you about a moderation decision on your ${APP_PRODUCT_NAME} video.`,
-        intro: `Your video "${title}" was rejected during moderation. It will remain available by direct link for ${REJECTED_VIDEO_RETENTION_DAYS} days, then it will be permanently deleted automatically.`,
+        intro: `Your video "${title}" was rejected during moderation. It will remain available by direct link for ${VIDEO_PENDING_PURGE_RETENTION_DAYS} days, then it will be permanently deleted automatically.`,
         subject: `Your ${APP_PRODUCT_NAME} video was rejected`,
         template: 'video-rejection',
         title: 'Your video was rejected',
+      });
+    },
+
+    async sendVideoDeletionScheduledEmail(
+      email: string,
+      title: string,
+      reason: string,
+    ): Promise<void> {
+      await sendNoticeEmail({
+        email,
+        details: reason,
+        detailsLabel: 'Reason provided by the moderation team',
+        footerText: `This message was sent to notify you about an administrative deletion of your ${APP_PRODUCT_NAME} video.`,
+        intro: `Your video "${title}" has been removed from public discovery and scheduled for permanent deletion. It can remain available by direct link until maintenance permanently deletes it after the ${VIDEO_PENDING_PURGE_RETENTION_DAYS}-day retention period has elapsed.`,
+        subject: `Your ${APP_PRODUCT_NAME} video is scheduled for deletion`,
+        template: 'video-deletion',
+        title: 'Your video is scheduled for deletion',
       });
     },
   };

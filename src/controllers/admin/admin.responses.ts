@@ -4,6 +4,7 @@ import type {
   ListAdminAccountsResult,
   ListAdminVideosResult,
   ModerateAdminVideoResult,
+  RequestAdminVideoDeletionResult,
   UnbanAdminAccountResult,
   UpdateAdminAccountRoleResult,
 } from '../../services/admin.types.js';
@@ -65,6 +66,7 @@ const toAdminVideoResponse = (video: ModerateAdminVideoResult['video']) => ({
   createdAt: toIsoString(video.createdAt),
   publishedAt: toNullableIsoString(video.publishedAt),
   rejectedAt: toNullableIsoString(video.rejectedAt),
+  deletionRequestedAt: toNullableIsoString(video.deletionRequestedAt),
 });
 
 export const toAdminVideosResponse = ({ nextCursor, total, videos }: ListAdminVideosResult) => ({
@@ -79,5 +81,11 @@ export const toAdminVideosResponse = ({ nextCursor, total, videos }: ListAdminVi
 });
 
 export const toModerateAdminVideoResponse = ({ video }: ModerateAdminVideoResult) => ({
+  video: toAdminVideoResponse(video),
+});
+
+export const toRequestAdminVideoDeletionResponse = ({
+  video,
+}: RequestAdminVideoDeletionResult) => ({
   video: toAdminVideoResponse(video),
 });

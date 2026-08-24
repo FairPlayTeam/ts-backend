@@ -415,11 +415,11 @@ describe('maintenance and reconciliation integration', () => {
             failed: 0,
           };
         },
-        deleteExpiredRejectedVideos: async () => {
-          calls.push('rejectedVideos');
+        deleteExpiredVideosPendingPurge: async () => {
+          calls.push('videosPendingPurge');
           return {
-            rejectedVideosDeleted: 0,
-            rejectedVideoTargetsScheduled: 0,
+            videosPendingPurgeDeleted: 0,
+            videoPendingPurgeTargetsScheduled: 0,
           };
         },
       },

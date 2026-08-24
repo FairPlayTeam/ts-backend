@@ -28,6 +28,9 @@ const records = videoIds.map((id, index) => ({
   publishedAt: null,
   rejectedAt: null,
   rejectionReason: null,
+  deletionRequestedAt: null,
+  deletionReason: null,
+  deletionOrigin: null,
   owner: {
     username: 'video_owner',
   },

@@ -7,6 +7,7 @@ import {
   VideoCommentNotFoundError,
   VideoCommentsDisabledError,
   VideoCommentTemporarilyUnavailableError,
+  VideoDeletionTemporarilyUnavailableError,
   VideoStorageQuotaExceededError,
   VideoNotFoundError,
   VideoRatingTemporarilyUnavailableError,
@@ -42,7 +43,8 @@ export function toVideosHttpError(err: unknown): Error {
 
   if (
     err instanceof VideoRatingTemporarilyUnavailableError ||
-    err instanceof VideoCommentTemporarilyUnavailableError
+    err instanceof VideoCommentTemporarilyUnavailableError ||
+    err instanceof VideoDeletionTemporarilyUnavailableError
   ) {
     return new HttpError(503, 'ServiceUnavailable', err.message, { cause: err });
   }

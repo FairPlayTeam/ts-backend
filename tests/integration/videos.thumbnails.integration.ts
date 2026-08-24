@@ -181,13 +181,13 @@ describe('videos thumbnails integration', () => {
 
     const rejectedBefore = new Date(scenarioNow.getTime() - 7 * 24 * HOUR_MS);
     await expect(
-      controlledVideosService.deleteExpiredRejectedVideos({
+      controlledVideosService.deleteExpiredVideosPendingPurge({
         observedAt: scenarioNow,
-        rejectedBefore,
+        purgeBefore: rejectedBefore,
       }),
     ).resolves.toEqual({
-      rejectedVideosDeleted: 1,
-      rejectedVideoTargetsScheduled: 0,
+      videosPendingPurgeDeleted: 1,
+      videoPendingPurgeTargetsScheduled: 2,
     });
     await expect(
       runtime.prisma.video.findUnique({

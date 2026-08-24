@@ -684,6 +684,8 @@ export const getPublicVideoDetailSchema = z.object({
   params: publicVideoIdParamsSchema,
 });
 
+export const deleteVideoSchema = getPublicVideoDetailSchema;
+
 export const getVideoRatingSchema = z.object({
   params: videoRatingParamsSchema,
 });

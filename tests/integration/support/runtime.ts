@@ -61,6 +61,12 @@ type DeliveredVideoRejectionEmail = {
   reason: string;
 };
 
+type DeliveredVideoDeletionEmail = {
+  email: string;
+  title: string;
+  reason: string;
+};
+
 export type TestRuntime = {
   databaseUrl: string;
   redisUrl: string;
@@ -81,6 +87,7 @@ export type TestRuntime = {
     passwordReset: DeliveredEmail[];
     accountBan: DeliveredBanEmail[];
     videoRejection: DeliveredVideoRejectionEmail[];
+    videoDeletion: DeliveredVideoDeletionEmail[];
   };
 };
 
@@ -165,6 +172,9 @@ export const createIntegrationAdminService = (
       },
       sendVideoRejectedEmail: async (email, title, reason) => {
         delivered.videoRejection.push({ email, title, reason });
+      },
+      sendVideoDeletionScheduledEmail: async (email, title, reason) => {
+        delivered.videoDeletion.push({ email, title, reason });
       },
     },
     clock: {
@@ -321,6 +331,7 @@ export const startRuntime = async (): Promise<TestRuntime> => {
     passwordReset: [] as DeliveredEmail[],
     accountBan: [] as DeliveredBanEmail[],
     videoRejection: [] as DeliveredVideoRejectionEmail[],
+    videoDeletion: [] as DeliveredVideoDeletionEmail[],
   };
 
   return {
@@ -373,4 +384,5 @@ export const resetState = async (runtime: TestRuntime): Promise<void> => {
   runtime.delivered.passwordReset = [];
   runtime.delivered.accountBan = [];
   runtime.delivered.videoRejection = [];
+  runtime.delivered.videoDeletion = [];
 };

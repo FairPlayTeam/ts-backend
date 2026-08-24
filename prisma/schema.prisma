@@ -48,6 +48,11 @@ enum VideoModerationStatus {
   rejected
 }
 
+enum VideoDeletionOrigin {
+  moderator
+  admin
+}
+
 enum VideoProcessingStatus {
   draft
   uploading
@@ -213,6 +218,9 @@ model Video {
   publishedAt                DateTime?             @map("published_at")
   rejectedAt                 DateTime?             @map("rejected_at")
   rejectionReason            String?               @map("rejection_reason") @db.VarChar(1000)
+  deletionRequestedAt        DateTime?             @map("deletion_requested_at")
+  deletionReason             String?               @map("deletion_reason") @db.VarChar(1000)
+  deletionOrigin             VideoDeletionOrigin?  @map("deletion_origin")
   createdAt                  DateTime              @default(now()) @map("created_at")
   updatedAt                  DateTime              @updatedAt @map("updated_at")
 
@@ -229,6 +237,7 @@ model Video {
   @@index([ownerId, createdAt, id])
   @@index([visibility, moderationStatus, processingStatus, createdAt, id])
   @@index([moderationStatus, rejectedAt, id])
+  @@index([deletionRequestedAt, id])
   @@map("videos")
 }
 

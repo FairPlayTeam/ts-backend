@@ -175,6 +175,23 @@
                   "type": "string",
                   "nullable": true,
                   "example": "The video contains content that violates the publishing guidelines."
+                },
+                "deletionRequestedAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "format": "date-time",
+                  "example": null
+                },
+                "deletionReason": {
+                  "type": "string",
+                  "nullable": true,
+                  "example": "This published video violates the platform safety policy."
+                },
+                "deletionOrigin": {
+                  "type": "string",
+                  "nullable": true,
+                  "enum": ["moderator", "admin", null],
+                  "example": null
                 }
               },
               "required": [
@@ -190,7 +207,10 @@
                 "thumbnailPath",
                 "publishedAt",
                 "rejectedAt",
-                "rejectionReason"
+                "rejectionReason",
+                "deletionRequestedAt",
+                "deletionReason",
+                "deletionOrigin"
               ]
             }
           },
@@ -960,6 +980,23 @@
                 "type": "string",
                 "nullable": true,
                 "example": "The video contains content that violates the publishing guidelines."
+              },
+              "deletionRequestedAt": {
+                "type": "string",
+                "nullable": true,
+                "format": "date-time",
+                "example": null
+              },
+              "deletionReason": {
+                "type": "string",
+                "nullable": true,
+                "example": "This published video violates the platform safety policy."
+              },
+              "deletionOrigin": {
+                "type": "string",
+                "nullable": true,
+                "enum": ["moderator", "admin", null],
+                "example": null
               }
             },
             "required": [
@@ -975,7 +1012,10 @@
               "thumbnailPath",
               "publishedAt",
               "rejectedAt",
-              "rejectionReason"
+              "rejectionReason",
+              "deletionRequestedAt",
+              "deletionReason",
+              "deletionOrigin"
             ]
           }
         },
@@ -1554,6 +1594,121 @@
           "message": { "type": "string", "example": "Account created. Please verify your email." }
         },
         "required": ["message"]
+      },
+      "RequestAdminVideoDeletionRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "example": "This published video violates the platform safety policy."
+          }
+        },
+        "required": ["reason"],
+        "additionalProperties": false
+      },
+      "RequestAdminVideoDeletionResponse": {
+        "type": "object",
+        "properties": {
+          "video": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "example": "0d4e55cb-c278-4d74-a192-bf7c10888c7a"
+              },
+              "publicId": { "type": "string", "example": "AbCdEf123_" },
+              "ownerId": {
+                "type": "string",
+                "format": "uuid",
+                "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
+              },
+              "username": { "type": "string", "example": "jawed" },
+              "title": { "type": "string", "example": "Me at the zoo" },
+              "moderationStatus": {
+                "type": "string",
+                "enum": ["pending", "approved", "rejected"],
+                "example": "pending"
+              },
+              "processingStatus": {
+                "type": "string",
+                "enum": ["draft", "uploading", "queued", "processing", "ready", "failed"],
+                "example": "ready"
+              },
+              "visibility": {
+                "type": "string",
+                "enum": ["public", "unlisted"],
+                "example": "unlisted"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "example": "2026-01-01T00:00:00.000Z"
+              },
+              "thumbnailPath": {
+                "type": "string",
+                "nullable": true,
+                "pattern": "^\\/(?!\\/)[^\\s]*$",
+                "example": "/videos/AbCdEf123_/thumbnail"
+              },
+              "publishedAt": {
+                "type": "string",
+                "nullable": true,
+                "format": "date-time",
+                "example": null
+              },
+              "rejectedAt": {
+                "type": "string",
+                "nullable": true,
+                "format": "date-time",
+                "example": null
+              },
+              "rejectionReason": {
+                "type": "string",
+                "nullable": true,
+                "example": "The video contains content that violates the publishing guidelines."
+              },
+              "deletionRequestedAt": {
+                "type": "string",
+                "nullable": true,
+                "format": "date-time",
+                "example": null
+              },
+              "deletionReason": {
+                "type": "string",
+                "nullable": true,
+                "example": "This published video violates the platform safety policy."
+              },
+              "deletionOrigin": {
+                "type": "string",
+                "nullable": true,
+                "enum": ["moderator", "admin", null],
+                "example": null
+              }
+            },
+            "required": [
+              "id",
+              "publicId",
+              "ownerId",
+              "username",
+              "title",
+              "moderationStatus",
+              "processingStatus",
+              "visibility",
+              "createdAt",
+              "thumbnailPath",
+              "publishedAt",
+              "rejectedAt",
+              "rejectionReason",
+              "deletionRequestedAt",
+              "deletionReason",
+              "deletionOrigin"
+            ]
+          }
+        },
+        "required": ["video"]
       },
       "RequestPasswordResetRequest": {
         "type": "object",
@@ -4834,6 +4989,66 @@
             }
           }
         }
+      },
+      "delete": {
+        "operationId": "deleteOwnedVideo",
+        "summary": "Permanently delete a video owned by the current user",
+        "description": "Deletes the database video immediately and durably schedules every associated external resource for absence. Moderator and administrator roles grant no ownership override on this route.",
+        "tags": ["Videos"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_]{10}$",
+              "example": "AbCdEf123_"
+            },
+            "required": true,
+            "name": "publicId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": { "description": "Video deleted and external cleanup scheduled" },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiOrValidationError" }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          },
+          "404": {
+            "description": "Video not found or not owned by the current user",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          },
+          "503": {
+            "description": "Video deletion temporarily unavailable",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          }
+        }
       }
     },
     "/videos/{publicId}/thumbnail": {
@@ -6621,6 +6836,82 @@
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ModerateAdminVideoResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiOrValidationError" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, or expired session",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          },
+          "404": {
+            "description": "Video not found",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ApiError" } }
+            }
+          }
+        }
+      }
+    },
+    "/moderation/videos/{videoId}/deletion": {
+      "post": {
+        "operationId": "requestVideoDeletionByModeration",
+        "summary": "Schedule administrative deletion of a video after seven days",
+        "tags": ["Moderation"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "0d4e55cb-c278-4d74-a192-bf7c10888c7a"
+            },
+            "required": true,
+            "name": "videoId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RequestAdminVideoDeletionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Administrative deletion scheduled or existing request returned",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RequestAdminVideoDeletionResponse" }
               }
             }
           },

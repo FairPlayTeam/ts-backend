@@ -1202,9 +1202,9 @@ describe('video comments integration', () => {
       runtime.videoExternalResources,
       { now: () => observedAt },
     );
-    const staleCandidatePurgePromise = staleCandidatePurgeService.deleteExpiredRejectedVideos({
+    const staleCandidatePurgePromise = staleCandidatePurgeService.deleteExpiredVideosPendingPurge({
       observedAt,
-      rejectedBefore,
+      purgeBefore: rejectedBefore,
     });
 
     await candidatesRead.promise;
@@ -1247,8 +1247,8 @@ describe('video comments integration', () => {
     ]);
     expect(creationResponse.status).toBe(201);
     expect(stalePurgeResult).toEqual({
-      rejectedVideosDeleted: 0,
-      rejectedVideoTargetsScheduled: 0,
+      videosPendingPurgeDeleted: 0,
+      videoPendingPurgeTargetsScheduled: 0,
     });
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
@@ -1286,9 +1286,9 @@ describe('video comments integration', () => {
       runtime.videoExternalResources,
       { now: () => observedAt },
     );
-    const purgeFirstPromise = purgeFirstService.deleteExpiredRejectedVideos({
+    const purgeFirstPromise = purgeFirstService.deleteExpiredVideosPendingPurge({
       observedAt,
-      rejectedBefore,
+      purgeBefore: rejectedBefore,
     });
 
     await purgeLocked.promise;
@@ -1308,8 +1308,8 @@ describe('video comments integration', () => {
 
     const purgeResult = await purgeFirstPromise;
     expect(purgeResult).toEqual({
-      rejectedVideosDeleted: 1,
-      rejectedVideoTargetsScheduled: expect.any(Number),
+      videosPendingPurgeDeleted: 1,
+      videoPendingPurgeTargetsScheduled: expect.any(Number),
     });
     await expect(
       runtime.prisma.video.findUnique({ where: { id: purgeFirstVideo.id } }),

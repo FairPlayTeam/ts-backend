@@ -76,11 +76,11 @@ const createMaintenanceServices = (
         failed: 11,
       };
     },
-    deleteExpiredRejectedVideos: async (input) => {
-      calls.push(['rejectedVideos', input]);
+    deleteExpiredVideosPendingPurge: async (input) => {
+      calls.push(['videosPendingPurge', input]);
       return {
-        rejectedVideosDeleted: 12,
-        rejectedVideoTargetsScheduled: 13,
+        videosPendingPurgeDeleted: 12,
+        videoPendingPurgeTargetsScheduled: 13,
       };
     },
     ...videos,
@@ -137,10 +137,10 @@ describe('maintenance cleanup job', () => {
       ],
       ['videoTargets', undefined],
       [
-        'rejectedVideos',
+        'videosPendingPurge',
         {
           observedAt: new Date('2026-01-31T00:00:00.000Z'),
-          rejectedBefore: new Date('2026-01-24T00:00:00.000Z'),
+          purgeBefore: new Date('2026-01-24T00:00:00.000Z'),
         },
       ],
     ]);
@@ -159,8 +159,8 @@ describe('maintenance cleanup job', () => {
         videoTargetsConfirmed: 9,
         videoTargetsRedirectedAbsent: 10,
         videoTargetsFailed: 11,
-        rejectedVideosDeleted: 12,
-        rejectedVideoTargetsScheduled: 13,
+        videosPendingPurgeDeleted: 12,
+        videoPendingPurgeTargetsScheduled: 13,
       },
       failedSteps: [],
     });
@@ -208,7 +208,7 @@ describe('maintenance cleanup job', () => {
       'multipartSessions',
       'abandonedArtifactGenerations',
       'videoTargets',
-      'rejectedVideos',
+      'videosPendingPurge',
     ]);
     expect(result.failedSteps).toEqual(['sessions', 'abandonedArtifactGenerations']);
     expect(logs).toContainEqual({
@@ -226,13 +226,13 @@ describe('maintenance cleanup job', () => {
     });
   });
 
-  test('isolates a rejected-video purge failure after every earlier step has completed', async () => {
+  test('isolates a pending-video purge failure after every earlier step has completed', async () => {
     const calls: unknown[] = [];
-    const purgeError = new Error('rejected video purge unavailable');
+    const purgeError = new Error('pending video purge unavailable');
     const services = createMaintenanceServices(calls, {
       videos: {
-        deleteExpiredRejectedVideos: async () => {
-          calls.push(['rejectedVideos']);
+        deleteExpiredVideosPendingPurge: async () => {
+          calls.push(['videosPendingPurge']);
           throw purgeError;
         },
       },
@@ -255,9 +255,9 @@ describe('maintenance cleanup job', () => {
       'multipartSessions',
       'abandonedArtifactGenerations',
       'videoTargets',
-      'rejectedVideos',
+      'videosPendingPurge',
     ]);
-    expect(result.failedSteps).toEqual(['rejectedVideos']);
+    expect(result.failedSteps).toEqual(['videosPendingPurge']);
     expect(result.summary).toMatchObject({
       sessionsDeleted: 2,
       videoTargetsConfirmed: 9,

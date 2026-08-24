@@ -7,6 +7,7 @@ export type AdminDependencies = {
   mailer: {
     sendAccountBannedEmail(email: string, reason: string): Promise<void>;
     sendVideoRejectedEmail(email: string, title: string, reason: string): Promise<void>;
+    sendVideoDeletionScheduledEmail(email: string, title: string, reason: string): Promise<void>;
   };
   clock: {
     now(): Date;

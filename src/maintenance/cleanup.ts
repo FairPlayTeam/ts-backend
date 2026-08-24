@@ -5,7 +5,7 @@ import {
 } from '../lib/redisLease.js';
 import type { AuthMaintenancePort } from '../services/auth.types.js';
 import type { VideoMaintenancePort } from '../services/videos.types.js';
-import { REJECTED_VIDEO_RETENTION_MS } from '../config/constants.js';
+import { VIDEO_PENDING_PURGE_RETENTION_MS } from '../config/constants.js';
 
 const MAINTENANCE_CLEANUP_LOCK_KEY = 'maintenance:cleanup:lock';
 type MaintenanceCleanupLockManager = {
@@ -42,8 +42,8 @@ type MaintenanceCleanupSummary = Partial<{
   videoTargetsConfirmed: number;
   videoTargetsRedirectedAbsent: number;
   videoTargetsFailed: number;
-  rejectedVideosDeleted: number;
-  rejectedVideoTargetsScheduled: number;
+  videosPendingPurgeDeleted: number;
+  videoPendingPurgeTargetsScheduled: number;
 }>;
 
 type MaintenanceCleanupStep =
@@ -53,7 +53,7 @@ type MaintenanceCleanupStep =
   | 'multipartSessions'
   | 'abandonedArtifactGenerations'
   | 'videoTargets'
-  | 'rejectedVideos'
+  | 'videosPendingPurge'
   | 'lockOwnership';
 
 type MaintenanceCleanupResult = {
@@ -104,7 +104,7 @@ export const createMaintenanceCleanupJob = ({
     currentRun = (async () => {
       const now = clock.now();
       const inactiveUpdatedBefore = new Date(now.getTime() - config.inactiveRetentionMs);
-      const rejectedBefore = new Date(now.getTime() - REJECTED_VIDEO_RETENTION_MS);
+      const purgeBefore = new Date(now.getTime() - VIDEO_PENDING_PURGE_RETENTION_MS);
       const summary: MaintenanceCleanupSummary = {};
       const failedSteps: MaintenanceCleanupStep[] = [];
       const pendingRenewals = new Set<Promise<void>>();
@@ -242,11 +242,11 @@ export const createMaintenanceCleanupJob = ({
             },
           },
           {
-            name: 'rejectedVideos',
+            name: 'videosPendingPurge',
             run: () =>
-              videosService.deleteExpiredRejectedVideos({
+              videosService.deleteExpiredVideosPendingPurge({
                 observedAt: now,
-                rejectedBefore,
+                purgeBefore,
               }),
           },
         ];

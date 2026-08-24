@@ -445,13 +445,13 @@ describe('videos moderation integration', () => {
     );
 
     await expect(
-      controlledVideosService.deleteExpiredRejectedVideos({
+      controlledVideosService.deleteExpiredVideosPendingPurge({
         observedAt,
-        rejectedBefore: new Date(observedAt.getTime() - 7 * 24 * HOUR_MS),
+        purgeBefore: new Date(observedAt.getTime() - 7 * 24 * HOUR_MS),
       }),
     ).resolves.toEqual({
-      rejectedVideosDeleted: 1,
-      rejectedVideoTargetsScheduled: 0,
+      videosPendingPurgeDeleted: 1,
+      videoPendingPurgeTargetsScheduled: 0,
     });
     await expect(
       runtime.prisma.video.findUnique({
@@ -498,6 +498,7 @@ describe('videos moderation integration', () => {
           sendVideoRejectedEmail: async () => {
             throw mailerError;
           },
+          sendVideoDeletionScheduledEmail: async () => undefined,
         },
         clock: {
           now: () => moderationNow,
@@ -896,9 +897,9 @@ describe('videos moderation integration', () => {
           .send({ decision: 'approved' })
           .then((response) => response);
       const startMaintenance = () =>
-        maintenanceVideosService.deleteExpiredRejectedVideos({
+        maintenanceVideosService.deleteExpiredVideosPendingPurge({
           observedAt: cleanupNow,
-          rejectedBefore: new Date(cleanupNow.getTime() - 7 * 24 * HOUR_MS),
+          purgeBefore: new Date(cleanupNow.getTime() - 7 * 24 * HOUR_MS),
         });
       let approvalPromise: ReturnType<typeof startApproval>;
       let maintenancePromise: ReturnType<typeof startMaintenance>;
@@ -941,8 +942,8 @@ describe('videos moderation integration', () => {
 
     expect(approvalWins.approvalResponse.status).toBe(200);
     expect(approvalWins.maintenanceResult).toEqual({
-      rejectedVideosDeleted: 0,
-      rejectedVideoTargetsScheduled: 0,
+      videosPendingPurgeDeleted: 0,
+      videoPendingPurgeTargetsScheduled: 0,
     });
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
@@ -966,8 +967,8 @@ describe('videos moderation integration', () => {
     const maintenanceWins = await runInterleaving(true);
 
     expect(maintenanceWins.maintenanceResult).toEqual({
-      rejectedVideosDeleted: 1,
-      rejectedVideoTargetsScheduled: 0,
+      videosPendingPurgeDeleted: 1,
+      videoPendingPurgeTargetsScheduled: 0,
     });
     expect(maintenanceWins.approvalResponse.status).toBe(404);
     expect(maintenanceWins.approvalResponse.body).toEqual({
@@ -1090,8 +1091,8 @@ describe('videos moderation integration', () => {
 
     expect(cleanupResult.failedSteps).toEqual([]);
     expect(cleanupResult.summary).toMatchObject({
-      rejectedVideosDeleted: 1,
-      rejectedVideoTargetsScheduled: 4,
+      videosPendingPurgeDeleted: 1,
+      videoPendingPurgeTargetsScheduled: 4,
     });
     await expect(
       runtime.prisma.video.findUnique({

@@ -13,6 +13,7 @@ import type {
   CreateVideoCommentInput,
   CreateVideoCommentReplyInput,
   CreateVideoInput,
+  DeleteVideoInput,
   DeleteVideoCommentInput,
   GetMyVideoRatingInput,
   GetPublicVideoDetailInput,
@@ -43,6 +44,7 @@ let server: Server;
 let baseUrl: string;
 let receivedInitRequest: InitVideoMultipartUploadInput | undefined;
 let receivedCreateRequest: CreateVideoInput | undefined;
+let receivedDeleteVideoRequest: DeleteVideoInput | undefined;
 let receivedSignRequest: SignVideoMultipartUploadPartsInput | undefined;
 let receivedThumbnailRequest: UploadVideoSourceThumbnailInput | undefined;
 let receivedCompleteRequest: CompleteVideoMultipartUploadInput | undefined;
@@ -109,6 +111,11 @@ describe('videos routes multipart uploads', () => {
             receivedCreateRequest = input;
 
             return videosService.createVideo(input);
+          },
+          deleteVideo: async (input) => {
+            receivedDeleteVideoRequest = input;
+
+            return videosService.deleteVideo(input);
           },
           listMyVideos: async (input) => {
             receivedListRequest = input;
@@ -426,6 +433,53 @@ describe('videos routes multipart uploads', () => {
       error: 'Unauthorized',
       message: AUTH_SESSION_REQUIRED_MESSAGE,
     });
+  });
+
+  test('deletes an owned video through an authenticated body-free no-store route', async () => {
+    receivedDeleteVideoRequest = undefined;
+    receivedSessionKey = undefined;
+
+    const response = await fetch(`${baseUrl}/videos/${publicId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: 'Bearer route-session-key',
+      },
+    });
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.text()).toBe('');
+    const observedSessionKey = receivedSessionKey as string | undefined;
+    const observedDeleteVideoRequest = receivedDeleteVideoRequest as DeleteVideoInput | undefined;
+    expect(observedSessionKey).toBe('route-session-key');
+    expect(observedDeleteVideoRequest).toEqual({
+      publicId,
+      userId: authenticatedUserId,
+    });
+  });
+
+  test('requires authentication and a valid public id before deleting a video', async () => {
+    receivedDeleteVideoRequest = undefined;
+
+    const [unauthenticated, malformed] = await Promise.all([
+      fetch(`${baseUrl}/videos/${publicId}`, {
+        method: 'DELETE',
+      }),
+      fetch(`${baseUrl}/videos/not-a-public-id`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: 'Bearer route-session-key',
+        },
+      }),
+    ]);
+
+    expect(unauthenticated.status).toBe(401);
+    expect(await unauthenticated.json()).toEqual({
+      error: 'Unauthorized',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+    expect(malformed.status).toBe(400);
+    expect(receivedDeleteVideoRequest).toBeUndefined();
   });
 
   test('lists current user videos with stable pagination input', async () => {

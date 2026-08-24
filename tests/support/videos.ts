@@ -241,6 +241,7 @@ export const createStubVideosService = (): VideosPorts => ({
   deleteVideoComment: async () => undefined,
   likeVideoComment: async () => undefined,
   unlikeVideoComment: async () => undefined,
+  deleteVideo: async () => undefined,
   createVideo: async (input) =>
     createVideoResult({
       ownerId: input.userId,

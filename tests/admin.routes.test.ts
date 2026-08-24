@@ -17,6 +17,7 @@ import type {
   ListAdminAccountsInput,
   ListAdminVideosInput,
   ModerateAdminVideoInput,
+  RequestAdminVideoDeletionInput,
   UnbanAdminAccountInput,
   UpdateAdminAccountRoleInput,
 } from '../src/services/admin.types.js';
@@ -31,6 +32,7 @@ let receivedBanAccountRequest: BanAdminAccountInput | undefined;
 let receivedListAccountsRequest: ListAdminAccountsInput | undefined;
 let receivedListVideosRequest: ListAdminVideosInput | undefined;
 let receivedModerateVideoRequest: ModerateAdminVideoInput | undefined;
+let receivedVideoDeletionRequest: RequestAdminVideoDeletionInput | undefined;
 let receivedUnbanAccountRequest: UnbanAdminAccountInput | undefined;
 let receivedUpdateAccountRoleRequest: UpdateAdminAccountRoleInput | undefined;
 let receivedSessionKey: string | undefined;
@@ -77,6 +79,11 @@ describe('admin routes', () => {
             receivedModerateVideoRequest = input;
 
             return adminService.moderateVideo(input);
+          },
+          requestVideoDeletion: async (input) => {
+            receivedVideoDeletionRequest = input;
+
+            return adminService.requestVideoDeletion(input);
           },
           unbanAccount: async (input) => {
             receivedUnbanAccountRequest = input;
@@ -243,6 +250,9 @@ describe('admin routes', () => {
           publishedAt: null,
           rejectedAt: null,
           rejectionReason: null,
+          deletionRequestedAt: null,
+          deletionReason: null,
+          deletionOrigin: null,
         },
       ],
       total: 1,
@@ -284,7 +294,78 @@ describe('admin routes', () => {
         publishedAt: '2026-01-05T00:00:00.000Z',
         rejectedAt: null,
         rejectionReason: null,
+        deletionRequestedAt: null,
+        deletionReason: null,
+        deletionOrigin: null,
       },
+    });
+  });
+
+  test('schedules administrative deletion with the validated session role and a whitelisted response', async () => {
+    receivedVideoDeletionRequest = undefined;
+    const response = await fetch(`${baseUrl}/moderation/videos/${cursorId}/deletion`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${adminSessionKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ reason: '  Published safety violation.  ' }),
+    });
+
+    expect(response.status).toBe(200);
+    const observedVideoDeletionRequest = receivedVideoDeletionRequest as
+      | RequestAdminVideoDeletionInput
+      | undefined;
+    expect(observedVideoDeletionRequest).toEqual({
+      actorRole: 'admin',
+      reason: 'Published safety violation.',
+      videoId: cursorId,
+    });
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.json()).toEqual({
+      video: {
+        id: '33333333-3333-4333-8333-333333333333',
+        publicId: 'AdminVid01_',
+        ownerId: '11111111-1111-4111-8111-111111111111',
+        username: 'admin_listed',
+        title: 'Video scheduled for deletion',
+        moderationStatus: 'approved',
+        processingStatus: 'ready',
+        visibility: 'unlisted',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        thumbnailPath: '/videos/AbCdEf123_/thumbnail',
+        publishedAt: '2026-01-05T00:00:00.000Z',
+        rejectedAt: null,
+        rejectionReason: null,
+        deletionRequestedAt: '2026-01-06T00:00:00.000Z',
+        deletionReason: 'Published safety violation.',
+        deletionOrigin: 'admin',
+      },
+    });
+  });
+
+  test('rejects invalid administrative deletion reasons before calling the service', async () => {
+    receivedVideoDeletionRequest = undefined;
+    const response = await fetch(`${baseUrl}/moderation/videos/${cursorId}/deletion`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${moderatorSessionKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ reason: 'reason\u0000tail' }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(receivedVideoDeletionRequest).toBeUndefined();
+    expect(await response.json()).toEqual({
+      error: 'ValidationError',
+      message: REQUEST_VALIDATION_FAILED_MESSAGE,
+      details: [
+        {
+          field: 'body.reason',
+          message: 'Video deletion reason must not contain NUL characters',
+        },
+      ],
     });
   });
 
@@ -488,11 +569,12 @@ describe('admin routes', () => {
     });
   });
 
-  test('rejects ordinary users on both moderation routes before calling the admin service', async () => {
+  test('rejects ordinary users on every moderation route before calling the admin service', async () => {
     receivedListVideosRequest = undefined;
     receivedModerateVideoRequest = undefined;
+    receivedVideoDeletionRequest = undefined;
 
-    const [listResponse, decisionResponse] = await Promise.all([
+    const [listResponse, decisionResponse, deletionResponse] = await Promise.all([
       fetch(`${baseUrl}/moderation/videos`, {
         headers: {
           authorization: `Bearer ${userSessionKey}`,
@@ -506,12 +588,22 @@ describe('admin routes', () => {
         },
         body: JSON.stringify({ decision: 'rejected', reason: 'Video policy violation.' }),
       }),
+      fetch(`${baseUrl}/moderation/videos/${cursorId}/deletion`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${userSessionKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ reason: 'Administrative reason.' }),
+      }),
     ]);
 
     expect(listResponse.status).toBe(403);
     expect(decisionResponse.status).toBe(403);
+    expect(deletionResponse.status).toBe(403);
     expect(receivedListVideosRequest).toBeUndefined();
     expect(receivedModerateVideoRequest).toBeUndefined();
+    expect(receivedVideoDeletionRequest).toBeUndefined();
     expect(await listResponse.json()).toEqual({
       error: 'Forbidden',
       message: INSUFFICIENT_PERMISSIONS_MESSAGE,
@@ -520,10 +612,14 @@ describe('admin routes', () => {
       error: 'Forbidden',
       message: INSUFFICIENT_PERMISSIONS_MESSAGE,
     });
+    expect(await deletionResponse.json()).toEqual({
+      error: 'Forbidden',
+      message: INSUFFICIENT_PERMISSIONS_MESSAGE,
+    });
   });
 
-  test('requires a bearer session on both moderation routes', async () => {
-    const [listResponse, decisionResponse] = await Promise.all([
+  test('requires a bearer session on every moderation route', async () => {
+    const [listResponse, decisionResponse, deletionResponse] = await Promise.all([
       fetch(`${baseUrl}/moderation/videos`),
       fetch(`${baseUrl}/moderation/videos/${cursorId}/moderation`, {
         method: 'POST',
@@ -532,15 +628,27 @@ describe('admin routes', () => {
         },
         body: JSON.stringify({ decision: 'approved' }),
       }),
+      fetch(`${baseUrl}/moderation/videos/${cursorId}/deletion`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ reason: 'Administrative reason.' }),
+      }),
     ]);
 
     expect(listResponse.status).toBe(401);
     expect(decisionResponse.status).toBe(401);
+    expect(deletionResponse.status).toBe(401);
     expect(await listResponse.json()).toEqual({
       error: 'Unauthorized',
       message: AUTH_SESSION_REQUIRED_MESSAGE,
     });
     expect(await decisionResponse.json()).toEqual({
+      error: 'Unauthorized',
+      message: AUTH_SESSION_REQUIRED_MESSAGE,
+    });
+    expect(await deletionResponse.json()).toEqual({
       error: 'Unauthorized',
       message: AUTH_SESSION_REQUIRED_MESSAGE,
     });

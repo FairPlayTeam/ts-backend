@@ -48,6 +48,7 @@ import { PUBLIC_PROFILE_VISIBILITY_SCOPE } from '../profiles/publicProfileVisibi
 import {
   ActiveVideoUploadSessionExistsError,
   InvalidVideoUploadSessionStateError,
+  VideoDeletionTemporarilyUnavailableError,
   VideoNotFoundError,
   VideoRatingTemporarilyUnavailableError,
   VideoSelfRatingForbiddenError,
@@ -64,6 +65,7 @@ import type {
   CreateVideoCommentReplyInput,
   CreateVideoInput,
   CreateVideoResult,
+  DeleteVideoInput,
   DeleteVideoCommentInput,
   GetMyVideoRatingInput,
   GetPublicVideoDetailInput,
@@ -136,6 +138,7 @@ import {
   listVideoComments,
   unlikeVideoComment,
 } from './videoComments.js';
+import { hardDeleteVideo } from './videoDeletion.js';
 
 const ACTIVE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
   'initializing',
@@ -171,7 +174,7 @@ const MAX_MY_VIDEOS_LIMIT = 100;
 const DEFAULT_PUBLIC_VIDEO_LIST_LIMIT = 20;
 const MAX_PUBLIC_VIDEO_LIST_LIMIT = 100;
 const MULTIPART_MAINTENANCE_BATCH_SIZE = 100;
-const REJECTED_VIDEO_MAINTENANCE_BATCH_SIZE = 100;
+const VIDEO_PENDING_PURGE_MAINTENANCE_BATCH_SIZE = 100;
 const PUBLIC_ID_MAX_CREATE_ATTEMPTS = 5;
 
 const videoSelect = {
@@ -225,6 +228,7 @@ const publicVideoDetailSelect = {
   allowComments: true,
   processingStatus: true,
   moderationStatus: true,
+  deletionRequestedAt: true,
   ratingSum: true,
   ratingCount: true,
   thumbnailObjectKey: true,
@@ -702,163 +706,148 @@ const toVideoRatingResult = (
   userRating,
 });
 
-const deleteExpiredRejectedVideo = async (
+const deleteExpiredVideoPendingPurge = async (
   deps: VideosDependencies,
   videoId: string,
   observedAt: Date,
-  rejectedBefore: Date,
+  purgeBefore: Date,
 ): Promise<{ deleted: boolean; targetsScheduled: number }> =>
-  runSerializableTransaction(deps.prisma, async (tx) => {
-    await tx.$queryRaw(
-      Prisma.sql`
-        SELECT "id"
-        FROM "video_transcode_jobs"
-        WHERE "video_id" = CAST(${videoId} AS UUID)
-        FOR UPDATE
-      `,
-    );
-    const [lockedVideo] = await tx.$queryRaw<
-      Array<{ id: string; moderationStatus: string; rejectedAt: Date | null }>
-    >(
-      Prisma.sql`
-        SELECT
-          "id"::text AS "id",
-          "moderation_status" AS "moderationStatus",
-          "rejected_at" AS "rejectedAt"
-        FROM "videos"
-        WHERE "id" = CAST(${videoId} AS UUID)
-        FOR UPDATE
-      `,
-    );
-
-    if (
-      !lockedVideo ||
-      lockedVideo.moderationStatus !== 'rejected' ||
-      !lockedVideo.rejectedAt ||
-      lockedVideo.rejectedAt >= rejectedBefore
-    ) {
-      return { deleted: false, targetsScheduled: 0 };
-    }
-
-    const video = await tx.video.findUnique({
-      where: { id: videoId },
-      select: {
-        sourceUploadSession: {
-          select: {
-            externalResourceTargetId: true,
-            sourceThumbnail: {
-              select: {
-                externalResourceTargetId: true,
-              },
-            },
-          },
-        },
-        artifactGenerations: {
-          where: {
-            state: {
-              in: ['writing', 'active', 'retiring'],
-            },
-          },
-          select: {
-            id: true,
-          },
-        },
-      },
-    });
-
-    if (!video) {
-      return { deleted: false, targetsScheduled: 0 };
-    }
-
-    const generationIds = video.artifactGenerations.map(({ id }) => id);
-    const artifactTargets =
-      generationIds.length === 0
-        ? []
-        : await tx.externalResourceTarget.findMany({
-            where: {
-              videoId,
-              generation: {
-                in: generationIds,
-              },
-              role: {
-                in: ['hls_artifacts', 'thumbnail_prefix'],
-              },
-              state: {
-                not: 'confirmed_absent',
-              },
-            },
-            select: {
-              id: true,
-            },
-          });
-    const targetIds = [
-      ...(video.sourceUploadSession
-        ? [
-            video.sourceUploadSession.externalResourceTargetId,
-            ...(video.sourceUploadSession.sourceThumbnail
-              ? [video.sourceUploadSession.sourceThumbnail.externalResourceTargetId]
-              : []),
-          ]
-        : []),
-      ...artifactTargets.map(({ id }) => id),
-    ];
-    let targetsScheduled = 0;
-
-    for (const targetId of new Set(targetIds)) {
-      if (await requestExternalResourceAbsence(tx, targetId, observedAt)) {
-        targetsScheduled += 1;
-      }
-    }
-
-    await tx.video.delete({
-      where: { id: videoId },
-    });
-
-    return { deleted: true, targetsScheduled };
+  hardDeleteVideo(deps, {
+    videoId,
+    requestedAt: observedAt,
+    isEligible: (video) =>
+      (video.moderationStatus === 'rejected' &&
+        video.rejectedAt !== null &&
+        video.rejectedAt < purgeBefore) ||
+      (video.deletionRequestedAt !== null && video.deletionRequestedAt < purgeBefore),
   });
 
-const deleteExpiredRejectedVideos = async (
+const deleteExpiredVideosPendingPurge = async (
   deps: VideosDependencies,
   {
     observedAt,
-    rejectedBefore,
+    purgeBefore,
   }: {
     observedAt: Date;
-    rejectedBefore: Date;
+    purgeBefore: Date;
   },
 ): Promise<{
-  rejectedVideosDeleted: number;
-  rejectedVideoTargetsScheduled: number;
+  videosPendingPurgeDeleted: number;
+  videoPendingPurgeTargetsScheduled: number;
 }> => {
-  const candidates = await deps.prisma.video.findMany({
-    where: {
-      moderationStatus: 'rejected',
-      rejectedAt: {
-        lt: rejectedBefore,
+  const [rejectedCandidates, deletionCandidates] = await Promise.all([
+    deps.prisma.video.findMany({
+      where: {
+        moderationStatus: 'rejected',
+        rejectedAt: {
+          lt: purgeBefore,
+        },
       },
-    },
-    select: {
-      id: true,
-    },
-    orderBy: [{ rejectedAt: 'asc' }, { id: 'asc' }],
-    take: REJECTED_VIDEO_MAINTENANCE_BATCH_SIZE,
-  });
-  let rejectedVideosDeleted = 0;
-  let rejectedVideoTargetsScheduled = 0;
+      select: {
+        id: true,
+        rejectedAt: true,
+      },
+      orderBy: [{ rejectedAt: 'asc' }, { id: 'asc' }],
+      take: VIDEO_PENDING_PURGE_MAINTENANCE_BATCH_SIZE,
+    }),
+    deps.prisma.video.findMany({
+      where: {
+        deletionRequestedAt: {
+          lt: purgeBefore,
+        },
+      },
+      select: {
+        id: true,
+        deletionRequestedAt: true,
+      },
+      orderBy: [{ deletionRequestedAt: 'asc' }, { id: 'asc' }],
+      take: VIDEO_PENDING_PURGE_MAINTENANCE_BATCH_SIZE,
+    }),
+  ]);
+  const effectiveDeadlineByVideoId = new Map<string, Date>();
+
+  for (const candidate of rejectedCandidates) {
+    if (candidate.rejectedAt) {
+      effectiveDeadlineByVideoId.set(candidate.id, candidate.rejectedAt);
+    }
+  }
+
+  for (const candidate of deletionCandidates) {
+    if (!candidate.deletionRequestedAt) {
+      continue;
+    }
+
+    const currentDeadline = effectiveDeadlineByVideoId.get(candidate.id);
+
+    if (!currentDeadline || candidate.deletionRequestedAt < currentDeadline) {
+      effectiveDeadlineByVideoId.set(candidate.id, candidate.deletionRequestedAt);
+    }
+  }
+
+  const candidates = [...effectiveDeadlineByVideoId.entries()]
+    .map(([id, effectiveDeadline]) => ({ id, effectiveDeadline }))
+    .sort((left, right) => {
+      const deadlineComparison =
+        left.effectiveDeadline.getTime() - right.effectiveDeadline.getTime();
+
+      if (deadlineComparison !== 0) {
+        return deadlineComparison;
+      }
+
+      return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+    })
+    .slice(0, VIDEO_PENDING_PURGE_MAINTENANCE_BATCH_SIZE);
+  let videosPendingPurgeDeleted = 0;
+  let videoPendingPurgeTargetsScheduled = 0;
 
   for (const { id } of candidates) {
-    const result = await deleteExpiredRejectedVideo(deps, id, observedAt, rejectedBefore);
+    const result = await deleteExpiredVideoPendingPurge(deps, id, observedAt, purgeBefore);
 
     if (result.deleted) {
-      rejectedVideosDeleted += 1;
-      rejectedVideoTargetsScheduled += result.targetsScheduled;
+      videosPendingPurgeDeleted += 1;
+      videoPendingPurgeTargetsScheduled += result.targetsScheduled;
     }
   }
 
   return {
-    rejectedVideosDeleted,
-    rejectedVideoTargetsScheduled,
+    videosPendingPurgeDeleted,
+    videoPendingPurgeTargetsScheduled,
   };
+};
+
+const deleteOwnedVideo = async (
+  deps: VideosDependencies,
+  { publicId, userId }: DeleteVideoInput,
+): Promise<void> => {
+  const candidate = await deps.prisma.video.findFirst({
+    where: {
+      publicId,
+      ownerId: userId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!candidate) {
+    throw new VideoNotFoundError();
+  }
+
+  const result = await hardDeleteVideo(deps, {
+    videoId: candidate.id,
+    requestedAt: deps.clock.now(),
+    isEligible: (video) => video.publicId === publicId && video.ownerId === userId,
+  }).catch((err: unknown) => {
+    if (isSerializableTransactionConflictError(err)) {
+      throw new VideoDeletionTemporarilyUnavailableError({ cause: err });
+    }
+
+    throw err;
+  });
+
+  if (!result.deleted) {
+    throw new VideoNotFoundError();
+  }
 };
 
 const normalizeOptionalDescription = (description: string | null | undefined): string | null => {
@@ -1823,6 +1812,10 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     }
 
     throw new Error('Video public id generation retry loop exhausted unexpectedly');
+  },
+
+  async deleteVideo(input: DeleteVideoInput): Promise<void> {
+    return deleteOwnedVideo(deps, input);
   },
 
   async listMyVideos({ cursor, limit, userId }: ListMyVideosInput): Promise<ListMyVideosResult> {
@@ -2888,7 +2881,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     });
   },
 
-  async deleteExpiredRejectedVideos(input) {
-    return deleteExpiredRejectedVideos(deps, input);
+  async deleteExpiredVideosPendingPurge(input) {
+    return deleteExpiredVideosPendingPurge(deps, input);
   },
 });

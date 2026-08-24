@@ -221,8 +221,9 @@ ready.
 
 A single non-overlapping maintenance job extends the existing auth cleanup. It runs these isolated
 steps in order: expired sessions, expired auth tokens, user-media targets, expired multipart
-sessions, abandoned artifact generations, and video targets. A failed step is reported in the
-aggregate summary without preventing later steps from running.
+sessions, abandoned artifact generations, video targets, and videos whose delayed purge deadline
+has elapsed. A failed step is reported in the aggregate summary without preventing later steps from
+running.
 
 When Redis is configured, a token-valued lock excludes other instances. The owner renews the TTL
 with a compare-and-expire script, releases it with compare-and-delete, and stops before the next
@@ -305,6 +306,48 @@ before the SMTP call permanently loses that email, with no automatic retry; a la
 does not send another message because it is not a new rejection episode. A transactional outbox
 would close these windows, but its coordination and operational cost are disproportionate for this
 secondary notification effect.
+
+Administrative video-deletion emails have the same post-commit delivery boundary. In the concrete
+race where moderation commits a deletion request and begins SMTP delivery, then the owner
+immediately hard-deletes the video, the owner still receives the one legitimate administrative
+notice even though the row no longer exists when the message arrives. The inverse lock order is
+stronger: if owner deletion commits first, moderation returns 404 and sends no email. The first
+window is expected to be rare because it requires the owner request to overlap the short
+post-commit SMTP interval, and its impact is a stale but truthful notice about an action that did
+occur. Making that email cancellable would require a transactional outbox plus cancellation and
+delivery fencing; that coordination is disproportionate for this secondary effect and is therefore
+not implemented.
+
+## Video deletion lifecycle
+
+`DELETE /videos/:publicId` is owner-only even when the authenticated caller has a moderation role.
+It first avoids locking foreign identifiers, then rechecks ownership under the common hard-delete
+transaction. That transaction locks transcode jobs before the video, selects every durable video
+resource target directly by `videoId`, moves each non-absent target toward `absent`, and deletes the
+video. PostgreSQL cascades comments, comment likes, ratings, views, upload sessions, transcode jobs,
+and artifact generations. Selecting targets by their retained scalar `videoId` is essential: an
+initializing or uploading source is not yet attached through `Video.sourceUploadSession`.
+
+`POST /moderation/videos/:videoId/deletion` is restricted to validated moderator and administrator
+sessions. Its first locked request records `deletionRequestedAt`, `deletionReason`, and the
+category-only `deletionOrigin`, changes visibility to `unlisted`, and sends one dedicated
+post-commit notice. Repetitions preserve the first request and send no second email. Rejection
+fields remain independent, and neither deletion reason nor origin is present in a public or owner
+video DTO. `deletionOrigin` is retained only while the video row awaits purge; it is operational
+metadata for that retention window, not a permanent audit log. A later approval cannot restore
+public visibility while deletion is pending.
+
+A ready video pending administrative deletion remains readable by direct link during retention,
+matching rejected-video behavior, but disappears from feeds, search, and public profile catalogs.
+The shared engagement predicate additionally requires `deletionRequestedAt IS NULL`, so new or
+updated ratings, comments, replies, and comment likes are closed immediately and `commentsOpen` is
+false.
+
+The single maintenance purge selects both expired rejection episodes and expired administrative
+deletion requests. Eligibility is rechecked while the video row is locked and uses an OR between
+the two deadlines, so when both exist the older deadline wins and a later administrative request
+cannot postpone rejection cleanup. Every eligible row then passes through the same hard-delete
+protocol described above; there is no parallel cleanup implementation.
 
 Profile-media uploads reserve a writing target before PUT. Persisting the asset and confirming its
 target happen in one serializable transaction; replacement schedules the previous exact target in

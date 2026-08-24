@@ -532,13 +532,13 @@ describe('video views integration', () => {
     await harness.arrived;
     try {
       await expect(
-        runtime.videosService.deleteExpiredRejectedVideos({
+        runtime.videosService.deleteExpiredVideosPendingPurge({
           observedAt,
-          rejectedBefore: new Date('2026-07-28T12:00:00.000Z'),
+          purgeBefore: new Date('2026-07-28T12:00:00.000Z'),
         }),
       ).resolves.toEqual({
-        rejectedVideosDeleted: 1,
-        rejectedVideoTargetsScheduled: expect.any(Number),
+        videosPendingPurgeDeleted: 1,
+        videoPendingPurgeTargetsScheduled: expect.any(Number),
       });
       await expect(
         runtime.prisma.video.findUnique({ where: { id: video.id } }),

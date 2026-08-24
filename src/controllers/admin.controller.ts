@@ -11,6 +11,7 @@ export const createAdminController = (deps: AdminControllerDependencies) => {
     listAccounts: accounts.listAccounts,
     listVideos: videos.listVideos,
     moderateVideo: videos.moderateVideo,
+    requestVideoDeletion: videos.requestVideoDeletion,
     unbanAccount: accounts.unbanAccount,
     updateAccountRole: accounts.updateAccountRole,
   };

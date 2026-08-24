@@ -253,6 +253,51 @@ describe('mailer service', () => {
     expect(JSON.stringify(logs)).not.toContain('Launch recap');
   });
 
+  test('sends a distinct administrative video deletion notice through the shared notice builder', async () => {
+    const { logger, logs } = createOperationLogCollector();
+    const sentEmails: unknown[] = [];
+    const service = createMailerService({
+      config: mailerConfig,
+      logger,
+      createTransporter: () => ({
+        sendMail: async (email: unknown) => {
+          sentEmails.push(email);
+        },
+      }),
+    });
+
+    await service.sendVideoDeletionScheduledEmail(
+      'creator@example.com',
+      'Previously public <video>',
+      'Administrative safety reason <script>alert("x")</script>',
+    );
+
+    const email = sentEmails.at(0) as SentMail | undefined;
+
+    expect(email).toBeDefined();
+    expect(email?.to).toBe('creator@example.com');
+    expect(email?.subject).toBe('Your FairPlay video is scheduled for deletion');
+    expect(email?.text).toContain('removed from public discovery');
+    expect(email?.text).toContain('available by direct link');
+    expect(email?.text).toContain('after the 7-day retention period has elapsed');
+    expect(email?.text).not.toContain('no later than');
+    expect(email?.text).toContain('Administrative safety reason');
+    expect(email?.html).toContain('Previously public &lt;video&gt;');
+    expect(email?.html).toContain(
+      'Administrative safety reason &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;',
+    );
+    expect(logs[0]).toMatchObject({
+      level: 'info',
+      message: 'SMTP email delivery completed',
+      data: {
+        subject: 'Your FairPlay video is scheduled for deletion',
+        template: 'video-deletion',
+      },
+    });
+    expect(JSON.stringify(logs)).not.toContain('Administrative safety reason');
+    expect(JSON.stringify(logs)).not.toContain('Previously public');
+  });
+
   test('fails clearly when mailer configuration is missing', async () => {
     const service = createMailerService({ config: null });
 

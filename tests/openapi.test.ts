@@ -172,6 +172,7 @@ describe('OpenAPI generation', () => {
       '/health/live',
       '/health/ready',
       '/moderation/videos',
+      '/moderation/videos/{videoId}/deletion',
       '/moderation/videos/{videoId}/moderation',
       '/profiles/me/following',
       '/profiles/{username}',

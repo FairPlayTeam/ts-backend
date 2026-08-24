@@ -6,19 +6,22 @@ import type {
 } from './types/ports.types.js';
 
 type VideoEngagementState = {
+  deletionRequestedAt: Date | null;
   moderationStatus: VideoModerationStatus;
   processingStatus: VideoProcessingStatus;
   visibility: VideoVisibility;
 };
 
 export const isVideoWritableEngagement = ({
+  deletionRequestedAt,
   moderationStatus,
   processingStatus,
   visibility,
 }: VideoEngagementState): boolean =>
   processingStatus === 'ready' &&
   (visibility === 'public' || visibility === 'unlisted') &&
-  moderationStatus !== 'rejected';
+  moderationStatus !== 'rejected' &&
+  deletionRequestedAt === null;
 
 export const readableVideoWhere = {
   processingStatus: 'ready',
@@ -40,6 +43,7 @@ export const READABLE_VIDEO_SCOPE_SQL = Prisma.sql`
 
 export const writableVideoEngagementWhere = {
   ...readableVideoWhere,
+  deletionRequestedAt: null,
   moderationStatus: {
     not: 'rejected',
   },
@@ -48,4 +52,5 @@ export const writableVideoEngagementWhere = {
 export const WRITABLE_VIDEO_ENGAGEMENT_SCOPE_SQL = Prisma.sql`
   ${READABLE_VIDEO_SCOPE_SQL}
   AND v."moderation_status" <> 'rejected'
+  AND v."deletion_requested_at" IS NULL
 `;

@@ -18,3 +18,9 @@ export const sendVideoRejectedEmail = (
   title: string,
   reason: string,
 ): Promise<void> => mailerService.sendVideoRejectedEmail(email, title, reason);
+
+export const sendVideoDeletionScheduledEmail = (
+  email: string,
+  title: string,
+  reason: string,
+): Promise<void> => mailerService.sendVideoDeletionScheduledEmail(email, title, reason);

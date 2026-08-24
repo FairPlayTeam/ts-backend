@@ -64,8 +64,9 @@ test('video comment schemas normalize bounded plain text and validate reply targ
   ).toBe(false);
 });
 
-test('video engagement writes extend the centralized readability scope with rejection only', () => {
+test('video engagement writes exclude rejected and administratively pending-deletion videos', () => {
   expect(writableVideoEngagementWhere).toEqual({
+    deletionRequestedAt: null,
     ...readableVideoWhere,
     moderationStatus: {
       not: 'rejected',

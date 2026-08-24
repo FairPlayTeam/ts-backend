@@ -64,6 +64,7 @@ type ListMyVideosRequest = Request<unknown, unknown, unknown, ListMyVideosQuery>
 type ListPublicVideosRequest = Request<unknown, unknown, unknown, ListPublicVideosQuery>;
 type SearchPublicVideosRequest = Request<unknown, unknown, unknown, SearchPublicVideosQuery>;
 type PublicVideoDetailRequest = Request<PublicVideoIdParams>;
+type DeleteVideoRequest = Request<PublicVideoIdParams>;
 type RateVideoRequest = Request<VideoRatingParams, unknown, RateVideoBody>;
 type CreateVideoCommentRequest = Request<PublicVideoIdParams, unknown, CreateVideoCommentBody>;
 type CreateVideoCommentReplyRequest = Request<
@@ -106,6 +107,21 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
       });
 
       return sendNoStoreJson(res, 201, toCreateVideoResponse(result));
+    } catch (err) {
+      next(toVideosHttpError(err));
+    }
+  };
+
+  const deleteVideo: RequestHandler = async (req, res, next) => {
+    try {
+      const authenticatedReq = req as AuthenticatedRequest;
+      const deleteReq = req as DeleteVideoRequest;
+      await videosService.deleteVideo({
+        publicId: deleteReq.params.publicId,
+        userId: authenticatedReq.user.id,
+      });
+
+      return setNoStore(res).status(204).send();
     } catch (err) {
       next(toVideosHttpError(err));
     }
@@ -567,6 +583,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     createVideo,
     createVideoComment,
     createVideoCommentReply,
+    deleteVideo,
     deleteVideoComment,
     likeVideoComment,
     getHlsMaster,

@@ -240,15 +240,17 @@ the authenticated account-data export and are removed, with their aggregate cont
 account is deleted.
 
 Rating reads follow the same public/unlisted + ready policy as playback, including for `rejected`
-videos. `PUT /videos/:publicId/rating` remains stricter and refuses new or updated votes after
-rejection.
+videos and videos awaiting administrative deletion. `PUT /videos/:publicId/rating` remains
+stricter and refuses new or updated votes after rejection or once administrative deletion is
+requested.
 
 Readable videos expose public paginated comment threads through
 `GET /videos/:publicId/comments` and
 `GET /videos/:publicId/comments/:rootCommentId/replies`. Root threads are newest-first, replies
 oldest-first, and both use a stable `(createdAt, id)` cursor. Creating a root or reply requires an
 authenticated user, enabled comments, and the stricter engagement scope that excludes rejected
-videos. Replies remain one level deep in storage while `replyingToCommentId` identifies the
+videos and videos awaiting administrative deletion. Replies remain one level deep in storage while
+`replyingToCommentId` identifies the
 specific participant being addressed. Authors can soft-delete their own comments. The current video
 owner and moderators or administrators can also soft-delete comments without depending on video
 readability or engagement state. A deleted root is returned as a content-free placeholder only while
@@ -281,8 +283,25 @@ only; it does not cover redirected reads or presigned multipart uploads to MinIO
 The existing periodic auth cleanup is now the single general maintenance job. It sequentially and
 independently cleans expired sessions and tokens, reconciles user media, expires multipart
 sessions, schedules abandoned `writing` generations through the durable reconciliation engine,
-and reconciles video targets. A token-safe, renewable Redis lock excludes concurrent instances;
-loss of ownership stops the run before its next step.
+reconciles video targets, and purges videos whose rejection or administrative-deletion retention
+deadline has elapsed. If both deadlines exist, the earlier one wins. A token-safe, renewable Redis
+lock excludes concurrent instances; loss of ownership stops the run before its next step.
+
+## Video deletion
+
+`DELETE /videos/:publicId` immediately deletes a video only for its owner, regardless of processing
+or moderation state. Moderator and administrator roles do not override ownership on this route.
+The transaction schedules every durable source, source-thumbnail, active or retiring HLS, and
+thumbnail target for absence before deleting the row; database cascades remove comments, likes,
+ratings, views, upload sessions, jobs, and generations. No email is sent.
+
+`POST /moderation/videos/:videoId/deletion` is a separate moderator/administrator action with a
+required reason. It keeps rejection data distinct, records a category-only deletion origin, makes
+the video unlisted, and sends a dedicated notification once. A ready video remains readable by
+direct link during the seven-day retention window but is no longer discoverable or writable for
+ratings/comments. Maintenance then invokes the same hard-delete protocol used by owner deletion
+and rejected-video purge. Deletion audit fields are returned only by moderation endpoints and are
+not exposed by public or owner video DTOs.
 
 Maintenance and transcoding start only after the HTTP server is listening. Graceful shutdown stops
 maintenance, aborts and requeues owned transcodes while draining local slots, closes HTTP, and then

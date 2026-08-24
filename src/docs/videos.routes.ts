@@ -51,6 +51,15 @@ const videoListResponses = {
   500: jsonResponse('Internal server error', ApiErrorSchema),
 };
 
+const deleteVideoResponses = {
+  400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
+  401: jsonResponse('Authentication required', ApiErrorSchema),
+  404: jsonResponse('Video not found or not owned by the current user', ApiErrorSchema),
+  429: jsonResponse('Too many requests', ApiErrorSchema),
+  500: jsonResponse('Internal server error', ApiErrorSchema),
+  503: jsonResponse('Video deletion temporarily unavailable', ApiErrorSchema),
+};
+
 const publicVideoSearchResponses = {
   400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
   429: jsonResponse('Too many requests', ApiErrorSchema),
@@ -193,6 +202,25 @@ export const routeDocs = [
     responses: {
       200: jsonResponse('Playable public video detail', publicVideoDetailResponseSchema),
       ...publicVideoDetailResponses,
+    },
+  },
+  {
+    method: 'delete',
+    path: '/videos/{publicId}',
+    operationId: 'deleteOwnedVideo',
+    summary: 'Permanently delete a video owned by the current user',
+    description:
+      'Deletes the database video immediately and durably schedules every associated external resource for absence. Moderator and administrator roles grant no ownership override on this route.',
+    tags: ['Videos'],
+    security: [{ bearerAuth: [] }],
+    request: {
+      params: publicVideoIdParamsSchema,
+    },
+    responses: {
+      204: {
+        description: 'Video deleted and external cleanup scheduled',
+      },
+      ...deleteVideoResponses,
     },
   },
   {
