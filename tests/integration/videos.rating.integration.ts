@@ -77,7 +77,6 @@ const createRatableVideo = async (
     description: null,
     tags: [],
     license: 'all_rights_reserved',
-    visibility: 'unlisted',
     allowComments: true,
   });
 

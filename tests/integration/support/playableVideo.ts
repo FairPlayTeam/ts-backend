@@ -31,7 +31,6 @@ export const createPlayableVideo = async (
     description: '00:00 Intro 00:05 The cool thing 00:17 End.',
     tags: ['zoo', 'elephants'],
     license: 'cc_by',
-    visibility,
     allowComments: true,
   });
   const source = await uploadVideoSource(runtime.videosService, {

@@ -125,7 +125,6 @@ export const createVideoBodySchema = z
     license: videoLicenseSchema
       .default('all_rights_reserved')
       .openapi({ example: 'all_rights_reserved' }),
-    visibility: videoVisibilitySchema.default('unlisted').openapi({ example: 'public' }),
     allowComments: z.boolean().default(true).openapi({
       description:
         'Whether comments are allowed on this video. Defaults to true and is fixed at creation in this API version.',

@@ -71,7 +71,6 @@ const runOwnerModerationDeletionInterleaving = async (
     description: null,
     tags: [],
     license: 'all_rights_reserved',
-    visibility: 'unlisted',
     allowComments: true,
   });
   const app = await createIntegrationApp(runtime);
@@ -399,7 +398,6 @@ describe('video deletion integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     await runtime.prisma.video.update({
@@ -576,7 +574,6 @@ describe('video deletion integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const upload = await runtime.videosService.initMultipartUpload({
@@ -644,7 +641,6 @@ describe('video deletion integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const pendingUpload = await runtime.videosService.initMultipartUpload({
@@ -658,7 +654,6 @@ describe('video deletion integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const rejectedUpload = await runtime.videosService.initMultipartUpload({
@@ -922,7 +917,6 @@ describe('video deletion integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const upload = await runtime.videosService.initMultipartUpload({

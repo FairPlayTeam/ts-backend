@@ -141,7 +141,6 @@ describe('video views integration', () => {
       title: 'Direct owner view guard',
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'public',
       allowComments: true,
     });
 
@@ -406,7 +405,6 @@ describe('video views integration', () => {
       title: 'View cleanup one',
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'public',
       allowComments: true,
     });
     const secondVideo = await runtime.videosService.createVideo({
@@ -414,7 +412,6 @@ describe('video views integration', () => {
       title: 'View cleanup two',
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'public',
       allowComments: true,
     });
     await runtime.prisma.videoView.createMany({
@@ -610,7 +607,6 @@ describe('video views integration', () => {
       title: 'View count constraint',
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'public',
       allowComments: true,
     });
 

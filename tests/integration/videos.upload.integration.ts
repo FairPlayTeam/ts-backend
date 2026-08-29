@@ -52,7 +52,6 @@ describe('videos upload integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const firstBody = Buffer.from('first immutable source');
@@ -233,7 +232,6 @@ describe('videos upload integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     let observedReservation = false;
@@ -306,7 +304,6 @@ describe('videos upload integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const reservations = await Promise.allSettled([
@@ -389,7 +386,6 @@ describe('videos upload integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const body = Buffer.from('shorter than declared');
@@ -477,7 +473,6 @@ describe('videos upload integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const body = Buffer.from('actual source is larger than its declared reservation');
@@ -618,7 +613,6 @@ describe('videos upload integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const uploadSessionId = randomUUID();

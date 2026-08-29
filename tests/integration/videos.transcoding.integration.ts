@@ -59,7 +59,6 @@ describe('videos transcoding integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const source = await uploadVideoSource(runtime.videosService, {
@@ -102,6 +101,21 @@ describe('videos transcoding integration', () => {
     } finally {
       await runner.stop();
     }
+
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: created.video.id },
+        select: {
+          moderationStatus: true,
+          processingStatus: true,
+          visibility: true,
+        },
+      }),
+    ).resolves.toEqual({
+      moderationStatus: 'pending',
+      processingStatus: 'ready',
+      visibility: 'unlisted',
+    });
 
     const activeGeneration = await runtime.prisma.videoArtifactGeneration.findFirstOrThrow({
       where: {
@@ -167,7 +181,6 @@ describe('videos transcoding integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const source = await uploadVideoSource(runtime.videosService, {
@@ -259,7 +272,6 @@ describe('videos transcoding integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const source = await uploadVideoSource(runtime.videosService, {
@@ -569,7 +581,6 @@ describe('videos transcoding integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const source = await uploadVideoSource(runtime.videosService, {
@@ -741,7 +752,6 @@ describe('videos transcoding integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const source = await uploadVideoSource(runtime.videosService, {

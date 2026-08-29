@@ -58,7 +58,6 @@ describe('maintenance and reconciliation integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const objectKey = `${owner.userId}/${created.video.id}/lease-test/object.bin`;
@@ -235,7 +234,6 @@ describe('maintenance and reconciliation integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const objectKey = `${owner.userId}/${created.video.id}/expired-lease.bin`;
@@ -507,7 +505,6 @@ describe('maintenance and reconciliation integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const expiringUpload = await runtime.videosService.initMultipartUpload({
@@ -527,7 +524,6 @@ describe('maintenance and reconciliation integration', () => {
         description: null,
         tags: [],
         license: 'all_rights_reserved',
-        visibility: 'unlisted',
         allowComments: true,
       });
 
@@ -817,7 +813,6 @@ describe('maintenance and reconciliation integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const source = await uploadVideoSource(runtime.videosService, {

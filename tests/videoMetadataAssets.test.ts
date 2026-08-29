@@ -64,7 +64,6 @@ describe('owner video asset contracts', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'public',
       allowComments: true,
     });
     const listed = await service.listMyVideos({ userId: rawVideo.ownerId });

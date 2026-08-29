@@ -149,7 +149,6 @@ describe('public video detail integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'public',
       allowComments: true,
     });
     await runtime.prisma.video.update({
@@ -629,7 +628,6 @@ describe('public video detail integration', () => {
         .set('Authorization', `Bearer ${owner.sessionKey}`)
         .send({
           title: testCase.title,
-          visibility: 'public',
           ...(testCase.requestValue === undefined ? {} : { allowComments: testCase.requestValue }),
         })
         .expect(201);

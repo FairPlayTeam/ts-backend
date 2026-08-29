@@ -152,7 +152,6 @@ describe('videos search integration', () => {
         description,
         tags,
         license: 'all_rights_reserved',
-        visibility: 'unlisted',
         allowComments: true,
       });
 
@@ -394,7 +393,6 @@ describe('videos search integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     await activeRuntime.prisma.video.update({
@@ -413,7 +411,6 @@ describe('videos search integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
 

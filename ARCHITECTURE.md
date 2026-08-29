@@ -241,6 +241,14 @@ Redis.
 
 ## Durable video source reservation
 
+`POST /videos` deliberately exposes no visibility input. Both the application write and the
+database default create video metadata as `unlisted`; the route returns that persisted state but
+does not let the uploader choose it. Visibility remains an internal moderation state: approval
+makes a video `public` unless administrative deletion is pending, while rejection and
+administrative deletion make it `unlisted`. Processing and moderation may complete in either order,
+and transcoding never changes visibility. Discoverability still requires `public` + `approved` +
+`ready`, whereas a `ready` unlisted video remains readable through its direct public id.
+
 The database is authoritative for ownership and intent, while S3 holds the bytes. Multipart source
 initialization therefore follows this order:
 

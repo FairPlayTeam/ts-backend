@@ -102,7 +102,6 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
         description: createReq.body.description ?? null,
         tags: createReq.body.tags,
         license: createReq.body.license,
-        visibility: createReq.body.visibility,
         allowComments: createReq.body.allowComments,
       });
 

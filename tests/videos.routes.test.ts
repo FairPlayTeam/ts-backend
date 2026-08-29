@@ -300,7 +300,6 @@ describe('videos routes multipart uploads', () => {
         description: '00:00 Intro 00:05 The cool thing 00:17 End.',
         tags: ['zoo', 'elephants', 'zoo'],
         license: 'all_rights_reserved',
-        visibility: 'public',
         allowComments: false,
       }),
     });
@@ -316,7 +315,6 @@ describe('videos routes multipart uploads', () => {
       description: '00:00 Intro 00:05 The cool thing 00:17 End.',
       tags: ['zoo', 'elephants'],
       license: 'all_rights_reserved',
-      visibility: 'public',
       allowComments: false,
     });
     expect(await response.json()).toMatchObject({
@@ -835,7 +833,7 @@ describe('videos routes multipart uploads', () => {
     });
   });
 
-  test('rejects private video visibility before calling the service', async () => {
+  test('rejects unknown video creation fields before calling the service', async () => {
     receivedCreateRequest = undefined;
 
     const response = await fetch(`${baseUrl}/videos`, {
@@ -846,7 +844,7 @@ describe('videos routes multipart uploads', () => {
       },
       body: JSON.stringify({
         title: 'Me at the zoo',
-        visibility: 'private',
+        unsupportedField: true,
       }),
     });
 

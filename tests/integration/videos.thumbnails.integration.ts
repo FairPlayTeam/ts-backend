@@ -98,7 +98,6 @@ describe('videos thumbnails integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const initialized = await runtime.videosService.initMultipartUpload({
@@ -281,7 +280,6 @@ describe('videos thumbnails integration', () => {
           description: null,
           tags: [],
           license: 'all_rights_reserved',
-          visibility: 'unlisted',
           allowComments: true,
         }),
       ),
@@ -396,7 +394,6 @@ describe('videos thumbnails integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const firstThumbnail = await createPng(320, 900);
@@ -484,7 +481,6 @@ describe('videos thumbnails integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const replacementQuotaService = createIntegrationVideosService(
@@ -654,7 +650,6 @@ describe('videos thumbnails integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const sourceA = await uploadVideoSource(runtime.videosService, {
@@ -758,7 +753,6 @@ describe('videos thumbnails integration', () => {
         description: null,
         tags: [],
         license: 'all_rights_reserved',
-        visibility: 'unlisted',
         allowComments: true,
       }),
       runtime.videosService.createVideo({
@@ -767,7 +761,6 @@ describe('videos thumbnails integration', () => {
         description: null,
         tags: [],
         license: 'all_rights_reserved',
-        visibility: 'unlisted',
         allowComments: true,
       }),
     ]);
@@ -824,7 +817,6 @@ describe('videos thumbnails integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const sourceBody = Buffer.from('source finalized against thumbnail');
@@ -1052,7 +1044,6 @@ describe('videos thumbnails integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const initialized = await runtime.videosService.initMultipartUpload({
@@ -1227,7 +1218,6 @@ describe('videos thumbnails integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const sourceBody = await createTranscodeTestVideo();
@@ -1421,7 +1411,6 @@ describe('videos thumbnails integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const source = await uploadVideoSource(runtime.videosService, {

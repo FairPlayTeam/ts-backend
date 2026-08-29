@@ -105,10 +105,14 @@ describe('videos moderation integration', () => {
         description: null,
         tags,
         license: 'all_rights_reserved',
-        visibility: 'unlisted',
         allowComments: true,
       });
     const approved = await createVideo('Approve unlisted');
+    expect(approved.video).toMatchObject({
+      moderationStatus: 'pending',
+      processingStatus: 'draft',
+      visibility: 'unlisted',
+    });
 
     await request(app)
       .get('/moderation/videos')
@@ -386,7 +390,6 @@ describe('videos moderation integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const app = await createIntegrationApp({
@@ -484,7 +487,6 @@ describe('videos moderation integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const mailerError = new MailerDeliveryError('SMTP unavailable');
@@ -575,7 +577,6 @@ describe('videos moderation integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const app = await createIntegrationApp({
@@ -697,7 +698,6 @@ describe('videos moderation integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const app = await createIntegrationApp({
@@ -837,7 +837,6 @@ describe('videos moderation integration', () => {
         description: null,
         tags: [],
         license: 'all_rights_reserved',
-        visibility: 'unlisted',
         allowComments: true,
       });
 
@@ -999,7 +998,6 @@ describe('videos moderation integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const source = await uploadVideoSource(runtime.videosService, {
@@ -1049,7 +1047,6 @@ describe('videos moderation integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     await runtime.prisma.video.update({

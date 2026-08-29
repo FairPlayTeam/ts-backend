@@ -57,7 +57,6 @@ const createProfileCatalogVideo = async (
     description: 'Internal catalog description that must not leak.',
     tags: ['internal-profile-catalog-tag'],
     license: 'all_rights_reserved',
-    visibility: 'unlisted',
     allowComments: true,
   });
 
@@ -854,7 +853,6 @@ describe('profiles integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const dueAt = new Date(Date.now() - 1_000);

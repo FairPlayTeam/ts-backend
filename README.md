@@ -162,9 +162,15 @@ and an immutable source key before S3 is contacted. Each session writes below
 previous object. Replaced or ambiguously written sources continue to count toward the per-user
 quota until object storage reconciliation confirms their absence.
 
-`POST /videos` accepts an optional `allowComments` boolean when creating the video metadata. It
-defaults to `true` and is fixed for that video at creation in this API version; there is no
-post-upload comment-settings route.
+`POST /videos` does not accept a visibility preference. Every video is created as `unlisted`, and
+only moderation controls later visibility: approval makes it `public` unless administrative
+deletion is already pending, while rejection and administrative deletion make it `unlisted`.
+Transcoding never changes visibility. A `ready` unlisted video remains accessible by direct link
+but is absent from public catalogs.
+
+The route accepts an optional `allowComments` boolean when creating the video metadata. It defaults
+to `true` and is fixed for that video at creation in this API version; there is no post-upload
+comment-settings route.
 
 Before completing a multipart source session, a client may upload or replace an optional thumbnail
 with `PUT /videos/:videoId/upload/multipart/:uploadSessionId/thumbnail` using the multipart field

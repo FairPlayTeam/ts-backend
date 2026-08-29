@@ -67,7 +67,6 @@ export type CreateVideoInput = {
   description?: string | null;
   tags: string[];
   license: VideoLicense;
-  visibility: VideoVisibility;
   allowComments: boolean;
 };
 

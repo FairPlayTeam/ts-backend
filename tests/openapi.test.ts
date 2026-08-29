@@ -775,6 +775,9 @@ describe('OpenAPI generation', () => {
       default: true,
       example: true,
     });
+    expect(document.components?.schemas?.CreateVideoRequest?.properties).not.toHaveProperty(
+      'visibility',
+    );
     expect(document.components?.schemas?.CreateVideoRequest?.required ?? []).not.toContain(
       'allowComments',
     );

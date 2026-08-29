@@ -98,7 +98,6 @@ describe('public video feed integration', () => {
         description: 'This must never appear in a feed card.',
         tags: ['internal-feed-tag'],
         license: 'cc_by',
-        visibility: 'unlisted',
         allowComments: true,
       });
 
@@ -357,7 +356,6 @@ describe('public video feed integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
 

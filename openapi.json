@@ -431,12 +431,6 @@
             "default": "all_rights_reserved",
             "example": "all_rights_reserved"
           },
-          "visibility": {
-            "type": "string",
-            "enum": ["public", "unlisted"],
-            "default": "unlisted",
-            "example": "public"
-          },
           "allowComments": {
             "type": "boolean",
             "default": true,
@@ -4797,7 +4791,7 @@
       "post": {
         "operationId": "createVideo",
         "summary": "Create video metadata",
-        "description": "Creates draft video metadata. The optional allowComments preference defaults to true and cannot be changed through this API version after creation.",
+        "description": "Creates draft video metadata as unlisted. Visibility is controlled by moderation and cannot be selected by the uploader. The optional allowComments preference defaults to true and cannot be changed through this API version after creation.",
         "tags": ["Videos"],
         "security": [{ "bearerAuth": [] }],
         "requestBody": {

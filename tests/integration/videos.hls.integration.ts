@@ -173,7 +173,6 @@ describe('videos HLS integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const firstSource = await uploadVideoSource(runtime.videosService, {
@@ -237,7 +236,6 @@ describe('videos HLS integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const secondSource = await uploadVideoSource(runtime.videosService, {
@@ -414,7 +412,6 @@ describe('videos HLS integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const source = await uploadVideoSource(runtime.videosService, {
@@ -592,7 +589,6 @@ describe('videos HLS integration', () => {
       description: null,
       tags: [],
       license: 'all_rights_reserved',
-      visibility: 'unlisted',
       allowComments: true,
     });
     const sourceA = await uploadVideoSource(runtime.videosService, {

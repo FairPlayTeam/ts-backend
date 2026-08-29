@@ -293,7 +293,7 @@ export const routeDocs = [
     operationId: 'createVideo',
     summary: 'Create video metadata',
     description:
-      'Creates draft video metadata. The optional allowComments preference defaults to true and cannot be changed through this API version after creation.',
+      'Creates draft video metadata as unlisted. Visibility is controlled by moderation and cannot be selected by the uploader. The optional allowComments preference defaults to true and cannot be changed through this API version after creation.',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
     request: jsonRequest(createVideoBodySchema),
