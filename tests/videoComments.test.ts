@@ -383,7 +383,7 @@ test('invalid or foreign reply targets are rejected before opening video transac
   expect(transactionCalls).toBe(0);
 });
 
-test('root comment pages calculate every replyCount with one grouped query', async () => {
+test('root pages use the descending cursor bound and calculate reply counts with one grouped query', async () => {
   const createdAt = new Date('2026-01-01T00:00:00.000Z');
   const cursor = {
     createdAt: new Date('2026-01-02T00:00:00.000Z'),

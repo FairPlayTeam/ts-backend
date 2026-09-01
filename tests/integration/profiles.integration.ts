@@ -11,6 +11,7 @@ import {
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { ObjectStorageUnavailableError } from '../../src/lib/objectStorage.js';
 import { OperationTimeoutError } from '../../src/lib/operationMetrics.js';
+import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
 import { UPLOAD_AVATAR_SUCCESS_MESSAGE } from '../../src/services/auth/auth.messages.js';
 import {
   PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE,
@@ -24,14 +25,108 @@ import type { VideosService } from '../../src/services/videos.types.js';
 import { createPng, createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import { OBJECT_STORAGE_BUCKET } from './support/infrastructure.js';
 import {
+  coordinateWhilePaused,
+  throwCollectedErrors,
+  waitForBarrier,
+} from './support/asyncBarriers.js';
+import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
+import {
+  createIntegrationAuthService,
   createIntegrationApp,
   createIntegrationVideosService,
+  createPostgresApplicationName,
+  createPrismaClient,
   expectIntegrationReadinessOk,
   resetState,
   startRuntime,
   stopRuntime,
+  testLogger,
   type TestRuntime,
 } from './support/runtime.js';
+
+const createMediaPersistenceBarrierPrisma = (
+  prisma: PrismaClient,
+  {
+    afterFirstRead,
+    afterFirstUpsert,
+  }: {
+    afterFirstRead: (result: unknown) => Promise<void>;
+    afterFirstUpsert?: () => Promise<void>;
+  },
+): PrismaClient => {
+  let readObserved = false;
+  let upsertObserved = false;
+
+  return new Proxy(prisma, {
+    get(target, property) {
+      if (property === '$transaction') {
+        return async <T>(
+          run: (tx: Prisma.TransactionClient) => Promise<T>,
+          options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
+        ): Promise<T> =>
+          target.$transaction(async (tx) => {
+            const observedTransaction = new Proxy(tx, {
+              get(transactionTarget, transactionProperty) {
+                if (transactionProperty === 'userMediaAsset') {
+                  return new Proxy(transactionTarget.userMediaAsset, {
+                    get(mediaTarget, mediaProperty) {
+                      if (mediaProperty === 'findUnique') {
+                        return async (
+                          args: Parameters<typeof mediaTarget.findUnique>[0],
+                        ): Promise<Awaited<ReturnType<typeof mediaTarget.findUnique>>> => {
+                          const result = await mediaTarget.findUnique(args);
+
+                          if (!readObserved) {
+                            readObserved = true;
+                            await afterFirstRead(result);
+                          }
+
+                          return result;
+                        };
+                      }
+
+                      if (mediaProperty === 'upsert') {
+                        return async (
+                          args: Parameters<typeof mediaTarget.upsert>[0],
+                        ): Promise<Awaited<ReturnType<typeof mediaTarget.upsert>>> => {
+                          const result = await mediaTarget.upsert(args);
+
+                          if (!upsertObserved && afterFirstUpsert) {
+                            upsertObserved = true;
+                            await afterFirstUpsert();
+                          }
+
+                          return result;
+                        };
+                      }
+
+                      const value = Reflect.get(mediaTarget, mediaProperty, mediaTarget) as unknown;
+
+                      return typeof value === 'function' ? value.bind(mediaTarget) : value;
+                    },
+                  });
+                }
+
+                const value = Reflect.get(
+                  transactionTarget,
+                  transactionProperty,
+                  transactionTarget,
+                ) as unknown;
+
+                return typeof value === 'function' ? value.bind(transactionTarget) : value;
+              },
+            });
+
+            return run(observedTransaction);
+          }, options);
+      }
+
+      const value = Reflect.get(target, property, target) as unknown;
+
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+};
 
 const createProfileCatalogVideo = async (
   runtime: TestRuntime,
@@ -479,6 +574,7 @@ describe('profiles integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     for (const stateChange of ['delete', 'ban', 'unverify'] as const) {
       const username = `race_${stateChange}`;
@@ -504,29 +600,32 @@ describe('profiles integration', () => {
         .get(`/profiles/${username}/videos`)
         .then((response) => response);
 
+      const [response] = await coordinateWhilePaused({
+        firstBarrierDescription: `the ${stateChange} profile-catalog transaction`,
+        firstOperation: pendingResponse,
+        firstPaused: transactionStarted.promise,
+        releaseFirst: releaseTransaction.resolve,
+        runWhilePaused: async () => {
+          if (stateChange === 'delete') {
+            await activeRuntime.prisma.user.delete({ where: { id: owner.userId } });
+          } else if (stateChange === 'ban') {
+            await activeRuntime.prisma.user.update({
+              where: { id: owner.userId },
+              data: {
+                isBanned: true,
+                bannedAt: new Date('2026-07-04T01:00:00.000Z'),
+              },
+            });
+          } else {
+            await activeRuntime.prisma.user.update({
+              where: { id: owner.userId },
+              data: { isVerified: false },
+            });
+          }
+        },
+        whilePausedDescription: `the committed profile ${stateChange} transition`,
+      });
       const isolationLevel = await transactionStarted.promise;
-      try {
-        if (stateChange === 'delete') {
-          await runtime.prisma.user.delete({ where: { id: owner.userId } });
-        } else if (stateChange === 'ban') {
-          await runtime.prisma.user.update({
-            where: { id: owner.userId },
-            data: {
-              isBanned: true,
-              bannedAt: new Date('2026-07-04T01:00:00.000Z'),
-            },
-          });
-        } else {
-          await runtime.prisma.user.update({
-            where: { id: owner.userId },
-            data: { isVerified: false },
-          });
-        }
-      } finally {
-        releaseTransaction.resolve();
-      }
-
-      const response = await pendingResponse;
 
       expect(isolationLevel).toBe(Prisma.TransactionIsolationLevel.RepeatableRead);
       expect(response.status).toBe(404);
@@ -729,23 +828,127 @@ describe('profiles integration', () => {
       createPng(800, 600),
       createPng(900, 700),
     ]);
+    const firstApplicationName = createPostgresApplicationName();
+    const secondApplicationName = createPostgresApplicationName();
+    const firstPrisma = createPrismaClient(runtime.databaseUrl, {
+      applicationName: firstApplicationName,
+    });
+    const secondPrisma = createPrismaClient(runtime.databaseUrl, {
+      applicationName: secondApplicationName,
+    });
+    const bothReadPreviousAsset = Promise.withResolvers<void>();
+    const releaseFirstRead = Promise.withResolvers<void>();
+    const releaseSecondRead = Promise.withResolvers<void>();
+    const firstUpserted = Promise.withResolvers<void>();
+    const releaseFirstCommit = Promise.withResolvers<void>();
+    let readCount = 0;
+    const reportRead = (release: Promise<void>) => async (result: unknown) => {
+      expect(result).toBeNull();
+      readCount += 1;
 
-    await Promise.all([
-      runtime.authService.uploadAvatar({
-        userId: owner.userId,
-        file: {
-          buffer: firstAvatar,
-          size: firstAvatar.length,
-        },
-      }),
-      runtime.authService.uploadAvatar({
-        userId: owner.userId,
-        file: {
-          buffer: secondAvatar,
-          size: secondAvatar.length,
-        },
-      }),
-    ]);
+      if (readCount === 2) {
+        bothReadPreviousAsset.resolve();
+      }
+
+      await release;
+    };
+    const firstObservedPrisma = createMediaPersistenceBarrierPrisma(firstPrisma, {
+      afterFirstRead: reportRead(releaseFirstRead.promise),
+      afterFirstUpsert: async () => {
+        firstUpserted.resolve();
+        await releaseFirstCommit.promise;
+      },
+    });
+    const secondObservedPrisma = createMediaPersistenceBarrierPrisma(secondPrisma, {
+      afterFirstRead: reportRead(releaseSecondRead.promise),
+    });
+    const firstExternalResources = createExternalResourceReconciler({
+      prisma: firstObservedPrisma,
+      objectStorage: runtime.objectStorage,
+      clock: { now: () => new Date() },
+      logger: testLogger,
+    });
+    const secondExternalResources = createExternalResourceReconciler({
+      prisma: secondObservedPrisma,
+      objectStorage: runtime.objectStorage,
+      clock: { now: () => new Date() },
+      logger: testLogger,
+    });
+    const firstService = createIntegrationAuthService(
+      firstObservedPrisma,
+      runtime.objectStorage,
+      runtime.delivered,
+      firstExternalResources,
+    );
+    const secondService = createIntegrationAuthService(
+      secondObservedPrisma,
+      runtime.objectStorage,
+      runtime.delivered,
+      secondExternalResources,
+    );
+    const firstUpload = firstService.uploadAvatar({
+      userId: owner.userId,
+      file: {
+        buffer: firstAvatar,
+        size: firstAvatar.length,
+      },
+    });
+    const secondUpload = secondService.uploadAvatar({
+      userId: owner.userId,
+      file: {
+        buffer: secondAvatar,
+        size: secondAvatar.length,
+      },
+    });
+    const coordinationErrors = new Set<unknown>();
+
+    try {
+      await waitForBarrier({
+        description: 'both user-media reads of the previous asset',
+        operations: [firstUpload, secondUpload],
+        signal: bothReadPreviousAsset.promise,
+      });
+      releaseFirstRead.resolve();
+      await waitForBarrier({
+        description: 'the first uncommitted user-media upsert',
+        operations: [firstUpload],
+        signal: firstUpserted.promise,
+      });
+      releaseSecondRead.resolve();
+      await waitForPostgresLockWaiters(runtime.prisma, {
+        applicationNames: [secondApplicationName],
+        expectedCount: 1,
+        queryFragments: ['user_media_assets'],
+      });
+      releaseFirstCommit.resolve();
+      await Promise.all([firstUpload, secondUpload]);
+    } catch (error) {
+      coordinationErrors.add(error);
+    } finally {
+      releaseFirstRead.resolve();
+      releaseSecondRead.resolve();
+      releaseFirstCommit.resolve();
+      const operationResults = await Promise.allSettled([firstUpload, secondUpload]);
+
+      for (const result of operationResults) {
+        if (result.status === 'rejected') {
+          coordinationErrors.add(result.reason);
+        }
+      }
+
+      const disconnectResults = await Promise.allSettled([
+        firstPrisma.$disconnect(),
+        secondPrisma.$disconnect(),
+      ]);
+
+      for (const result of disconnectResults) {
+        if (result.status === 'rejected') {
+          coordinationErrors.add(result.reason);
+        }
+      }
+    }
+
+    throwCollectedErrors([...coordinationErrors], 'Concurrent user-media coordination failed');
 
     const assets = await runtime.prisma.userMediaAsset.findMany({
       where: {

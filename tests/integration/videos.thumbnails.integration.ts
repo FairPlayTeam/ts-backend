@@ -23,10 +23,12 @@ import {
 } from './support/fixtures.js';
 import { waitForTranscodeJob } from './support/videoArtifacts.js';
 import { VIDEO_OBJECT_STORAGE_BUCKET } from './support/infrastructure.js';
+import { throwCollectedErrors, waitForBarrier } from './support/asyncBarriers.js';
 import {
   PROFILE_MEDIA_MAX_UPLOAD_BYTES,
   createIntegrationApp,
   createIntegrationVideosService,
+  createPostgresApplicationName,
   createPrismaClient,
   resetState,
   startRuntime,
@@ -34,33 +36,7 @@ import {
   testLogger,
   type TestRuntime,
 } from './support/runtime.js';
-
-const createOneShotBarrier = (participants: number, timeoutMs = 10_000): (() => Promise<void>) => {
-  const outcome = Promise.withResolvers<void>();
-  let arrivals = 0;
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-
-  return async () => {
-    if (arrivals >= participants) {
-      return;
-    }
-
-    arrivals += 1;
-    if (arrivals === 1) {
-      timeout = setTimeout(() => {
-        outcome.reject(new Error(`Barrier timed out waiting for ${participants} participants`));
-      }, timeoutMs);
-      timeout.unref?.();
-    }
-    if (arrivals === participants) {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-      outcome.resolve();
-    }
-    await outcome.promise;
-  };
-};
+import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
 
 describe('videos thumbnails integration', () => {
   let runtime: TestRuntime | null = null;
@@ -155,50 +131,60 @@ describe('videos thumbnails integration', () => {
       },
     });
 
-    await Promise.race([
-      putStarted.promise,
-      delay(10_000).then(() => {
-        throw new Error('Source thumbnail PUT barrier was not reached');
-      }),
-    ]);
-    const reservedTarget = await runtime.prisma.externalResourceTarget.findFirstOrThrow({
-      where: {
-        generation: initialized.uploadSession.id,
-        role: 'source_thumbnail',
-      },
-    });
+    let reservedTargetId: string;
+    let uploadResult: PromiseSettledResult<Awaited<typeof uploadPromise>>;
 
-    expect(reservedTarget).toMatchObject({
-      goal: 'present',
-      state: 'writing',
-    });
-    await expect(
-      runtime.prisma.videoSourceThumbnail.findUnique({
-        where: { uploadSessionId: initialized.uploadSession.id },
-      }),
-    ).resolves.toBeNull();
+    try {
+      await waitForBarrier({
+        description: 'the source-thumbnail PUT before video purge',
+        operations: [uploadPromise],
+        signal: putStarted.promise,
+      });
+      const reservedTarget = await runtime.prisma.externalResourceTarget.findFirstOrThrow({
+        where: {
+          generation: initialized.uploadSession.id,
+          role: 'source_thumbnail',
+        },
+      });
+      reservedTargetId = reservedTarget.id;
 
-    const rejectedBefore = new Date(scenarioNow.getTime() - 7 * 24 * HOUR_MS);
-    await expect(
-      controlledVideosService.deleteExpiredVideosPendingPurge({
-        observedAt: scenarioNow,
-        purgeBefore: rejectedBefore,
-      }),
-    ).resolves.toEqual({
-      videosPendingPurgeDeleted: 1,
-      videoPendingPurgeTargetsScheduled: 2,
-    });
-    await expect(
-      runtime.prisma.video.findUnique({
-        where: { id: video.video.id },
-      }),
-    ).resolves.toBeNull();
+      expect(reservedTarget).toMatchObject({
+        goal: 'present',
+        state: 'writing',
+      });
+      await expect(
+        runtime.prisma.videoSourceThumbnail.findUnique({
+          where: { uploadSessionId: initialized.uploadSession.id },
+        }),
+      ).resolves.toBeNull();
 
-    releasePut.resolve();
-    await expect(uploadPromise).rejects.toBeInstanceOf(InvalidVideoUploadSessionStateError);
+      const rejectedBefore = new Date(scenarioNow.getTime() - 7 * 24 * HOUR_MS);
+      await expect(
+        controlledVideosService.deleteExpiredVideosPendingPurge({
+          observedAt: scenarioNow,
+          purgeBefore: rejectedBefore,
+        }),
+      ).resolves.toEqual({
+        videosPendingPurgeDeleted: 1,
+        videoPendingPurgeTargetsScheduled: 2,
+      });
+      await expect(
+        runtime.prisma.video.findUnique({
+          where: { id: video.video.id },
+        }),
+      ).resolves.toBeNull();
+    } finally {
+      releasePut.resolve();
+      [uploadResult] = await Promise.allSettled([uploadPromise]);
+    }
+
+    expect(uploadResult.status).toBe('rejected');
+    if (uploadResult.status === 'rejected') {
+      expect(uploadResult.reason).toBeInstanceOf(InvalidVideoUploadSessionStateError);
+    }
     await expect(
       runtime.prisma.externalResourceTarget.findUniqueOrThrow({
-        where: { id: reservedTarget.id },
+        where: { id: reservedTargetId },
         select: {
           goal: true,
           quiescenceNotBefore: true,
@@ -220,7 +206,7 @@ describe('videos thumbnails integration', () => {
     });
     await expect(
       runtime.prisma.externalResourceTarget.findUniqueOrThrow({
-        where: { id: reservedTarget.id },
+        where: { id: reservedTargetId },
         select: {
           goal: true,
           state: true,
@@ -841,8 +827,14 @@ describe('videos thumbnails integration', () => {
       throw new Error('Concurrent finalization source PUT did not return an ETag');
     }
 
-    const thumbnailPrisma = createPrismaClient(runtime.databaseUrl);
-    const completePrisma = createPrismaClient(runtime.databaseUrl);
+    const thumbnailApplicationName = createPostgresApplicationName();
+    const completeApplicationName = createPostgresApplicationName();
+    const thumbnailPrisma = createPrismaClient(runtime.databaseUrl, {
+      applicationName: thumbnailApplicationName,
+    });
+    const completePrisma = createPrismaClient(runtime.databaseUrl, {
+      applicationName: completeApplicationName,
+    });
     const lockPrisma = createPrismaClient(runtime.databaseUrl);
     const thumbnailStored = Promise.withResolvers<void>();
     const releaseThumbnailPut = Promise.withResolvers<void>();
@@ -905,83 +897,115 @@ describe('videos thumbnails integration', () => {
       },
     });
 
-    await thumbnailStored.promise;
-    const completePromise = completeService.completeMultipartUpload({
-      userId: owner.userId,
-      videoId: created.video.id,
-      uploadSessionId: initialized.uploadSession.id,
-      parts: [{ partNumber: 1, etag }],
-    });
-    releaseThumbnailPut.resolve();
-
-    await Promise.race([
-      bothHeadsCompleted.promise,
-      delay(10_000).then(() => {
-        throw new Error('Both reconciliations did not reach HEAD verification');
-      }),
-    ]);
-
     const lockAcquired = Promise.withResolvers<void>();
     const releaseLock = Promise.withResolvers<void>();
-    const lockTransaction = lockPrisma.$transaction(
-      async (tx) => {
-        await tx.$executeRawUnsafe('LOCK TABLE "video_upload_sessions" IN ACCESS EXCLUSIVE MODE');
-        lockAcquired.resolve();
-        await releaseLock.promise;
-      },
-      {
-        timeout: 15_000,
-      },
-    );
-    let blockedFinalizations = 0;
+    let completePromise: ReturnType<typeof completeService.completeMultipartUpload> | null = null;
+    let lockTransaction: Promise<void> | null = null;
+    let thumbnailResult: PromiseSettledResult<Awaited<typeof thumbnailPromise>>;
+    let completeResult: PromiseSettledResult<
+      Awaited<ReturnType<typeof completeService.completeMultipartUpload>>
+    > | null = null;
+    const coordinationErrors = new Set<unknown>();
 
     try {
-      await Promise.race([
-        lockAcquired.promise,
-        delay(5_000).then(() => {
-          throw new Error('Finalization lock could not be acquired');
-        }),
-      ]);
+      await waitForBarrier({
+        description: 'the stored source thumbnail',
+        operations: [thumbnailPromise],
+        signal: thumbnailStored.promise,
+      });
+      completePromise = completeService.completeMultipartUpload({
+        userId: owner.userId,
+        videoId: created.video.id,
+        uploadSessionId: initialized.uploadSession.id,
+        parts: [{ partNumber: 1, etag }],
+      });
+      releaseThumbnailPut.resolve();
+      await waitForBarrier({
+        description: 'both finalization HEAD verifications',
+        operations: [thumbnailPromise, completePromise],
+        signal: bothHeadsCompleted.promise,
+      });
+      lockTransaction = lockPrisma.$transaction(
+        async (tx) => {
+          await tx.$executeRawUnsafe('LOCK TABLE "video_upload_sessions" IN ACCESS EXCLUSIVE MODE');
+          lockAcquired.resolve();
+          await releaseLock.promise;
+        },
+        {
+          timeout: 15_000,
+        },
+      );
+      await waitForBarrier({
+        description: 'the upload-session finalization lock',
+        operations: [lockTransaction],
+        signal: lockAcquired.promise,
+        timeoutMs: 5_000,
+      });
       releaseHeads.resolve();
 
-      const blockedDeadline = Date.now() + 5_000;
-
-      while (Date.now() < blockedDeadline) {
-        const [activity] = await runtime.prisma.$queryRaw<Array<{ blocked_count: number }>>`
-          SELECT count(*)::int AS blocked_count
-          FROM pg_stat_activity
-          WHERE datname = current_database()
-            AND wait_event_type = 'Lock'
-            AND query LIKE '%video_upload_sessions%'
-        `;
-        blockedFinalizations = activity?.blocked_count ?? 0;
-
-        if (blockedFinalizations >= 2) {
-          break;
-        }
-
-        await delay(25);
-      }
+      await waitForPostgresLockWaiters(runtime.prisma, {
+        applicationNames: [thumbnailApplicationName, completeApplicationName],
+        expectedCount: 2,
+        queryFragments: ['video_upload_sessions'],
+      });
+    } catch (error) {
+      coordinationErrors.add(error);
     } finally {
       releaseLock.resolve();
       releaseHeads.resolve();
-      await lockTransaction;
-      await lockPrisma.$disconnect();
-    }
+      releaseThumbnailPut.resolve();
 
-    let thumbnailResult: PromiseSettledResult<Awaited<typeof thumbnailPromise>>;
-    let completeResult: PromiseSettledResult<Awaited<typeof completePromise>>;
+      if (lockTransaction) {
+        const [lockResult] = await Promise.allSettled([lockTransaction]);
 
-    try {
-      [thumbnailResult, completeResult] = await Promise.allSettled([
-        thumbnailPromise,
-        completePromise,
+        if (lockResult?.status === 'rejected') {
+          coordinationErrors.add(lockResult.reason);
+        }
+      }
+
+      const [lockDisconnectResult] = await Promise.allSettled([lockPrisma.$disconnect()]);
+
+      if (lockDisconnectResult?.status === 'rejected') {
+        coordinationErrors.add(lockDisconnectResult.reason);
+      }
+
+      if (completePromise) {
+        [thumbnailResult, completeResult] = await Promise.allSettled([
+          thumbnailPromise,
+          completePromise,
+        ]);
+      } else {
+        [thumbnailResult] = await Promise.allSettled([thumbnailPromise]);
+      }
+
+      const disconnectResults = await Promise.allSettled([
+        thumbnailPrisma.$disconnect(),
+        completePrisma.$disconnect(),
       ]);
-    } finally {
-      await Promise.all([thumbnailPrisma.$disconnect(), completePrisma.$disconnect()]);
+      for (const result of disconnectResults) {
+        if (result.status === 'rejected') {
+          coordinationErrors.add(result.reason);
+        }
+      }
+
+      if (coordinationErrors.size > 0) {
+        if (thumbnailResult.status === 'rejected') {
+          coordinationErrors.add(thumbnailResult.reason);
+        }
+        if (completeResult?.status === 'rejected') {
+          coordinationErrors.add(completeResult.reason);
+        }
+      }
     }
 
-    expect(blockedFinalizations).toBeGreaterThanOrEqual(2);
+    throwCollectedErrors(
+      [...coordinationErrors],
+      'Thumbnail/source finalization coordination failed',
+    );
+
+    if (!completeResult) {
+      throw new Error('Source completion did not start');
+    }
     expect(completeResult.status).toBe('fulfilled');
 
     const [storedSession, thumbnailTargets] = await Promise.all([
@@ -1051,14 +1075,27 @@ describe('videos thumbnails integration', () => {
       videoId: created.video.id,
       sizeBytes: 1,
     });
-    const firstPrisma = createPrismaClient(runtime.databaseUrl);
-    const secondPrisma = createPrismaClient(runtime.databaseUrl);
-    const putBarrier = createOneShotBarrier(2);
+    const firstApplicationName = createPostgresApplicationName();
+    const secondApplicationName = createPostgresApplicationName();
+    const firstPrisma = createPrismaClient(runtime.databaseUrl, {
+      applicationName: firstApplicationName,
+    });
+    const secondPrisma = createPrismaClient(runtime.databaseUrl, {
+      applicationName: secondApplicationName,
+    });
+    const lockPrisma = createPrismaClient(runtime.databaseUrl);
+    const bothPutsStored = Promise.withResolvers<void>();
+    const releasePuts = Promise.withResolvers<void>();
+    let storedPuts = 0;
     const parallelStorage: ObjectStorage = {
       ...runtime.videoObjectStorage,
       putObject: async (input) => {
         await activeRuntime.videoObjectStorage.putObject(input);
-        await putBarrier();
+        storedPuts += 1;
+        if (storedPuts === 2) {
+          bothPutsStored.resolve();
+        }
+        await releasePuts.promise;
       },
     };
     const firstExternalResources = createExternalResourceReconciler({
@@ -1109,14 +1146,82 @@ describe('videos thumbnails integration', () => {
         size: secondThumbnail.length,
       },
     });
-    let first: PromiseSettledResult<Awaited<typeof firstUpload>>;
-    let second: PromiseSettledResult<Awaited<typeof secondUpload>>;
+    const lockAcquired = Promise.withResolvers<void>();
+    const releaseLock = Promise.withResolvers<void>();
+    let lockTransaction: Promise<void> | null = null;
+    const coordinationErrors = new Set<unknown>();
 
     try {
-      [first, second] = await Promise.allSettled([firstUpload, secondUpload]);
+      await waitForBarrier({
+        description: 'both parallel thumbnail PUTs',
+        operations: [firstUpload, secondUpload],
+        signal: bothPutsStored.promise,
+      });
+      lockTransaction = lockPrisma.$transaction(
+        async (tx) => {
+          await tx.$executeRawUnsafe(
+            'LOCK TABLE "video_source_thumbnails" IN ACCESS EXCLUSIVE MODE',
+          );
+          lockAcquired.resolve();
+          await releaseLock.promise;
+        },
+        {
+          timeout: 15_000,
+        },
+      );
+      await waitForBarrier({
+        description: 'the parallel thumbnail finalization lock',
+        operations: [lockTransaction],
+        signal: lockAcquired.promise,
+        timeoutMs: 5_000,
+      });
+      releasePuts.resolve();
+      await waitForPostgresLockWaiters(runtime.prisma, {
+        applicationNames: [firstApplicationName, secondApplicationName],
+        expectedCount: 2,
+        queryFragments: ['video_source_thumbnails'],
+      });
+    } catch (error) {
+      coordinationErrors.add(error);
     } finally {
-      await Promise.all([firstPrisma.$disconnect(), secondPrisma.$disconnect()]);
+      releaseLock.resolve();
+      releasePuts.resolve();
+
+      if (lockTransaction) {
+        const [lockResult] = await Promise.allSettled([lockTransaction]);
+
+        if (lockResult?.status === 'rejected') {
+          coordinationErrors.add(lockResult.reason);
+        }
+      }
+
+      const [disconnectResult] = await Promise.allSettled([lockPrisma.$disconnect()]);
+
+      if (disconnectResult?.status === 'rejected') {
+        coordinationErrors.add(disconnectResult.reason);
+      }
     }
+
+    const [first, second] = await Promise.allSettled([firstUpload, secondUpload]);
+    const disconnectResults = await Promise.allSettled([
+      firstPrisma.$disconnect(),
+      secondPrisma.$disconnect(),
+    ]);
+    for (const result of disconnectResults) {
+      if (result.status === 'rejected') {
+        coordinationErrors.add(result.reason);
+      }
+    }
+
+    if (coordinationErrors.size > 0) {
+      for (const result of [first, second]) {
+        if (result.status === 'rejected') {
+          coordinationErrors.add(result.reason);
+        }
+      }
+    }
+
+    throwCollectedErrors([...coordinationErrors], 'Parallel thumbnail coordination failed');
 
     if (![first, second].some((result) => result.status === 'fulfilled')) {
       throw new AggregateError(

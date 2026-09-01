@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { setTimeout as delay } from 'node:timers/promises';
-import type { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { createAdminService } from '../../src/services/admin.service.js';
@@ -14,6 +12,7 @@ import {
   createIntegrationAdminService,
   createIntegrationApp,
   createIntegrationVideosService,
+  createPostgresApplicationName,
   createPrismaClient,
   resetState,
   startRuntime,
@@ -21,32 +20,29 @@ import {
   testLogger,
   type TestRuntime,
 } from './support/runtime.js';
+import { coordinateGatedOperations } from './support/asyncBarriers.js';
+import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
 
 const waitForBlockedVideoQueries = async (
-  prisma: PrismaClient,
+  runtime: TestRuntime,
   expectedCount: number,
-  timeoutMs = 5_000,
-): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const [activity] = await prisma.$queryRaw<Array<{ blocked_count: number }>>`
-      SELECT count(*)::int AS blocked_count
-      FROM pg_stat_activity
-      WHERE datname = current_database()
-        AND wait_event_type = 'Lock'
-        AND query LIKE '%FROM "videos"%'
-    `;
-
-    if ((activity?.blocked_count ?? 0) >= expectedCount) {
-      return;
-    }
-
-    await delay(25);
-  }
-
-  throw new Error(`Timed out waiting for ${expectedCount} blocked video queries`);
-};
+  {
+    applicationNames = [runtime.postgresApplicationName],
+    signal,
+    timeoutMs = 5_000,
+  }: {
+    applicationNames?: readonly [string, ...string[]];
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  } = {},
+): Promise<void> =>
+  waitForPostgresLockWaiters(runtime.prisma, {
+    applicationNames,
+    expectedCount,
+    queryFragments: ['FROM "videos"'],
+    ...(signal === undefined ? {} : { signal }),
+    timeoutMs,
+  });
 
 describe('videos moderation integration', () => {
   let runtime: TestRuntime | null = null;
@@ -555,6 +551,7 @@ describe('videos moderation integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const decisionAt = new Date('2026-03-10T18:00:00.000Z');
     const firstReason = 'First moderator rejection reason.';
@@ -606,12 +603,6 @@ describe('videos moderation integration', () => {
       },
     );
 
-    await Promise.race([
-      gateAcquired.promise,
-      delay(5_000).then(() => {
-        throw new Error('Concurrent rejection gate could not be acquired');
-      }),
-    ]);
     const startRejection = (reason: string) =>
       request(app)
         .post(`/moderation/videos/${video.video.id}/moderation`)
@@ -619,23 +610,27 @@ describe('videos moderation integration', () => {
         .send({ decision: 'rejected', reason })
         .expect(200)
         .then((response) => response);
-    const firstRejectionPromise = startRejection(firstReason);
-    let secondRejectionPromise: ReturnType<typeof startRejection>;
+    const [firstResponse, secondResponse] = await coordinateGatedOperations({
+      cleanup: [() => gatePrisma.$disconnect()],
+      gateBarrierDescription: 'the concurrent-rejection video-row gate',
+      gateOperation: gateTransaction,
+      gatePaused: gateAcquired.promise,
+      releaseGate: releaseGate.resolve,
+      runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
+        const firstRejectionPromise = trackOperation(startRejection(firstReason));
+        await waitForSignal({
+          description: 'the first rejection behind the video-row gate',
+          observe: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, { signal }),
+        });
+        const secondRejectionPromise = trackOperation(startRejection(secondReason));
+        await waitForSignal({
+          description: 'both rejections behind the video-row gate',
+          observe: (signal) => waitForBlockedVideoQueries(activeRuntime, 2, { signal }),
+        });
 
-    try {
-      await waitForBlockedVideoQueries(runtime.prisma, 1);
-      secondRejectionPromise = startRejection(secondReason);
-      await waitForBlockedVideoQueries(runtime.prisma, 2);
-    } finally {
-      releaseGate.resolve();
-      await gateTransaction;
-      await gatePrisma.$disconnect();
-    }
-
-    const [firstResponse, secondResponse] = await Promise.all([
-      firstRejectionPromise,
-      secondRejectionPromise,
-    ]);
+        return [firstRejectionPromise, secondRejectionPromise] as const;
+      },
+    });
 
     expect(firstResponse.body.video).toMatchObject({
       moderationStatus: 'rejected',
@@ -678,6 +673,7 @@ describe('videos moderation integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const decisionAt = new Date('2026-03-10T00:00:00.000Z');
     const owner = await createVerifiedSession(runtime, {
@@ -727,37 +723,37 @@ describe('videos moderation integration', () => {
       },
     );
 
-    await Promise.race([
-      gateAcquired.promise,
-      delay(5_000).then(() => {
-        throw new Error('Moderation decision gate could not be acquired');
-      }),
-    ]);
-    const approvalPromise = request(app)
-      .post(`/moderation/videos/${video.video.id}/moderation`)
-      .set('Authorization', `Bearer ${moderator.sessionKey}`)
-      .send({ decision: 'approved' })
-      .expect(200)
-      .then((response) => response);
-    const rejectionPromise = request(app)
-      .post(`/moderation/videos/${video.video.id}/moderation`)
-      .set('Authorization', `Bearer ${moderator.sessionKey}`)
-      .send({ decision: 'rejected', reason: 'Concurrent rejection reason.' })
-      .expect(200)
-      .then((response) => response);
+    const [approvalResponse, rejectionResponse] = await coordinateGatedOperations({
+      cleanup: [() => gatePrisma.$disconnect()],
+      gateBarrierDescription: 'the opposing-moderation-decisions video-row gate',
+      gateOperation: gateTransaction,
+      gatePaused: gateAcquired.promise,
+      releaseGate: releaseGate.resolve,
+      runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
+        const approvalPromise = trackOperation(
+          request(app)
+            .post(`/moderation/videos/${video.video.id}/moderation`)
+            .set('Authorization', `Bearer ${moderator.sessionKey}`)
+            .send({ decision: 'approved' })
+            .expect(200)
+            .then((response) => response),
+        );
+        const rejectionPromise = trackOperation(
+          request(app)
+            .post(`/moderation/videos/${video.video.id}/moderation`)
+            .set('Authorization', `Bearer ${moderator.sessionKey}`)
+            .send({ decision: 'rejected', reason: 'Concurrent rejection reason.' })
+            .expect(200)
+            .then((response) => response),
+        );
+        await waitForSignal({
+          description: 'both opposing moderation decisions behind the video-row gate',
+          observe: (signal) => waitForBlockedVideoQueries(activeRuntime, 2, { signal }),
+        });
 
-    try {
-      await waitForBlockedVideoQueries(runtime.prisma, 2);
-    } finally {
-      releaseGate.resolve();
-      await gateTransaction;
-      await gatePrisma.$disconnect();
-    }
-
-    const [approvalResponse, rejectionResponse] = await Promise.all([
-      approvalPromise,
-      rejectionPromise,
-    ]);
+        return [approvalPromise, rejectionPromise] as const;
+      },
+    });
 
     expect(approvalResponse.body.video).toMatchObject({
       moderationStatus: 'approved',
@@ -843,28 +839,32 @@ describe('videos moderation integration', () => {
       if (!video || !runtime) {
         throw new Error('Integration runtime disappeared during moderation race setup');
       }
+      const activeRuntime = runtime;
 
-      await runtime.prisma.video.update({
+      await activeRuntime.prisma.video.update({
         where: { id: video.video.id },
         data: {
           moderationStatus: 'rejected',
           rejectedAt,
         },
       });
-      const maintenancePrisma = createPrismaClient(runtime.databaseUrl);
+      const maintenanceApplicationName = createPostgresApplicationName();
+      const maintenancePrisma = createPrismaClient(activeRuntime.databaseUrl, {
+        applicationName: maintenanceApplicationName,
+      });
       const maintenanceExternalResources = createExternalResourceReconciler({
         prisma: maintenancePrisma,
-        objectStorage: runtime.videoObjectStorage,
+        objectStorage: activeRuntime.videoObjectStorage,
         clock: { now: () => cleanupNow },
         logger: testLogger,
       });
       const maintenanceVideosService = createIntegrationVideosService(
         maintenancePrisma,
-        runtime.videoObjectStorage,
+        activeRuntime.videoObjectStorage,
         maintenanceExternalResources,
         { now: () => cleanupNow },
       );
-      const gatePrisma = createPrismaClient(runtime.databaseUrl);
+      const gatePrisma = createPrismaClient(activeRuntime.databaseUrl);
       const gateAcquired = Promise.withResolvers<void>();
       const releaseGate = Promise.withResolvers<void>();
       const gateTransaction = gatePrisma.$transaction(
@@ -883,12 +883,6 @@ describe('videos moderation integration', () => {
         },
       );
 
-      await Promise.race([
-        gateAcquired.promise,
-        delay(5_000).then(() => {
-          throw new Error('Maintenance/approval gate could not be acquired');
-        }),
-      ]);
       const startApproval = () =>
         request(app)
           .post(`/moderation/videos/${video.video.id}/moderation`)
@@ -900,41 +894,66 @@ describe('videos moderation integration', () => {
           observedAt: cleanupNow,
           purgeBefore: new Date(cleanupNow.getTime() - 7 * 24 * HOUR_MS),
         });
-      let approvalPromise: ReturnType<typeof startApproval>;
-      let maintenancePromise: ReturnType<typeof startMaintenance>;
+      const [approvalResponse, maintenanceResult] = await coordinateGatedOperations({
+        cleanup: [() => gatePrisma.$disconnect(), () => maintenancePrisma.$disconnect()],
+        gateBarrierDescription: 'the maintenance/approval video-row gate',
+        gateOperation: gateTransaction,
+        gatePaused: gateAcquired.promise,
+        releaseGate: releaseGate.resolve,
+        runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
+          if (maintenanceFirst) {
+            const maintenancePromise = trackOperation(startMaintenance());
+            await waitForSignal({
+              description: 'maintenance behind the video-row gate',
+              observe: (signal) =>
+                waitForBlockedVideoQueries(activeRuntime, 1, {
+                  applicationNames: [maintenanceApplicationName],
+                  signal,
+                }),
+            });
+            const approvalPromise = trackOperation(startApproval());
+            await waitForSignal({
+              description: 'maintenance and approval behind the video-row gate',
+              observe: (signal) =>
+                waitForBlockedVideoQueries(activeRuntime, 2, {
+                  applicationNames: [
+                    activeRuntime.postgresApplicationName,
+                    maintenanceApplicationName,
+                  ],
+                  signal,
+                }),
+            });
 
-      try {
-        if (maintenanceFirst) {
-          maintenancePromise = startMaintenance();
-          await waitForBlockedVideoQueries(runtime.prisma, 1);
-          approvalPromise = startApproval();
-        } else {
-          approvalPromise = startApproval();
-          await waitForBlockedVideoQueries(runtime.prisma, 1);
-          maintenancePromise = startMaintenance();
-        }
+            return [approvalPromise, maintenancePromise] as const;
+          }
 
-        await waitForBlockedVideoQueries(runtime.prisma, 2);
-      } finally {
-        releaseGate.resolve();
-        await gateTransaction;
-        await gatePrisma.$disconnect();
-      }
+          const approvalPromise = trackOperation(startApproval());
+          await waitForSignal({
+            description: 'approval behind the video-row gate',
+            observe: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, { signal }),
+          });
+          const maintenancePromise = trackOperation(startMaintenance());
+          await waitForSignal({
+            description: 'maintenance and approval behind the video-row gate',
+            observe: (signal) =>
+              waitForBlockedVideoQueries(activeRuntime, 2, {
+                applicationNames: [
+                  activeRuntime.postgresApplicationName,
+                  maintenanceApplicationName,
+                ],
+                signal,
+              }),
+          });
 
-      try {
-        const [approvalResponse, maintenanceResult] = await Promise.all([
-          approvalPromise,
-          maintenancePromise,
-        ]);
+          return [approvalPromise, maintenancePromise] as const;
+        },
+      });
 
-        return {
-          approvalResponse,
-          maintenanceResult,
-          videoId: video.video.id,
-        };
-      } finally {
-        await maintenancePrisma.$disconnect();
-      }
+      return {
+        approvalResponse,
+        maintenanceResult,
+        videoId: video.video.id,
+      };
     };
 
     const approvalWins = await runInterleaving(false);

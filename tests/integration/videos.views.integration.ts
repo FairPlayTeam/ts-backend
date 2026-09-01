@@ -1,18 +1,26 @@
-import { setTimeout as delay } from 'node:timers/promises';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { recordVideoView } from '../../src/services/videos/videoViews.js';
 import { createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
+import {
+  coordinateGatedOperations,
+  throwCollectedErrors,
+  waitForBarrier,
+} from './support/asyncBarriers.js';
 import { createPlayableVideo } from './support/playableVideo.js';
 import {
   createIntegrationApp,
   createIntegrationVideosService,
+  createPostgresApplicationName,
+  createPrismaClient,
   resetState,
   startRuntime,
   stopRuntime,
   type TestRuntime,
 } from './support/runtime.js';
+import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
+import { waitForVideoViewState } from './support/videoViews.js';
 
 type ViewWriterHarness = {
   app: Awaited<ReturnType<typeof createIntegrationApp>>;
@@ -83,30 +91,69 @@ const createViewWriterHarness = async (
   };
 };
 
-const waitForViewState = async (
-  prisma: PrismaClient,
-  videoId: string,
-  expectedCount: number,
-): Promise<void> => {
-  const deadline = Date.now() + 5_000;
+const runWhileViewWriterPaused = async <TResponse, TResult>(
+  harness: ViewWriterHarness,
+  responseOperation: Promise<TResponse>,
+  {
+    description,
+    run,
+    timeoutMs = 10_000,
+  }: {
+    description: string;
+    run(response: TResponse): Promise<TResult> | TResult;
+    timeoutMs?: number;
+  },
+): Promise<TResult> => {
+  let whilePausedOperation: Promise<TResult> | null = null;
+  let whilePausedResult: PromiseSettledResult<TResult> | null = null;
+  let writerArrived = false;
+  const errors = new Set<unknown>();
 
-  while (Date.now() < deadline) {
-    const [video, facts] = await Promise.all([
-      prisma.video.findUniqueOrThrow({
-        where: { id: videoId },
-        select: { viewCount: true },
-      }),
-      prisma.videoView.count({ where: { videoId } }),
-    ]);
+  try {
+    await waitForBarrier({
+      description: `${description} writer arrival`,
+      operations: [responseOperation, harness.completed],
+      signal: harness.arrived,
+      timeoutMs,
+    });
+    writerArrived = true;
+    whilePausedOperation = responseOperation.then((response) => run(response));
+    await waitForBarrier({
+      description: `${description} work while the writer is paused`,
+      operations: [harness.completed],
+      signal: whilePausedOperation,
+      timeoutMs,
+    });
+  } catch (error) {
+    errors.add(error);
+  } finally {
+    harness.release();
+    const operationResults = await Promise.allSettled(
+      writerArrived ? [responseOperation, harness.completed] : [responseOperation],
+    );
 
-    if (video.viewCount === expectedCount && facts === expectedCount) {
-      return;
+    for (const result of operationResults) {
+      if (result.status === 'rejected') {
+        errors.add(result.reason);
+      }
     }
 
-    await delay(25);
+    if (whilePausedOperation) {
+      [whilePausedResult] = await Promise.allSettled([whilePausedOperation]);
+
+      if (whilePausedResult?.status === 'rejected') {
+        errors.add(whilePausedResult.reason);
+      }
+    }
   }
 
-  throw new Error(`Timed out waiting for video ${videoId} to reach ${expectedCount} views`);
+  throwCollectedErrors([...errors], 'Paused video-view writer coordination failed');
+
+  if (whilePausedResult?.status !== 'fulfilled') {
+    throw new Error('Paused video-view writer work did not complete');
+  }
+
+  return whilePausedResult.value;
 };
 
 describe('video views integration', () => {
@@ -208,40 +255,52 @@ describe('video views integration', () => {
     await expect(runtime.prisma.videoView.count({ where: { videoId: video.id } })).resolves.toBe(0);
 
     const first = await createViewWriterHarness(runtime, { expectedCalls: 1, now: dayOne });
-    const firstResponse = await request(first.app)
-      .get(`/videos/${video.publicId}`)
-      .set('Authorization', `Bearer ${viewer.sessionKey}`)
-      .expect(200);
+    const firstResponse = await runWhileViewWriterPaused(
+      first,
+      request(first.app)
+        .get(`/videos/${video.publicId}`)
+        .set('Authorization', `Bearer ${viewer.sessionKey}`)
+        .expect(200),
+      {
+        description: 'the first daily view',
+        run: (response) => response,
+      },
+    );
     expect(firstResponse.body.video.viewCount).toBe(0);
-    await first.arrived;
-    first.release();
-    await first.completed;
-    await waitForViewState(runtime.prisma, video.id, 1);
+    await waitForVideoViewState(runtime.prisma, video.id, 1);
 
     const repeated = await createViewWriterHarness(runtime, { expectedCalls: 1, now: dayOne });
-    const repeatedResponse = await request(repeated.app)
-      .get(`/videos/${video.publicId}`)
-      .set('Authorization', `Bearer ${viewer.sessionKey}`)
-      .expect(200);
+    const repeatedResponse = await runWhileViewWriterPaused(
+      repeated,
+      request(repeated.app)
+        .get(`/videos/${video.publicId}`)
+        .set('Authorization', `Bearer ${viewer.sessionKey}`)
+        .expect(200),
+      {
+        description: 'the repeated daily view',
+        run: (response) => response,
+      },
+    );
     expect(repeatedResponse.body.video.viewCount).toBe(1);
-    await repeated.arrived;
-    repeated.release();
-    await repeated.completed;
-    await waitForViewState(runtime.prisma, video.id, 1);
+    await waitForVideoViewState(runtime.prisma, video.id, 1);
 
     const nextDay = await createViewWriterHarness(runtime, {
       expectedCalls: 1,
       now: new Date('2026-08-05T00:00:00.000Z'),
     });
-    const nextDayResponse = await request(nextDay.app)
-      .get(`/videos/${video.publicId}`)
-      .set('Authorization', `Bearer ${viewer.sessionKey}`)
-      .expect(200);
+    const nextDayResponse = await runWhileViewWriterPaused(
+      nextDay,
+      request(nextDay.app)
+        .get(`/videos/${video.publicId}`)
+        .set('Authorization', `Bearer ${viewer.sessionKey}`)
+        .expect(200),
+      {
+        description: 'the next-day view',
+        run: (response) => response,
+      },
+    );
     expect(nextDayResponse.body.video.viewCount).toBe(1);
-    await nextDay.arrived;
-    nextDay.release();
-    await nextDay.completed;
-    await waitForViewState(runtime.prisma, video.id, 2);
+    await waitForVideoViewState(runtime.prisma, video.id, 2);
 
     await runtime.prisma.video.update({
       where: { id: video.id },
@@ -251,14 +310,18 @@ describe('video views integration', () => {
       expectedCalls: 1,
       now: new Date('2026-08-05T12:00:00.000Z'),
     });
-    await request(rejected.app)
-      .get(`/videos/${video.publicId}`)
-      .set('Authorization', `Bearer ${rejectedViewer.sessionKey}`)
-      .expect(200);
-    await rejected.arrived;
-    rejected.release();
-    await rejected.completed;
-    await waitForViewState(runtime.prisma, video.id, 3);
+    await runWhileViewWriterPaused(
+      rejected,
+      request(rejected.app)
+        .get(`/videos/${video.publicId}`)
+        .set('Authorization', `Bearer ${rejectedViewer.sessionKey}`)
+        .expect(200),
+      {
+        description: 'the rejected-video direct-link view',
+        run: () => undefined,
+      },
+    );
+    await waitForVideoViewState(runtime.prisma, video.id, 3);
 
     const days = await runtime.prisma.videoView.findMany({
       where: { videoId: video.id, userId: viewer.userId },
@@ -271,10 +334,11 @@ describe('video views integration', () => {
     ]);
   });
 
-  test('deduplicates simultaneous same-user views and preserves concurrent distinct viewers', async () => {
+  test('atomically deduplicates same-user views and counts concurrent distinct viewers', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'view-race-owner@example.com',
@@ -293,49 +357,114 @@ describe('video views integration', () => {
       title: 'Same-user concurrent views',
       visibility: 'public',
     });
-    const sameUser = await createViewWriterHarness(runtime, {
-      expectedCalls: 2,
-      now: new Date('2026-08-04T12:00:00.000Z'),
-    });
+    const viewedOn = '2026-08-04';
 
-    await Promise.all([
-      request(sameUser.app)
-        .get(`/videos/${sameUserVideo.publicId}`)
-        .set('Authorization', `Bearer ${firstViewer.sessionKey}`)
-        .expect(200),
-      request(sameUser.app)
-        .get(`/videos/${sameUserVideo.publicId}`)
-        .set('Authorization', `Bearer ${firstViewer.sessionKey}`)
-        .expect(200),
+    const recordBehindVideoLock = async (
+      videoId: string,
+      userIds: readonly [string, string],
+    ): Promise<readonly [boolean, boolean]> => {
+      const gatePrisma = createPrismaClient(activeRuntime.databaseUrl);
+      const firstApplicationName = createPostgresApplicationName();
+      const secondApplicationName = createPostgresApplicationName();
+      const firstPrisma = createPrismaClient(activeRuntime.databaseUrl, {
+        applicationName: firstApplicationName,
+      });
+      const secondPrisma = createPrismaClient(activeRuntime.databaseUrl, {
+        applicationName: secondApplicationName,
+      });
+      const gateAcquired = Promise.withResolvers<void>();
+      const releaseGate = Promise.withResolvers<void>();
+      const gateTransaction = gatePrisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`
+            SELECT "id"
+            FROM "videos"
+            WHERE "id" = CAST(${videoId} AS UUID)
+            FOR UPDATE
+          `;
+          gateAcquired.resolve();
+          await releaseGate.promise;
+        },
+        { timeout: 15_000 },
+      );
+
+      return coordinateGatedOperations({
+        cleanup: [
+          () => gatePrisma.$disconnect(),
+          () => firstPrisma.$disconnect(),
+          () => secondPrisma.$disconnect(),
+        ],
+        gateBarrierDescription: 'the video-view row gate',
+        gateOperation: gateTransaction,
+        gatePaused: gateAcquired.promise,
+        releaseGate: releaseGate.resolve,
+        runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
+          const firstView = trackOperation(
+            recordVideoView(firstPrisma, {
+              userId: userIds[0],
+              videoId,
+              viewedOn,
+            }),
+          );
+          const secondView = trackOperation(
+            recordVideoView(secondPrisma, {
+              userId: userIds[1],
+              videoId,
+              viewedOn,
+            }),
+          );
+          await waitForSignal({
+            description: 'both video-view writes behind the video row gate',
+            observe: (signal) =>
+              waitForPostgresLockWaiters(activeRuntime.prisma, {
+                applicationNames: [firstApplicationName, secondApplicationName],
+                expectedCount: 2,
+                queryFragments: ['video_views'],
+                signal,
+              }),
+          });
+
+          return [firstView, secondView] as const;
+        },
+      });
+    };
+
+    const sameUserResults = await recordBehindVideoLock(sameUserVideo.id, [
+      firstViewer.userId,
+      firstViewer.userId,
     ]);
-    await sameUser.arrived;
-    sameUser.release();
-    await sameUser.completed;
-    await waitForViewState(runtime.prisma, sameUserVideo.id, 1);
+
+    expect([...sameUserResults].sort()).toEqual([false, true]);
+    await expect(
+      runtime.prisma.videoView.count({ where: { videoId: sameUserVideo.id } }),
+    ).resolves.toBe(1);
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: sameUserVideo.id },
+        select: { viewCount: true },
+      }),
+    ).resolves.toEqual({ viewCount: 1 });
 
     const distinctVideo = await createPlayableVideo(runtime, {
       ownerId: owner.userId,
       title: 'Distinct concurrent viewers',
       visibility: 'public',
     });
-    const distinctUsers = await createViewWriterHarness(runtime, {
-      expectedCalls: 2,
-      now: new Date('2026-08-04T12:00:00.000Z'),
-    });
-    await Promise.all([
-      request(distinctUsers.app)
-        .get(`/videos/${distinctVideo.publicId}`)
-        .set('Authorization', `Bearer ${firstViewer.sessionKey}`)
-        .expect(200),
-      request(distinctUsers.app)
-        .get(`/videos/${distinctVideo.publicId}`)
-        .set('Authorization', `Bearer ${secondViewer.sessionKey}`)
-        .expect(200),
+    const distinctUserResults = await recordBehindVideoLock(distinctVideo.id, [
+      firstViewer.userId,
+      secondViewer.userId,
     ]);
-    await distinctUsers.arrived;
-    distinctUsers.release();
-    await distinctUsers.completed;
-    await waitForViewState(runtime.prisma, distinctVideo.id, 2);
+
+    expect(distinctUserResults).toEqual([true, true]);
+    await expect(
+      runtime.prisma.videoView.count({ where: { videoId: distinctVideo.id } }),
+    ).resolves.toBe(2);
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: distinctVideo.id },
+        select: { viewCount: true },
+      }),
+    ).resolves.toEqual({ viewCount: 2 });
   });
 
   test('returns the detail before a blocked writer and absorbs its eventual failure', async () => {
@@ -366,20 +495,14 @@ describe('video views integration', () => {
       .set('Authorization', `Bearer ${viewer.sessionKey}`)
       .then((response) => response);
 
-    await harness.arrived;
-    try {
-      const response = await Promise.race([
-        responsePromise,
-        delay(1_000).then(() => {
-          throw new Error('Detail response waited for the best-effort view writer');
-        }),
-      ]);
-      expect(response.status).toBe(200);
-      expect(response.body.video.viewCount).toBe(0);
-    } finally {
-      harness.release();
-    }
-    await harness.completed;
+    await runWhileViewWriterPaused(harness, responsePromise, {
+      description: 'the best-effort failing view',
+      run: (response) => {
+        expect(response.status).toBe(200);
+        expect(response.body.video.viewCount).toBe(0);
+      },
+      timeoutMs: 1_000,
+    });
     await expect(runtime.prisma.videoView.count({ where: { videoId: video.id } })).resolves.toBe(0);
   });
 
@@ -493,6 +616,7 @@ describe('video views integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'view-purge-race-owner@example.com',
@@ -521,29 +645,31 @@ describe('video views integration', () => {
       now: observedAt,
     });
 
-    const detail = await request(harness.app)
-      .get(`/videos/${video.publicId}`)
-      .set('Authorization', `Bearer ${viewer.sessionKey}`)
-      .expect(200);
-    expect(detail.body.video.publicId).toBe(video.publicId);
-    await harness.arrived;
-    try {
-      await expect(
-        runtime.videosService.deleteExpiredVideosPendingPurge({
-          observedAt,
-          purgeBefore: new Date('2026-07-28T12:00:00.000Z'),
-        }),
-      ).resolves.toEqual({
-        videosPendingPurgeDeleted: 1,
-        videoPendingPurgeTargetsScheduled: expect.any(Number),
-      });
-      await expect(
-        runtime.prisma.video.findUnique({ where: { id: video.id } }),
-      ).resolves.toBeNull();
-    } finally {
-      harness.release();
-    }
-    await harness.completed;
+    await runWhileViewWriterPaused(
+      harness,
+      request(harness.app)
+        .get(`/videos/${video.publicId}`)
+        .set('Authorization', `Bearer ${viewer.sessionKey}`)
+        .expect(200),
+      {
+        description: 'the view scheduled before deferred video purge',
+        run: async (detail) => {
+          expect(detail.body.video.publicId).toBe(video.publicId);
+          await expect(
+            activeRuntime.videosService.deleteExpiredVideosPendingPurge({
+              observedAt,
+              purgeBefore: new Date('2026-07-28T12:00:00.000Z'),
+            }),
+          ).resolves.toEqual({
+            videosPendingPurgeDeleted: 1,
+            videoPendingPurgeTargetsScheduled: expect.any(Number),
+          });
+          await expect(
+            activeRuntime.prisma.video.findUnique({ where: { id: video.id } }),
+          ).resolves.toBeNull();
+        },
+      },
+    );
 
     await expect(runtime.prisma.video.findUnique({ where: { id: video.id } })).resolves.toBeNull();
     await expect(runtime.prisma.videoView.count({ where: { videoId: video.id } })).resolves.toBe(0);
@@ -553,6 +679,7 @@ describe('video views integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'view-delete-race-owner@example.com',
@@ -572,17 +699,21 @@ describe('video views integration', () => {
       now: new Date('2026-08-04T12:00:00.000Z'),
     });
 
-    await request(harness.app)
-      .get(`/videos/${video.publicId}`)
-      .set('Authorization', `Bearer ${deletedViewer.sessionKey}`)
-      .expect(200);
-    await harness.arrived;
-    await runtime.authService.deleteAccount({
-      userId: deletedViewer.userId,
-      currentPassword: INITIAL_PASSWORD,
-    });
-    harness.release();
-    await harness.completed;
+    await runWhileViewWriterPaused(
+      harness,
+      request(harness.app)
+        .get(`/videos/${video.publicId}`)
+        .set('Authorization', `Bearer ${deletedViewer.sessionKey}`)
+        .expect(200),
+      {
+        description: 'the view scheduled before viewer deletion',
+        run: () =>
+          activeRuntime.authService.deleteAccount({
+            userId: deletedViewer.userId,
+            currentPassword: INITIAL_PASSWORD,
+          }),
+      },
+    );
 
     await expect(runtime.prisma.videoView.count({ where: { videoId: video.id } })).resolves.toBe(0);
     await expect(

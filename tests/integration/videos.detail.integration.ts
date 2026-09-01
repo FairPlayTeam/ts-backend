@@ -1,53 +1,19 @@
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import type { Prisma, PrismaClient } from '@prisma/client';
 import type { AuthPorts } from '../../src/services/auth.types.js';
-import type { VideosService } from '../../src/services/videos.types.js';
 import { createPng, createVerifiedSession, uploadVideoSource } from './support/fixtures.js';
 import { createPlayableVideo, type PlayableVideo } from './support/playableVideo.js';
 import { seedHlsGeneration } from './support/videoArtifacts.js';
 import {
   createIntegrationApp,
-  createIntegrationVideosService,
+  createVideoReadBarrierService,
   resetState,
   startRuntime,
   stopRuntime,
   type TestRuntime,
 } from './support/runtime.js';
-
-const createVideoReadBarrierService = (
-  runtime: TestRuntime,
-  afterVideoRead: () => Promise<void>,
-): VideosService => {
-  const barrierPrisma = {
-    $executeRaw: (query: Prisma.Sql) => runtime.prisma.$executeRaw(query),
-    $transaction: async <T>(
-      run: (tx: Prisma.TransactionClient) => Promise<T>,
-      options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
-    ): Promise<T> =>
-      runtime.prisma.$transaction(async (tx) => {
-        const barrierTransaction = {
-          video: {
-            findFirst: async (args: unknown) => {
-              const video = await tx.video.findFirst(args as never);
-              await afterVideoRead();
-
-              return video;
-            },
-          },
-          videoRating: tx.videoRating,
-        } as unknown as Prisma.TransactionClient;
-
-        return run(barrierTransaction);
-      }, options),
-  } as unknown as PrismaClient;
-
-  return createIntegrationVideosService(
-    barrierPrisma,
-    runtime.videoObjectStorage,
-    runtime.videoExternalResources,
-  );
-};
+import { coordinateWhilePaused } from './support/asyncBarriers.js';
+import { waitForVideoViewState } from './support/videoViews.js';
 
 describe('public video detail integration', () => {
   let runtime: TestRuntime | null = null;
@@ -60,6 +26,9 @@ describe('public video detail integration', () => {
   let revokedUser: Awaited<ReturnType<typeof createVerifiedSession>>;
   let moderator: Awaited<ReturnType<typeof createVerifiedSession>>;
   let publicVideo: PlayableVideo;
+  let optionalAuthVideo: PlayableVideo;
+  let moderatorVideo: PlayableVideo;
+  let avatarlessVideo: PlayableVideo;
   let unlistedVideo: PlayableVideo;
   let rejectedVideo: PlayableVideo;
   let nonReadyVideo: PlayableVideo;
@@ -124,6 +93,29 @@ describe('public video detail integration', () => {
       title: 'Me at the zoo',
       visibility: 'public',
     });
+    optionalAuthVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Optional authentication detail',
+      visibility: 'public',
+    });
+    moderatorVideo = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Moderator public detail',
+      visibility: 'public',
+    });
+    const avatarlessOwner = await createVerifiedSession(runtime, {
+      email: 'video-detail-avatarless@example.com',
+      username: 'detail_avatarless',
+    });
+    await runtime.prisma.user.update({
+      where: { id: avatarlessOwner.userId },
+      data: { displayName: 'Avatarless Creator' },
+    });
+    avatarlessVideo = await createPlayableVideo(runtime, {
+      ownerId: avatarlessOwner.userId,
+      title: 'Avatarless creator detail',
+      visibility: 'public',
+    });
     unlistedVideo = await createPlayableVideo(runtime, {
       ownerId: owner.userId,
       title: 'Unlisted playable detail',
@@ -171,6 +163,11 @@ describe('public video detail integration', () => {
       .put(`/videos/${publicVideo.publicId}/rating`)
       .set('Authorization', `Bearer ${secondRater.sessionKey}`)
       .send({ value: 5 })
+      .expect(200);
+    await request(app)
+      .put(`/videos/${optionalAuthVideo.publicId}/rating`)
+      .set('Authorization', `Bearer ${rater.sessionKey}`)
+      .send({ value: 4 })
       .expect(200);
     await request(app)
       .put(`/videos/${rejectedVideo.publicId}/rating`)
@@ -306,27 +303,32 @@ describe('public video detail integration', () => {
   });
 
   test('returns the current user rating or null for every optional-auth state', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
     const [rated, unrated, anonymous, malformed, invalid, expired, revoked] = await Promise.all([
       request(app)
-        .get(`/videos/${publicVideo.publicId}`)
+        .get(`/videos/${optionalAuthVideo.publicId}`)
         .set('Authorization', `Bearer ${rater.sessionKey}`),
       request(app)
-        .get(`/videos/${publicVideo.publicId}`)
+        .get(`/videos/${optionalAuthVideo.publicId}`)
         .set('Authorization', `Bearer ${unratedUser.sessionKey}`),
-      request(app).get(`/videos/${publicVideo.publicId}`),
+      request(app).get(`/videos/${optionalAuthVideo.publicId}`),
       request(app)
-        .get(`/videos/${publicVideo.publicId}`)
+        .get(`/videos/${optionalAuthVideo.publicId}`)
         .set('Authorization', 'Basic malformed-session-token'),
       request(app)
-        .get(`/videos/${publicVideo.publicId}`)
+        .get(`/videos/${optionalAuthVideo.publicId}`)
         .set('Authorization', 'Bearer invalid-session-token'),
       request(app)
-        .get(`/videos/${publicVideo.publicId}`)
+        .get(`/videos/${optionalAuthVideo.publicId}`)
         .set('Authorization', `Bearer ${expiredUser.sessionKey}`),
       request(app)
-        .get(`/videos/${publicVideo.publicId}`)
+        .get(`/videos/${optionalAuthVideo.publicId}`)
         .set('Authorization', `Bearer ${revokedUser.sessionKey}`),
     ]);
+    await waitForVideoViewState(runtime.prisma, optionalAuthVideo.id, 2);
 
     expect([
       rated.status,
@@ -350,6 +352,7 @@ describe('public video detail integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const raceOwner = await createVerifiedSession(runtime, {
       email: 'video-detail-owner-delete@example.com',
@@ -371,13 +374,14 @@ describe('public video detail integration', () => {
       .get(`/videos/${raceVideo.publicId}`)
       .then((response) => response);
 
-    await videoRead.promise;
-    try {
-      await runtime.prisma.user.delete({ where: { id: raceOwner.userId } });
-    } finally {
-      releaseVideoRead.resolve();
-    }
-    const detail = await pendingDetail;
+    const [detail] = await coordinateWhilePaused({
+      firstBarrierDescription: 'the owner-deletion detail video read',
+      firstOperation: pendingDetail,
+      firstPaused: videoRead.promise,
+      releaseFirst: releaseVideoRead.resolve,
+      runWhilePaused: () => activeRuntime.prisma.user.delete({ where: { id: raceOwner.userId } }),
+      whilePausedDescription: 'the owner deletion during the detail snapshot',
+    });
 
     expect(detail.status).toBe(200);
     expect(detail.body.video.creator.username).toBe('detail_owner_delete');
@@ -391,6 +395,7 @@ describe('public video detail integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const deletedViewer = await createVerifiedSession(runtime, {
       email: 'video-detail-viewer-delete@example.com',
@@ -425,13 +430,15 @@ describe('public video detail integration', () => {
       .set('Authorization', `Bearer ${deletedViewer.sessionKey}`)
       .then((response) => response);
 
-    await sessionValidated.promise;
-    try {
-      await runtime.prisma.user.delete({ where: { id: deletedViewer.userId } });
-    } finally {
-      releaseValidation.resolve();
-    }
-    const detail = await pendingDetail;
+    const [detail] = await coordinateWhilePaused({
+      firstBarrierDescription: 'the deleted-viewer session validation',
+      firstOperation: pendingDetail,
+      firstPaused: sessionValidated.promise,
+      releaseFirst: releaseValidation.resolve,
+      runWhilePaused: () =>
+        activeRuntime.prisma.user.delete({ where: { id: deletedViewer.userId } }),
+      whilePausedDescription: 'the viewer deletion before the detail snapshot',
+    });
 
     expect(detail.status).toBe(200);
     expect(detail.body.video.ratingAverage).toBe(4);
@@ -463,35 +470,43 @@ describe('public video detail integration', () => {
     const barrierApp = await createIntegrationApp(runtime, { videosService: barrierService });
     const pendingDetail = request(barrierApp)
       .get(`/videos/${raceVideo.publicId}`)
+      .set('Authorization', `Bearer ${rater.sessionKey}`)
       .then((response) => response);
 
-    await videoRead.promise;
-    const dedicatedRatingBody: unknown = await (async () => {
-      try {
+    const [detail, dedicatedRatingBody] = await coordinateWhilePaused({
+      firstBarrierDescription: 'the rating-linearization detail video read',
+      firstOperation: pendingDetail,
+      firstPaused: videoRead.promise,
+      releaseFirst: releaseVideoRead.resolve,
+      runWhilePaused: async () => {
         await request(app)
           .put(`/videos/${raceVideo.publicId}/rating`)
-          .set('Authorization', `Bearer ${secondRater.sessionKey}`)
+          .set('Authorization', `Bearer ${rater.sessionKey}`)
           .send({ value: 5 })
           .expect(200);
 
-        return (await request(app).get(`/videos/${raceVideo.publicId}/rating`).expect(200)).body;
-      } finally {
-        releaseVideoRead.resolve();
-      }
-    })();
-    const detail = await pendingDetail;
+        const ratingBody: unknown = (
+          await request(app).get(`/videos/${raceVideo.publicId}/rating`).expect(200)
+        ).body;
+
+        return ratingBody;
+      },
+      whilePausedDescription: 'the committed rating and dedicated aggregate read',
+    });
 
     expect({
       ratingAverage: detail.body.video.ratingAverage,
       ratingCount: detail.body.video.ratingCount,
-    }).toEqual({ ratingAverage: 2, ratingCount: 1 });
-    expect(dedicatedRatingBody).toEqual({ ratingAverage: 3.5, ratingCount: 2 });
+      userRating: detail.body.video.userRating,
+    }).toEqual({ ratingAverage: 2, ratingCount: 1, userRating: 2 });
+    expect(dedicatedRatingBody).toEqual({ ratingAverage: 5, ratingCount: 1 });
   });
 
   test('keeps the stable master path valid across publication during the detail snapshot', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const raceVideo = await createPlayableVideo(runtime, {
       ownerId: owner.userId,
@@ -517,30 +532,32 @@ describe('public video detail integration', () => {
       .get(`/videos/${raceVideo.publicId}`)
       .then((response) => response);
 
-    await videoRead.promise;
-    try {
-      await runtime.prisma.$transaction(async (tx) => {
-        await tx.videoArtifactGeneration.update({
-          where: { id: raceVideo.generationId },
-          data: { state: 'retiring' },
-        });
-        await tx.videoArtifactGeneration.update({
-          where: { id: nextGeneration.generationId },
-          data: { state: 'active', activatedAt: new Date() },
-        });
-        await tx.video.update({
-          where: { id: raceVideo.id },
-          data: {
-            activeArtifactGenerationId: nextGeneration.generationId,
-            hlsMasterObjectKey: nextGeneration.manifest.master.objectKey,
-            thumbnailObjectKey: nextGeneration.manifest.thumbnail.objectKey,
-          },
-        });
-      });
-    } finally {
-      releaseVideoRead.resolve();
-    }
-    const detail = await pendingDetail;
+    const [detail] = await coordinateWhilePaused({
+      firstBarrierDescription: 'the generation-publication detail video read',
+      firstOperation: pendingDetail,
+      firstPaused: videoRead.promise,
+      releaseFirst: releaseVideoRead.resolve,
+      runWhilePaused: () =>
+        activeRuntime.prisma.$transaction(async (tx) => {
+          await tx.videoArtifactGeneration.update({
+            where: { id: raceVideo.generationId },
+            data: { state: 'retiring' },
+          });
+          await tx.videoArtifactGeneration.update({
+            where: { id: nextGeneration.generationId },
+            data: { state: 'active', activatedAt: new Date() },
+          });
+          await tx.video.update({
+            where: { id: raceVideo.id },
+            data: {
+              activeArtifactGenerationId: nextGeneration.generationId,
+              hlsMasterObjectKey: nextGeneration.manifest.master.objectKey,
+              thumbnailObjectKey: nextGeneration.manifest.thumbnail.objectKey,
+            },
+          });
+        }),
+      whilePausedDescription: 'the replacement generation publication',
+    });
 
     expect(detail.status).toBe(200);
     expect(detail.body.video.hlsMasterPath).toBe(`/videos/${raceVideo.publicId}/hls/master.m3u8`);
@@ -553,27 +570,28 @@ describe('public video detail integration', () => {
   });
 
   test('keeps a missing creator avatar best-effort', async () => {
-    await runtime?.prisma.userMediaAsset.deleteMany({
-      where: { userId: owner.userId, kind: 'avatar' },
-    });
-
-    const response = await request(app).get(`/videos/${unlistedVideo.publicId}`).expect(200);
+    const response = await request(app).get(`/videos/${avatarlessVideo.publicId}`).expect(200);
 
     expect(response.body.video.creator).toEqual({
-      username: 'jawed',
-      displayName: 'Jawed Karim',
+      username: 'detail_avatarless',
+      displayName: 'Avatarless Creator',
       avatarUrl: null,
     });
     expect(response.body.video.hlsMasterPath).toBe(
-      `/videos/${unlistedVideo.publicId}/hls/master.m3u8`,
+      `/videos/${avatarlessVideo.publicId}/hls/master.m3u8`,
     );
   });
 
   test('does not expose privileged fields to a moderator on the public route', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
     const response = await request(app)
-      .get(`/videos/${publicVideo.publicId}`)
+      .get(`/videos/${moderatorVideo.publicId}`)
       .set('Authorization', `Bearer ${moderator.sessionKey}`)
       .expect(200);
+    await waitForVideoViewState(runtime.prisma, moderatorVideo.id, 1);
 
     expect(Object.keys(response.body.video).sort()).toEqual(
       [

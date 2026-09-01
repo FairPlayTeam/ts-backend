@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { setTimeout as delay } from 'node:timers/promises';
 import type { Prisma, PrismaClient, UserRole } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
@@ -17,31 +16,21 @@ import {
   stopRuntime,
   type TestRuntime,
 } from './support/runtime.js';
+import { coordinateLockInterleavingSettled } from './support/asyncBarriers.js';
+import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
 
 const waitForBlockedCommentQuery = async (
-  prisma: PrismaClient,
+  runtime: TestRuntime,
   timeoutMs = 5_000,
-): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const [activity] = await prisma.$queryRaw<Array<{ blockedCount: number }>>`
-      SELECT count(*)::int AS "blockedCount"
-      FROM pg_stat_activity
-      WHERE datname = current_database()
-        AND wait_event_type = 'Lock'
-        AND query LIKE '%FROM "comments" AS c%'
-    `;
-
-    if ((activity?.blockedCount ?? 0) >= 1) {
-      return;
-    }
-
-    await delay(25);
-  }
-
-  throw new Error('Timed out waiting for a PostgreSQL comment-row lock waiter');
-};
+  signal?: AbortSignal,
+): Promise<void> =>
+  waitForPostgresLockWaiters(runtime.prisma, {
+    applicationNames: [runtime.postgresApplicationName],
+    expectedCount: 1,
+    queryFragments: ['FROM "comments" AS c'],
+    ...(signal === undefined ? {} : { signal }),
+    timeoutMs,
+  });
 
 const createCommentLockBarrierPrisma = (
   prisma: PrismaClient,
@@ -160,17 +149,11 @@ const withFirstCommentLockHeld = async (
   first: (service: VideosService) => Promise<unknown>,
   second: () => Promise<unknown>,
 ): Promise<[PromiseSettledResult<unknown>, PromiseSettledResult<unknown>]> => {
-  let releaseLock!: () => void;
-  let reportLock!: () => void;
-  const locked = new Promise<void>((resolve) => {
-    reportLock = resolve;
-  });
-  const release = new Promise<void>((resolve) => {
-    releaseLock = resolve;
-  });
+  const locked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
   const barrierPrisma = createCommentLockBarrierPrisma(runtime.prisma, async () => {
-    reportLock();
-    await release;
+    locked.resolve();
+    await release.promise;
   });
   const barrierService = createIntegrationVideosService(
     barrierPrisma,
@@ -179,14 +162,15 @@ const withFirstCommentLockHeld = async (
   );
   const firstPromise = first(barrierService);
 
-  await locked;
-
-  const secondPromise = second();
-
-  await waitForBlockedCommentQuery(runtime.prisma);
-  releaseLock();
-
-  return Promise.allSettled([firstPromise, secondPromise]);
+  return coordinateLockInterleavingSettled({
+    firstBarrierDescription: 'the first comment-row lock',
+    firstOperation: firstPromise,
+    firstPaused: locked.promise,
+    releaseFirst: release.resolve,
+    secondLockDescription: 'the second blocked comment-row query',
+    startSecond: second,
+    waitForSecondLock: (signal) => waitForBlockedCommentQuery(runtime, 5_000, signal),
+  });
 };
 
 describe('video comment likes integration', () => {

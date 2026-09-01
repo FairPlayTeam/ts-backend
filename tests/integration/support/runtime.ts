@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -69,6 +70,7 @@ type DeliveredVideoDeletionEmail = {
 
 export type TestRuntime = {
   databaseUrl: string;
+  postgresApplicationName: string;
   redisUrl: string;
   objectStorageConfig: ObjectStorageConfig;
   postgresContainerId: string;
@@ -97,10 +99,42 @@ export const testLogger = {
   error: () => undefined,
 };
 
-export const createPrismaClient = (databaseUrl: string): PrismaClient =>
+export const createPostgresApplicationName = (): string => `fp-test-${randomUUID()}`;
+
+const withPostgresApplicationName = (databaseUrl: string, applicationName?: string): string => {
+  if (!applicationName) {
+    return databaseUrl;
+  }
+
+  const url = new URL(databaseUrl);
+  url.searchParams.set('application_name', applicationName);
+
+  return url.toString();
+};
+
+export const createPrismaClient = (
+  databaseUrl: string,
+  { applicationName }: { applicationName?: string } = {},
+): PrismaClient =>
   new PrismaClient({
-    adapter: new PrismaPg({ connectionString: databaseUrl }),
+    adapter: new PrismaPg({
+      connectionString: withPostgresApplicationName(databaseUrl, applicationName),
+    }),
   });
+
+export const createQueryObservedPrismaClient = (
+  databaseUrl: string,
+  onQuery: (event: Prisma.QueryEvent) => void,
+) => {
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg({ connectionString: databaseUrl }),
+    log: [{ emit: 'event', level: 'query' }],
+  });
+
+  prisma.$on('query', onQuery);
+
+  return prisma;
+};
 
 export const createIntegrationAuthService = (
   prisma: PrismaClient,
@@ -234,6 +268,66 @@ export const createIntegrationVideosService = (
     },
   });
 
+export const createVideoReadBarrierService = (
+  runtime: TestRuntime,
+  afterVideoRead: () => Promise<void>,
+): VideosService => {
+  const barrierPrisma = new Proxy(runtime.prisma, {
+    get(target, property) {
+      if (property === '$transaction') {
+        return async <T>(
+          run: (tx: Prisma.TransactionClient) => Promise<T>,
+          options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
+        ): Promise<T> =>
+          target.$transaction(async (tx) => {
+            const barrierTransaction = new Proxy(tx, {
+              get(transactionTarget, transactionProperty) {
+                if (transactionProperty === 'video') {
+                  return new Proxy(transactionTarget.video, {
+                    get(videoTarget, videoProperty) {
+                      if (videoProperty === 'findFirst') {
+                        return async (...args: Parameters<typeof videoTarget.findFirst>) => {
+                          const video = await videoTarget.findFirst(...args);
+                          await afterVideoRead();
+
+                          return video;
+                        };
+                      }
+
+                      const value = Reflect.get(videoTarget, videoProperty, videoTarget) as unknown;
+
+                      return typeof value === 'function' ? value.bind(videoTarget) : value;
+                    },
+                  });
+                }
+
+                const value = Reflect.get(
+                  transactionTarget,
+                  transactionProperty,
+                  transactionTarget,
+                ) as unknown;
+
+                return typeof value === 'function' ? value.bind(transactionTarget) : value;
+              },
+            });
+
+            return run(barrierTransaction);
+          }, options);
+      }
+
+      const value = Reflect.get(target, property, target) as unknown;
+
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+
+  return createIntegrationVideosService(
+    barrierPrisma,
+    runtime.videoObjectStorage,
+    runtime.videoExternalResources,
+  );
+};
+
 export const createIntegrationApp = async (
   runtime: TestRuntime,
   overrides: {
@@ -292,7 +386,10 @@ export const expectIntegrationReadinessOk = async (
 
 export const startRuntime = async (): Promise<TestRuntime> => {
   const infrastructure = inject('integrationInfrastructure');
-  const prisma = createPrismaClient(infrastructure.databaseUrl);
+  const postgresApplicationName = createPostgresApplicationName();
+  const prisma = createPrismaClient(infrastructure.databaseUrl, {
+    applicationName: postgresApplicationName,
+  });
   const redisClient = createRedisClient(infrastructure.redisUrl, testLogger);
   const objectStorage = createObjectStorage(
     infrastructure.objectStorageConfig,
@@ -336,6 +433,7 @@ export const startRuntime = async (): Promise<TestRuntime> => {
 
   return {
     databaseUrl: infrastructure.databaseUrl,
+    postgresApplicationName,
     redisUrl: infrastructure.redisUrl,
     objectStorageConfig: infrastructure.objectStorageConfig,
     postgresContainerId: infrastructure.postgresContainerId,

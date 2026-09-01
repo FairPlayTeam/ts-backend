@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjectKeys.js';
@@ -19,11 +20,163 @@ import { waitForTranscodeJob } from './support/videoArtifacts.js';
 import { VIDEO_OBJECT_STORAGE_BUCKET } from './support/infrastructure.js';
 import {
   createIntegrationApp,
+  createPrismaClient,
   resetState,
   startRuntime,
   stopRuntime,
   type TestRuntime,
 } from './support/runtime.js';
+import { throwCollectedErrors, waitForBarrier } from './support/asyncBarriers.js';
+
+const createPublicationCommitBarrierPrisma = (
+  prisma: PrismaClient,
+  {
+    afterGenerationActivation,
+    afterPublicationCommit,
+  }: {
+    afterGenerationActivation: () => Promise<void>;
+    afterPublicationCommit: () => Promise<void>;
+  },
+): PrismaClient =>
+  new Proxy(prisma, {
+    get(target, property) {
+      if (property === '$transaction') {
+        return async <T>(
+          run: (tx: Prisma.TransactionClient) => Promise<T>,
+          options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
+        ): Promise<T> => {
+          let activatedGeneration = false;
+          const result = await target.$transaction(async (tx) => {
+            const observedTransaction = new Proxy(tx, {
+              get(transactionTarget, transactionProperty) {
+                if (transactionProperty === 'videoArtifactGeneration') {
+                  return new Proxy(transactionTarget.videoArtifactGeneration, {
+                    get(generationTarget, generationProperty) {
+                      if (generationProperty === 'updateMany') {
+                        return async (
+                          args: Parameters<typeof generationTarget.updateMany>[0],
+                        ): Promise<Awaited<ReturnType<typeof generationTarget.updateMany>>> => {
+                          const updateResult = await generationTarget.updateMany(args);
+
+                          if (
+                            updateResult.count === 1 &&
+                            typeof args.data === 'object' &&
+                            args.data !== null &&
+                            'state' in args.data &&
+                            args.data.state === 'active'
+                          ) {
+                            activatedGeneration = true;
+                            await afterGenerationActivation();
+                          }
+
+                          return updateResult;
+                        };
+                      }
+
+                      const value = Reflect.get(
+                        generationTarget,
+                        generationProperty,
+                        generationTarget,
+                      ) as unknown;
+
+                      return typeof value === 'function' ? value.bind(generationTarget) : value;
+                    },
+                  });
+                }
+
+                const value = Reflect.get(
+                  transactionTarget,
+                  transactionProperty,
+                  transactionTarget,
+                ) as unknown;
+
+                return typeof value === 'function' ? value.bind(transactionTarget) : value;
+              },
+            });
+
+            return run(observedTransaction);
+          }, options);
+
+          if (activatedGeneration) {
+            await afterPublicationCommit();
+          }
+
+          return result;
+        };
+      }
+
+      const value = Reflect.get(target, property, target) as unknown;
+
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+
+const readTranscodePublicationSnapshot = (
+  prisma: PrismaClient,
+  {
+    jobId,
+    videoId,
+  }: {
+    jobId: string;
+    videoId: string;
+  },
+) =>
+  prisma.$transaction(
+    async (tx) => {
+      const video = await tx.video.findUniqueOrThrow({
+        where: { id: videoId },
+        select: {
+          activeArtifactGenerationId: true,
+          durationSeconds: true,
+          height: true,
+          hlsMasterObjectKey: true,
+          processingStatus: true,
+          thumbnailObjectKey: true,
+          width: true,
+        },
+      });
+      const generations = await tx.videoArtifactGeneration.findMany({
+        where: { videoId },
+        select: {
+          hlsMasterObjectKey: true,
+          id: true,
+          renditions: {
+            orderBy: { quality: 'asc' },
+            select: {
+              bitrate: true,
+              height: true,
+              playlistObjectKey: true,
+              quality: true,
+              segmentPrefix: true,
+              width: true,
+            },
+          },
+          state: true,
+          thumbnailObjectKey: true,
+        },
+      });
+      const artifactTargets = await tx.externalResourceTarget.findMany({
+        where: {
+          videoId,
+          role: { in: ['hls_artifacts', 'thumbnail_prefix'] },
+        },
+        select: {
+          generation: true,
+          goal: true,
+          quiescenceNotBefore: true,
+          role: true,
+          state: true,
+        },
+      });
+      const job = await tx.videoTranscodeJob.findUniqueOrThrow({
+        where: { id: jobId },
+        select: { status: true },
+      });
+
+      return { artifactTargets, generations, job, video };
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+  );
 
 describe('videos transcoding integration', () => {
   let runtime: TestRuntime | null = null;
@@ -371,8 +524,24 @@ describe('videos transcoding integration', () => {
     });
 
     const runnerErrors: object[] = [];
+    const publicationPendingCommit = Promise.withResolvers<void>();
+    const releasePublicationTransaction = Promise.withResolvers<void>();
+    const publicationCommitted = Promise.withResolvers<void>();
+    const releasePublication = Promise.withResolvers<void>();
+    const runnerLifecycle = Promise.withResolvers<void>();
+    const snapshotPrisma = createPrismaClient(runtime.databaseUrl);
+    const observedPrisma = createPublicationCommitBarrierPrisma(runtime.prisma, {
+      afterGenerationActivation: async () => {
+        publicationPendingCommit.resolve();
+        await releasePublicationTransaction.promise;
+      },
+      afterPublicationCommit: async () => {
+        publicationCommitted.resolve();
+        await releasePublication.promise;
+      },
+    });
     const runner = createVideoTranscodeRunner({
-      prisma: runtime.prisma,
+      prisma: observedPrisma,
       objectStorage: runtime.videoObjectStorage,
       clock: { now: () => new Date() },
       config: {
@@ -384,6 +553,9 @@ describe('videos transcoding integration', () => {
         warn: () => undefined,
         error: (data) => {
           runnerErrors.push(data);
+          runnerLifecycle.reject(
+            new Error('Transcode runner failed before the publication barrier'),
+          );
         },
       },
     });
@@ -392,9 +564,157 @@ describe('videos transcoding integration', () => {
     let completedJob: Awaited<ReturnType<typeof waitForTranscodeJob>>;
 
     try {
+      await waitForBarrier({
+        description: 'the uncommitted transcode publication writes',
+        operations: [runnerLifecycle.promise],
+        signal: publicationPendingCommit.promise,
+        timeoutMs: 30_000,
+      });
+      const pendingSnapshot = await readTranscodePublicationSnapshot(snapshotPrisma, {
+        jobId: job.id,
+        videoId: created.video.id,
+      });
+      expect(pendingSnapshot.generations).toHaveLength(2);
+      expect(pendingSnapshot.artifactTargets).toHaveLength(4);
+      const pendingGeneration = pendingSnapshot.generations.find(
+        ({ id }) => id !== previousGenerationId,
+      );
+
+      if (!pendingGeneration) {
+        throw new Error('Pending transcode generation was not persisted');
+      }
+
+      const pendingManifest = buildVideoArtifactManifest(
+        owner.userId,
+        created.video.id,
+        pendingGeneration.id,
+        [],
+      );
+      const pendingCurrentTargets = pendingSnapshot.artifactTargets.filter(
+        ({ generation }) => generation === pendingGeneration.id,
+      );
+      const pendingPreviousTargets = pendingSnapshot.artifactTargets.filter(
+        ({ generation }) => generation === previousGenerationId,
+      );
+
+      expect(pendingSnapshot.video).toEqual({
+        activeArtifactGenerationId: previousGenerationId,
+        durationSeconds: 2,
+        height: null,
+        hlsMasterObjectKey: previousManifest.master.objectKey,
+        processingStatus: 'ready',
+        thumbnailObjectKey: previousManifest.thumbnail.objectKey,
+        width: null,
+      });
+      expect(pendingSnapshot.generations).toContainEqual({
+        hlsMasterObjectKey: previousManifest.master.objectKey,
+        id: previousGenerationId,
+        renditions: [],
+        state: 'active',
+        thumbnailObjectKey: previousManifest.thumbnail.objectKey,
+      });
+      expect(pendingGeneration).toEqual({
+        hlsMasterObjectKey: pendingManifest.master.objectKey,
+        id: pendingGeneration.id,
+        renditions: [],
+        state: 'writing',
+        thumbnailObjectKey: pendingManifest.thumbnail.objectKey,
+      });
+      expect(pendingCurrentTargets).toHaveLength(2);
+      expect(pendingCurrentTargets).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            goal: 'present',
+            quiescenceNotBefore: null,
+            role: 'hls_artifacts',
+            state: 'writing',
+          }),
+          expect.objectContaining({
+            goal: 'present',
+            quiescenceNotBefore: null,
+            role: 'thumbnail_prefix',
+            state: 'writing',
+          }),
+        ]),
+      );
+      expect(pendingPreviousTargets).toHaveLength(2);
+      expect(pendingPreviousTargets).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            goal: 'present',
+            quiescenceNotBefore: null,
+            role: 'hls_artifacts',
+            state: 'confirmed_present',
+          }),
+          expect.objectContaining({
+            goal: 'present',
+            quiescenceNotBefore: null,
+            role: 'thumbnail_prefix',
+            state: 'confirmed_present',
+          }),
+        ]),
+      );
+      expect(pendingSnapshot.job).toEqual({ status: 'processing' });
+
+      releasePublicationTransaction.resolve();
+      await waitForBarrier({
+        description: 'the committed transcode publication',
+        operations: [runnerLifecycle.promise],
+        signal: publicationCommitted.promise,
+        timeoutMs: 30_000,
+      });
+      const committedSnapshot = await readTranscodePublicationSnapshot(snapshotPrisma, {
+        jobId: job.id,
+        videoId: created.video.id,
+      });
+      const committedGeneration = committedSnapshot.generations.find(
+        ({ id }) => id !== previousGenerationId,
+      );
+
+      if (!committedGeneration) {
+        throw new Error('Committed transcode generation was not persisted');
+      }
+
+      const summarizeTargets = (generation: string) =>
+        committedSnapshot.artifactTargets
+          .filter((target) => target.generation === generation)
+          .map(({ goal, role, state }) => ({ goal, role, state }))
+          .sort((left, right) => left.role.localeCompare(right.role));
+
+      expect({
+        activeGenerationId: committedSnapshot.video.activeArtifactGenerationId,
+        activeGenerationState: committedGeneration.state,
+        currentTargets: summarizeTargets(committedGeneration.id),
+        jobStatus: committedSnapshot.job.status,
+        previousGenerationState: committedSnapshot.generations.find(
+          ({ id }) => id === previousGenerationId,
+        )?.state,
+        previousTargets: summarizeTargets(previousGenerationId),
+      }).toEqual({
+        activeGenerationId: committedGeneration.id,
+        activeGenerationState: 'active',
+        currentTargets: [
+          { goal: 'present', role: 'hls_artifacts', state: 'confirmed_present' },
+          { goal: 'present', role: 'thumbnail_prefix', state: 'confirmed_present' },
+        ],
+        jobStatus: 'completed',
+        previousGenerationState: 'retiring',
+        previousTargets: [
+          { goal: 'absent', role: 'hls_artifacts', state: 'quiescing' },
+          { goal: 'absent', role: 'thumbnail_prefix', state: 'quiescing' },
+        ],
+      });
+      releasePublication.resolve();
       completedJob = await waitForTranscodeJob(runtime.prisma, job.id);
     } finally {
-      await runner.stop();
+      releasePublicationTransaction.resolve();
+      releasePublication.resolve();
+      try {
+        await runner.stop();
+      } finally {
+        runnerLifecycle.resolve();
+        await snapshotPrisma.$disconnect();
+      }
     }
 
     expect(completedJob).toMatchObject({
@@ -768,6 +1088,7 @@ describe('videos transcoding integration', () => {
     });
     const downloadStarted = Promise.withResolvers<void>();
     const releaseDownload = Promise.withResolvers<void>();
+    const runnerFailed = Promise.withResolvers<void>();
     const runnerErrors: object[] = [];
     const runner = createVideoTranscodeRunner({
       prisma: runtime.prisma,
@@ -788,15 +1109,50 @@ describe('videos transcoding integration', () => {
         warn: () => undefined,
         error: (data) => {
           runnerErrors.push(data);
+          runnerFailed.reject(new Error('Transcode runner failed before graceful shutdown'));
         },
       },
     });
 
     runner.start();
-    await downloadStarted.promise;
-    const stopped = runner.stop();
-    releaseDownload.resolve();
-    await stopped;
+    let stopped: Promise<void> | null = null;
+    const coordinationErrors = new Set<unknown>();
+
+    try {
+      await waitForBarrier({
+        description: 'the graceful-shutdown source download',
+        operations: [runnerFailed.promise],
+        signal: downloadStarted.promise,
+        timeoutMs: 30_000,
+      });
+      stopped = runner.stop();
+      releaseDownload.resolve();
+      await stopped;
+    } catch (error) {
+      coordinationErrors.add(error);
+    } finally {
+      releaseDownload.resolve();
+      runnerFailed.resolve();
+
+      try {
+        stopped ??= runner.stop();
+      } catch (error) {
+        coordinationErrors.add(error);
+      }
+
+      if (stopped) {
+        const [stopResult] = await Promise.allSettled([stopped]);
+
+        if (stopResult?.status === 'rejected') {
+          coordinationErrors.add(stopResult.reason);
+        }
+      }
+    }
+
+    throwCollectedErrors(
+      [...coordinationErrors],
+      'Graceful transcode shutdown coordination failed',
+    );
 
     await expect(
       runtime.prisma.videoTranscodeJob.findUniqueOrThrow({

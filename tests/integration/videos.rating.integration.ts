@@ -1,48 +1,60 @@
-import { setTimeout as delay } from 'node:timers/promises';
 import type { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import {
+  createExternalResourceReconciler,
+  USER_MEDIA_EXTERNAL_RESOURCE_ROLES,
+} from '../../src/services/externalResources.js';
 import { createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import {
   createIntegrationApp,
+  createIntegrationAuthService,
   createPrismaClient,
+  createQueryObservedPrismaClient,
+  createVideoReadBarrierService,
   resetState,
   startRuntime,
   stopRuntime,
+  testLogger,
   type TestRuntime,
 } from './support/runtime.js';
+import { coordinateGatedOperations, coordinateWhilePaused } from './support/asyncBarriers.js';
+import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
 
-const waitForBlockedQueriesMatching = async (
-  prisma: PrismaClient,
+const waitForBlockedQueriesMatching = (
+  runtime: TestRuntime,
   expectedCount: number,
   queryFragment: string,
-  timeoutMs = 5_000,
-): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
+  {
+    countMode = 'exact',
+    observerPrisma = runtime.prisma,
+    signal,
+    timeoutMs = 5_000,
+  }: {
+    countMode?: 'at-least' | 'exact';
+    observerPrisma?: PrismaClient;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  } = {},
+): Promise<void> =>
+  waitForPostgresLockWaiters(observerPrisma, {
+    applicationNames: [runtime.postgresApplicationName],
+    countMode,
+    expectedCount,
+    queryFragments: [queryFragment],
+    ...(signal === undefined ? {} : { signal }),
+    timeoutMs,
+  });
 
-  while (Date.now() < deadline) {
-    const [activity] = await prisma.$queryRaw<Array<{ blockedCount: number }>>`
-      SELECT count(*)::int AS "blockedCount"
-      FROM pg_stat_activity
-      WHERE datname = current_database()
-        AND wait_event_type = 'Lock'
-        AND query LIKE ${`%${queryFragment}%`}
-    `;
-
-    if ((activity?.blockedCount ?? 0) >= expectedCount) {
-      return;
-    }
-
-    await delay(25);
-  }
-
-  throw new Error(
-    `Timed out waiting for ${expectedCount} blocked queries matching ${queryFragment}`,
-  );
-};
-
-const waitForBlockedRatingQueries = (prisma: PrismaClient, expectedCount: number): Promise<void> =>
-  waitForBlockedQueriesMatching(prisma, expectedCount, '"rating_sum"');
+const waitForBlockedRatingQueries = (
+  runtime: TestRuntime,
+  expectedCount: number,
+  options: {
+    countMode?: 'at-least' | 'exact';
+    observerPrisma?: PrismaClient;
+    signal?: AbortSignal;
+  } = {},
+): Promise<void> => waitForBlockedQueriesMatching(runtime, expectedCount, '"rating_sum"', options);
 
 const expectCheckConstraintViolation = async (
   operation: Promise<unknown>,
@@ -355,6 +367,7 @@ describe('video ratings integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const app = await createIntegrationApp(runtime);
     const owner = await createVerifiedSession(runtime, {
@@ -387,29 +400,37 @@ describe('video ratings integration', () => {
       { timeout: 15_000 },
     );
 
-    await gateAcquired.promise;
-    const firstRequest = request(app)
-      .put(`/videos/${video.publicId}/rating`)
-      .set('Authorization', `Bearer ${firstRater.sessionKey}`)
-      .send({ value: 5 })
-      .expect(200)
-      .then((response) => response);
-    const secondRequest = request(app)
-      .put(`/videos/${video.publicId}/rating`)
-      .set('Authorization', `Bearer ${secondRater.sessionKey}`)
-      .send({ value: 3 })
-      .expect(200)
-      .then((response) => response);
+    const startFirstRequest = () =>
+      request(app)
+        .put(`/videos/${video.publicId}/rating`)
+        .set('Authorization', `Bearer ${firstRater.sessionKey}`)
+        .send({ value: 5 })
+        .expect(200)
+        .then((response) => response);
+    const startSecondRequest = () =>
+      request(app)
+        .put(`/videos/${video.publicId}/rating`)
+        .set('Authorization', `Bearer ${secondRater.sessionKey}`)
+        .send({ value: 3 })
+        .expect(200)
+        .then((response) => response);
+    await coordinateGatedOperations({
+      cleanup: [() => gatePrisma.$disconnect()],
+      gateBarrierDescription: 'the concurrent-first-ratings video-row gate',
+      gateOperation: gateTransaction,
+      gatePaused: gateAcquired.promise,
+      releaseGate: releaseGate.resolve,
+      runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
+        const firstRequest = trackOperation(startFirstRequest());
+        const secondRequest = trackOperation(startSecondRequest());
+        await waitForSignal({
+          description: 'both first ratings behind the video-row gate',
+          observe: (signal) => waitForBlockedRatingQueries(activeRuntime, 2, { signal }),
+        });
 
-    try {
-      await waitForBlockedRatingQueries(runtime.prisma, 2);
-    } finally {
-      releaseGate.resolve();
-      await gateTransaction;
-      await gatePrisma.$disconnect();
-    }
-
-    await Promise.all([firstRequest, secondRequest]);
+        return [firstRequest, secondRequest] as const;
+      },
+    });
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
         where: { id: video.id },
@@ -425,13 +446,14 @@ describe('video ratings integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const app = await createIntegrationApp(runtime);
     const owner = await createVerifiedSession(runtime, {
       email: 'rating-burst-owner@example.com',
       username: 'rating_burst_owner',
     });
-    const raters = [];
+    const raters: Array<Awaited<ReturnType<typeof createVerifiedSession>>> = [];
 
     for (let index = 0; index < 32; index += 1) {
       raters.push(
@@ -467,28 +489,39 @@ describe('video ratings integration', () => {
         { timeout: 30_000 },
       );
 
-      await gateAcquired.promise;
-      const ratingRequests = raters.map((rater, index) => {
-        const value = (index % 5) + 1;
+      const results = await coordinateGatedOperations({
+        cleanup: [() => gatePrisma.$disconnect()],
+        gateBarrierDescription: `the rating-burst video-row gate for repetition ${repetition}`,
+        gateOperation: gateTransaction,
+        gatePaused: gateAcquired.promise,
+        releaseGate: releaseGate.resolve,
+        runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
+          const ratingRequests = raters.map((rater, index) => {
+            const value = (index % 5) + 1;
 
-        return request(app)
-          .put(`/videos/${video.publicId}/rating`)
-          .set('Authorization', `Bearer ${rater.sessionKey}`)
-          .send({ value })
-          .then((response) => ({ response, value }));
+            return trackOperation(
+              request(app)
+                .put(`/videos/${video.publicId}/rating`)
+                .set('Authorization', `Bearer ${rater.sessionKey}`)
+                .send({ value })
+                .then((response) => ({ response, value })),
+            );
+          });
+          // The application Prisma pool bounds the number of simultaneous database queries,
+          // while all 32 HTTP requests remain in flight.
+          await waitForSignal({
+            description: `eight rating requests behind the repetition ${repetition} gate`,
+            observe: (signal) =>
+              waitForBlockedRatingQueries(activeRuntime, 8, {
+                countMode: 'at-least',
+                observerPrisma: gatePrisma,
+                signal,
+              }),
+          });
+
+          return ratingRequests;
+        },
       });
-
-      try {
-        // The application Prisma pool bounds the number of simultaneous database queries,
-        // while all 32 HTTP requests remain in flight.
-        await waitForBlockedRatingQueries(gatePrisma, 8);
-      } finally {
-        releaseGate.resolve();
-        await gateTransaction;
-        await gatePrisma.$disconnect();
-      }
-
-      const results = await Promise.all(ratingRequests);
       statuses.push(...results.map(({ response }) => response.status));
       const successfulRatings = results.filter(({ response }) => response.status === 200);
       await expect(
@@ -509,6 +542,7 @@ describe('video ratings integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const app = await createIntegrationApp(runtime);
     const owner = await createVerifiedSession(runtime, {
@@ -542,29 +576,37 @@ describe('video ratings integration', () => {
       { timeout: 15_000 },
     );
 
-    await gateAcquired.promise;
-    const firstRequest = request(app)
-      .put(`/videos/${video.publicId}/rating`)
-      .set('Authorization', `Bearer ${rater.sessionKey}`)
-      .send({ value: 1 })
-      .expect(200)
-      .then((response) => response);
-    const secondRequest = request(app)
-      .put(`/videos/${video.publicId}/rating`)
-      .set('Authorization', `Bearer ${rater.sessionKey}`)
-      .send({ value: 5 })
-      .expect(200)
-      .then((response) => response);
+    const startFirstUpdate = () =>
+      request(app)
+        .put(`/videos/${video.publicId}/rating`)
+        .set('Authorization', `Bearer ${rater.sessionKey}`)
+        .send({ value: 1 })
+        .expect(200)
+        .then((response) => response);
+    const startSecondUpdate = () =>
+      request(app)
+        .put(`/videos/${video.publicId}/rating`)
+        .set('Authorization', `Bearer ${rater.sessionKey}`)
+        .send({ value: 5 })
+        .expect(200)
+        .then((response) => response);
+    await coordinateGatedOperations({
+      cleanup: [() => gatePrisma.$disconnect()],
+      gateBarrierDescription: 'the concurrent-rating-updates video-row gate',
+      gateOperation: gateTransaction,
+      gatePaused: gateAcquired.promise,
+      releaseGate: releaseGate.resolve,
+      runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
+        const firstRequest = trackOperation(startFirstUpdate());
+        const secondRequest = trackOperation(startSecondUpdate());
+        await waitForSignal({
+          description: 'both rating updates behind the video-row gate',
+          observe: (signal) => waitForBlockedRatingQueries(activeRuntime, 2, { signal }),
+        });
 
-    try {
-      await waitForBlockedRatingQueries(runtime.prisma, 2);
-    } finally {
-      releaseGate.resolve();
-      await gateTransaction;
-      await gatePrisma.$disconnect();
-    }
-
-    await Promise.all([firstRequest, secondRequest]);
+        return [firstRequest, secondRequest] as const;
+      },
+    });
     const [storedVideo, storedRatings] = await Promise.all([
       runtime.prisma.video.findUniqueOrThrow({
         where: { id: video.id },
@@ -603,46 +645,35 @@ describe('video ratings integration', () => {
       .set('Authorization', `Bearer ${rater.sessionKey}`)
       .send({ value: 1 })
       .expect(200);
-
-    const gatePrisma = createPrismaClient(runtime.databaseUrl);
-    const gateAcquired = Promise.withResolvers<void>();
-    const releaseGate = Promise.withResolvers<void>();
-    const gateTransaction = gatePrisma.$transaction(
-      async (tx) => {
-        await tx.$executeRawUnsafe('LOCK TABLE "video_ratings" IN ACCESS EXCLUSIVE MODE');
-        gateAcquired.resolve();
-        await releaseGate.promise;
-      },
-      { timeout: 15_000 },
-    );
-
-    await gateAcquired.promise;
-    const updateRequest = request(app)
-      .put(`/videos/${video.publicId}/rating`)
-      .set('Authorization', `Bearer ${rater.sessionKey}`)
-      .send({ value: 5 })
-      .then((response) => response);
-    await waitForBlockedQueriesMatching(runtime.prisma, 1, 'video_ratings');
-    const readRequest = request(app)
+    const aggregateRead = Promise.withResolvers<void>();
+    const releaseRatingRead = Promise.withResolvers<void>();
+    const readService = createVideoReadBarrierService(runtime, async () => {
+      aggregateRead.resolve();
+      await releaseRatingRead.promise;
+    });
+    const readApp = await createIntegrationApp(runtime, { videosService: readService });
+    const readRequest = request(readApp)
       .get(`/videos/${video.publicId}/rating/me`)
       .set('Authorization', `Bearer ${rater.sessionKey}`)
       .then((response) => response);
+    const [readResponse, updateResponse] = await coordinateWhilePaused({
+      firstBarrierDescription: 'the current-rating aggregate read',
+      firstOperation: readRequest,
+      firstPaused: aggregateRead.promise,
+      releaseFirst: releaseRatingRead.resolve,
+      runWhilePaused: () =>
+        request(app)
+          .put(`/videos/${video.publicId}/rating`)
+          .set('Authorization', `Bearer ${rater.sessionKey}`)
+          .send({ value: 5 })
+          .expect(200)
+          .then((response) => response),
+      whilePausedDescription: 'the committed rating update after the aggregate read',
+    });
 
-    try {
-      await waitForBlockedQueriesMatching(runtime.prisma, 2, 'video_ratings');
-    } finally {
-      releaseGate.resolve();
-      await gateTransaction;
-      await gatePrisma.$disconnect();
-    }
-
-    const [updateResponse, readResponse] = await Promise.all([updateRequest, readRequest]);
-    expect(updateResponse.status).toBe(200);
+    expect(updateResponse.body).toEqual({ ratingAverage: 5, ratingCount: 1, userRating: 5 });
     expect(readResponse.status).toBe(200);
-    expect([
-      { ratingAverage: 1, ratingCount: 1, userRating: 1 },
-      { ratingAverage: 5, ratingCount: 1, userRating: 5 },
-    ]).toContainEqual(readResponse.body);
+    expect(readResponse.body).toEqual({ ratingAverage: 1, ratingCount: 1, userRating: 1 });
   });
 
   test('returns 404 when the authenticated rater is deleted before the rating write', async () => {
@@ -686,18 +717,18 @@ describe('video ratings integration', () => {
       .send({ value: 4 })
       .then((response) => response);
 
-    await sessionValidated.promise;
-
-    try {
-      await runtime.authService.deleteAccount({
-        userId: deletedRater.userId,
-        currentPassword: INITIAL_PASSWORD,
-      });
-    } finally {
-      releaseRating.resolve();
-    }
-
-    const response = await ratingRequest;
+    const [response] = await coordinateWhilePaused({
+      firstBarrierDescription: 'the deleted-rater session validation',
+      firstOperation: ratingRequest,
+      firstPaused: sessionValidated.promise,
+      releaseFirst: releaseRating.resolve,
+      runWhilePaused: () =>
+        activeRuntime.authService.deleteAccount({
+          userId: deletedRater.userId,
+          currentPassword: INITIAL_PASSWORD,
+        }),
+      whilePausedDescription: 'the rater account deletion before the rating write',
+    });
     expect(response.status).toBe(404);
     expect(response.body).toMatchObject({ error: 'NotFound', message: 'Video not found' });
     await expect(
@@ -827,7 +858,7 @@ describe('video ratings integration', () => {
     expect(deletedRatings).toBe(0);
   });
 
-  test('deletes 2,000 rating contributions with one bounded transaction', async () => {
+  test('uses the same bounded SQL statement set to delete one or 2,000 rating contributions', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
@@ -839,6 +870,10 @@ describe('video ratings integration', () => {
     const deletedRater = await createVerifiedSession(runtime, {
       email: 'rating-volume-rater@example.com',
       username: 'rating_volume_rater',
+    });
+    const baselineRater = await createVerifiedSession(runtime, {
+      email: 'rating-baseline-rater@example.com',
+      username: 'rating_base_rater',
     });
     const ratingCount = 2_000;
 
@@ -869,16 +904,74 @@ describe('video ratings integration', () => {
         value: 3,
       })),
     });
+    const firstVideo = videos[0];
 
-    const startedAt = performance.now();
-    await runtime.authService.deleteAccount({
-      userId: deletedRater.userId,
-      currentPassword: INITIAL_PASSWORD,
+    if (!firstVideo) {
+      throw new Error('Expected at least one rating-volume video');
+    }
+
+    await runtime.prisma.$transaction([
+      runtime.prisma.videoRating.create({
+        data: {
+          userId: baselineRater.userId,
+          videoId: firstVideo.id,
+          value: 4,
+        },
+      }),
+      runtime.prisma.video.update({
+        where: { id: firstVideo.id },
+        data: {
+          ratingSum: { increment: 4 },
+          ratingCount: { increment: 1 },
+        },
+      }),
+    ]);
+
+    const statements: string[] = [];
+    const observedPrisma = createQueryObservedPrismaClient(runtime.databaseUrl, ({ query }) => {
+      statements.push(query);
     });
-    const durationMs = performance.now() - startedAt;
+    const observedExternalResources = createExternalResourceReconciler({
+      prisma: observedPrisma,
+      objectStorage: runtime.objectStorage,
+      clock: { now: () => new Date() },
+      logger: testLogger,
+      allowedRoles: USER_MEDIA_EXTERNAL_RESOURCE_ROLES,
+    });
+    const deletionService = createIntegrationAuthService(
+      observedPrisma,
+      runtime.objectStorage,
+      runtime.delivered,
+      observedExternalResources,
+    );
+    let baselineStatements: string[];
+    let volumeStatements: string[];
+
+    try {
+      statements.length = 0;
+      await deletionService.deleteAccount({
+        userId: baselineRater.userId,
+        currentPassword: INITIAL_PASSWORD,
+      });
+      baselineStatements = [...statements];
+
+      statements.length = 0;
+      await deletionService.deleteAccount({
+        userId: deletedRater.userId,
+        currentPassword: INITIAL_PASSWORD,
+      });
+      volumeStatements = [...statements];
+    } finally {
+      await observedPrisma.$disconnect();
+    }
 
     expect(videos).toHaveLength(ratingCount);
-    expect(durationMs).toBeLessThan(5_000);
+    expect(volumeStatements).toEqual(baselineStatements);
+    expect(
+      volumeStatements.filter(
+        (sql) => sql.includes('UPDATE "videos" AS v') && sql.includes('FROM "video_ratings" AS vr'),
+      ),
+    ).toHaveLength(1);
     await expect(
       runtime.prisma.video.count({
         where: {

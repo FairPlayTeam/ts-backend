@@ -16,8 +16,15 @@ import {
 } from './support/fixtures.js';
 import { OBJECT_STORAGE_BUCKET, VIDEO_OBJECT_STORAGE_BUCKET } from './support/infrastructure.js';
 import {
+  coordinateGatedOperations,
+  throwCollectedErrors,
+  waitForBarrier,
+} from './support/asyncBarriers.js';
+import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
+import {
   createIntegrationAuthService,
   createIntegrationVideosService,
+  createPrismaClient,
   resetState,
   startRuntime,
   stopRuntime,
@@ -363,6 +370,8 @@ describe('maintenance and reconciliation integration', () => {
     const secondCalls: string[] = [];
     const firstStepStarted = Promise.withResolvers<void>();
     const releaseFirstStep = Promise.withResolvers<void>();
+    const firstRenewalCompleted = Promise.withResolvers<void>();
+    const lockLossObserved = Promise.withResolvers<void>();
     const createMaintenanceServices = (calls: string[], blockFirstStep: boolean) => ({
       authService: {
         cleanupSessions: async () => {
@@ -422,7 +431,33 @@ describe('maintenance and reconciliation integration', () => {
         },
       },
     });
-    const lockTtlMs = 300;
+    const lockTtlMs = 3_000;
+    const callRedis = runtime.redisClient.call.bind(runtime.redisClient);
+    const observedRedisClient = new Proxy(runtime.redisClient, {
+      get(target, property) {
+        if (property === 'call') {
+          return async (...args: Parameters<typeof callRedis>) => {
+            const result = await callRedis(...args);
+
+            if (
+              args[0] === 'eval' &&
+              typeof args[1] === 'string' &&
+              args[1].includes('pexpire') &&
+              args[4] === 'first-maintenance-instance' &&
+              result === 1
+            ) {
+              firstRenewalCompleted.resolve();
+            }
+
+            return result;
+          };
+        }
+
+        const value = Reflect.get(target, property, target) as unknown;
+
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
     const firstJob = createMaintenanceCleanupJob({
       ...createMaintenanceServices(firstCalls, true),
       clock: { now: () => new Date() },
@@ -431,11 +466,18 @@ describe('maintenance and reconciliation integration', () => {
         inactiveRetentionMs: 1_000,
       },
       lock: createRedisMaintenanceCleanupLock({
-        redisClient: runtime.redisClient,
+        redisClient: observedRedisClient,
         ttlMs: lockTtlMs,
         tokenFactory: () => 'first-maintenance-instance',
       }),
-      logger: testLogger,
+      logger: {
+        ...testLogger,
+        error: (_data: object, message: string) => {
+          if (message === 'Maintenance cleanup lock ownership lost') {
+            lockLossObserved.resolve();
+          }
+        },
+      },
     });
     const secondJob = createMaintenanceCleanupJob({
       ...createMaintenanceServices(secondCalls, false),
@@ -453,21 +495,74 @@ describe('maintenance and reconciliation integration', () => {
     });
 
     const firstRun = firstJob.runOnce();
-    await firstStepStarted.promise;
-    await delay(lockTtlMs * 2);
-    const secondResult = await secondJob.runOnce();
-    await runtime.redisClient.call(
-      'set',
-      'maintenance:cleanup:lock',
-      'intruder-token',
-      'PX',
-      '5000',
-    );
-    await delay(150);
-    releaseFirstStep.resolve();
-    const firstResult = await firstRun;
-    const retainedToken = await runtime.redisClient.call('get', 'maintenance:cleanup:lock');
-    await runtime.redisClient.call('del', 'maintenance:cleanup:lock');
+    let firstResult: Awaited<typeof firstRun> | null = null;
+    let secondResult: Awaited<ReturnType<typeof secondJob.runOnce>> | null = null;
+    let retainedToken: unknown;
+    const coordinationErrors: unknown[] = [];
+
+    try {
+      await waitForBarrier({
+        description: 'the first maintenance cleanup step',
+        operations: [firstRun],
+        signal: firstStepStarted.promise,
+      });
+      await waitForBarrier({
+        description: 'a successful Redis maintenance-lock renewal',
+        operations: [firstRun],
+        signal: firstRenewalCompleted.promise,
+        timeoutMs: lockTtlMs * 2,
+      });
+      secondResult = await secondJob.runOnce();
+      await runtime.redisClient.call(
+        'set',
+        'maintenance:cleanup:lock',
+        'intruder-token',
+        'PX',
+        String(lockTtlMs * 4),
+      );
+      await waitForBarrier({
+        description: 'maintenance-lock ownership loss',
+        operations: [firstRun],
+        signal: lockLossObserved.promise,
+        timeoutMs: lockTtlMs * 2,
+      });
+    } catch (error) {
+      coordinationErrors.push(error);
+    } finally {
+      releaseFirstStep.resolve();
+      const [firstRunResult] = await Promise.allSettled([firstRun]);
+
+      if (firstRunResult?.status === 'fulfilled') {
+        firstResult = firstRunResult.value;
+      } else if (firstRunResult) {
+        coordinationErrors.push(firstRunResult.reason);
+      }
+
+      const retainedTokenResult = await Promise.allSettled([
+        runtime.redisClient.call('get', 'maintenance:cleanup:lock'),
+      ]);
+      const tokenResult = retainedTokenResult[0];
+
+      if (tokenResult?.status === 'fulfilled') {
+        retainedToken = tokenResult.value;
+      } else if (tokenResult) {
+        coordinationErrors.push(tokenResult.reason);
+      }
+
+      const [cleanupResult] = await Promise.allSettled([
+        runtime.redisClient.call('del', 'maintenance:cleanup:lock'),
+      ]);
+
+      if (cleanupResult?.status === 'rejected') {
+        coordinationErrors.push(cleanupResult.reason);
+      }
+    }
+
+    throwCollectedErrors(coordinationErrors, 'Redis maintenance-lock coordination failed');
+
+    if (!firstResult || !secondResult) {
+      throw new Error('Redis maintenance-lock runs did not both complete');
+    }
 
     expect(secondResult).toEqual({
       skipped: true,
@@ -1037,10 +1132,11 @@ describe('maintenance and reconciliation integration', () => {
     expect(queuedTargets.map(({ id }) => id)).toContain(mediaAsset.externalResourceTargetId);
   });
 
-  test('keeps concurrent account deletions idempotent without creating cleanup targets', async () => {
+  test('serializes duplicate account-deletion cleanup transitions without creating a second target', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'concurrent-account-delete@example.com',
@@ -1059,11 +1155,31 @@ describe('maintenance and reconciliation integration', () => {
       select: { id: true },
       orderBy: { id: 'asc' },
     });
+
+    const lockedTarget = targetsBefore[0];
+
+    if (!lockedTarget) {
+      throw new Error('Concurrent account deletion fixture has no media target to lock');
+    }
+
+    const gatePrisma = createPrismaClient(runtime.databaseUrl);
+    const gateAcquired = Promise.withResolvers<void>();
+    const releaseGate = Promise.withResolvers<void>();
+    const gateTransaction = gatePrisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`
+          SELECT "id"
+          FROM "external_resource_targets"
+          WHERE "id" = CAST(${lockedTarget.id} AS UUID)
+          FOR UPDATE
+        `;
+        gateAcquired.resolve();
+        await releaseGate.promise;
+      },
+      { timeout: 15_000 },
+    );
     let arrivals = 0;
-    let release: (() => void) | null = null;
-    const bothReauthenticated = new Promise<void>((resolveBarrier) => {
-      release = resolveBarrier;
-    });
+    const bothReauthenticated = Promise.withResolvers<void>();
     const deletionService = createIntegrationAuthService(
       runtime.prisma,
       runtime.objectStorage,
@@ -1074,24 +1190,55 @@ describe('maintenance and reconciliation integration', () => {
           arrivals += 1;
 
           if (arrivals === 2) {
-            release?.();
+            bothReauthenticated.resolve();
           }
 
-          await bothReauthenticated;
+          await bothReauthenticated.promise;
         },
       },
     );
 
-    const deletions = await Promise.all([
-      deletionService.deleteAccount({
-        userId: owner.userId,
-        currentPassword: INITIAL_PASSWORD,
-      }),
-      deletionService.deleteAccount({
-        userId: owner.userId,
-        currentPassword: INITIAL_PASSWORD,
-      }),
-    ]);
+    const deletions = await coordinateGatedOperations({
+      cleanup: [() => gatePrisma.$disconnect()],
+      gateBarrierDescription: 'the account-deletion target gate',
+      gateOperation: gateTransaction,
+      gatePaused: gateAcquired.promise,
+      releaseGate: () => {
+        bothReauthenticated.resolve();
+        releaseGate.resolve();
+      },
+      runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
+        const firstDeletion = trackOperation(
+          deletionService.deleteAccount({
+            userId: owner.userId,
+            currentPassword: INITIAL_PASSWORD,
+          }),
+        );
+        const secondDeletion = trackOperation(
+          deletionService.deleteAccount({
+            userId: owner.userId,
+            currentPassword: INITIAL_PASSWORD,
+          }),
+        );
+        await waitForSignal({
+          description: 'both account-deletion reauthentication checks',
+          observe: () => bothReauthenticated.promise,
+          timeoutMs: 5_000,
+        });
+        await waitForSignal({
+          description: 'both account deletions behind the external-resource target gate',
+          observe: (signal) =>
+            waitForPostgresLockWaiters(activeRuntime.prisma, {
+              applicationNames: [activeRuntime.postgresApplicationName],
+              expectedCount: 2,
+              queryFragments: ['external_resource_targets'],
+              signal,
+            }),
+        });
+
+        return [firstDeletion, secondDeletion] as const;
+      },
+    });
 
     expect(deletions).toEqual([
       expect.objectContaining({

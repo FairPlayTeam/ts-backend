@@ -1,8 +1,11 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
-import { setTimeout as delay } from 'node:timers/promises';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import {
+  listVideoCommentReplies,
+  listVideoComments,
+} from '../../src/services/videos/videoComments.js';
 import { createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import { createPlayableVideo } from './support/playableVideo.js';
 import {
@@ -10,11 +13,18 @@ import {
   createIntegrationAdminService,
   createIntegrationAuthService,
   createIntegrationVideosService,
+  createQueryObservedPrismaClient,
   resetState,
   startRuntime,
   stopRuntime,
   type TestRuntime,
 } from './support/runtime.js';
+import {
+  coordinateLockInterleaving,
+  coordinateWhilePaused,
+  waitForBarrier,
+} from './support/asyncBarriers.js';
+import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
 
 type TransactionRawBarrier = {
   after?: () => Promise<void> | void;
@@ -22,30 +32,18 @@ type TransactionRawBarrier = {
 };
 
 const waitForBlockedVideoQueries = async (
-  prisma: PrismaClient,
+  runtime: TestRuntime,
   expectedCount: number,
   timeoutMs = 5_000,
-): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const [activity] = await prisma.$queryRaw<Array<{ blocked_count: number }>>`
-      SELECT count(*)::int AS blocked_count
-      FROM pg_stat_activity
-      WHERE datname = current_database()
-        AND wait_event_type = 'Lock'
-        AND query LIKE '%FROM "videos"%'
-    `;
-
-    if ((activity?.blocked_count ?? 0) >= expectedCount) {
-      return;
-    }
-
-    await delay(25);
-  }
-
-  throw new Error(`Timed out waiting for ${expectedCount} blocked video queries`);
-};
+  signal?: AbortSignal,
+): Promise<void> =>
+  waitForPostgresLockWaiters(runtime.prisma, {
+    applicationNames: [runtime.postgresApplicationName],
+    expectedCount,
+    queryFragments: ['FROM "videos"'],
+    ...(signal === undefined ? {} : { signal }),
+    timeoutMs,
+  });
 
 const createBarrierPrisma = (
   prisma: PrismaClient,
@@ -189,6 +187,41 @@ const expectConstraintViolation = async (
 
 type ExplainPlanRow = {
   'QUERY PLAN': string;
+};
+
+type ObservedQuery = Pick<Prisma.QueryEvent, 'params' | 'query'>;
+
+const findEmittedCommentPageQuery = (queries: readonly ObservedQuery[]): ObservedQuery => {
+  const pageQueries = queries.filter(
+    ({ query }) =>
+      query.includes('"comments"') && query.includes('ORDER BY') && query.includes('LIMIT'),
+  );
+
+  expect(pageQueries).toHaveLength(1);
+
+  const pageQuery = pageQueries[0];
+
+  if (!pageQuery) {
+    throw new Error('Expected Prisma to emit one ordered comment page query');
+  }
+
+  return pageQuery;
+};
+
+const explainObservedQuery = async (
+  prisma: PrismaClient,
+  { params, query }: ObservedQuery,
+): Promise<ExplainPlanRow[]> => {
+  const parsedParameters = JSON.parse(params) as unknown;
+
+  if (!Array.isArray(parsedParameters)) {
+    throw new Error('Expected Prisma query parameters to be encoded as an array');
+  }
+
+  return prisma.$queryRawUnsafe<ExplainPlanRow[]>(
+    `EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) ${query}`,
+    ...parsedParameters,
+  );
 };
 
 const expectBoundedCommentCursorPlan = (rows: readonly ExplainPlanRow[]): void => {
@@ -818,7 +851,7 @@ describe('video comments integration', () => {
     expect(dataExport.body.comments).toHaveLength(2);
   });
 
-  test('streams several thousand exported comments while reading them in bounded batches', async () => {
+  test('serves a 2,500-comment personal export over chunked HTTP', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
@@ -1052,6 +1085,7 @@ describe('video comments integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'comment-rejection-race-owner@example.com',
@@ -1089,20 +1123,22 @@ describe('video comments integration', () => {
       .set('Authorization', `Bearer ${commenter.sessionKey}`)
       .send({ content: 'Committed before the rejection.' })
       .then((response) => response);
-
-    await creationLocked.promise;
-    const rejectionPromise = runtime.adminService.moderateVideo({
-      videoId: creationFirstVideo.id,
-      decision: 'rejected',
-      reason: 'Concurrent rejection after the comment lock.',
+    const [creationResponse] = await coordinateLockInterleaving({
+      firstBarrierDescription: 'comment creation to acquire the video lock',
+      firstOperation: creationResponsePromise,
+      firstPaused: creationLocked.promise,
+      releaseFirst: releaseCreation.resolve,
+      secondLockDescription: 'video rejection to wait for comment creation',
+      startSecond: () =>
+        activeRuntime.adminService.moderateVideo({
+          videoId: creationFirstVideo.id,
+          decision: 'rejected',
+          reason: 'Concurrent rejection after the comment lock.',
+        }),
+      waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
     });
 
-    await waitForBlockedVideoQueries(runtime.prisma, 1);
-    releaseCreation.resolve();
-
-    const creationResponse = await creationResponsePromise;
     expect(creationResponse.status).toBe(201);
-    await rejectionPromise;
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
         where: { id: creationFirstVideo.id },
@@ -1129,25 +1165,27 @@ describe('video comments integration', () => {
       }),
       runtime.delivered,
     );
+    const rejectionFirstApp = await createIntegrationApp(runtime);
     const rejectionFirstPromise = rejectionFirstService.moderateVideo({
       videoId: rejectionFirstVideo.id,
       decision: 'rejected',
       reason: 'Concurrent rejection before the comment lock.',
     });
+    const [, rejectedCreationResponse] = await coordinateLockInterleaving({
+      firstBarrierDescription: 'video rejection to acquire the video lock',
+      firstOperation: rejectionFirstPromise,
+      firstPaused: rejectionLocked.promise,
+      releaseFirst: releaseRejection.resolve,
+      secondLockDescription: 'comment creation to wait for video rejection',
+      startSecond: () =>
+        request(rejectionFirstApp)
+          .post(`/videos/${rejectionFirstVideo.publicId}/comments`)
+          .set('Authorization', `Bearer ${commenter.sessionKey}`)
+          .send({ content: 'Must not survive the rejection.' })
+          .then((response) => response),
+      waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
+    });
 
-    await rejectionLocked.promise;
-    const rejectionFirstApp = await createIntegrationApp(runtime);
-    const rejectedCreationResponsePromise = request(rejectionFirstApp)
-      .post(`/videos/${rejectionFirstVideo.publicId}/comments`)
-      .set('Authorization', `Bearer ${commenter.sessionKey}`)
-      .send({ content: 'Must not survive the rejection.' })
-      .then((response) => response);
-
-    await waitForBlockedVideoQueries(runtime.prisma, 1);
-    releaseRejection.resolve();
-
-    await rejectionFirstPromise;
-    const rejectedCreationResponse = await rejectedCreationResponsePromise;
     expect(rejectedCreationResponse.status).toBe(404);
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
@@ -1164,6 +1202,7 @@ describe('video comments integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'comment-purge-race-owner@example.com',
@@ -1189,29 +1228,6 @@ describe('video comments integration', () => {
         visibility: 'unlisted',
       },
     });
-    const candidatesRead = Promise.withResolvers<void>();
-    const releaseCandidates = Promise.withResolvers<void>();
-    const staleCandidatePurgeService = createIntegrationVideosService(
-      createBarrierPrisma(runtime.prisma, {
-        afterVideoCandidates: async () => {
-          candidatesRead.resolve();
-          await releaseCandidates.promise;
-        },
-      }),
-      runtime.videoObjectStorage,
-      runtime.videoExternalResources,
-      { now: () => observedAt },
-    );
-    const staleCandidatePurgePromise = staleCandidatePurgeService.deleteExpiredVideosPendingPurge({
-      observedAt,
-      purgeBefore: rejectedBefore,
-    });
-
-    await candidatesRead.promise;
-    await runtime.adminService.moderateVideo({
-      videoId: creationFirstVideo.id,
-      decision: 'approved',
-    });
     const creationLocked = Promise.withResolvers<void>();
     const releaseCreation = Promise.withResolvers<void>();
     const creationFirstService = createIntegrationVideosService(
@@ -1230,21 +1246,60 @@ describe('video comments integration', () => {
     const creationFirstApp = await createIntegrationApp(runtime, {
       videosService: creationFirstService,
     });
+    const candidatesRead = Promise.withResolvers<void>();
+    const releaseCandidates = Promise.withResolvers<void>();
+    const staleCandidatePurgeService = createIntegrationVideosService(
+      createBarrierPrisma(runtime.prisma, {
+        afterVideoCandidates: async () => {
+          candidatesRead.resolve();
+          await releaseCandidates.promise;
+        },
+      }),
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+      { now: () => observedAt },
+    );
+    const staleCandidatePurgePromise = staleCandidatePurgeService.deleteExpiredVideosPendingPurge({
+      observedAt,
+      purgeBefore: rejectedBefore,
+    });
+
+    try {
+      await waitForBarrier({
+        description: 'the stale video-purge candidate snapshot',
+        operations: [staleCandidatePurgePromise],
+        signal: candidatesRead.promise,
+      });
+      await runtime.adminService.moderateVideo({
+        videoId: creationFirstVideo.id,
+        decision: 'approved',
+      });
+    } catch (error) {
+      releaseCandidates.resolve();
+      await Promise.allSettled([staleCandidatePurgePromise]);
+      throw error;
+    }
     const creationResponsePromise = request(creationFirstApp)
       .post(`/videos/${creationFirstVideo.publicId}/comments`)
       .set('Authorization', `Bearer ${commenter.sessionKey}`)
       .send({ content: 'Created before the stale purge recheck.' })
       .then((response) => response);
+    const [creationResponse, stalePurgeResult] = await coordinateLockInterleaving({
+      firstBarrierDescription: 'comment creation to acquire the video lock before stale purge',
+      firstOperation: creationResponsePromise,
+      firstPaused: creationLocked.promise,
+      releaseFirst: () => {
+        releaseCandidates.resolve();
+        releaseCreation.resolve();
+      },
+      secondLockDescription: 'the stale purge recheck to wait for comment creation',
+      startSecond: () => {
+        releaseCandidates.resolve();
+        return staleCandidatePurgePromise;
+      },
+      waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
+    });
 
-    await creationLocked.promise;
-    releaseCandidates.resolve();
-    await waitForBlockedVideoQueries(runtime.prisma, 1);
-    releaseCreation.resolve();
-
-    const [creationResponse, stalePurgeResult] = await Promise.all([
-      creationResponsePromise,
-      staleCandidatePurgePromise,
-    ]);
     expect(creationResponse.status).toBe(201);
     expect(stalePurgeResult).toEqual({
       videosPendingPurgeDeleted: 0,
@@ -1286,27 +1341,29 @@ describe('video comments integration', () => {
       runtime.videoExternalResources,
       { now: () => observedAt },
     );
+    const purgeFirstApp = await createIntegrationApp(runtime);
     const purgeFirstPromise = purgeFirstService.deleteExpiredVideosPendingPurge({
       observedAt,
       purgeBefore: rejectedBefore,
     });
+    const [purgeResult, purgedCreationResponse] = await coordinateWhilePaused({
+      firstBarrierDescription: 'the deferred purge video lock',
+      firstOperation: purgeFirstPromise,
+      firstPaused: purgeLocked.promise,
+      releaseFirst: releasePurge.resolve,
+      runWhilePaused: () =>
+        request(purgeFirstApp)
+          .post(`/videos/${purgeFirstVideo.publicId}/comments`)
+          .set('Authorization', `Bearer ${commenter.sessionKey}`)
+          .send({ content: 'Must not survive the deferred purge.' })
+          .then((response) => response),
+      // The rejected row is already ineligible in this transaction's snapshot. The engagement
+      // predicate belongs to the locking SELECT itself, so this 404 must complete while the purge
+      // still owns the video lock instead of waiting for that lock to be released.
+      whilePausedDescription: 'ineligible comment creation during the deferred purge lock',
+    });
 
-    await purgeLocked.promise;
-    const purgeFirstApp = await createIntegrationApp(runtime);
-    const purgedCreationResponsePromise = request(purgeFirstApp)
-      .post(`/videos/${purgeFirstVideo.publicId}/comments`)
-      .set('Authorization', `Bearer ${commenter.sessionKey}`)
-      .send({ content: 'Must not survive the deferred purge.' })
-      .then((response) => response);
-
-    // The rejected row is already ineligible in this transaction's snapshot. The engagement
-    // predicate belongs to the locking SELECT itself, so this 404 must complete while the purge
-    // still owns the video lock instead of waiting for that lock to be released.
-    const purgedCreationResponse = await purgedCreationResponsePromise;
     expect(purgedCreationResponse.status).toBe(404);
-    releasePurge.resolve();
-
-    const purgeResult = await purgeFirstPromise;
     expect(purgeResult).toEqual({
       videosPendingPurgeDeleted: 1,
       videoPendingPurgeTargetsScheduled: expect.any(Number),
@@ -1323,6 +1380,7 @@ describe('video comments integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'reply-not-found-owner@example.com',
@@ -1389,15 +1447,19 @@ describe('video comments integration', () => {
       .set('Authorization', `Bearer ${author.sessionKey}`)
       .send({ content: 'The status changes after preflight.' })
       .then((response) => response);
-
-    await candidatesRead.promise;
-    await runtime.prisma.video.update({
-      where: { id: video.id },
-      data: { processingStatus: 'failed' },
+    const [raceResponse] = await coordinateWhilePaused({
+      firstBarrierDescription: 'the reply-target preflight candidate read',
+      firstOperation: raceResponsePromise,
+      firstPaused: candidatesRead.promise,
+      releaseFirst: releaseCandidates.resolve,
+      runWhilePaused: () =>
+        activeRuntime.prisma.video.update({
+          where: { id: video.id },
+          data: { processingStatus: 'failed' },
+        }),
+      whilePausedDescription: 'video ineligibility update after reply preflight',
     });
-    releaseCandidates.resolve();
 
-    const raceResponse = await raceResponsePromise;
     expect(raceResponse.status).toBe(404);
     expect(raceResponse.body).toEqual(expectedNotFound);
     await expect(runtime.prisma.comment.count({ where: { rootId: root.id } })).resolves.toBe(0);
@@ -1609,7 +1671,7 @@ describe('video comments integration', () => {
       .expect(404);
   });
 
-  test('uses bounded ordered index scans with large remaining ranges in both sort directions', async () => {
+  test('executes emitted root and reply cursor queries with bounded index scans', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
@@ -1702,46 +1764,43 @@ describe('video comments integration', () => {
       throw new Error('Expected both cursor-plan boundary rows');
     }
 
-    const rootPlan = await runtime.prisma.$queryRaw<ExplainPlanRow[]>`
-      EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
-      SELECT c."id"
-      FROM "comments" AS c
-      WHERE c."video_id" = CAST(${video.id} AS UUID)
-        AND c."root_id" IS NULL
-        AND (
-          c."deleted_at" IS NULL
-          OR EXISTS (
-            SELECT 1
-            FROM "comments" AS reply
-            WHERE reply."video_id" = CAST(${video.id} AS UUID)
-              AND reply."root_id" IS NOT NULL
-              AND reply."root_id" = c."id"
-              AND reply."deleted_at" IS NULL
-          )
-        )
-        AND c."created_at" <= ${rootCursor.createdAt}
-        AND (
-          c."created_at" < ${rootCursor.createdAt}
-          OR (c."created_at" = ${rootCursor.createdAt} AND c."id" < CAST(${rootCursor.id} AS UUID))
-        )
-      ORDER BY c."created_at" DESC, c."id" DESC
-      LIMIT 101
-    `;
-    const replyPlan = await runtime.prisma.$queryRaw<ExplainPlanRow[]>`
-      EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
-      SELECT c."id"
-      FROM "comments" AS c
-      WHERE c."video_id" = CAST(${video.id} AS UUID)
-        AND c."root_id" = CAST(${root.id} AS UUID)
-        AND c."deleted_at" IS NULL
-        AND c."created_at" >= ${replyCursor.createdAt}
-        AND (
-          c."created_at" > ${replyCursor.createdAt}
-          OR (c."created_at" = ${replyCursor.createdAt} AND c."id" > CAST(${replyCursor.id} AS UUID))
-        )
-      ORDER BY c."created_at" ASC, c."id" ASC
-      LIMIT 101
-    `;
+    const emittedQueries: ObservedQuery[] = [];
+    const observedPrisma = createQueryObservedPrismaClient(runtime.databaseUrl, (event) => {
+      emittedQueries.push({ params: event.params, query: event.query });
+    });
+    let rootQuery: ObservedQuery;
+    let replyQuery: ObservedQuery;
+
+    try {
+      await listVideoComments(
+        { prisma: observedPrisma },
+        {
+          cursor: rootCursor,
+          limit: 100,
+          publicId: video.publicId,
+        },
+      );
+      rootQuery = findEmittedCommentPageQuery(emittedQueries);
+
+      emittedQueries.length = 0;
+      await listVideoCommentReplies(
+        { prisma: observedPrisma },
+        {
+          cursor: replyCursor,
+          limit: 100,
+          publicId: video.publicId,
+          rootCommentId: root.id,
+        },
+      );
+      replyQuery = findEmittedCommentPageQuery(emittedQueries);
+    } finally {
+      await observedPrisma.$disconnect();
+    }
+
+    const [rootPlan, replyPlan] = await Promise.all([
+      explainObservedQuery(runtime.prisma, rootQuery),
+      explainObservedQuery(runtime.prisma, replyQuery),
+    ]);
 
     expectBoundedCommentCursorPlan(rootPlan);
     expectBoundedCommentCursorPlan(replyPlan);
@@ -2244,6 +2303,7 @@ describe('video comments integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'comment-role-window-owner@example.com',
@@ -2294,15 +2354,20 @@ describe('video comments integration', () => {
       .delete(`/videos/${video.publicId}/comments/${comment.id}`)
       .set('Authorization', `Bearer ${moderator.sessionKey}`)
       .then((response) => response);
-
-    await roleValidated.promise;
-    await runtime.prisma.user.update({
-      where: { id: moderator.userId },
-      data: { role: 'user' },
+    const [deletionResponse] = await coordinateWhilePaused({
+      firstBarrierDescription: 'moderator session-role validation',
+      firstOperation: deletion,
+      firstPaused: roleValidated.promise,
+      releaseFirst: releaseValidatedRequest.resolve,
+      runWhilePaused: () =>
+        activeRuntime.prisma.user.update({
+          where: { id: moderator.userId },
+          data: { role: 'user' },
+        }),
+      whilePausedDescription: 'moderator role downgrade after session validation',
     });
-    releaseValidatedRequest.resolve();
 
-    expect((await deletion).status).toBe(204);
+    expect(deletionResponse.status).toBe(204);
     await expect(
       runtime.prisma.user.findUniqueOrThrow({
         where: { id: moderator.userId },
@@ -2331,6 +2396,7 @@ describe('video comments integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'comment-dual-delete-owner@example.com',
@@ -2381,17 +2447,22 @@ describe('video comments integration', () => {
       .delete(`/videos/${video.publicId}/comments/${comment.id}`)
       .set('Authorization', `Bearer ${author.sessionKey}`)
       .then((response) => response);
+    const [authorDeletionResponse, moderatorDeletionResponse] = await coordinateLockInterleaving({
+      firstBarrierDescription: 'author deletion to acquire the video lock',
+      firstOperation: authorDeletion,
+      firstPaused: firstVideoLocked.promise,
+      releaseFirst: releaseFirstDeletion.resolve,
+      secondLockDescription: 'moderator deletion to wait for author deletion',
+      startSecond: () =>
+        request(secondApp)
+          .delete(`/videos/${video.publicId}/comments/${comment.id}`)
+          .set('Authorization', `Bearer ${moderator.sessionKey}`)
+          .then((response) => response),
+      waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
+    });
 
-    await firstVideoLocked.promise;
-    const moderatorDeletion = request(secondApp)
-      .delete(`/videos/${video.publicId}/comments/${comment.id}`)
-      .set('Authorization', `Bearer ${moderator.sessionKey}`)
-      .then((response) => response);
-    await waitForBlockedVideoQueries(runtime.prisma, 1);
-    releaseFirstDeletion.resolve();
-
-    expect((await authorDeletion).status).toBe(204);
-    expect((await moderatorDeletion).status).toBe(204);
+    expect(authorDeletionResponse.status).toBe(204);
+    expect(moderatorDeletionResponse.status).toBe(204);
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
         where: { id: video.id },
@@ -2410,6 +2481,7 @@ describe('video comments integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'comment-account-delete-race-owner@example.com',
@@ -2449,29 +2521,31 @@ describe('video comments integration', () => {
     const commentFirstApp = await createIntegrationApp(runtime, {
       videosService: commentFirstService,
     });
-    const commentDeletionResponsePromise = request(commentFirstApp)
-      .delete(`/videos/${commentFirstVideo.publicId}/comments/${commentFirstRoot.id}`)
-      .set('Authorization', `Bearer ${commentFirstAuthor.sessionKey}`)
-      .then((response) => response);
-
-    await commentDeletionLocked.promise;
     const accountAfterCommentService = createIntegrationAuthService(
       runtime.prisma,
       runtime.objectStorage,
       runtime.delivered,
       runtime.userMediaExternalResources,
     );
-    const accountAfterCommentPromise = accountAfterCommentService.deleteAccount({
-      userId: commentFirstAuthor.userId,
-      currentPassword: INITIAL_PASSWORD,
+    const commentDeletionResponsePromise = request(commentFirstApp)
+      .delete(`/videos/${commentFirstVideo.publicId}/comments/${commentFirstRoot.id}`)
+      .set('Authorization', `Bearer ${commentFirstAuthor.sessionKey}`)
+      .then((response) => response);
+    const [commentDeletionResponse] = await coordinateLockInterleaving({
+      firstBarrierDescription: 'comment deletion to acquire the video lock',
+      firstOperation: commentDeletionResponsePromise,
+      firstPaused: commentDeletionLocked.promise,
+      releaseFirst: releaseCommentDeletion.resolve,
+      secondLockDescription: 'account deletion to wait for comment deletion',
+      startSecond: () =>
+        accountAfterCommentService.deleteAccount({
+          userId: commentFirstAuthor.userId,
+          currentPassword: INITIAL_PASSWORD,
+        }),
+      waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
     });
 
-    await waitForBlockedVideoQueries(runtime.prisma, 1);
-    releaseCommentDeletion.resolve();
-
-    const commentDeletionResponse = await commentDeletionResponsePromise;
     expect(commentDeletionResponse.status).toBe(204);
-    await accountAfterCommentPromise;
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
         where: { id: commentFirstVideo.id },
@@ -2522,23 +2596,25 @@ describe('video comments integration', () => {
       runtime.delivered,
       runtime.userMediaExternalResources,
     );
+    const accountFirstApp = await createIntegrationApp(runtime);
     const accountFirstPromise = accountFirstService.deleteAccount({
       userId: accountFirstAuthor.userId,
       currentPassword: INITIAL_PASSWORD,
     });
+    const [, commentAfterAccountResponse] = await coordinateLockInterleaving({
+      firstBarrierDescription: 'account deletion to acquire the video lock',
+      firstOperation: accountFirstPromise,
+      firstPaused: accountVideoLocked.promise,
+      releaseFirst: releaseAccountDeletion.resolve,
+      secondLockDescription: 'comment deletion to wait for account deletion',
+      startSecond: () =>
+        request(accountFirstApp)
+          .delete(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstRoot.id}`)
+          .set('Authorization', `Bearer ${accountFirstAuthor.sessionKey}`)
+          .then((response) => response),
+      waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
+    });
 
-    await accountVideoLocked.promise;
-    const accountFirstApp = await createIntegrationApp(runtime);
-    const commentAfterAccountResponsePromise = request(accountFirstApp)
-      .delete(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstRoot.id}`)
-      .set('Authorization', `Bearer ${accountFirstAuthor.sessionKey}`)
-      .then((response) => response);
-
-    await waitForBlockedVideoQueries(runtime.prisma, 1);
-    releaseAccountDeletion.resolve();
-
-    await accountFirstPromise;
-    const commentAfterAccountResponse = await commentAfterAccountResponsePromise;
     expect(commentAfterAccountResponse.status).toBe(404);
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
@@ -2563,6 +2639,7 @@ describe('video comments integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'comment-privileged-account-race-owner@example.com',
@@ -2611,27 +2688,31 @@ describe('video comments integration', () => {
     const ownerFirstApp = await createIntegrationApp(runtime, {
       videosService: ownerFirstVideosService,
     });
-    const ownerDeletion = request(ownerFirstApp)
-      .delete(`/videos/${ownerFirstVideo.publicId}/comments/${ownerFirstComment.id}`)
-      .set('Authorization', `Bearer ${owner.sessionKey}`)
-      .then((response) => response);
-
-    await ownerVideoLocked.promise;
     const accountAfterOwnerService = createIntegrationAuthService(
       runtime.prisma,
       runtime.objectStorage,
       runtime.delivered,
       runtime.userMediaExternalResources,
     );
-    const accountAfterOwner = accountAfterOwnerService.deleteAccount({
-      userId: ownerFirstAuthor.userId,
-      currentPassword: INITIAL_PASSWORD,
+    const ownerDeletion = request(ownerFirstApp)
+      .delete(`/videos/${ownerFirstVideo.publicId}/comments/${ownerFirstComment.id}`)
+      .set('Authorization', `Bearer ${owner.sessionKey}`)
+      .then((response) => response);
+    const [ownerDeletionResponse] = await coordinateLockInterleaving({
+      firstBarrierDescription: 'owner deletion to acquire the video lock',
+      firstOperation: ownerDeletion,
+      firstPaused: ownerVideoLocked.promise,
+      releaseFirst: releaseOwnerDeletion.resolve,
+      secondLockDescription: 'account deletion to wait for owner deletion',
+      startSecond: () =>
+        accountAfterOwnerService.deleteAccount({
+          userId: ownerFirstAuthor.userId,
+          currentPassword: INITIAL_PASSWORD,
+        }),
+      waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
     });
-    await waitForBlockedVideoQueries(runtime.prisma, 1);
-    releaseOwnerDeletion.resolve();
 
-    expect((await ownerDeletion).status).toBe(204);
-    await accountAfterOwner;
+    expect(ownerDeletionResponse.status).toBe(204);
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
         where: { id: ownerFirstVideo.id },
@@ -2677,22 +2758,26 @@ describe('video comments integration', () => {
       runtime.delivered,
       runtime.userMediaExternalResources,
     );
+    const moderatorApp = await createIntegrationApp(runtime);
     const accountFirst = accountFirstService.deleteAccount({
       userId: accountFirstAuthor.userId,
       currentPassword: INITIAL_PASSWORD,
     });
+    const [, moderatorDeletionResponse] = await coordinateLockInterleaving({
+      firstBarrierDescription: 'account deletion to acquire the video lock before moderation',
+      firstOperation: accountFirst,
+      firstPaused: accountVideoLocked.promise,
+      releaseFirst: releaseAccountDeletion.resolve,
+      secondLockDescription: 'moderator deletion to wait for account deletion',
+      startSecond: () =>
+        request(moderatorApp)
+          .delete(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstComment.id}`)
+          .set('Authorization', `Bearer ${moderator.sessionKey}`)
+          .then((response) => response),
+      waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
+    });
 
-    await accountVideoLocked.promise;
-    const moderatorApp = await createIntegrationApp(runtime);
-    const moderatorDeletion = request(moderatorApp)
-      .delete(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstComment.id}`)
-      .set('Authorization', `Bearer ${moderator.sessionKey}`)
-      .then((response) => response);
-    await waitForBlockedVideoQueries(runtime.prisma, 1);
-    releaseAccountDeletion.resolve();
-
-    await accountFirst;
-    expect((await moderatorDeletion).status).toBe(204);
+    expect(moderatorDeletionResponse.status).toBe(204);
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
         where: { id: accountFirstVideo.id },
@@ -2841,6 +2926,7 @@ describe('video comments integration', () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'comment-reply-account-race-owner@example.com',
@@ -2884,6 +2970,12 @@ describe('video comments integration', () => {
     const replyFirstApp = await createIntegrationApp(runtime, {
       videosService: replyFirstService,
     });
+    const accountAfterReplyService = createIntegrationAuthService(
+      runtime.prisma,
+      runtime.objectStorage,
+      runtime.delivered,
+      runtime.userMediaExternalResources,
+    );
     const replyFirstResponsePromise = request(replyFirstApp)
       .post(`/videos/${replyFirstVideo.publicId}/comments/${replyFirstRoot.id}/replies`)
       .set('Authorization', `Bearer ${replier.sessionKey}`)
@@ -2892,26 +2984,22 @@ describe('video comments integration', () => {
         replyingToCommentId: replyFirstRoot.id,
       })
       .then((response) => response);
-
-    await replyTransactionPausedAfterRowLocks.promise;
-    const accountAfterReplyService = createIntegrationAuthService(
-      runtime.prisma,
-      runtime.objectStorage,
-      runtime.delivered,
-      runtime.userMediaExternalResources,
-    );
-    const accountAfterReplyPromise = accountAfterReplyService.deleteAccount({
-      userId: replyFirstAuthor.userId,
-      currentPassword: INITIAL_PASSWORD,
+    const [replyFirstResponse] = await coordinateLockInterleaving({
+      firstBarrierDescription: 'targeted reply to acquire its video and comment locks',
+      firstOperation: replyFirstResponsePromise,
+      firstPaused: replyTransactionPausedAfterRowLocks.promise,
+      releaseFirst: releaseReply.resolve,
+      secondLockDescription: 'target-author account deletion to wait for the reply',
+      startSecond: () =>
+        accountAfterReplyService.deleteAccount({
+          userId: replyFirstAuthor.userId,
+          currentPassword: INITIAL_PASSWORD,
+        }),
+      waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
     });
 
-    await waitForBlockedVideoQueries(runtime.prisma, 1);
-    releaseReply.resolve();
-
-    const replyFirstResponse = await replyFirstResponsePromise;
     expect(replyFirstResponse.status).toBe(201);
     const committedReplyId = replyFirstResponse.body.comment.id as string;
-    await accountAfterReplyPromise;
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
         where: { id: replyFirstVideo.id },
@@ -2970,27 +3058,29 @@ describe('video comments integration', () => {
       runtime.delivered,
       runtime.userMediaExternalResources,
     );
+    const accountFirstApp = await createIntegrationApp(runtime);
     const accountFirstPromise = accountFirstService.deleteAccount({
       userId: accountFirstAuthor.userId,
       currentPassword: INITIAL_PASSWORD,
     });
+    const [, replyAfterAccountResponse] = await coordinateLockInterleaving({
+      firstBarrierDescription: 'target-author account deletion to acquire the video lock',
+      firstOperation: accountFirstPromise,
+      firstPaused: accountVideoLocked.promise,
+      releaseFirst: releaseAccount.resolve,
+      secondLockDescription: 'targeted reply to wait for account deletion',
+      startSecond: () =>
+        request(accountFirstApp)
+          .post(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstRoot.id}/replies`)
+          .set('Authorization', `Bearer ${replier.sessionKey}`)
+          .send({
+            content: 'Must not target an anonymized root.',
+            replyingToCommentId: accountFirstRoot.id,
+          })
+          .then((response) => response),
+      waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
+    });
 
-    await accountVideoLocked.promise;
-    const accountFirstApp = await createIntegrationApp(runtime);
-    const replyAfterAccountResponsePromise = request(accountFirstApp)
-      .post(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstRoot.id}/replies`)
-      .set('Authorization', `Bearer ${replier.sessionKey}`)
-      .send({
-        content: 'Must not target an anonymized root.',
-        replyingToCommentId: accountFirstRoot.id,
-      })
-      .then((response) => response);
-
-    await waitForBlockedVideoQueries(runtime.prisma, 1);
-    releaseAccount.resolve();
-
-    await accountFirstPromise;
-    const replyAfterAccountResponse = await replyAfterAccountResponsePromise;
     expect(replyAfterAccountResponse.status).toBe(404);
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
@@ -3039,22 +3129,26 @@ describe('video comments integration', () => {
       runtime.delivered,
       runtime.userMediaExternalResources,
     );
+    const accountSnapshotFirstApp = await createIntegrationApp(runtime);
     const accountSnapshotFirstPromise = accountSnapshotFirstService.deleteAccount({
       userId: accountSnapshotFirstAuthor.userId,
       currentPassword: INITIAL_PASSWORD,
     });
-
-    await accountSnapshotRead.promise;
-    const accountSnapshotFirstApp = await createIntegrationApp(runtime);
-    const committedCommentResponse = await request(accountSnapshotFirstApp)
-      .post(`/videos/${accountSnapshotFirstVideo.publicId}/comments`)
-      .set('Authorization', `Bearer ${accountSnapshotFirstAuthor.sessionKey}`)
-      .send({ content: 'The first comment commits after the account snapshot.' })
-      .expect(201);
+    const [, committedCommentResponse] = await coordinateWhilePaused({
+      firstBarrierDescription: 'the account-deletion comment snapshot',
+      firstOperation: accountSnapshotFirstPromise,
+      firstPaused: accountSnapshotRead.promise,
+      releaseFirst: releaseAccountSnapshot.resolve,
+      runWhilePaused: () =>
+        request(accountSnapshotFirstApp)
+          .post(`/videos/${accountSnapshotFirstVideo.publicId}/comments`)
+          .set('Authorization', `Bearer ${accountSnapshotFirstAuthor.sessionKey}`)
+          .send({ content: 'The first comment commits after the account snapshot.' })
+          .expect(201)
+          .then((response) => response),
+      whilePausedDescription: 'first comment creation after the account snapshot',
+    });
     const committedCommentId = committedCommentResponse.body.comment.id as string;
-    releaseAccountSnapshot.resolve();
-
-    await accountSnapshotFirstPromise;
     await expect(
       runtime.prisma.user.findUnique({ where: { id: accountSnapshotFirstAuthor.userId } }),
     ).resolves.toBeNull();
@@ -3103,26 +3197,30 @@ describe('video comments integration', () => {
     const commentLockFirstApp = await createIntegrationApp(runtime, {
       videosService: commentLockFirstVideosService,
     });
-    const commentAfterAccountPromise = request(commentLockFirstApp)
-      .post(`/videos/${commentLockFirstVideo.publicId}/comments`)
-      .set('Authorization', `Bearer ${commentLockFirstAuthor.sessionKey}`)
-      .send({ content: 'Must not become an orphan after account deletion.' })
-      .then((response) => response);
-
-    await commentVideoLocked.promise;
     const accountAfterCommentLockService = createIntegrationAuthService(
       runtime.prisma,
       runtime.objectStorage,
       runtime.delivered,
       runtime.userMediaExternalResources,
     );
-    await accountAfterCommentLockService.deleteAccount({
-      userId: commentLockFirstAuthor.userId,
-      currentPassword: INITIAL_PASSWORD,
+    const commentAfterAccountPromise = request(commentLockFirstApp)
+      .post(`/videos/${commentLockFirstVideo.publicId}/comments`)
+      .set('Authorization', `Bearer ${commentLockFirstAuthor.sessionKey}`)
+      .send({ content: 'Must not become an orphan after account deletion.' })
+      .then((response) => response);
+    const [commentAfterAccountResponse] = await coordinateWhilePaused({
+      firstBarrierDescription: 'the first-comment video lock',
+      firstOperation: commentAfterAccountPromise,
+      firstPaused: commentVideoLocked.promise,
+      releaseFirst: releaseCommentTransaction.resolve,
+      runWhilePaused: () =>
+        accountAfterCommentLockService.deleteAccount({
+          userId: commentLockFirstAuthor.userId,
+          currentPassword: INITIAL_PASSWORD,
+        }),
+      whilePausedDescription: 'account deletion during the first-comment video lock',
     });
-    releaseCommentTransaction.resolve();
 
-    const commentAfterAccountResponse = await commentAfterAccountPromise;
     expect(commentAfterAccountResponse.status).toBe(404);
     await expect(
       runtime.prisma.comment.count({ where: { videoId: commentLockFirstVideo.id } }),

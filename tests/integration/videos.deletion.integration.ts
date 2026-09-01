@@ -1,6 +1,4 @@
 import request from 'supertest';
-import { setTimeout as delay } from 'node:timers/promises';
-import type { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { HOUR_MS } from '../../src/config/constants.js';
 import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjectKeys.js';
@@ -20,33 +18,22 @@ import {
   stopRuntime,
   type TestRuntime,
 } from './support/runtime.js';
+import { coordinateGatedOperations } from './support/asyncBarriers.js';
+import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
 
 const waitForBlockedVideoQueries = async (
-  prisma: PrismaClient,
+  runtime: TestRuntime,
   expectedCount: number,
   timeoutMs = 5_000,
-): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const [activity] = await prisma.$queryRaw<Array<{ blocked_count: number }>>`
-      SELECT count(*)::int AS blocked_count
-      FROM pg_stat_activity
-      WHERE datname = current_database()
-        AND wait_event_type = 'Lock'
-        AND query LIKE '%FROM "videos"%'
-        AND query LIKE '%FOR UPDATE%'
-    `;
-
-    if ((activity?.blocked_count ?? 0) >= expectedCount) {
-      return;
-    }
-
-    await delay(25);
-  }
-
-  throw new Error(`Timed out waiting for ${expectedCount} blocked video queries`);
-};
+  signal?: AbortSignal,
+): Promise<void> =>
+  waitForPostgresLockWaiters(runtime.prisma, {
+    applicationNames: [runtime.postgresApplicationName],
+    expectedCount,
+    queryFragments: ['FROM "videos"', 'FOR UPDATE'],
+    ...(signal === undefined ? {} : { signal }),
+    timeoutMs,
+  });
 
 const runOwnerModerationDeletionInterleaving = async (
   runtime: TestRuntime,
@@ -91,12 +78,6 @@ const runOwnerModerationDeletionInterleaving = async (
     { timeout: 15_000 },
   );
 
-  await Promise.race([
-    gateAcquired.promise,
-    delay(5_000).then(() => {
-      throw new Error('Owner/moderation deletion gate could not be acquired');
-    }),
-  ]);
   const startOwnerDeletion = () =>
     request(app)
       .delete(`/videos/${video.video.publicId}`)
@@ -108,27 +89,42 @@ const runOwnerModerationDeletionInterleaving = async (
       .set('Authorization', `Bearer ${moderator.sessionKey}`)
       .send({ reason: `Concurrent administrative reason ${suffix}.` })
       .then((response) => response);
-  let ownerPromise: ReturnType<typeof startOwnerDeletion>;
-  let moderationPromise: ReturnType<typeof startModerationDeletion>;
+  const [ownerResponse, moderationResponse] = await coordinateGatedOperations({
+    cleanup: [() => gatePrisma.$disconnect()],
+    gateBarrierDescription: 'the owner/moderation deletion video-row gate',
+    gateOperation: gateTransaction,
+    gatePaused: gateAcquired.promise,
+    releaseGate: releaseGate.resolve,
+    runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
+      if (ownerFirst) {
+        const ownerPromise = trackOperation(startOwnerDeletion());
+        await waitForSignal({
+          description: 'the owner deletion behind the video-row gate',
+          observe: (signal) => waitForBlockedVideoQueries(runtime, 1, 5_000, signal),
+        });
+        const moderationPromise = trackOperation(startModerationDeletion());
+        await waitForSignal({
+          description: 'both deletions behind the video-row gate',
+          observe: (signal) => waitForBlockedVideoQueries(runtime, 2, 5_000, signal),
+        });
 
-  try {
-    if (ownerFirst) {
-      ownerPromise = startOwnerDeletion();
-      await waitForBlockedVideoQueries(runtime.prisma, 1);
-      moderationPromise = startModerationDeletion();
-    } else {
-      moderationPromise = startModerationDeletion();
-      await waitForBlockedVideoQueries(runtime.prisma, 1);
-      ownerPromise = startOwnerDeletion();
-    }
-    await waitForBlockedVideoQueries(runtime.prisma, 2);
-  } finally {
-    releaseGate.resolve();
-    await gateTransaction;
-    await gatePrisma.$disconnect();
-  }
+        return [ownerPromise, moderationPromise] as const;
+      }
 
-  const [ownerResponse, moderationResponse] = await Promise.all([ownerPromise, moderationPromise]);
+      const moderationPromise = trackOperation(startModerationDeletion());
+      await waitForSignal({
+        description: 'the moderation deletion behind the video-row gate',
+        observe: (signal) => waitForBlockedVideoQueries(runtime, 1, 5_000, signal),
+      });
+      const ownerPromise = trackOperation(startOwnerDeletion());
+      await waitForSignal({
+        description: 'both deletions behind the video-row gate',
+        observe: (signal) => waitForBlockedVideoQueries(runtime, 2, 5_000, signal),
+      });
+
+      return [ownerPromise, moderationPromise] as const;
+    },
+  });
 
   return { moderationResponse, ownerResponse, videoId: video.video.id };
 };

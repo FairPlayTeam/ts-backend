@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { videoOriginalKey } from '../../src/services/videos/videoObjectKeys.js';
 import type { ObjectStorage } from '../../src/lib/objectStorage.js';
+import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
 import {
   ActiveVideoUploadSessionExistsError,
   InvalidVideoUploadSessionStateError,
@@ -9,14 +11,88 @@ import {
   VideoUploadSizeMismatchError,
 } from '../../src/services/videos.errors.js';
 import { createVerifiedSession, uploadVideoSource } from './support/fixtures.js';
+import {
+  coordinateLockInterleavingSettled,
+  throwCollectedErrors,
+} from './support/asyncBarriers.js';
 import { VIDEO_OBJECT_STORAGE_BUCKET } from './support/infrastructure.js';
+import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
 import {
   createIntegrationVideosService,
+  createPostgresApplicationName,
+  createPrismaClient,
   resetState,
   startRuntime,
   stopRuntime,
+  testLogger,
   type TestRuntime,
 } from './support/runtime.js';
+
+const createUploadReservationBarrierPrisma = (
+  prisma: PrismaClient,
+  afterFirstReservation: () => Promise<void>,
+): PrismaClient => {
+  let reservationObserved = false;
+
+  return new Proxy(prisma, {
+    get(target, property) {
+      if (property === '$transaction') {
+        return async <T>(
+          run: (tx: Prisma.TransactionClient) => Promise<T>,
+          options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
+        ): Promise<T> =>
+          target.$transaction(async (tx) => {
+            const observedTransaction = new Proxy(tx, {
+              get(transactionTarget, transactionProperty) {
+                if (transactionProperty === 'videoUploadSession') {
+                  return new Proxy(transactionTarget.videoUploadSession, {
+                    get(sessionTarget, sessionProperty) {
+                      if (sessionProperty === 'create') {
+                        return async (
+                          args: Parameters<typeof sessionTarget.create>[0],
+                        ): Promise<Awaited<ReturnType<typeof sessionTarget.create>>> => {
+                          const result = await sessionTarget.create(args);
+
+                          if (!reservationObserved) {
+                            reservationObserved = true;
+                            await afterFirstReservation();
+                          }
+
+                          return result;
+                        };
+                      }
+
+                      const value = Reflect.get(
+                        sessionTarget,
+                        sessionProperty,
+                        sessionTarget,
+                      ) as unknown;
+
+                      return typeof value === 'function' ? value.bind(sessionTarget) : value;
+                    },
+                  });
+                }
+
+                const value = Reflect.get(
+                  transactionTarget,
+                  transactionProperty,
+                  transactionTarget,
+                ) as unknown;
+
+                return typeof value === 'function' ? value.bind(transactionTarget) : value;
+              },
+            });
+
+            return run(observedTransaction);
+          }, options);
+      }
+
+      const value = Reflect.get(target, property, target) as unknown;
+
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+};
 
 describe('videos upload integration', () => {
   let runtime: TestRuntime | null = null;
@@ -289,10 +365,11 @@ describe('videos upload integration', () => {
     expect(session.externalResourceTarget.quiescenceNotBefore).not.toBeNull();
   });
 
-  test('serializes concurrent upload reservations before S3 and durably rejects a size mismatch', async () => {
+  test('serializes concurrent upload reservations before starting one S3 multipart upload', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
+    const activeRuntime = runtime;
 
     const owner = await createVerifiedSession(runtime, {
       email: 'video-concurrent-upload@example.com',
@@ -306,18 +383,105 @@ describe('videos upload integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const reservations = await Promise.allSettled([
-      runtime.videosService.initMultipartUpload({
-        userId: owner.userId,
-        videoId: firstVideo.video.id,
-        sizeBytes: 32,
-      }),
-      runtime.videosService.initMultipartUpload({
-        userId: owner.userId,
-        videoId: firstVideo.video.id,
-        sizeBytes: 32,
-      }),
-    ]);
+    const firstApplicationName = createPostgresApplicationName();
+    const secondApplicationName = createPostgresApplicationName();
+    const firstPrisma = createPrismaClient(runtime.databaseUrl, {
+      applicationName: firstApplicationName,
+    });
+    const secondPrisma = createPrismaClient(runtime.databaseUrl, {
+      applicationName: secondApplicationName,
+    });
+    const reservationPersisted = Promise.withResolvers<void>();
+    const releaseReservation = Promise.withResolvers<void>();
+    const firstObservedPrisma = createUploadReservationBarrierPrisma(firstPrisma, async () => {
+      reservationPersisted.resolve();
+      await releaseReservation.promise;
+    });
+    let multipartInitializations = 0;
+    const observedStorage: ObjectStorage = {
+      ...runtime.videoObjectStorage,
+      initiateMultipartUpload: async (input) => {
+        multipartInitializations += 1;
+
+        return activeRuntime.videoObjectStorage.initiateMultipartUpload(input);
+      },
+    };
+    const firstExternalResources = createExternalResourceReconciler({
+      prisma: firstObservedPrisma,
+      objectStorage: observedStorage,
+      clock: { now: () => new Date() },
+      logger: testLogger,
+    });
+    const secondExternalResources = createExternalResourceReconciler({
+      prisma: secondPrisma,
+      objectStorage: observedStorage,
+      clock: { now: () => new Date() },
+      logger: testLogger,
+    });
+    const firstService = createIntegrationVideosService(
+      firstObservedPrisma,
+      observedStorage,
+      firstExternalResources,
+    );
+    const secondService = createIntegrationVideosService(
+      secondPrisma,
+      observedStorage,
+      secondExternalResources,
+    );
+    const firstReservation = firstService.initMultipartUpload({
+      userId: owner.userId,
+      videoId: firstVideo.video.id,
+      sizeBytes: 32,
+    });
+    let reservations: PromiseSettledResult<Awaited<typeof firstReservation>>[] | null = null;
+    const coordinationErrors = new Set<unknown>();
+
+    try {
+      reservations = await coordinateLockInterleavingSettled({
+        firstBarrierDescription: 'the first persisted upload reservation',
+        firstOperation: firstReservation,
+        firstPaused: reservationPersisted.promise,
+        releaseFirst: releaseReservation.resolve,
+        secondLockDescription: 'the second upload reservation behind the active-session lock',
+        startSecond: () =>
+          secondService.initMultipartUpload({
+            userId: owner.userId,
+            videoId: firstVideo.video.id,
+            sizeBytes: 32,
+          }),
+        waitForSecondLock: (signal) =>
+          waitForPostgresLockWaiters(activeRuntime.prisma, {
+            applicationNames: [secondApplicationName],
+            expectedCount: 1,
+            queryFragments: ['video_upload_sessions'],
+            signal,
+          }),
+      });
+    } catch (error) {
+      coordinationErrors.add(error);
+    } finally {
+      releaseReservation.resolve();
+      const disconnectResults = await Promise.allSettled([
+        firstPrisma.$disconnect(),
+        secondPrisma.$disconnect(),
+      ]);
+
+      for (const result of disconnectResults) {
+        if (result.status === 'rejected') {
+          coordinationErrors.add(result.reason);
+        }
+      }
+    }
+
+    throwCollectedErrors(
+      [...coordinationErrors],
+      'Concurrent upload-reservation coordination failed',
+    );
+
+    if (!reservations) {
+      throw new Error('Concurrent upload reservations did not both settle');
+    }
+
     const acceptedReservation = reservations.find(
       (reservation) => reservation.status === 'fulfilled',
     );
@@ -333,6 +497,7 @@ describe('videos upload integration', () => {
     }
 
     expect(rejectedReservation.reason).toBeInstanceOf(ActiveVideoUploadSessionExistsError);
+    expect(multipartInitializations).toBe(1);
     expect(
       await runtime.prisma.videoUploadSession.count({
         where: {
@@ -341,18 +506,6 @@ describe('videos upload integration', () => {
         },
       }),
     ).toBe(1);
-
-    await expect(
-      runtime.videosService.completeMultipartUpload({
-        userId: owner.userId,
-        videoId: firstVideo.video.id,
-        uploadSessionId: acceptedReservation.value.uploadSession.id,
-        parts: [
-          { partNumber: 1, etag: '"duplicate-a"' },
-          { partNumber: 1, etag: '"duplicate-b"' },
-        ],
-      }),
-    ).rejects.toBeInstanceOf(InvalidVideoUploadSessionStateError);
 
     const abortedReservation = await runtime.videosService.abortMultipartUpload({
       userId: owner.userId,
@@ -379,8 +532,80 @@ describe('videos upload integration', () => {
       goal: 'absent',
       state: 'quiescing',
     });
+  });
 
-    const secondVideo = await runtime.videosService.createVideo({
+  test('rejects duplicate completion parts before calling S3', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+    const activeRuntime = runtime;
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'video-duplicate-parts@example.com',
+      username: 'duplicate_parts',
+    });
+    const video = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Duplicate completion parts',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      allowComments: true,
+    });
+    const initialized = await runtime.videosService.initMultipartUpload({
+      userId: owner.userId,
+      videoId: video.video.id,
+      sizeBytes: 32,
+    });
+    let multipartCompletions = 0;
+    const observedStorage: ObjectStorage = {
+      ...runtime.videoObjectStorage,
+      completeMultipartUpload: async (input) => {
+        multipartCompletions += 1;
+
+        return activeRuntime.videoObjectStorage.completeMultipartUpload(input);
+      },
+    };
+    const service = createIntegrationVideosService(
+      runtime.prisma,
+      observedStorage,
+      runtime.videoExternalResources,
+    );
+
+    await expect(
+      service.completeMultipartUpload({
+        userId: owner.userId,
+        videoId: video.video.id,
+        uploadSessionId: initialized.uploadSession.id,
+        parts: [
+          { partNumber: 1, etag: '"duplicate-a"' },
+          { partNumber: 1, etag: '"duplicate-b"' },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(InvalidVideoUploadSessionStateError);
+    expect(multipartCompletions).toBe(0);
+
+    await expect(
+      runtime.videosService.abortMultipartUpload({
+        userId: owner.userId,
+        videoId: video.video.id,
+        uploadSessionId: initialized.uploadSession.id,
+      }),
+    ).resolves.toMatchObject({
+      uploadSession: { status: 'aborting' },
+    });
+  });
+
+  test('durably rejects a completed multipart upload whose stored size mismatches its reservation', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'video-size-mismatch@example.com',
+      username: 'video_size_mismatch',
+    });
+    const video = await runtime.videosService.createVideo({
       userId: owner.userId,
       title: 'Declared size mismatch',
       description: null,
@@ -391,12 +616,12 @@ describe('videos upload integration', () => {
     const body = Buffer.from('shorter than declared');
     const initialized = await runtime.videosService.initMultipartUpload({
       userId: owner.userId,
-      videoId: secondVideo.video.id,
+      videoId: video.video.id,
       sizeBytes: body.length + 1,
     });
     const signed = await runtime.videosService.signMultipartUploadParts({
       userId: owner.userId,
-      videoId: secondVideo.video.id,
+      videoId: video.video.id,
       uploadSessionId: initialized.uploadSession.id,
       partNumbers: [1],
     });
@@ -418,7 +643,7 @@ describe('videos upload integration', () => {
     await expect(
       runtime.videosService.completeMultipartUpload({
         userId: owner.userId,
-        videoId: secondVideo.video.id,
+        videoId: video.video.id,
         uploadSessionId: initialized.uploadSession.id,
         parts: [{ partNumber: 1, etag: etag ?? '' }],
       }),
@@ -429,7 +654,7 @@ describe('videos upload integration', () => {
       include: { externalResourceTarget: true },
     });
     const mismatchedVideo = await runtime.prisma.video.findUniqueOrThrow({
-      where: { id: secondVideo.video.id },
+      where: { id: video.video.id },
       select: {
         sourceUploadSessionId: true,
         sourceObjectKey: true,
