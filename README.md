@@ -16,7 +16,7 @@ This repository contains the Fairplay backend API built with:
 It uses **session-based authentication** and versioned Prisma migrations.
 
 Documentation is available at:
-[https://apiv2.fairplay.video/docs](https://apiv2.fairplay.video/docs)
+[https://apiv1.fairplayvideo.org/docs](https://apiv1.fairplayvideo.org/docs)
 
 ---
 
