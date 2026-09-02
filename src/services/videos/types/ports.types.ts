@@ -16,12 +16,7 @@ export type VideoUploadSessionStatus =
 export type VideoVisibility = 'public' | 'unlisted';
 
 export type VideoProcessingStatus =
-  | 'draft'
-  | 'uploading'
-  | 'queued'
-  | 'processing'
-  | 'ready'
-  | 'failed';
+  'draft' | 'uploading' | 'queued' | 'processing' | 'ready' | 'failed';
 
 export type VideoModerationStatus = 'pending' | 'approved' | 'rejected';
 

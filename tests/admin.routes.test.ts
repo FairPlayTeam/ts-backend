@@ -168,8 +168,7 @@ describe('admin routes', () => {
     expect(response.status).toBe(200);
     const observedSessionKey = receivedSessionKey as string | undefined;
     const observedListAccountsRequest = receivedListAccountsRequest as
-      | ListAdminAccountsInput
-      | undefined;
+      ListAdminAccountsInput | undefined;
     expect(observedSessionKey).toBe(adminSessionKey);
     expect(observedListAccountsRequest).toEqual({
       banStatus: 'notbanned',
@@ -273,8 +272,7 @@ describe('admin routes', () => {
 
     expect(response.status).toBe(200);
     const observedModerateVideoRequest = receivedModerateVideoRequest as
-      | ModerateAdminVideoInput
-      | undefined;
+      ModerateAdminVideoInput | undefined;
     expect(observedModerateVideoRequest).toEqual({
       videoId: cursorId,
       decision: 'approved',
@@ -314,8 +312,7 @@ describe('admin routes', () => {
 
     expect(response.status).toBe(200);
     const observedVideoDeletionRequest = receivedVideoDeletionRequest as
-      | RequestAdminVideoDeletionInput
-      | undefined;
+      RequestAdminVideoDeletionInput | undefined;
     expect(observedVideoDeletionRequest).toEqual({
       actorRole: 'admin',
       reason: 'Published safety violation.',
@@ -480,8 +477,7 @@ describe('admin routes', () => {
     expect(response.status).toBe(200);
     const observedSessionKey = receivedSessionKey as string | undefined;
     const observedUnbanAccountRequest = receivedUnbanAccountRequest as
-      | UnbanAdminAccountInput
-      | undefined;
+      UnbanAdminAccountInput | undefined;
     expect(observedSessionKey).toBe(adminSessionKey);
     expect(observedUnbanAccountRequest).toEqual({
       actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
@@ -523,8 +519,7 @@ describe('admin routes', () => {
     expect(response.status).toBe(200);
     const observedSessionKey = receivedSessionKey as string | undefined;
     const observedUpdateAccountRoleRequest = receivedUpdateAccountRoleRequest as
-      | UpdateAdminAccountRoleInput
-      | undefined;
+      UpdateAdminAccountRoleInput | undefined;
     expect(observedSessionKey).toBe(adminSessionKey);
     expect(observedUpdateAccountRoleRequest).toEqual({
       actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',

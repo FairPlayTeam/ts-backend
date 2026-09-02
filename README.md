@@ -103,9 +103,11 @@ These overrides should be reviewed periodically and removed once the parent depe
 
 Current overrides:
 
-- `@hono/node-server@2.0.10`, pulled in by Prisma through `@prisma/dev`
-- `deepmerge-ts@8.0.0`, pulled in by Prisma through `@prisma/config`
-- `valibot@1.4.2`, pulled in by Prisma through `@prisma/dev`
+- `decode-uri-component@0.5.0`, pulled in by MinIO through `query-string`
+- `deepmerge-ts@8.0.2`, pulled in by Prisma through `@prisma/config`
+- `fast-uri@3.1.6`, pulled in through AJV by Prisma and ESLint
+- `mysql2@3.24.3`, pulled in directly by the Prisma CLI
+- `qs@6.16.0`, pulled in by Express and Supertest
 
 Other patched transitive dependencies, including `nanoid`, resolve through their parent package's
 declared semver range and therefore do not require an override.

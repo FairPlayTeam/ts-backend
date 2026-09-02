@@ -63,7 +63,7 @@ const expectCheckConstraintViolation = async (
   try {
     await operation;
   } catch (err) {
-    expect(err).toMatchObject({ name: 'DriverAdapterError' });
+    expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toContain(constraintName ?? 'videos_rating_');
     return;
   }

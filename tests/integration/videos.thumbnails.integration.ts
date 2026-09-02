@@ -1431,8 +1431,7 @@ describe('videos thumbnails integration', () => {
       failed: 0,
     });
     const writtenThumbnail = racedThumbnail as
-      | { body: Buffer; bucket: string; objectKey: string }
-      | undefined;
+      { body: Buffer; bucket: string; objectKey: string } | undefined;
 
     if (!writtenThumbnail) {
       throw new Error('Raced thumbnail PUT was not observed');

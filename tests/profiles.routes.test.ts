@@ -205,8 +205,7 @@ describe('profiles routes', () => {
     expect(receivedSessionKey).toBeUndefined();
     const observedProfileRequest = receivedProfileRequest as GetPublicProfileInput | undefined;
     const observedVideosRequest = receivedPublicProfileVideosRequest as
-      | ListPublicProfileVideosInput
-      | undefined;
+      ListPublicProfileVideosInput | undefined;
     expect(observedProfileRequest).toEqual({ username: 'fairplay_user' });
     expect(observedVideosRequest).toEqual({
       ownerId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
@@ -342,8 +341,7 @@ describe('profiles routes', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
     const observedSessionKey = receivedSessionKey as string | undefined;
     const observedFollowingProfilesRequest = receivedFollowingProfilesRequest as
-      | ListFollowingProfilesInput
-      | undefined;
+      ListFollowingProfilesInput | undefined;
     expect(observedSessionKey).toBe('route-session-key');
     expect(receivedProfileRequest).toBeUndefined();
     expect(observedFollowingProfilesRequest).toEqual({
@@ -384,8 +382,7 @@ describe('profiles routes', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
     const observedSessionKey = receivedSessionKey as string | undefined;
     const observedFollowProfileRequest = receivedFollowProfileRequest as
-      | FollowPublicProfileInput
-      | undefined;
+      FollowPublicProfileInput | undefined;
     expect(observedSessionKey).toBe('route-session-key');
     expect(observedFollowProfileRequest).toEqual({
       actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
@@ -422,8 +419,7 @@ describe('profiles routes', () => {
     expect(response.status).toBe(200);
     const observedSessionKey = receivedSessionKey as string | undefined;
     const observedUnfollowProfileRequest = receivedUnfollowProfileRequest as
-      | FollowPublicProfileInput
-      | undefined;
+      FollowPublicProfileInput | undefined;
     expect(observedSessionKey).toBe('route-session-key');
     expect(observedUnfollowProfileRequest).toEqual({
       actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',

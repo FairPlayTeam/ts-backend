@@ -628,8 +628,7 @@ describe('auth controller', () => {
 
   test('exports authenticated user data as downloadable JSON', async () => {
     let receivedInput:
-      | { userId: string; currentSessionId: string; currentPassword: string }
-      | undefined;
+      { userId: string; currentSessionId: string; currentPassword: string } | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
     const controller = createTestAuthController({
@@ -1191,8 +1190,7 @@ describe('auth controller', () => {
 
   test('logs out other sessions while keeping the current authenticated session', async () => {
     let receivedInput:
-      | { userId: string; currentSessionId: string; currentPassword: string }
-      | undefined;
+      { userId: string; currentSessionId: string; currentPassword: string } | undefined;
     let receivedError: unknown;
     const { response, state } = createMockResponse();
     const controller = createTestAuthController({

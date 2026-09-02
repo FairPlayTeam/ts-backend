@@ -559,8 +559,7 @@ describe('videos routes multipart uploads', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(receivedSessionKey).toBeUndefined();
     const observedPublicSearchRequest = receivedPublicSearchRequest as
-      | SearchPublicVideosInput
-      | undefined;
+      SearchPublicVideosInput | undefined;
     expect(observedPublicSearchRequest).toEqual({
       search: 'launch recap',
       sort: 'oldest',
@@ -615,8 +614,7 @@ describe('videos routes multipart uploads', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(receivedSessionKey).toBeUndefined();
     const observedPublicListRequest = receivedPublicListRequest as
-      | ListPublicVideosInput
-      | undefined;
+      ListPublicVideosInput | undefined;
     expect(observedPublicListRequest).toEqual({
       limit: 10,
       cursor: {
@@ -689,8 +687,7 @@ describe('videos routes multipart uploads', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(receivedSessionKey).toBeUndefined();
     const observedAnonymousDetailRequest = receivedPublicVideoDetailRequest as
-      | GetPublicVideoDetailInput
-      | undefined;
+      GetPublicVideoDetailInput | undefined;
     expect(observedAnonymousDetailRequest).toEqual({ publicId });
     const body = (await response.json()) as { video: Record<string, unknown> };
     expect(body).toEqual({
@@ -744,8 +741,7 @@ describe('videos routes multipart uploads', () => {
     expect(authenticatedResponse.status).toBe(200);
     const observedAuthenticatedSessionKey = receivedSessionKey as string | undefined;
     const observedAuthenticatedDetailRequest = receivedPublicVideoDetailRequest as
-      | GetPublicVideoDetailInput
-      | undefined;
+      GetPublicVideoDetailInput | undefined;
     expect(observedAuthenticatedSessionKey).toBe('route-session-key');
     expect(observedAuthenticatedDetailRequest).toEqual({
       publicId,
@@ -766,8 +762,7 @@ describe('videos routes multipart uploads', () => {
     expect(invalidResponse.status).toBe(200);
     const observedInvalidSessionKey = receivedSessionKey as string | undefined;
     const observedInvalidDetailRequest = receivedPublicVideoDetailRequest as
-      | GetPublicVideoDetailInput
-      | undefined;
+      GetPublicVideoDetailInput | undefined;
     expect(observedInvalidSessionKey).toBe('invalid-session-key');
     expect(observedInvalidDetailRequest).toEqual({ publicId });
     expect((await invalidResponse.json()) as unknown).toEqual(
@@ -1194,8 +1189,7 @@ describe('videos routes multipart uploads', () => {
       'application/vnd.apple.mpegurl',
     );
     const observedRenditionRequest = receivedHlsRenditionRequest as
-      | GetVideoHlsRenditionInput
-      | undefined;
+      GetVideoHlsRenditionInput | undefined;
     expect(observedRenditionRequest).toEqual({
       publicId,
       generationId,
@@ -1240,8 +1234,7 @@ describe('videos routes multipart uploads', () => {
       'http://localhost:9000/videos/thumbnail/poster.webp?signature=test',
     );
     const observedThumbnailReadRequest = receivedThumbnailReadRequest as
-      | GetVideoThumbnailInput
-      | undefined;
+      GetVideoThumbnailInput | undefined;
     expect(observedThumbnailReadRequest).toEqual({ publicId });
     expect(receivedSessionKey).toBeUndefined();
   });
@@ -1335,8 +1328,7 @@ describe('videos routes multipart uploads', () => {
 
     expect(response.status).toBe(200);
     const observedSignRequest = receivedSignRequest as
-      | SignVideoMultipartUploadPartsInput
-      | undefined;
+      SignVideoMultipartUploadPartsInput | undefined;
     expect(observedSignRequest).toEqual({
       userId: authenticatedUserId,
       videoId,
@@ -1376,8 +1368,7 @@ describe('videos routes multipart uploads', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
     const observedSessionKey = receivedSessionKey as string | undefined;
     const observedThumbnailRequest = receivedThumbnailRequest as
-      | UploadVideoSourceThumbnailInput
-      | undefined;
+      UploadVideoSourceThumbnailInput | undefined;
     expect(observedSessionKey).toBe('route-session-key');
     expect(observedThumbnailRequest).toMatchObject({
       userId: authenticatedUserId,
@@ -1443,8 +1434,7 @@ describe('videos routes multipart uploads', () => {
 
     expect(response.status).toBe(200);
     const observedCompleteRequest = receivedCompleteRequest as
-      | CompleteVideoMultipartUploadInput
-      | undefined;
+      CompleteVideoMultipartUploadInput | undefined;
     expect(observedCompleteRequest).toEqual({
       userId: authenticatedUserId,
       videoId,
@@ -1487,8 +1477,7 @@ describe('videos routes multipart uploads', () => {
     expect(getResponse.status).toBe(200);
     const observedAbortRequest = receivedAbortRequest as AbortVideoMultipartUploadInput | undefined;
     const observedGetRequest = receivedGetRequest as
-      | GetVideoMultipartUploadSessionInput
-      | undefined;
+      GetVideoMultipartUploadSessionInput | undefined;
     expect(observedAbortRequest).toEqual({
       userId: authenticatedUserId,
       videoId,

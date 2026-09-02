@@ -197,8 +197,7 @@ export const coordinateLockInterleavingSettled = async <TFirst, TSecond>({
   let lockObservationController: AbortController | null = null;
   let secondOperation: Promise<TSecond> | null = null;
   let operationResults:
-    | [PromiseSettledResult<TFirst>]
-    | [PromiseSettledResult<TFirst>, PromiseSettledResult<TSecond>];
+    [PromiseSettledResult<TFirst>] | [PromiseSettledResult<TFirst>, PromiseSettledResult<TSecond>];
   const coordinationErrors = new Set<unknown>();
 
   try {
