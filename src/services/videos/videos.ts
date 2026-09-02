@@ -1730,7 +1730,7 @@ const findPublicHlsRendition = async (
         quality: toVideoObjectKeyQuality(persistedRendition.quality),
         width: persistedRendition.width,
         height: persistedRendition.height,
-        bandwidth: persistedRendition.bitrate,
+        videoBitrate: persistedRendition.bitrate,
       },
     ],
   );
@@ -2244,7 +2244,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
       quality: toVideoObjectKeyQuality(rendition.quality),
       width: rendition.width,
       height: rendition.height,
-      bandwidth: rendition.bitrate,
+      videoBitrate: rendition.bitrate,
     }));
     const manifest = buildVideoArtifactManifest(video.ownerId, video.id, generation.id, profiles);
     const storedPlaylist = await readForProxy(

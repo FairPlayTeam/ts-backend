@@ -14,11 +14,12 @@ import { buildVideoArtifactManifest, type VideoArtifactManifest } from './videoO
 import { toVideoRenditionQuality } from './videoHls.js';
 import {
   probeVideo,
+  isTerminalVideoTranscodeError,
   selectVideoTranscodeProfiles,
   transcodeVideoArtifacts,
-  VideoSourceResolutionTooLowError,
   type GeneratedVideoArtifacts,
   type VideoProbe,
+  type VideoTranscodeLimits,
 } from './videoTranscode.js';
 
 const TRANSCODE_POLL_INTERVAL_MS = 2_000;
@@ -49,7 +50,7 @@ type VideoTranscodeRunnerDependencies = {
   clock: {
     now(): Date;
   };
-  config: {
+  config: VideoTranscodeLimits & {
     maxConcurrentJobs: number;
     threadsPerJob: number;
   };
@@ -561,7 +562,7 @@ export const publishVideoArtifactGeneration = async (
         quality: toVideoRenditionQuality(rendition.quality),
         width: rendition.width,
         height: rendition.height,
-        bitrate: rendition.bandwidth,
+        bitrate: rendition.videoBitrate,
         playlistObjectKey: rendition.playlistObjectKey,
         segmentPrefix: rendition.segmentPrefix,
         codec: 'h264',
@@ -1014,6 +1015,7 @@ const processClaimedJob = async (
     const probe = await probeVideo({
       ...(deps.binaries?.ffprobePath ? { ffprobePath: deps.binaries.ffprobePath } : {}),
       inputPath,
+      limits: deps.config,
       signal: controller.signal,
     });
     const profiles = selectVideoTranscodeProfiles(probe);
@@ -1026,6 +1028,7 @@ const processClaimedJob = async (
     const artifacts = await transcodeVideoArtifacts({
       ...(deps.binaries?.ffmpegPath ? { ffmpegPath: deps.binaries.ffmpegPath } : {}),
       inputPath,
+      limits: deps.config,
       manifest,
       outputDirectory,
       probe,
@@ -1081,8 +1084,7 @@ const processClaimedJob = async (
       deps,
       job,
       error,
-      error instanceof VideoTranscodeSourceNotCurrentError ||
-        error instanceof VideoSourceResolutionTooLowError,
+      error instanceof VideoTranscodeSourceNotCurrentError || isTerminalVideoTranscodeError(error),
     ).catch((updateError: unknown) => {
       if (!(updateError instanceof VideoTranscodeOwnershipLostError)) {
         throw updateError;

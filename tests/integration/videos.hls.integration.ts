@@ -55,7 +55,7 @@ const prepareHlsGenerationForPublication = async (
       quality,
       width: profile.width,
       height: profile.height,
-      bandwidth: profile.bandwidth,
+      videoBitrate: profile.videoBitrate,
     },
   ]);
   const rendition = manifest.renditions[0];
@@ -91,7 +91,7 @@ const prepareHlsGenerationForPublication = async (
       body: Buffer.from(
         '#EXTM3U\n' +
           '#EXT-X-VERSION:3\n' +
-          `#EXT-X-STREAM-INF:BANDWIDTH=${profile.bandwidth},RESOLUTION=${profile.width}x${profile.height},CODECS="avc1.4d401f,mp4a.40.2"\n` +
+          `#EXT-X-STREAM-INF:BANDWIDTH=${profile.advertisedBandwidth},RESOLUTION=${profile.width}x${profile.height},CODECS="avc1.4d401f,mp4a.40.2"\n` +
           `${quality}/index.m3u8\n`,
       ),
       contentType: 'application/vnd.apple.mpegurl',
@@ -279,7 +279,7 @@ describe('videos HLS integration', () => {
     expect(masterResponse.headers['content-type']).toMatch(/^application\/vnd\.apple\.mpegurl/u);
     expect(masterResponse.headers['cache-control']).toBe('no-cache');
     expect(masterResponse.text).toContain(
-      '#EXT-X-STREAM-INF:BANDWIDTH=1400000,RESOLUTION=854x480,CODECS="avc1.4d401f,mp4a.40.2"',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1680800,RESOLUTION=854x480,CODECS="avc1.4d401f,mp4a.40.2"',
     );
     expect(masterResponse.text).toContain(activeRenditionPath);
     expect(masterResponse.text).not.toContain('\n480p/index.m3u8');
@@ -499,6 +499,8 @@ describe('videos HLS integration', () => {
           width: 854,
           height: 480,
           durationSeconds: 6,
+          displayWidth: 854,
+          displayHeight: 480,
           hasAudio: true,
         },
       },
@@ -719,6 +721,8 @@ describe('videos HLS integration', () => {
           width: 854,
           height: 480,
           durationSeconds: 6,
+          displayWidth: 854,
+          displayHeight: 480,
           hasAudio: true,
         },
       },

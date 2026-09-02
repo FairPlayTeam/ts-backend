@@ -265,6 +265,19 @@ The full Swagger UI documentation will be available at /docs.
   `0` disables claiming transcode work on that replica. Defaults to `1`.
 - `VIDEO_TRANSCODE_THREADS_PER_JOB` FFmpeg encoder and filter thread limit for each job. Defaults
   to `2`.
+- `VIDEO_TRANSCODE_MAX_DURATION_SECONDS` maximum source and rendition duration. Defaults to `3600`.
+- `VIDEO_TRANSCODE_MAX_WIDTH` and `VIDEO_TRANSCODE_MAX_HEIGHT` maximum source raster and oriented
+  display dimensions after sample-aspect-ratio and quarter-turn rotation correction. Both default
+  to `3840` so portrait and landscape 4K remain possible when the total-pixel limit allows them.
+- `VIDEO_TRANSCODE_MAX_PIXELS` maximum source raster and square-pixel display count, also passed to
+  FFmpeg's decoder. Defaults to `8294400` (3840x2160) and cannot exceed `2147483647`.
+- `VIDEO_TRANSCODE_MAX_ASPECT_RATIO` maximum raster or display width:height or height:width ratio.
+  Defaults to `4`.
+- `VIDEO_TRANSCODE_MAX_FPS` maximum average source FPS and maximum rendition FPS. Defaults to `60`.
+- `VIDEO_TRANSCODE_FFPROBE_TIMEOUT_MS` and `VIDEO_TRANSCODE_FFMPEG_TIMEOUT_MS` child-process
+  deadlines. They default to `30000` and `21600000` and cannot exceed seven days.
+- `VIDEO_TRANSCODE_MAX_ARTIFACT_BYTES` maximum cumulative size of a generated artifact set before
+  upload. Defaults to `8589934592` (8 GiB).
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS_MODE`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` configure
   email delivery. Use `SMTP_TLS_MODE=implicit` for implicit TLS, `starttls` for mandatory STARTTLS,
   or `none` only for trusted local SMTP servers without TLS. `none` is rejected in production.

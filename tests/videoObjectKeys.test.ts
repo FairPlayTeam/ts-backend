@@ -15,13 +15,13 @@ const profiles: VideoArtifactProfile[] = [
     quality: '480p',
     width: 854,
     height: 480,
-    bandwidth: 1_400_000,
+    videoBitrate: 1_400_000,
   },
   {
     quality: '720p',
     width: 1280,
     height: 720,
-    bandwidth: 2_800_000,
+    videoBitrate: 2_800_000,
   },
 ];
 
@@ -58,7 +58,7 @@ describe('video object keys', () => {
           quality: '480p',
           width: 854,
           height: 480,
-          bandwidth: 1_400_000,
+          videoBitrate: 1_400_000,
           playlistObjectKey: 'user-123/video-456/generations/generation-789/hls/480p/index.m3u8',
           playlistRelativePath: 'hls/480p/index.m3u8',
           segmentPrefix: 'user-123/video-456/generations/generation-789/hls/480p/segments/',
@@ -68,7 +68,7 @@ describe('video object keys', () => {
           quality: '720p',
           width: 1280,
           height: 720,
-          bandwidth: 2_800_000,
+          videoBitrate: 2_800_000,
           playlistObjectKey: 'user-123/video-456/generations/generation-789/hls/720p/index.m3u8',
           playlistRelativePath: 'hls/720p/index.m3u8',
           segmentPrefix: 'user-123/video-456/generations/generation-789/hls/720p/segments/',
@@ -84,7 +84,7 @@ describe('video object keys', () => {
         quality: '240p',
         width: 426,
         height: 240,
-        bandwidth: 700_000,
+        videoBitrate: 700_000,
       },
     ]);
 

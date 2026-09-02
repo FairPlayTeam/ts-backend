@@ -8,7 +8,16 @@ import {
   DEFAULT_PROFILE_MEDIA_MAX_UPLOAD_BYTES,
   DEFAULT_SMTP_TIMEOUT_MS,
   DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET,
+  DEFAULT_VIDEO_TRANSCODE_FFMPEG_TIMEOUT_MS,
+  DEFAULT_VIDEO_TRANSCODE_FFPROBE_TIMEOUT_MS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_ARTIFACT_BYTES,
+  DEFAULT_VIDEO_TRANSCODE_MAX_ASPECT_RATIO,
   DEFAULT_VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_DURATION_SECONDS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_FPS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_HEIGHT,
+  DEFAULT_VIDEO_TRANSCODE_MAX_PIXELS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_WIDTH,
   DEFAULT_VIDEO_TRANSCODE_THREADS_PER_JOB,
   DEFAULT_VIDEO_UPLOAD_MAX_BYTES,
   DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
@@ -32,6 +41,8 @@ const MAX_OBJECT_STORAGE_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MIN_VIDEO_UPLOAD_PART_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_VIDEO_UPLOAD_PART_SIZE_BYTES = 99_999_999;
 const MAX_VIDEO_UPLOAD_PARTS = 10_000;
+const MAX_VIDEO_TRANSCODE_PROCESS_TIMEOUT_MS = 7 * DAYS_MS;
+const MAX_VIDEO_TRANSCODE_PIXELS = 2_147_483_647;
 
 type TrustProxySetting = boolean | number | string | string[];
 
@@ -56,7 +67,16 @@ export type VideoUploadConfig = {
 };
 
 type VideoTranscodeConfig = {
+  ffmpegTimeoutMs: number;
+  ffprobeTimeoutMs: number;
+  maxArtifactBytes: number;
+  maxAspectRatio: number;
   maxConcurrentJobs: number;
+  maxDurationSeconds: number;
+  maxFps: number;
+  maxHeight: number;
+  maxPixels: number;
+  maxWidth: number;
   threadsPerJob: number;
 };
 
@@ -478,7 +498,16 @@ type RawVideoUploadConfig = {
 };
 
 type RawVideoTranscodeConfig = {
+  ffmpegTimeoutMs: string | undefined;
+  ffprobeTimeoutMs: string | undefined;
+  maxArtifactBytes: string | undefined;
+  maxAspectRatio: string | undefined;
   maxConcurrentJobs: string | undefined;
+  maxDurationSeconds: string | undefined;
+  maxFps: string | undefined;
+  maxHeight: string | undefined;
+  maxPixels: string | undefined;
+  maxWidth: string | undefined;
   threadsPerJob: string | undefined;
 };
 
@@ -617,6 +646,63 @@ export const parseVideoTranscodeConfig = (
     DEFAULT_VIDEO_TRANSCODE_THREADS_PER_JOB,
     'VIDEO_TRANSCODE_THREADS_PER_JOB',
     'threads',
+  ),
+  maxDurationSeconds: parsePositiveInteger(
+    rawConfig.maxDurationSeconds,
+    DEFAULT_VIDEO_TRANSCODE_MAX_DURATION_SECONDS,
+    'VIDEO_TRANSCODE_MAX_DURATION_SECONDS',
+    'seconds',
+  ),
+  maxWidth: parsePositiveInteger(
+    rawConfig.maxWidth,
+    DEFAULT_VIDEO_TRANSCODE_MAX_WIDTH,
+    'VIDEO_TRANSCODE_MAX_WIDTH',
+    'pixels',
+  ),
+  maxHeight: parsePositiveInteger(
+    rawConfig.maxHeight,
+    DEFAULT_VIDEO_TRANSCODE_MAX_HEIGHT,
+    'VIDEO_TRANSCODE_MAX_HEIGHT',
+    'pixels',
+  ),
+  maxPixels: parsePositiveInteger(
+    rawConfig.maxPixels,
+    DEFAULT_VIDEO_TRANSCODE_MAX_PIXELS,
+    'VIDEO_TRANSCODE_MAX_PIXELS',
+    'pixels',
+    MAX_VIDEO_TRANSCODE_PIXELS,
+  ),
+  maxAspectRatio: parsePositiveInteger(
+    rawConfig.maxAspectRatio,
+    DEFAULT_VIDEO_TRANSCODE_MAX_ASPECT_RATIO,
+    'VIDEO_TRANSCODE_MAX_ASPECT_RATIO',
+    'ratio units',
+  ),
+  maxFps: parsePositiveInteger(
+    rawConfig.maxFps,
+    DEFAULT_VIDEO_TRANSCODE_MAX_FPS,
+    'VIDEO_TRANSCODE_MAX_FPS',
+    'frames per second',
+  ),
+  ffprobeTimeoutMs: parsePositiveInteger(
+    rawConfig.ffprobeTimeoutMs,
+    DEFAULT_VIDEO_TRANSCODE_FFPROBE_TIMEOUT_MS,
+    'VIDEO_TRANSCODE_FFPROBE_TIMEOUT_MS',
+    'milliseconds',
+    MAX_VIDEO_TRANSCODE_PROCESS_TIMEOUT_MS,
+  ),
+  ffmpegTimeoutMs: parsePositiveInteger(
+    rawConfig.ffmpegTimeoutMs,
+    DEFAULT_VIDEO_TRANSCODE_FFMPEG_TIMEOUT_MS,
+    'VIDEO_TRANSCODE_FFMPEG_TIMEOUT_MS',
+    'milliseconds',
+    MAX_VIDEO_TRANSCODE_PROCESS_TIMEOUT_MS,
+  ),
+  maxArtifactBytes: parsePositiveInteger(
+    rawConfig.maxArtifactBytes,
+    DEFAULT_VIDEO_TRANSCODE_MAX_ARTIFACT_BYTES,
+    'VIDEO_TRANSCODE_MAX_ARTIFACT_BYTES',
+    'bytes',
   ),
 });
 

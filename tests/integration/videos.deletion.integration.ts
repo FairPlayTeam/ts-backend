@@ -172,7 +172,7 @@ describe('video deletion integration', () => {
         quality: '480p',
         width: profile.width,
         height: profile.height,
-        bandwidth: profile.bandwidth,
+        videoBitrate: profile.videoBitrate,
       },
     ]);
     await reserveHlsArtifactTargets(runtime, {

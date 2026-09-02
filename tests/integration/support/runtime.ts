@@ -41,10 +41,27 @@ import type { AuthPorts } from '../../../src/services/auth.types.js';
 import type { ProfilesPorts } from '../../../src/services/profiles.types.js';
 import type { VideosService } from '../../../src/services/videos.types.js';
 import type { ObjectStorageConfig } from '../../../src/config/env.parsers.js';
+import type { VideoTranscodeLimits } from '../../../src/services/videos/videoTranscode.js';
 import type { Redis } from 'ioredis';
 
 export const PROFILE_MEDIA_MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 export const AUTH_CODE_PEPPER = 'integration-auth-code-pepper-change-me';
+export const VIDEO_TRANSCODE_TEST_CONFIG = {
+  ffmpegTimeoutMs: 60_000,
+  ffprobeTimeoutMs: 10_000,
+  maxArtifactBytes: 64 * 1024 * 1024,
+  maxAspectRatio: 4,
+  maxConcurrentJobs: 1,
+  maxDurationSeconds: 60,
+  maxFps: 60,
+  maxHeight: 3840,
+  maxPixels: 3840 * 2160,
+  maxWidth: 3840,
+  threadsPerJob: 1,
+} satisfies VideoTranscodeLimits & {
+  maxConcurrentJobs: number;
+  threadsPerJob: number;
+};
 
 type DeliveredEmail = {
   email: string;

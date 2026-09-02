@@ -407,7 +407,9 @@ FFprobe metadata is validated before encoding. Sources below 240p fail permanent
 240p through 479p emit only 240p, while sources at 480p and above emit the fitting 480p, 720p, and
 1080p ladder entries. A single direct FFmpeg process creates those H.264/CRF 24 HLS VOD renditions
 without upscaling, with even dimensions, six-second segments, AAC 128k audio when the source has
-audio, and a WebP fallback thumbnail. When the
+audio, and a WebP fallback thumbnail. Each master-playlist `BANDWIDTH` value is the matching video
+VBV bitrate plus optional audio, with a 10% allowance for MPEG-TS/HLS overhead; it is therefore not
+reused as the encoder's video-only `maxrate`. When the
 completed source session has a confirmed custom thumbnail, the runner replaces that local
 fallback before artifact enumeration and uploads the bytes to the generation's own immutable
 `thumbnail/poster.webp` key. Different generations never reference the shared source object.
@@ -415,6 +417,32 @@ Publication schedules the consumed source thumbnail for reconciliation cleanup i
 transaction that activates the generation. Encoder and filter threads are bounded by
 `VIDEO_TRANSCODE_THREADS_PER_JOB`; child output retained in memory is also bounded. Abort sends
 `SIGTERM`, followed by `SIGKILL` after five seconds if necessary.
+
+The default media policy accepts at most one hour, 3840 pixels on either raster or square-pixel
+display dimension, 8,294,400 raster or display pixels, a 4:1 raster or display aspect ratio in
+either orientation, and 60 average FPS. An FFmpeg `max_pixels` decoder option repeats the metadata
+pixel ceiling. Display dimensions include the sample aspect ratio and quarter-turn container
+rotation; FFmpeg autorotation plus rendition and fallback-thumbnail filters normalize the result to
+square pixels. Other rotation angles are rejected. FFprobe has a 30-second deadline and FFmpeg a
+six-hour deadline; either deadline terminates the child with the same `SIGTERM` then `SIGKILL`
+sequence. Inputs are restricted to the local `file` protocol and the MP4-family `mov` demuxer, so a
+probed upload cannot select a playlist demuxer or make FFmpeg fetch remote network resources.
+FFmpeg repeats the one-hour and 60 FPS ceilings on rendition outputs and combines CRF with
+per-rendition VBV `maxrate`/`bufsize` limits. After generation, the runner sums every playlist,
+segment, and thumbnail and refuses to upload anything when the total exceeds 8 GiB. Invalid or
+out-of-policy media, ordinary ffprobe rejections, child timeouts, and oversized artifact sets fail
+permanently. An unexpected signal termination, a non-zero FFmpeg exit, or process spawn failure
+remains retryable because it can represent a transient infrastructure error. All values are
+startup-validated `VIDEO_TRANSCODE_*` settings documented in `.env.example`.
+
+The cumulative artifact check runs after local generation and before upload; it is not an operating
+system filesystem quota. Duration, FPS, and VBV rate bounds keep the standard one-hour ladder below
+the 8 GiB ceiling. The peak temporary footprint nevertheless includes both the downloaded source
+and artifacts being generated. Deployments must therefore reserve at least
+`VIDEO_UPLOAD_MAX_BYTES + VIDEO_TRANSCODE_MAX_ARTIFACT_BYTES` per active local transcode job,
+multiplied by `VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS`. Because the application checks the artifact cap
+only after FFmpeg exits, customized limits also require either additional headroom derived from the
+duration/VBV bounds or an equivalent container ephemeral-storage quota.
 
 Each execution writes to a unique generation namespace. Its database generation and prefix cleanup
 targets are reserved before any potentially ambiguous artifact upload. The runner verifies the

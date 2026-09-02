@@ -1,8 +1,16 @@
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { resolve } from 'node:path';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjectKeys.js';
+import {
+  probeVideo,
+  transcodeVideoArtifacts,
+  type VideoTranscodeLimits,
+} from '../../src/services/videos/videoTranscode.js';
 import {
   claimNextVideoTranscodeJob,
   createVideoTranscodeRunner,
@@ -13,7 +21,10 @@ import {
 import {
   createTranscodeTestVideo,
   createVerifiedSession,
+  decodeFirstVideoFrame,
+  probeVideoArtifact,
   readStoredObject,
+  readStoredObjectBuffer,
   uploadVideoSource,
 } from './support/fixtures.js';
 import { waitForTranscodeJob } from './support/videoArtifacts.js';
@@ -25,8 +36,81 @@ import {
   startRuntime,
   stopRuntime,
   type TestRuntime,
+  VIDEO_TRANSCODE_TEST_CONFIG,
 } from './support/runtime.js';
 import { throwCollectedErrors, waitForBarrier } from './support/asyncBarriers.js';
+
+type DirectFfmpegLimits = Pick<
+  VideoTranscodeLimits,
+  'ffmpegTimeoutMs' | 'maxArtifactBytes' | 'maxDurationSeconds' | 'maxFps' | 'maxPixels'
+>;
+
+const transcodeWithRealFfmpeg = ({
+  inputPath,
+  limits = {},
+  outputDirectory,
+}: {
+  inputPath: string;
+  limits?: Partial<DirectFfmpegLimits>;
+  outputDirectory: string;
+}) =>
+  transcodeVideoArtifacts({
+    inputPath,
+    limits: {
+      ffmpegTimeoutMs: VIDEO_TRANSCODE_TEST_CONFIG.ffmpegTimeoutMs,
+      maxArtifactBytes: VIDEO_TRANSCODE_TEST_CONFIG.maxArtifactBytes,
+      maxDurationSeconds: VIDEO_TRANSCODE_TEST_CONFIG.maxDurationSeconds,
+      maxFps: VIDEO_TRANSCODE_TEST_CONFIG.maxFps,
+      maxPixels: VIDEO_TRANSCODE_TEST_CONFIG.maxPixels,
+      ...limits,
+    },
+    manifest: buildVideoArtifactManifest(
+      'direct-transcode-user',
+      'direct-transcode-video',
+      'direct-transcode-generation',
+      [
+        {
+          quality: '240p',
+          width: 320,
+          height: 240,
+          videoBitrate: 700_000,
+        },
+      ],
+    ),
+    outputDirectory,
+    probe: {
+      width: 320,
+      height: 240,
+      durationSeconds: 2,
+      displayWidth: 320,
+      displayHeight: 240,
+      hasAudio: true,
+    },
+    signal: new AbortController().signal,
+    threads: 1,
+  });
+
+const redBlueDominanceAt = (
+  frame: Awaited<ReturnType<typeof decodeFirstVideoFrame>>,
+  xRatio: number,
+  yRatio: number,
+): number => {
+  if (frame.channels < 3) {
+    throw new Error('Decoded video frame does not expose RGB channels');
+  }
+
+  const x = Math.min(frame.width - 1, Math.floor(frame.width * xRatio));
+  const y = Math.min(frame.height - 1, Math.floor(frame.height * yRatio));
+  const offset = (y * frame.width + x) * frame.channels;
+  const red = frame.data[offset];
+  const blue = frame.data[offset + 2];
+
+  if (red === undefined || blue === undefined) {
+    throw new Error('Decoded video frame is missing an expected RGB pixel');
+  }
+
+  return red - blue;
+};
 
 const createPublicationCommitBarrierPrisma = (
   prisma: PrismaClient,
@@ -178,6 +262,59 @@ const readTranscodePublicationSnapshot = (
     { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
   );
 
+const expectNoPublishedOrStoredArtifacts = async (
+  runtime: TestRuntime,
+  {
+    userId,
+    videoId,
+  }: {
+    userId: string;
+    videoId: string;
+  },
+): Promise<void> => {
+  const [video, generations] = await Promise.all([
+    runtime.prisma.video.findUniqueOrThrow({
+      where: { id: videoId },
+      select: {
+        activeArtifactGenerationId: true,
+        hlsMasterObjectKey: true,
+        thumbnailObjectKey: true,
+      },
+    }),
+    runtime.prisma.videoArtifactGeneration.findMany({
+      where: { videoId },
+      select: { id: true, state: true },
+    }),
+  ]);
+
+  expect(video).toEqual({
+    activeArtifactGenerationId: null,
+    hlsMasterObjectKey: null,
+    thumbnailObjectKey: null,
+  });
+  expect(generations).toHaveLength(1);
+  expect(generations.every(({ state }) => state !== 'active')).toBe(true);
+
+  for (const generation of generations) {
+    const manifest = buildVideoArtifactManifest(userId, videoId, generation.id, []);
+    const [hlsObjects, thumbnailObjects] = await Promise.all([
+      runtime.videoObjectStorage.listObjects({
+        bucket: VIDEO_OBJECT_STORAGE_BUCKET,
+        prefix: manifest.hlsPrefix,
+        limit: 1,
+      }),
+      runtime.videoObjectStorage.listObjects({
+        bucket: VIDEO_OBJECT_STORAGE_BUCKET,
+        prefix: manifest.thumbnailPrefix,
+        limit: 1,
+      }),
+    ]);
+
+    expect(hlsObjects.objects).toEqual([]);
+    expect(thumbnailObjects.objects).toEqual([]);
+  }
+};
+
 describe('videos transcoding integration', () => {
   let runtime: TestRuntime | null = null;
 
@@ -197,25 +334,156 @@ describe('videos transcoding integration', () => {
     await stopRuntime(runtime);
   });
 
-  test('transcodes an intermediate 280p source into a 240p-only HLS generation and serves it', async () => {
+  test('enforces decoder pixel and MP4 demuxer allowlists with real ffprobe', async () => {
+    const directory = await mkdtemp(resolve(tmpdir(), 'fairplay-integration-probe-limits-'));
+    const inputPath = resolve(directory, 'source.mp4');
+
+    try {
+      await writeFile(inputPath, await createTranscodeTestVideo());
+      await expect(
+        probeVideo({
+          inputPath,
+          limits: {
+            ...VIDEO_TRANSCODE_TEST_CONFIG,
+            maxPixels: 1,
+          },
+          signal: new AbortController().signal,
+        }),
+      ).rejects.toThrow('max pixel count');
+
+      await writeFile(
+        inputPath,
+        await createTranscodeTestVideo({
+          container: 'matroska',
+        }),
+      );
+      await expect(
+        probeVideo({
+          inputPath,
+          limits: VIDEO_TRANSCODE_TEST_CONFIG,
+          signal: new AbortController().signal,
+        }),
+      ).rejects.toThrow('not on whitelist');
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  test('enforces decoder pixel, demuxer, and protocol allowlists with real ffmpeg when probing is bypassed', async () => {
+    const directory = await mkdtemp(resolve(tmpdir(), 'fairplay-integration-ffmpeg-limits-'));
+    const mp4Path = resolve(directory, 'source.mp4');
+    const matroskaPath = resolve(directory, 'source.mkv');
+
+    try {
+      await writeFile(mp4Path, await createTranscodeTestVideo());
+      await expect(
+        transcodeWithRealFfmpeg({
+          inputPath: mp4Path,
+          limits: { maxPixels: 1 },
+          outputDirectory: resolve(directory, 'pixels-output'),
+        }),
+      ).rejects.toThrow('max pixel count');
+
+      await writeFile(
+        matroskaPath,
+        await createTranscodeTestVideo({
+          container: 'matroska',
+        }),
+      );
+      await expect(
+        transcodeWithRealFfmpeg({
+          inputPath: matroskaPath,
+          outputDirectory: resolve(directory, 'demuxer-output'),
+        }),
+      ).rejects.toThrow('not on whitelist');
+
+      await expect(
+        transcodeWithRealFfmpeg({
+          inputPath: 'http://127.0.0.1:9/source.mp4',
+          outputDirectory: resolve(directory, 'protocol-output'),
+        }),
+      ).rejects.toThrow("Protocol 'http' not on whitelist 'file'");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  test('caps the frame rate and duration of real ffmpeg artifacts when probing is bypassed', async () => {
+    const directory = await mkdtemp(resolve(tmpdir(), 'fairplay-integration-ffmpeg-output-'));
+    const inputPath = resolve(directory, 'source.mp4');
+
+    try {
+      await writeFile(
+        inputPath,
+        await createTranscodeTestVideo({
+          durationSeconds: 2,
+          frameRate: 120,
+          height: 240,
+          width: 320,
+        }),
+      );
+      const artifacts = await transcodeWithRealFfmpeg({
+        inputPath,
+        limits: {
+          maxDurationSeconds: 1,
+          maxFps: 12,
+        },
+        outputDirectory: resolve(directory, 'output'),
+      });
+      const renditionSegments = artifacts.renditionSegments[0];
+
+      if (!renditionSegments || renditionSegments.length === 0) {
+        throw new Error('FFmpeg generated no segment for bounded-output inspection');
+      }
+
+      const artifactProbes = await Promise.all(
+        renditionSegments.map(async (segment) =>
+          probeVideoArtifact(await readFile(segment.filePath)),
+        ),
+      );
+
+      for (const artifactProbe of artifactProbes) {
+        expect(artifactProbe).toMatchObject({
+          frameRate: 12,
+          height: 240,
+          sampleAspectRatio: '1:1',
+          width: 320,
+        });
+      }
+
+      expect(
+        artifactProbes.reduce((total, artifactProbe) => total + artifactProbe.durationSeconds, 0),
+      ).toBeLessThanOrEqual(1.25);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  test('transcodes a rotated anamorphic source into a square-pixel portrait HLS generation and serves it', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
 
     const owner = await createVerifiedSession(runtime, {
-      email: 'transcode-240p@example.com',
-      username: 'transcode_240p',
+      email: 'transcode-rotated@example.com',
+      username: 'transcode_rotated',
     });
     const created = await runtime.videosService.createVideo({
       userId: owner.userId,
-      title: 'Intermediate source for 240p',
+      title: 'Rotated anamorphic source',
       description: null,
       tags: [],
       license: 'all_rights_reserved',
       allowComments: true,
     });
     const source = await uploadVideoSource(runtime.videosService, {
-      body: await createTranscodeTestVideo({ width: 498, height: 280 }),
+      body: await createTranscodeTestVideo({
+        width: 498,
+        height: 280,
+        sampleAspectRatio: '4/3',
+        displayRotation: 90,
+        visualPattern: 'vertical-halves',
+      }),
       userId: owner.userId,
       videoId: created.video.id,
     });
@@ -232,6 +500,7 @@ describe('videos transcoding integration', () => {
       objectStorage: runtime.videoObjectStorage,
       clock: { now: () => new Date() },
       config: {
+        ...VIDEO_TRANSCODE_TEST_CONFIG,
         maxConcurrentJobs: 1,
         threadsPerJob: 1,
       },
@@ -281,32 +550,73 @@ describe('videos transcoding integration', () => {
     });
     expect(activeGeneration.renditions).toEqual([
       expect.objectContaining({
-        quality: 'p240',
-        width: 426,
-        height: 240,
-        bitrate: 700_000,
+        quality: 'p480',
+        width: 202,
+        height: 480,
+        bitrate: 1_400_000,
       }),
     ]);
+    const activeRendition = activeGeneration.renditions[0];
+
+    if (!activeRendition) {
+      throw new Error('Active portrait generation has no rendition');
+    }
+
+    const storedSegments = await runtime.videoObjectStorage.listObjects({
+      bucket: VIDEO_OBJECT_STORAGE_BUCKET,
+      prefix: activeRendition.segmentPrefix,
+      limit: 1,
+    });
+    const storedSegment = storedSegments.objects[0];
+
+    if (!storedSegment) {
+      throw new Error('Active portrait generation has no stored segment');
+    }
+
+    const segmentBody = await readStoredObjectBuffer(
+      runtime.videoObjectStorage,
+      VIDEO_OBJECT_STORAGE_BUCKET,
+      storedSegment.objectKey,
+    );
+    await expect(probeVideoArtifact(segmentBody)).resolves.toMatchObject({
+      height: 480,
+      sampleAspectRatio: '1:1',
+      width: 202,
+    });
+    const frame = await decodeFirstVideoFrame(segmentBody);
+    const topLeftDominance = redBlueDominanceAt(frame, 0.25, 0.25);
+    const topRightDominance = redBlueDominanceAt(frame, 0.75, 0.25);
+    const bottomLeftDominance = redBlueDominanceAt(frame, 0.25, 0.75);
+    const bottomRightDominance = redBlueDominanceAt(frame, 0.75, 0.75);
+
+    expect(Math.abs(topLeftDominance)).toBeGreaterThan(80);
+    expect(Math.abs(topRightDominance)).toBeGreaterThan(80);
+    expect(Math.abs(bottomLeftDominance)).toBeGreaterThan(80);
+    expect(Math.abs(bottomRightDominance)).toBeGreaterThan(80);
+    expect(topLeftDominance * topRightDominance).toBeGreaterThan(0);
+    expect(bottomLeftDominance * bottomRightDominance).toBeGreaterThan(0);
+    expect(topLeftDominance * bottomLeftDominance).toBeLessThan(0);
+
     if (!activeGeneration.hlsMasterObjectKey) {
-      throw new Error('Active 240p generation has no master playlist object key');
+      throw new Error('Active portrait generation has no master playlist object key');
     }
     const masterPlaylist = await readStoredObject(
       runtime.videoObjectStorage,
       VIDEO_OBJECT_STORAGE_BUCKET,
       activeGeneration.hlsMasterObjectKey,
     );
-    expect(masterPlaylist).toContain('#EXT-X-STREAM-INF:BANDWIDTH=700000,RESOLUTION=426x240');
-    expect(masterPlaylist).toContain('240p/index.m3u8');
-    expect(masterPlaylist).not.toContain('480p/index.m3u8');
+    expect(masterPlaylist).toContain('#EXT-X-STREAM-INF:BANDWIDTH=1680800,RESOLUTION=202x480');
+    expect(masterPlaylist).toContain('480p/index.m3u8');
+    expect(masterPlaylist).not.toContain('720p/index.m3u8');
 
     const app = await createIntegrationApp(runtime);
-    const renditionPath = `/videos/${created.video.publicId}/hls/${activeGeneration.id}/240p/index.m3u8`;
+    const renditionPath = `/videos/${created.video.publicId}/hls/${activeGeneration.id}/480p/index.m3u8`;
     await request(app)
       .get(`/videos/${created.video.publicId}/hls/master.m3u8`)
       .expect(200)
       .expect((response) => {
         expect(response.text).toContain(renditionPath);
-        expect(response.text).not.toContain('/480p/index.m3u8');
+        expect(response.text).not.toContain('/720p/index.m3u8');
       });
     await request(app)
       .get(renditionPath)
@@ -355,6 +665,7 @@ describe('videos transcoding integration', () => {
       objectStorage: runtime.videoObjectStorage,
       clock: { now: () => new Date() },
       config: {
+        ...VIDEO_TRANSCODE_TEST_CONFIG,
         maxConcurrentJobs: 1,
         threadsPerJob: 1,
       },
@@ -410,6 +721,148 @@ describe('videos transcoding integration', () => {
     ).resolves.toBeNull();
   });
 
+  test('rejects an overlong source permanently before uploading or publishing artifacts', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'transcode-too-long@example.com',
+      username: 'transcode_too_long',
+    });
+    const created = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Source over the configured duration limit',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      allowComments: true,
+    });
+    const source = await uploadVideoSource(runtime.videosService, {
+      body: await createTranscodeTestVideo(),
+      userId: owner.userId,
+      videoId: created.video.id,
+    });
+    const job = await runtime.prisma.videoTranscodeJob.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+        sourceObjectKey: source.uploadSession.objectKey,
+      },
+      select: { id: true, maxAttempts: true },
+    });
+    expect(job.maxAttempts).toBeGreaterThan(1);
+
+    const runner = createVideoTranscodeRunner({
+      prisma: runtime.prisma,
+      objectStorage: runtime.videoObjectStorage,
+      clock: { now: () => new Date() },
+      config: {
+        ...VIDEO_TRANSCODE_TEST_CONFIG,
+        maxConcurrentJobs: 1,
+        maxDurationSeconds: 1,
+        threadsPerJob: 1,
+      },
+      logger: {
+        info: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+      },
+    });
+
+    runner.start();
+
+    try {
+      await expect(waitForTranscodeJob(runtime.prisma, job.id)).resolves.toMatchObject({
+        status: 'failed',
+        lastError: expect.stringContaining('duration 1.5s is above 1s'),
+      });
+    } finally {
+      await runner.stop();
+    }
+
+    await expect(
+      runtime.prisma.videoTranscodeJob.findUniqueOrThrow({
+        where: { id: job.id },
+        select: { attempts: true, status: true },
+      }),
+    ).resolves.toEqual({ attempts: 1, status: 'failed' });
+    await expectNoPublishedOrStoredArtifacts(runtime, {
+      userId: owner.userId,
+      videoId: created.video.id,
+    });
+  });
+
+  test('rejects oversized generated artifacts permanently before uploading or publishing them', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'transcode-artifacts-too-large@example.com',
+      username: 'transcode_cap',
+    });
+    const created = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Artifacts over the configured size limit',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      allowComments: true,
+    });
+    const source = await uploadVideoSource(runtime.videosService, {
+      body: await createTranscodeTestVideo(),
+      userId: owner.userId,
+      videoId: created.video.id,
+    });
+    const job = await runtime.prisma.videoTranscodeJob.findFirstOrThrow({
+      where: {
+        videoId: created.video.id,
+        sourceObjectKey: source.uploadSession.objectKey,
+      },
+      select: { id: true, maxAttempts: true },
+    });
+    expect(job.maxAttempts).toBeGreaterThan(1);
+
+    const runner = createVideoTranscodeRunner({
+      prisma: runtime.prisma,
+      objectStorage: runtime.videoObjectStorage,
+      clock: { now: () => new Date() },
+      config: {
+        ...VIDEO_TRANSCODE_TEST_CONFIG,
+        maxArtifactBytes: 1,
+        maxConcurrentJobs: 1,
+        threadsPerJob: 1,
+      },
+      logger: {
+        info: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+      },
+    });
+
+    runner.start();
+
+    try {
+      await expect(waitForTranscodeJob(runtime.prisma, job.id)).resolves.toMatchObject({
+        status: 'failed',
+        lastError: expect.stringContaining('Generated video artifacts exceed the 1-byte limit'),
+      });
+    } finally {
+      await runner.stop();
+    }
+
+    await expect(
+      runtime.prisma.videoTranscodeJob.findUniqueOrThrow({
+        where: { id: job.id },
+        select: { attempts: true, status: true },
+      }),
+    ).resolves.toEqual({ attempts: 1, status: 'failed' });
+    await expectNoPublishedOrStoredArtifacts(runtime, {
+      userId: owner.userId,
+      videoId: created.video.id,
+    });
+  });
+
   test('takes over a stale transcode into a complete generation, uses the ffmpeg thumbnail fallback, and retires the previous generation atomically', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
@@ -452,7 +905,7 @@ describe('videos transcoding integration', () => {
           quality: '480p',
           width: 640,
           height: 480,
-          bandwidth: 1_400_000,
+          videoBitrate: 1_400_000,
         },
       ],
     );
@@ -545,6 +998,7 @@ describe('videos transcoding integration', () => {
       objectStorage: runtime.videoObjectStorage,
       clock: { now: () => new Date() },
       config: {
+        ...VIDEO_TRANSCODE_TEST_CONFIG,
         maxConcurrentJobs: 1,
         threadsPerJob: 1,
       },
@@ -808,7 +1262,7 @@ describe('videos transcoding integration', () => {
           quality: '480p',
           width: 640,
           height: 480,
-          bandwidth: 1_400_000,
+          videoBitrate: 1_400_000,
         },
       ],
     );
@@ -921,7 +1375,7 @@ describe('videos transcoding integration', () => {
         quality: '480p',
         width: 640,
         height: 480,
-        bandwidth: 1_400_000,
+        videoBitrate: 1_400_000,
       },
     ]);
     await runtime.prisma.videoTranscodeJob.update({
@@ -1020,6 +1474,8 @@ describe('videos transcoding integration', () => {
             width: 640,
             height: 480,
             durationSeconds: 2,
+            displayWidth: 640,
+            displayHeight: 480,
             hasAudio: true,
           },
         },
@@ -1101,6 +1557,7 @@ describe('videos transcoding integration', () => {
       },
       clock: { now: () => new Date() },
       config: {
+        ...VIDEO_TRANSCODE_TEST_CONFIG,
         maxConcurrentJobs: 1,
         threadsPerJob: 1,
       },

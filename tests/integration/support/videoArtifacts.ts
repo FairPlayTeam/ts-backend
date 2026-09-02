@@ -21,7 +21,8 @@ export const hlsProfileForQuality = (
   persistedQuality: VideoRenditionQuality;
   width: number;
   height: number;
-  bandwidth: number;
+  videoBitrate: number;
+  advertisedBandwidth: number;
 } => {
   switch (quality) {
     case '240p':
@@ -29,28 +30,32 @@ export const hlsProfileForQuality = (
         persistedQuality: 'p240',
         width: 426,
         height: 240,
-        bandwidth: 700_000,
+        videoBitrate: 700_000,
+        advertisedBandwidth: 910_800,
       };
     case '480p':
       return {
         persistedQuality: 'p480',
         width: 854,
         height: 480,
-        bandwidth: 1_400_000,
+        videoBitrate: 1_400_000,
+        advertisedBandwidth: 1_680_800,
       };
     case '720p':
       return {
         persistedQuality: 'p720',
         width: 1280,
         height: 720,
-        bandwidth: 2_800_000,
+        videoBitrate: 2_800_000,
+        advertisedBandwidth: 3_220_800,
       };
     case '1080p':
       return {
         persistedQuality: 'p1080',
         width: 1920,
         height: 1080,
-        bandwidth: 5_000_000,
+        videoBitrate: 5_000_000,
+        advertisedBandwidth: 5_640_800,
       };
   }
 };
@@ -82,7 +87,7 @@ export const seedHlsGeneration = async (
       quality,
       width: profile.width,
       height: profile.height,
-      bandwidth: profile.bandwidth,
+      videoBitrate: profile.videoBitrate,
     },
   ]);
   const rendition = manifest.renditions[0];
@@ -112,7 +117,7 @@ export const seedHlsGeneration = async (
       quality: profile.persistedQuality,
       width: profile.width,
       height: profile.height,
-      bitrate: profile.bandwidth,
+      bitrate: profile.videoBitrate,
       playlistObjectKey: rendition.playlistObjectKey,
       segmentPrefix: rendition.segmentPrefix,
       codec: 'h264',
@@ -128,7 +133,7 @@ export const seedHlsGeneration = async (
       body: Buffer.from(
         '#EXTM3U\n' +
           '#EXT-X-VERSION:3\n' +
-          `#EXT-X-STREAM-INF:BANDWIDTH=${profile.bandwidth},RESOLUTION=${profile.width}x${profile.height},CODECS="avc1.4d401f,mp4a.40.2"\n` +
+          `#EXT-X-STREAM-INF:BANDWIDTH=${profile.advertisedBandwidth},RESOLUTION=${profile.width}x${profile.height},CODECS="avc1.4d401f,mp4a.40.2"\n` +
           `${quality}/index.m3u8\n`,
       ),
       contentType: 'application/vnd.apple.mpegurl',

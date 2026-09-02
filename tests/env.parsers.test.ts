@@ -24,18 +24,41 @@ import {
 import {
   DEFAULT_OBJECT_STORAGE_BUCKET,
   DEFAULT_OBJECT_STORAGE_TIMEOUT_MS,
+  DEFAULT_SMTP_TIMEOUT_MS,
   DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET,
+  DEFAULT_VIDEO_TRANSCODE_FFMPEG_TIMEOUT_MS,
+  DEFAULT_VIDEO_TRANSCODE_FFPROBE_TIMEOUT_MS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_ARTIFACT_BYTES,
+  DEFAULT_VIDEO_TRANSCODE_MAX_ASPECT_RATIO,
   DEFAULT_VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_DURATION_SECONDS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_FPS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_HEIGHT,
+  DEFAULT_VIDEO_TRANSCODE_MAX_PIXELS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_WIDTH,
   DEFAULT_VIDEO_TRANSCODE_THREADS_PER_JOB,
   DEFAULT_VIDEO_UPLOAD_MAX_BYTES,
   DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
   DEFAULT_VIDEO_UPLOAD_PART_SIZE_BYTES,
   DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
   DEFAULT_VIDEO_USER_STORAGE_QUOTA_BYTES,
-  DEFAULT_SMTP_TIMEOUT_MS,
   SESSION_CLEANUP_INACTIVE_RETENTION_MS,
   SESSION_CLEANUP_INTERVAL_MS,
 } from '../src/config/constants.js';
+
+const EMPTY_VIDEO_TRANSCODE_CONFIG = {
+  ffmpegTimeoutMs: undefined,
+  ffprobeTimeoutMs: undefined,
+  maxArtifactBytes: undefined,
+  maxAspectRatio: undefined,
+  maxConcurrentJobs: undefined,
+  maxDurationSeconds: undefined,
+  maxFps: undefined,
+  maxHeight: undefined,
+  maxPixels: undefined,
+  maxWidth: undefined,
+  threadsPerJob: undefined,
+};
 
 describe('env parsers', () => {
   test('keeps the official object storage bucket defaults', () => {
@@ -487,28 +510,52 @@ describe('env parsers', () => {
   });
 
   test('parses strict per-process video transcode limits', () => {
-    expect(
-      parseVideoTranscodeConfig({
-        maxConcurrentJobs: undefined,
-        threadsPerJob: undefined,
-      }),
-    ).toEqual({
+    expect(parseVideoTranscodeConfig(EMPTY_VIDEO_TRANSCODE_CONFIG)).toEqual({
+      ffmpegTimeoutMs: DEFAULT_VIDEO_TRANSCODE_FFMPEG_TIMEOUT_MS,
+      ffprobeTimeoutMs: DEFAULT_VIDEO_TRANSCODE_FFPROBE_TIMEOUT_MS,
+      maxArtifactBytes: DEFAULT_VIDEO_TRANSCODE_MAX_ARTIFACT_BYTES,
+      maxAspectRatio: DEFAULT_VIDEO_TRANSCODE_MAX_ASPECT_RATIO,
       maxConcurrentJobs: DEFAULT_VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS,
+      maxDurationSeconds: DEFAULT_VIDEO_TRANSCODE_MAX_DURATION_SECONDS,
+      maxFps: DEFAULT_VIDEO_TRANSCODE_MAX_FPS,
+      maxHeight: DEFAULT_VIDEO_TRANSCODE_MAX_HEIGHT,
+      maxPixels: DEFAULT_VIDEO_TRANSCODE_MAX_PIXELS,
+      maxWidth: DEFAULT_VIDEO_TRANSCODE_MAX_WIDTH,
       threadsPerJob: DEFAULT_VIDEO_TRANSCODE_THREADS_PER_JOB,
     });
     expect(
       parseVideoTranscodeConfig({
+        ...EMPTY_VIDEO_TRANSCODE_CONFIG,
+        ffmpegTimeoutMs: '20000',
+        ffprobeTimeoutMs: '1000',
+        maxArtifactBytes: '1000000',
+        maxAspectRatio: '3',
         maxConcurrentJobs: '0',
+        maxDurationSeconds: '600',
+        maxFps: '30',
+        maxHeight: '1920',
+        maxPixels: '2073600',
+        maxWidth: '1920',
         threadsPerJob: '4',
       }),
     ).toEqual({
+      ffmpegTimeoutMs: 20_000,
+      ffprobeTimeoutMs: 1_000,
+      maxArtifactBytes: 1_000_000,
+      maxAspectRatio: 3,
       maxConcurrentJobs: 0,
+      maxDurationSeconds: 600,
+      maxFps: 30,
+      maxHeight: 1920,
+      maxPixels: 2_073_600,
+      maxWidth: 1920,
       threadsPerJob: 4,
     });
 
     for (const invalidValue of ['-1', '1.5', '1e2', '+1']) {
       expect(() =>
         parseVideoTranscodeConfig({
+          ...EMPTY_VIDEO_TRANSCODE_CONFIG,
           maxConcurrentJobs: invalidValue,
           threadsPerJob: '2',
         }),
@@ -518,10 +565,46 @@ describe('env parsers', () => {
     for (const invalidValue of ['0', '-1', '1.5', '1e2', '+1']) {
       expect(() =>
         parseVideoTranscodeConfig({
+          ...EMPTY_VIDEO_TRANSCODE_CONFIG,
           maxConcurrentJobs: '1',
           threadsPerJob: invalidValue,
         }),
       ).toThrow(ServerConfigurationError);
     }
+
+    for (const field of [
+      'ffmpegTimeoutMs',
+      'ffprobeTimeoutMs',
+      'maxArtifactBytes',
+      'maxAspectRatio',
+      'maxDurationSeconds',
+      'maxFps',
+      'maxHeight',
+      'maxPixels',
+      'maxWidth',
+    ] as const) {
+      expect(() =>
+        parseVideoTranscodeConfig({
+          ...EMPTY_VIDEO_TRANSCODE_CONFIG,
+          [field]: '0',
+        }),
+      ).toThrow(ServerConfigurationError);
+    }
+
+    for (const field of ['ffmpegTimeoutMs', 'ffprobeTimeoutMs'] as const) {
+      expect(() =>
+        parseVideoTranscodeConfig({
+          ...EMPTY_VIDEO_TRANSCODE_CONFIG,
+          [field]: String(8 * 24 * 60 * 60 * 1000),
+        }),
+      ).toThrow(ServerConfigurationError);
+    }
+
+    expect(() =>
+      parseVideoTranscodeConfig({
+        ...EMPTY_VIDEO_TRANSCODE_CONFIG,
+        maxPixels: String(2_147_483_648),
+      }),
+    ).toThrow(ServerConfigurationError);
   });
 });

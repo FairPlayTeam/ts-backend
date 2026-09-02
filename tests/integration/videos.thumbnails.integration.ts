@@ -35,6 +35,7 @@ import {
   stopRuntime,
   testLogger,
   type TestRuntime,
+  VIDEO_TRANSCODE_TEST_CONFIG,
 } from './support/runtime.js';
 import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
 
@@ -523,6 +524,7 @@ describe('videos thumbnails integration', () => {
       objectStorage: runtime.videoObjectStorage,
       clock: { now: () => new Date() },
       config: {
+        ...VIDEO_TRANSCODE_TEST_CONFIG,
         maxConcurrentJobs: 1,
         threadsPerJob: 1,
       },
@@ -1456,6 +1458,7 @@ describe('videos thumbnails integration', () => {
       objectStorage: runtime.videoObjectStorage,
       clock: { now: () => new Date() },
       config: {
+        ...VIDEO_TRANSCODE_TEST_CONFIG,
         maxConcurrentJobs: 1,
         threadsPerJob: 1,
       },
@@ -1558,6 +1561,7 @@ describe('videos thumbnails integration', () => {
       objectStorage: verificationFailureStorage,
       clock: { now: () => new Date() },
       config: {
+        ...VIDEO_TRANSCODE_TEST_CONFIG,
         maxConcurrentJobs: 1,
         threadsPerJob: 1,
       },

@@ -54,7 +54,16 @@ const videoUpload = parseVideoUploadConfig({
 });
 
 const videoTranscode = parseVideoTranscodeConfig({
+  ffmpegTimeoutMs: process.env.VIDEO_TRANSCODE_FFMPEG_TIMEOUT_MS,
+  ffprobeTimeoutMs: process.env.VIDEO_TRANSCODE_FFPROBE_TIMEOUT_MS,
+  maxArtifactBytes: process.env.VIDEO_TRANSCODE_MAX_ARTIFACT_BYTES,
+  maxAspectRatio: process.env.VIDEO_TRANSCODE_MAX_ASPECT_RATIO,
   maxConcurrentJobs: process.env.VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS,
+  maxDurationSeconds: process.env.VIDEO_TRANSCODE_MAX_DURATION_SECONDS,
+  maxFps: process.env.VIDEO_TRANSCODE_MAX_FPS,
+  maxHeight: process.env.VIDEO_TRANSCODE_MAX_HEIGHT,
+  maxPixels: process.env.VIDEO_TRANSCODE_MAX_PIXELS,
+  maxWidth: process.env.VIDEO_TRANSCODE_MAX_WIDTH,
   threadsPerJob: process.env.VIDEO_TRANSCODE_THREADS_PER_JOB,
 });
 

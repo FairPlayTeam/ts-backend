@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -28,16 +28,33 @@ export const createPng = async (width = 800, height = 600): Promise<Buffer> =>
     .toBuffer();
 
 export const createTranscodeTestVideo = async ({
+  container = 'mp4',
+  displayRotation = 0,
+  durationSeconds = 1.5,
+  frameRate = 24,
   height = 480,
+  sampleAspectRatio = '1/1',
+  visualPattern = 'testsrc',
   width = 640,
 }: {
+  container?: 'matroska' | 'mp4';
+  displayRotation?: 0 | 90 | 180 | 270;
+  durationSeconds?: number;
+  frameRate?: number;
   height?: number;
+  sampleAspectRatio?: string;
+  visualPattern?: 'testsrc' | 'vertical-halves';
   width?: number;
 } = {}): Promise<Buffer> => {
   const directory = await mkdtemp(resolve(tmpdir(), 'fairplay-integration-video-'));
-  const outputPath = resolve(directory, 'source.mp4');
+  const encodedPath = resolve(directory, 'encoded.mp4');
+  const rotatedPath = resolve(directory, 'rotated.mp4');
 
   try {
+    if (container !== 'mp4' && displayRotation !== 0) {
+      throw new Error('Display rotation test fixtures require an MP4 container');
+    }
+
     await execFileAsync(
       'ffmpeg',
       [
@@ -48,13 +65,15 @@ export const createTranscodeTestVideo = async ({
         '-f',
         'lavfi',
         '-i',
-        `testsrc=size=${width}x${height}:rate=24`,
+        visualPattern === 'vertical-halves'
+          ? `color=c=red:size=${width}x${height}:rate=${frameRate},drawbox=x=iw/2:y=0:w=iw/2:h=ih:color=blue:t=fill,setsar=${sampleAspectRatio}`
+          : `testsrc=size=${width}x${height}:rate=${frameRate},setsar=${sampleAspectRatio}`,
         '-f',
         'lavfi',
         '-i',
         'sine=frequency=1000:sample_rate=48000',
         '-t',
-        '1.5',
+        String(durationSeconds),
         '-c:v',
         'libx264',
         '-preset',
@@ -66,17 +85,73 @@ export const createTranscodeTestVideo = async ({
         '-c:a',
         'aac',
         '-shortest',
-        '-movflags',
-        '+faststart',
-        outputPath,
+        ...(container === 'mp4' ? ['-movflags', '+faststart'] : ['-f', 'matroska']),
+        encodedPath,
       ],
       { timeout: 30_000 },
     );
 
-    return await readFile(outputPath);
+    if (displayRotation === 0) {
+      return await readFile(encodedPath);
+    }
+
+    await execFileAsync(
+      'ffmpeg',
+      [
+        '-y',
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-display_rotation',
+        String(displayRotation),
+        '-i',
+        encodedPath,
+        '-map',
+        '0',
+        '-c',
+        'copy',
+        rotatedPath,
+      ],
+      { timeout: 30_000 },
+    );
+
+    return await readFile(rotatedPath);
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
+};
+
+type ProbedVideoArtifact = {
+  durationSeconds: number;
+  frameRate: number;
+  height: number;
+  sampleAspectRatio: string;
+  width: number;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const parsePositiveRational = (value: unknown): number | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const [numeratorText, denominatorText, ...remainder] = value.split('/');
+  const numerator = Number(numeratorText);
+  const denominator = Number(denominatorText);
+
+  if (
+    remainder.length > 0 ||
+    !Number.isFinite(numerator) ||
+    !Number.isFinite(denominator) ||
+    numerator <= 0 ||
+    denominator <= 0
+  ) {
+    return null;
+  }
+
+  return numerator / denominator;
 };
 
 export const readStoredObject = async (
@@ -101,6 +176,96 @@ export const readStoredObjectBuffer = async (
     });
 
     return await readFile(destinationPath);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+};
+
+export const probeVideoArtifact = async (body: Buffer): Promise<ProbedVideoArtifact> => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'fairplay-integration-probe-'));
+  const inputPath = resolve(directory, 'artifact.ts');
+
+  try {
+    await writeFile(inputPath, body);
+    const { stdout } = await execFileAsync(
+      'ffprobe',
+      [
+        '-v',
+        'error',
+        '-select_streams',
+        'v:0',
+        '-show_entries',
+        'format=duration:stream=avg_frame_rate,height,sample_aspect_ratio,width',
+        '-of',
+        'json',
+        inputPath,
+      ],
+      { timeout: 30_000 },
+    );
+
+    const parsed: unknown = JSON.parse(stdout);
+
+    if (!isRecord(parsed) || !Array.isArray(parsed.streams) || !isRecord(parsed.format)) {
+      throw new Error('ffprobe returned incomplete artifact metadata');
+    }
+
+    const videoStream = parsed.streams.find(isRecord);
+    const durationSeconds = Number(parsed.format.duration);
+    const frameRate = videoStream ? parsePositiveRational(videoStream.avg_frame_rate) : null;
+    const width = videoStream ? Number(videoStream.width) : Number.NaN;
+    const height = videoStream ? Number(videoStream.height) : Number.NaN;
+    const sampleAspectRatio = videoStream?.sample_aspect_ratio;
+
+    if (
+      !Number.isFinite(durationSeconds) ||
+      durationSeconds <= 0 ||
+      frameRate === null ||
+      !Number.isSafeInteger(width) ||
+      width <= 0 ||
+      !Number.isSafeInteger(height) ||
+      height <= 0 ||
+      typeof sampleAspectRatio !== 'string'
+    ) {
+      throw new Error('ffprobe returned invalid artifact metadata');
+    }
+
+    return {
+      durationSeconds,
+      frameRate,
+      height,
+      sampleAspectRatio,
+      width,
+    };
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+};
+
+export const decodeFirstVideoFrame = async (
+  body: Buffer,
+): Promise<{ channels: number; data: Buffer; height: number; width: number }> => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'fairplay-integration-frame-'));
+  const inputPath = resolve(directory, 'artifact.ts');
+  const outputPath = resolve(directory, 'frame.png');
+
+  try {
+    await writeFile(inputPath, body);
+    await execFileAsync(
+      'ffmpeg',
+      ['-y', '-hide_banner', '-loglevel', 'error', '-i', inputPath, '-frames:v', '1', outputPath],
+      { timeout: 30_000 },
+    );
+    const { data, info } = await sharp(await readFile(outputPath))
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    return {
+      channels: info.channels,
+      data,
+      height: info.height,
+      width: info.width,
+    };
   } finally {
     await rm(directory, { force: true, recursive: true });
   }

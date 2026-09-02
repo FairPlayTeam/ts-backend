@@ -200,6 +200,19 @@ Sources below 240p fail permanently. Renditions use six-second HLS VOD segments,
 audio, and a WebP thumbnail. All artifacts use an immutable generation namespace and are checked
 in object storage before publication.
 
+Before encoding, ffprobe rejects sources longer than one hour, wider or taller than 3840 pixels,
+above 8,294,400 raster or square-pixel display pixels, above a 4:1 raster or display aspect ratio in
+either orientation, or above 60 average FPS. An FFmpeg decoder-level pixel ceiling repeats the
+metadata pixel check, and anamorphic inputs are normalized to square-pixel artifacts. FFprobe and
+FFmpeg also account for quarter-turn container rotation before producing oriented square-pixel
+artifacts; other rotation angles are rejected. They have independent 30-second and six-hour
+deadlines. Both accept only the local `file` input protocol and the MP4-family `mov` demuxer;
+FFmpeg also caps every rendition at 60 FPS and applies a VBV maximum rate and buffer alongside CRF.
+A generation whose cumulative local artifacts exceeds 8 GiB is rejected before any artifact
+upload. These defaults are configurable through the
+`VIDEO_TRANSCODE_MAX_*`, `VIDEO_TRANSCODE_FFPROBE_TIMEOUT_MS`, and
+`VIDEO_TRANSCODE_FFMPEG_TIMEOUT_MS` variables listed in `.env.example`.
+
 A confirmed custom thumbnail replaces the local FFmpeg poster before upload, so the final bytes
 are copied into each generation's own immutable thumbnail key. Its temporary source object becomes
 eligible for delayed reconciliation cleanup only after that generation is published.

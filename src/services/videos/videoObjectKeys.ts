@@ -6,7 +6,7 @@ export type VideoArtifactProfile = {
   quality: VideoObjectKeyQuality;
   width: number;
   height: number;
-  bandwidth: number;
+  videoBitrate: number;
 };
 
 export type VideoArtifactManifest = {
