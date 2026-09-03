@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { z, ZodError } from 'zod';
+import { ThemeColorsSchema } from '../lib/theme';
 
 const passwordSchema = z
   .string()
@@ -129,6 +130,21 @@ export const upsertCampaignSchema = z.object({
       .max(200),
     link: httpUrlSchema,
     thumbnailUrl: httpUrlSchema,
+  }),
+});
+
+export const createThemeSchema = z.object({
+  body: z.object({
+    name: z.string().trim().min(1, "Theme name is required").max(100),
+    description: z.string().trim().max(1000).optional().nullable(),
+    isPublic: z.boolean(),
+    colors: ThemeColorsSchema,
+  }),
+});
+
+export const updateUserThemeSchema = z.object({
+  body: z.object({
+    themeId: z.string().trim().min(1, "themeId string is required"),
   }),
 });
 
