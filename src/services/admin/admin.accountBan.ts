@@ -11,6 +11,8 @@ import {
 } from '../admin.errors.js';
 import { handleExpectedMailerError } from '../mailer/mailer.helpers.js';
 import type { AdminDependencies } from './admin.dependencies.js';
+import { ADMIN_ONLY_ROLES } from '../auth.roles.js';
+import { lockAuthorizedAdminActor } from './admin.actorAuthorization.js';
 import { BAN_ACCOUNT_SUCCESS_MESSAGE } from './admin.messages.js';
 import { canManageRole, getManageableRoles } from './admin.roleHierarchy.js';
 import type {
@@ -61,17 +63,18 @@ const toBannedAdminAccount = (account: BannedAccountRecord): BannedAdminAccount 
 
 export const banAdminAccount = async (
   deps: AdminDependencies,
-  { actorRole, actorUserId, reason, targetUserId }: BanAdminAccountInput,
+  { actorUserId, reason, targetUserId }: BanAdminAccountInput,
 ): Promise<BanAdminAccountResult> => {
   if (actorUserId === targetUserId) {
     throw new AdminSelfBanError();
   }
 
   const normalizedReason = normalizeBanReason(reason);
-  const bannableRoles = getManageableRoles(actorRole);
   const bannedAt = deps.clock.now();
 
   const { account, sessionsRevoked } = await deps.prisma.$transaction(async (tx) => {
+    const actorRole = await lockAuthorizedAdminActor(tx, actorUserId, ADMIN_ONLY_ROLES);
+    const bannableRoles = getManageableRoles(actorRole);
     const existingAccount = await tx.user.findUnique({
       where: { id: targetUserId },
       select: { id: true, isBanned: true, role: true },

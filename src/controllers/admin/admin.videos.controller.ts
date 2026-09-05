@@ -26,10 +26,12 @@ type RequestVideoDeletionRequest = Request<
 export const createAdminVideosController = (deps: AdminControllerDependencies) => {
   const listVideos: RequestHandler = async (req, res, next) => {
     try {
+      const authenticatedReq = req as AuthenticatedRequest;
       const listReq = req as ListVideosRequest;
       const { cursorCreatedAt, cursorId, limit, moderationStatus, processingStatus, search, sort } =
         listReq.query;
       const result = await deps.adminService.listVideos({
+        actorUserId: authenticatedReq.user.id,
         ...(limit === undefined ? {} : { limit }),
         ...(moderationStatus === undefined ? {} : { moderationStatus }),
         ...(processingStatus === undefined ? {} : { processingStatus }),
@@ -53,15 +55,18 @@ export const createAdminVideosController = (deps: AdminControllerDependencies) =
 
   const moderateVideo: RequestHandler = async (req, res, next) => {
     try {
+      const authenticatedReq = req as AuthenticatedRequest;
       const moderationReq = req as ModerateVideoRequest;
       const result = await deps.adminService.moderateVideo(
         moderationReq.body.decision === 'rejected'
           ? {
+              actorUserId: authenticatedReq.user.id,
               videoId: moderationReq.params.videoId,
               decision: 'rejected',
               reason: moderationReq.body.reason,
             }
           : {
+              actorUserId: authenticatedReq.user.id,
               videoId: moderationReq.params.videoId,
               decision: 'approved',
             },
@@ -77,15 +82,9 @@ export const createAdminVideosController = (deps: AdminControllerDependencies) =
     try {
       const authenticatedReq = req as AuthenticatedRequest;
       const deletionReq = req as RequestVideoDeletionRequest;
-      const actorRole = authenticatedReq.user.role;
-
-      if (actorRole === 'user') {
-        next(new Error('Moderation route authorization invariant violated'));
-        return;
-      }
 
       const result = await deps.adminService.requestVideoDeletion({
-        actorRole,
+        actorUserId: authenticatedReq.user.id,
         reason: deletionReq.body.reason,
         videoId: deletionReq.params.videoId,
       });

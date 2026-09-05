@@ -9,6 +9,7 @@ import { createRouteProtector } from '../middleware/routeProtection.js';
 import { validate } from '../middleware/validation.js';
 import type { AdminRoutePort } from '../services/admin.types.js';
 import type { AuthSessionValidationPort } from '../services/auth.types.js';
+import { MODERATION_ROLES } from '../services/auth.roles.js';
 
 type ModerationRouterDependencies = {
   authService: AuthSessionValidationPort;
@@ -24,7 +25,7 @@ export const createRouter = ({ adminService, authService }: ModerationRouterDepe
   });
   const protect = createRouteProtector({ authService });
   const moderationRoute = (schema: ValidationSchema, ...handlers: RequestHandler[]) => [
-    ...protect({ roles: ['moderator', 'admin'] }),
+    ...protect({ roles: MODERATION_ROLES }),
     validate(schema),
     ...handlers,
   ];

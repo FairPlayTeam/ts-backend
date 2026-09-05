@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import type { AdminDependencies } from './admin.dependencies.js';
 import {
   profileAvatarMediaAssetsSelection,
@@ -11,6 +11,8 @@ import {
 } from './admin.accountFilters.js';
 import { unbanAdminAccount } from './admin.accountUnban.js';
 import { updateAdminAccountRole } from './admin.accountRoles.js';
+import { ADMIN_ONLY_ROLES } from '../auth.roles.js';
+import { lockAuthorizedAdminActor } from './admin.actorAuthorization.js';
 import type {
   BanAdminAccountInput,
   BanAdminAccountResult,
@@ -113,6 +115,7 @@ const toAdminAccountSummary = (account: AccountRecord): AdminAccountSummary => {
 
 export const createAdminAccountsService = (deps: AdminDependencies): AdminAccountsPort => ({
   async listAccounts({
+    actorUserId,
     banStatus = DEFAULT_ADMIN_ACCOUNT_BAN_STATUS,
     cursor,
     limit,
@@ -133,15 +136,24 @@ export const createAdminAccountsService = (deps: AdminDependencies): AdminAccoun
     const pageFilter = combineUserFilters(searchFilter, banStatusFilter, cursorFilter);
     const countArgs = hasUserFilter(resultFilter) ? { where: resultFilter } : undefined;
 
-    const [queriedAccounts, total] = await deps.prisma.$transaction([
-      deps.prisma.user.findMany({
-        where: pageFilter,
-        select: adminAccountSelect,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: pageSize + 1,
-      }),
-      deps.prisma.user.count(countArgs),
-    ]);
+    const [queriedAccounts, total] = await deps.prisma.$transaction(
+      async (tx) => {
+        await lockAuthorizedAdminActor(tx, actorUserId, ADMIN_ONLY_ROLES);
+
+        return Promise.all([
+          tx.user.findMany({
+            where: pageFilter,
+            select: adminAccountSelect,
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: pageSize + 1,
+          }),
+          tx.user.count(countArgs),
+        ]);
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      },
+    );
 
     const accounts = queriedAccounts.slice(0, pageSize);
     const lastAccount = accounts.at(-1);

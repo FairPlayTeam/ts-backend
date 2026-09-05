@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { Prisma } from '@prisma/client';
 import type { AdminDependencies } from '../src/services/admin/admin.dependencies.js';
 import { createAdminService } from '../src/services/admin.service.js';
 import type { ListAdminVideosInput } from '../src/services/admin.types.js';
@@ -13,6 +14,7 @@ const videoIds = [
   '22222222-2222-4222-8222-222222222222',
   '11111111-1111-4111-8111-111111111111',
 ] as const;
+const actorUserId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 const records = videoIds.map((id, index) => ({
   id,
@@ -40,10 +42,21 @@ const createDeps = () => {
   const calls: {
     count?: unknown;
     findMany?: unknown;
+    transactionIsolationLevel?: Prisma.TransactionIsolationLevel;
   } = {};
   const deps = {
     prisma: {
-      $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
+      $transaction: async (
+        run: (tx: unknown) => Promise<unknown>,
+        options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
+      ) => {
+        if (options?.isolationLevel !== undefined) {
+          calls.transactionIsolationLevel = options.isolationLevel;
+        }
+
+        return run(deps.prisma);
+      },
+      $queryRaw: async () => [{ role: 'moderator', isBanned: false }],
       video: {
         findMany: async (args: unknown) => {
           calls.findMany = args;
@@ -72,15 +85,16 @@ describe('admin video service', () => {
       where: unknown;
     }> = [
       {
-        input: { moderationStatus: 'pending' },
+        input: { actorUserId, moderationStatus: 'pending' },
         where: { moderationStatus: 'pending' },
       },
       {
-        input: { processingStatus: 'processing' },
+        input: { actorUserId, processingStatus: 'processing' },
         where: { processingStatus: 'processing' },
       },
       {
         input: {
+          actorUserId,
           moderationStatus: 'rejected',
           processingStatus: 'failed',
           search: 'failed upload',
@@ -115,6 +129,7 @@ describe('admin video service', () => {
         }),
       );
       expect(calls.count).toEqual({ where });
+      expect(calls.transactionIsolationLevel).toBe(Prisma.TransactionIsolationLevel.ReadCommitted);
     }
   });
 
@@ -129,7 +144,9 @@ describe('admin video service', () => {
       ],
     };
 
-    await expect(service.listVideos({ search: 'catalog phrase' })).resolves.toBeDefined();
+    await expect(
+      service.listVideos({ actorUserId, search: 'catalog phrase' }),
+    ).resolves.toBeDefined();
     expect(calls.findMany).toEqual(
       expect.objectContaining({
         where,
@@ -142,7 +159,7 @@ describe('admin video service', () => {
     const { calls, deps } = createDeps();
     const service = createAdminService(deps);
 
-    await service.listVideos({ search: '   ' });
+    await service.listVideos({ actorUserId, search: '   ' });
 
     expect(calls.findMany).toEqual(expect.objectContaining({ where: {} }));
     expect(calls.count).toEqual({ where: {} });
@@ -156,8 +173,13 @@ describe('admin video service', () => {
     const newest = createDeps();
     const oldest = createDeps();
 
-    await createAdminService(newest.deps).listVideos({ cursor, limit: 2 });
-    await createAdminService(oldest.deps).listVideos({ cursor, limit: 2, sort: 'oldest' });
+    await createAdminService(newest.deps).listVideos({ actorUserId, cursor, limit: 2 });
+    await createAdminService(oldest.deps).listVideos({
+      actorUserId,
+      cursor,
+      limit: 2,
+      sort: 'oldest',
+    });
 
     expect(newest.calls.findMany).toEqual(
       expect.objectContaining({
@@ -199,7 +221,7 @@ describe('admin video service', () => {
     const { deps } = createDeps();
     const service = createAdminService(deps);
 
-    await expect(service.listVideos({ limit: 2 })).resolves.toEqual(
+    await expect(service.listVideos({ actorUserId, limit: 2 })).resolves.toEqual(
       expect.objectContaining({
         total: 3,
         nextCursor: {
@@ -216,7 +238,7 @@ describe('admin video service', () => {
 
   test('maps persisted thumbnail presence to an opaque relative path without exposing the key', async () => {
     const { deps } = createDeps();
-    const result = await createAdminService(deps).listVideos({ limit: 1 });
+    const result = await createAdminService(deps).listVideos({ actorUserId, limit: 1 });
 
     expect(result.videos[0]).toMatchObject({
       publicId: 'AdminVid01_',

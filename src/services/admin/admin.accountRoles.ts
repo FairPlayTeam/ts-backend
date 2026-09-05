@@ -2,12 +2,13 @@ import type { Prisma } from '@prisma/client';
 import {
   AdminAccountNotFoundError,
   AdminRoleAlreadyAssignedError,
-  AdminRoleAssignmentError,
   AdminRoleHierarchyError,
 } from '../admin.errors.js';
 import type { AdminDependencies } from './admin.dependencies.js';
+import { ADMIN_ONLY_ROLES } from '../auth.roles.js';
+import { lockAuthorizedAdminActor } from './admin.actorAuthorization.js';
 import { UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE } from './admin.messages.js';
-import { canAssignRole, canManageRole, getManageableRoles } from './admin.roleHierarchy.js';
+import { canManageRole, getManageableRoles } from './admin.roleHierarchy.js';
 import type {
   UpdateAdminAccountRoleInput,
   UpdateAdminAccountRoleResult,
@@ -24,15 +25,11 @@ const updatedAccountRoleSelect = {
 
 export const updateAdminAccountRole = async (
   deps: AdminDependencies,
-  { actorRole, actorUserId, role, targetUserId }: UpdateAdminAccountRoleInput,
+  { actorUserId, role, targetUserId }: UpdateAdminAccountRoleInput,
 ): Promise<UpdateAdminAccountRoleResult> => {
-  if (!canAssignRole(actorRole, role)) {
-    throw new AdminRoleAssignmentError();
-  }
-
-  const manageableRoles = getManageableRoles(actorRole);
-
   const account = await deps.prisma.$transaction(async (tx) => {
+    const actorRole = await lockAuthorizedAdminActor(tx, actorUserId, ADMIN_ONLY_ROLES);
+    const manageableRoles = getManageableRoles(actorRole);
     const existingAccount = await tx.user.findUnique({
       where: { id: targetUserId },
       select: { id: true, role: true },

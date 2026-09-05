@@ -345,6 +345,24 @@ video DTO. `deletionOrigin` is retained only while the video row awaits purge; i
 metadata for that retention window, not a permanent audit log. A later approval cannot restore
 public visibility while deletion is pending.
 
+Routes and services share the role allowlists declared in `auth.roles.ts`; they remain two distinct
+authorization checkpoints. Session validation supplies only a request-time role preflight. Every
+account-administration and video-moderation service call receives the actor identifier and locks the
+corresponding `users` row before its authorization becomes final. Account administration locks the
+actor before inspecting or mutating its target. Video mutations preserve the established lifecycle
+order by locking the video first and the actor second. Privileged list reads lock the actor for the
+duration of a `ReadCommitted` transaction: if that lock waits behind a revocation, its statement sees
+the newly committed role instead of retaining an older snapshot. The locked row must still exist, be
+unbanned, and carry the role required by the route. Bans and role changes write that same user row,
+so PostgreSQL orders them with in-flight privileged work: a revocation that commits before the actor
+lock is acquired is observed and the operation returns `403`, without a business write or
+post-commit email. A deletion request records `deletionOrigin` from this locked role rather than from
+the earlier session snapshot. Conversely, if the privileged transaction acquires the actor lock
+first, revocation waits until that transaction commits or rolls back. The actor lock must not be
+moved into a separate authorization transaction. The account-role integration tests cover both
+orders with real PostgreSQL lock waiters and read the committed target state from the revoking
+connection for the action-first case.
+
 A ready video pending administrative deletion remains readable by direct link during retention,
 matching rejected-video behavior, but disappears from feeds, search, and public profile catalogs.
 The shared engagement predicate additionally requires `deletionRequestedAt IS NULL`, so new or
@@ -648,7 +666,7 @@ anti-amplification and locking protocols form one consistent ownership model:
 | ------------ | ----------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Create root  | None beyond validated/authenticated input                                     | Video                                          | `videos.comment_count`                        | The video owns the aggregate and the locked query atomically checks engagement scope plus `allow_comments`.                                                                                 |
 | Create reply | Active root/target membership and video engagement scope                      | Video, then root/target comments in UUID order | `videos.comment_count`                        | Random comment UUIDs cannot contend on a popular video; the locked rows remain the final same-video/thread validation boundary.                                                             |
-| Soft-delete  | Exact comment/video membership and preliminary permission                     | Video, then comment                            | `videos.comment_count`, received-like cleanup | Unauthorized or random UUIDs never reach locks; locked rows repeat author, exact current video owner, then moderator/administrator authorization.                                           |
+| Soft-delete  | Exact comment/video membership and preliminary permission                     | Video, comment, then actor for staff deletion  | `videos.comment_count`, received-like cleanup | Unauthorized or random UUIDs never reach locks; locked rows repeat author and exact current video owner, then lock and recheck the actor only when permission depends on a staff role.      |
 | PUT like     | Exact active comment/video membership, engagement scope, and `allow_comments` | Comment only                                   | `comments.like_count`                         | The aggregate belongs to one comment; a video lock would serialize unrelated likes across a popular video. The transaction freshly rechecks video eligibility in its serializable snapshot. |
 | DELETE like  | Exact comment/video membership, without engagement or lifecycle filters       | Comment only                                   | `comments.like_count`                         | Unlike remains idempotent outside engagement scope and after soft deletion, without exposing whether a fact existed.                                                                        |
 
@@ -668,6 +686,13 @@ would let the self-FK cascade erase its reply subtree while bypassing every corr
 `videos.comment_count` decrement, permanently drifting the denormalized aggregate. Serializable
 contention for comment mutations uses up to ten attempts with the shared capped exponential
 full-jitter backoff and becomes HTTP 503 if that budget is exhausted.
+
+Author and current-video-owner deletions do not depend on a staff role and therefore do not lock the
+actor account. When the preliminary permission depends on `moderator` or `admin`, the transaction
+locks that actor after its video and comment locks, then recomputes the deletion origin from the
+current role and ban state. This retains the common video/comment lock order used by account
+deletion while ensuring that a role downgrade or ban committed first produces the same `404` as any
+other unauthorized comment deletion and leaves both the tombstone and aggregate unchanged.
 
 Each new tombstone stores a private `deletion_origin`: author, current video owner, moderator,
 administrator, or account deletion. It records the permission category that won the lifecycle
@@ -722,7 +747,7 @@ define normal behavior without silently claiming stronger guarantees.
 | Exact `total` counts               | Root and reply pages count the full matching set, so cost grows beyond page size. Active replies do have a partial index containing `deleted_at IS NULL`; the root pagination index does not, and the visible-root predicate can still include tombstones with active replies. Revisit at material thread volume, potentially replacing `total` with `hasMore` or adding a workload-specific index. |
 | Permanent tombstones               | Soft-deleted rows are not physically purged and continue occupying table/index space. Define an explicit retention or asynchronous purge policy before material volume.                                                                                                                                                                                                                             |
 | Synchronous cascades               | Video deletion cascades comments and likes in the current transaction, so maintenance or owner account deletion can become long-running for a very large thread. Move large purges to bounded asynchronous work before material volume.                                                                                                                                                             |
-| Session-time authorization         | A ban or role downgrade affects subsequent requests, but an already-validated comment mutation may commit afterward. Privileged deletion permanently clears content, unlike reversible video moderation; this higher impact is consciously accepted to avoid coupling comment locks to account administration.                                                                                      |
+| Transactional staff authorization  | Privileged comment deletion locks and rechecks the actor only after its video and comment rows. This deliberately adds contention with a concurrent role change, ban, or actor-account deletion, while author and video-owner deletion keep the narrower resource-only protocol because their authority does not depend on a staff role.                                                            |
 | Redis account-operation lease loss | If renewal fails and a slow export/deletion outlives the five-minute lease, another instance can start an overlapping operation. Lease loss is logged and closes the response but cannot cancel an in-flight Prisma transaction; fencing or true cancellation is deferred at current scale.                                                                                                         |
 | Multi-section export snapshots     | Export avoids one long database snapshot: every keyset page observes state when queried, so concurrent changes may appear in later sections/pages but not earlier ones. This weak temporal consistency is accepted for bounded transaction duration and availability.                                                                                                                               |
 | Like overlapping video rejection   | Serializable ordering is authoritative, not wall-clock commit order. A like whose transaction read the eligible video before a concurrent rejection may commit after the rejection's commit is observed; serialization may still order the like first. Preventing that visible ordering surprise would require a video lock that serializes unrelated comment likes.                                |

@@ -171,6 +171,7 @@ describe('admin routes', () => {
       ListAdminAccountsInput | undefined;
     expect(observedSessionKey).toBe(adminSessionKey);
     expect(observedListAccountsRequest).toEqual({
+      actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
       banStatus: 'notbanned',
       limit: 10,
       search: 'Admin Listed',
@@ -222,6 +223,7 @@ describe('admin routes', () => {
     expect(response.status).toBe(200);
     const observedListVideosRequest = receivedListVideosRequest as ListAdminVideosInput | undefined;
     expect(observedListVideosRequest).toEqual({
+      actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
       moderationStatus: 'pending',
       processingStatus: 'ready',
       sort: 'oldest',
@@ -274,6 +276,7 @@ describe('admin routes', () => {
     const observedModerateVideoRequest = receivedModerateVideoRequest as
       ModerateAdminVideoInput | undefined;
     expect(observedModerateVideoRequest).toEqual({
+      actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
       videoId: cursorId,
       decision: 'approved',
     });
@@ -299,7 +302,7 @@ describe('admin routes', () => {
     });
   });
 
-  test('schedules administrative deletion with the validated session role and a whitelisted response', async () => {
+  test('schedules administrative deletion from the validated actor identity with a whitelisted response', async () => {
     receivedVideoDeletionRequest = undefined;
     const response = await fetch(`${baseUrl}/moderation/videos/${cursorId}/deletion`, {
       method: 'POST',
@@ -314,7 +317,7 @@ describe('admin routes', () => {
     const observedVideoDeletionRequest = receivedVideoDeletionRequest as
       RequestAdminVideoDeletionInput | undefined;
     expect(observedVideoDeletionRequest).toEqual({
-      actorRole: 'admin',
+      actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
       reason: 'Published safety violation.',
       videoId: cursorId,
     });
@@ -441,7 +444,6 @@ describe('admin routes', () => {
     expect(observedSessionKey).toBe(adminSessionKey);
     expect(observedBanAccountRequest).toEqual({
       actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
-      actorRole: 'admin',
       targetUserId: cursorId,
       reason: 'Repeated abusive behavior.',
     });
@@ -481,7 +483,6 @@ describe('admin routes', () => {
     expect(observedSessionKey).toBe(adminSessionKey);
     expect(observedUnbanAccountRequest).toEqual({
       actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
-      actorRole: 'admin',
       targetUserId: cursorId,
     });
     expect(response.headers.get('cache-control')).toBe('no-store');
@@ -523,7 +524,6 @@ describe('admin routes', () => {
     expect(observedSessionKey).toBe(adminSessionKey);
     expect(observedUpdateAccountRoleRequest).toEqual({
       actorUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
-      actorRole: 'admin',
       targetUserId: cursorId,
       role: 'moderator',
     });

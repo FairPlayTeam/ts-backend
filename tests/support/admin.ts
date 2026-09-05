@@ -98,7 +98,7 @@ export const createStubAdminService = (): AdminPorts => ({
       deletionOrigin: null,
     },
   }),
-  requestVideoDeletion: async ({ actorRole, reason }) => ({
+  requestVideoDeletion: async ({ reason }) => ({
     video: {
       id: '33333333-3333-4333-8333-333333333333',
       publicId: 'AdminVid01_',
@@ -115,7 +115,7 @@ export const createStubAdminService = (): AdminPorts => ({
       rejectionReason: null,
       deletionRequestedAt: new Date('2026-01-06T00:00:00.000Z'),
       deletionReason: reason,
-      deletionOrigin: actorRole,
+      deletionOrigin: 'admin',
     },
   }),
   updateAccountRole: async () => ({

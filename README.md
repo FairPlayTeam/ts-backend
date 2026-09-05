@@ -321,6 +321,13 @@ ratings/comments. Maintenance then invokes the same hard-delete protocol used by
 and rejected-video purge. Deletion audit fields are returned only by moderation endpoints and are
 not exposed by public or owner video DTOs.
 
+Administrative and moderation services receive the actor identifier, not an authoritative role.
+Their transactions lock the actor account and recheck its current role and ban state before
+returning privileged data or applying a write. Role downgrades and bans update that same row, so a
+revocation that commits first prevents an already-authenticated request from completing its
+privileged operation. If the privileged transaction acquires the actor lock first, revocation
+waits for that transaction to finish; the lock is retained through the business commit.
+
 Maintenance and transcoding start only after the HTTP server is listening. Graceful shutdown stops
 maintenance, aborts and requeues owned transcodes while draining local slots, closes HTTP, and then
 disconnects Prisma and Redis. Each shutdown step is attempted even if an earlier one fails.

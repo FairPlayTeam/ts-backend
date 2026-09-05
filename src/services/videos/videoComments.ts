@@ -38,6 +38,7 @@ import {
 } from './videoReadability.js';
 import type { VideosDependencies } from './videos.dependencies.js';
 import { softDeleteLockedVideoComments } from './videoCommentLifecycle.js';
+import { lockUserAuthorizationState } from '../auth/auth.userAuthorization.js';
 
 const VIDEO_COMMENT_TRANSACTION_MAX_ATTEMPTS = 10;
 const DEFAULT_VIDEO_COMMENTS_LIMIT = 20;
@@ -816,7 +817,7 @@ export const deleteVideoComment = async (
       `,
     );
 
-    const deletionOrigin = comment
+    let deletionOrigin = comment
       ? resolveVideoCommentDeletionOrigin({
           actorRole,
           authorId: comment.authorId,
@@ -824,6 +825,16 @@ export const deleteVideoComment = async (
           userId,
         })
       : null;
+
+    if (deletionOrigin === 'moderator' || deletionOrigin === 'admin') {
+      const actor = await lockUserAuthorizationState(tx, userId);
+      deletionOrigin = resolveVideoCommentDeletionOrigin({
+        actorRole: !actor || actor.isBanned ? 'user' : actor.role,
+        authorId: comment?.authorId ?? null,
+        ownerId: video.ownerId,
+        userId,
+      });
+    }
 
     if (!comment || deletionOrigin === null) {
       throw new VideoCommentNotFoundError();

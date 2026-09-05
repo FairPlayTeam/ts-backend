@@ -20,11 +20,16 @@ import {
   type TestRuntime,
 } from './support/runtime.js';
 import {
+  coordinateGatedOperations,
   coordinateLockInterleaving,
   coordinateWhilePaused,
   waitForBarrier,
 } from './support/asyncBarriers.js';
 import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
+import {
+  beginHeldActorDowngrade,
+  waitForBlockedActorAuthorizationQuery,
+} from './support/actorAuthorization.js';
 
 type TransactionRawBarrier = {
   after?: () => Promise<void> | void;
@@ -1095,6 +1100,10 @@ describe('video comments integration', () => {
       email: 'comment-rejection-race-author@example.com',
       username: 'c_reject_author',
     });
+    await runtime.prisma.user.update({
+      where: { id: owner.userId },
+      data: { role: 'moderator' },
+    });
     const creationFirstVideo = await createPlayableVideo(runtime, {
       ownerId: owner.userId,
       title: 'Comment creation locks before rejection',
@@ -1131,6 +1140,7 @@ describe('video comments integration', () => {
       secondLockDescription: 'video rejection to wait for comment creation',
       startSecond: () =>
         activeRuntime.adminService.moderateVideo({
+          actorUserId: owner.userId,
           videoId: creationFirstVideo.id,
           decision: 'rejected',
           reason: 'Concurrent rejection after the comment lock.',
@@ -1167,6 +1177,7 @@ describe('video comments integration', () => {
     );
     const rejectionFirstApp = await createIntegrationApp(runtime);
     const rejectionFirstPromise = rejectionFirstService.moderateVideo({
+      actorUserId: owner.userId,
       videoId: rejectionFirstVideo.id,
       decision: 'rejected',
       reason: 'Concurrent rejection before the comment lock.',
@@ -1211,6 +1222,10 @@ describe('video comments integration', () => {
     const commenter = await createVerifiedSession(runtime, {
       email: 'comment-purge-race-author@example.com',
       username: 'comment_purge_author',
+    });
+    await runtime.prisma.user.update({
+      where: { id: owner.userId },
+      data: { role: 'moderator' },
     });
     const oldRejection = new Date('2026-07-01T00:00:00.000Z');
     const observedAt = new Date('2026-08-05T12:00:00.000Z');
@@ -1271,6 +1286,7 @@ describe('video comments integration', () => {
         signal: candidatesRead.promise,
       });
       await runtime.adminService.moderateVideo({
+        actorUserId: owner.userId,
         videoId: creationFirstVideo.id,
         decision: 'approved',
       });
@@ -2071,6 +2087,92 @@ describe('video comments integration', () => {
     ).resolves.toEqual({ commentCount: 2 });
   });
 
+  test('rejects in-flight privileged deletion when the actor downgrade commits first', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const activeRuntime = runtime;
+    const app = await createIntegrationApp(runtime);
+    const owner = await createVerifiedSession(runtime, {
+      email: 'comment-role-race-owner@example.com',
+      username: 'c_role_race_owner',
+    });
+    const author = await createVerifiedSession(runtime, {
+      email: 'comment-role-race-author@example.com',
+      username: 'c_role_race_author',
+    });
+    const moderator = await createVerifiedSession(runtime, {
+      email: 'comment-role-race-moderator@example.com',
+      username: 'c_role_race_mod',
+    });
+    await runtime.prisma.user.update({
+      where: { id: moderator.userId },
+      data: { role: 'moderator' },
+    });
+    const video = await createPlayableVideo(runtime, {
+      ownerId: owner.userId,
+      title: 'Privileged comment actor lock',
+      visibility: 'public',
+    });
+    const comment = (
+      await runtime.videosService.createVideoComment({
+        publicId: video.publicId,
+        userId: author.userId,
+        content: 'This comment must survive the actor downgrade race.',
+      })
+    ).comment;
+    const downgrade = beginHeldActorDowngrade(runtime, moderator.userId, 'user');
+
+    const [deletionResponse] = await coordinateGatedOperations({
+      cleanup: [downgrade.disconnect],
+      gateBarrierDescription: 'the uncommitted comment-moderator downgrade',
+      gateOperation: downgrade.transaction,
+      gatePaused: downgrade.paused,
+      releaseGate: downgrade.release,
+      runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
+        const deletionPromise = trackOperation(
+          request(app)
+            .delete(`/videos/${video.publicId}/comments/${comment.id}`)
+            .set('Authorization', `Bearer ${moderator.sessionKey}`)
+            .then((response) => response),
+        );
+        await waitForSignal({
+          description: 'privileged comment deletion to wait on the actor row',
+          observe: (signal) => waitForBlockedActorAuthorizationQuery(activeRuntime, signal),
+        });
+
+        return [deletionPromise] as const;
+      },
+    });
+
+    expect(deletionResponse.status).toBe(404);
+    expect(deletionResponse.body).toEqual({
+      error: 'NotFound',
+      message: 'Comment not found',
+    });
+    await expect(
+      runtime.prisma.comment.findUniqueOrThrow({
+        where: { id: comment.id },
+        select: {
+          content: true,
+          deletedAt: true,
+          deletionOrigin: true,
+        },
+      }),
+    ).resolves.toEqual({
+      content: 'This comment must survive the actor downgrade race.',
+      deletedAt: null,
+      deletionOrigin: null,
+    });
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: video.id },
+        select: { commentCount: true },
+      }),
+    ).resolves.toEqual({ commentCount: 1 });
+  });
+
   test('allows moderation deletion on rejected and non-ready videos', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
@@ -2299,7 +2401,7 @@ describe('video comments integration', () => {
       .expect(404);
   });
 
-  test('keeps the role captured by session validation when a downgrade commits before deletion', async () => {
+  test('rejects a downgrade committed after session validation and before deletion', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
@@ -2330,7 +2432,7 @@ describe('video comments integration', () => {
       await runtime.videosService.createVideoComment({
         publicId: video.publicId,
         userId: author.userId,
-        content: 'The validated role remains authoritative for this request.',
+        content: 'The current database role remains authoritative for this request.',
       })
     ).comment;
     const roleValidated = Promise.withResolvers<void>();
@@ -2367,7 +2469,7 @@ describe('video comments integration', () => {
       whilePausedDescription: 'moderator role downgrade after session validation',
     });
 
-    expect(deletionResponse.status).toBe(204);
+    expect(deletionResponse.status).toBe(404);
     await expect(
       runtime.prisma.user.findUniqueOrThrow({
         where: { id: moderator.userId },
@@ -2380,16 +2482,16 @@ describe('video comments integration', () => {
         select: { content: true, deletedAt: true, deletionOrigin: true },
       }),
     ).resolves.toEqual({
-      content: null,
-      deletedAt: expect.any(Date),
-      deletionOrigin: 'moderator',
+      content: 'The current database role remains authoritative for this request.',
+      deletedAt: null,
+      deletionOrigin: null,
     });
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
         where: { id: video.id },
         select: { commentCount: true },
       }),
-    ).resolves.toEqual({ commentCount: 0 });
+    ).resolves.toEqual({ commentCount: 1 });
   });
 
   test('serializes author and moderator deletion through a real PostgreSQL video lock', async () => {

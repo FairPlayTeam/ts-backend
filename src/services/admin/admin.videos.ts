@@ -18,6 +18,8 @@ import { VideoNotFoundError } from '../videos.errors.js';
 import { buildVideoSearchFilter } from '../videos/videoSearch.js';
 import { resolveBestEffortLink, videoThumbnailPath } from '../assets/assetLinks.js';
 import type { AdminDependencies } from './admin.dependencies.js';
+import { MODERATION_ROLES } from '../auth.roles.js';
+import { lockAuthorizedAdminActor } from './admin.actorAuthorization.js';
 import type {
   AdminVideoSummary,
   AdminVideosPort,
@@ -74,7 +76,7 @@ type LockedAdminVideo = Pick<
 const lockAdminVideo = async (
   tx: Prisma.TransactionClient,
   videoId: string,
-): Promise<LockedAdminVideo> => {
+): Promise<LockedAdminVideo | null> => {
   const [video] = await tx.$queryRaw<Array<LockedAdminVideo>>(
     Prisma.sql`
       SELECT
@@ -94,11 +96,7 @@ const lockAdminVideo = async (
     `,
   );
 
-  if (!video) {
-    throw new VideoNotFoundError();
-  }
-
-  return video;
+  return video ?? null;
 };
 
 const normalizeVideoRejectionReason = (reason: string): string => {
@@ -159,7 +157,15 @@ const listAdminVideos = async (
   deps: AdminDependencies,
   input: ListAdminVideosInput,
 ): Promise<ListAdminVideosResult> => {
-  const { cursor, limit, moderationStatus, processingStatus, search, sort = 'newest' } = input;
+  const {
+    actorUserId,
+    cursor,
+    limit,
+    moderationStatus,
+    processingStatus,
+    search,
+    sort = 'newest',
+  } = input;
   const pageSize = normalizeAdminVideosLimit(limit);
   const direction = sort === 'oldest' ? 'asc' : 'desc';
   const cursorOperator = sort === 'oldest' ? 'gt' : 'lt';
@@ -184,17 +190,26 @@ const listAdminVideos = async (
     : {};
   const pageFilter = cursor ? { AND: [resultFilter, cursorFilter] } : resultFilter;
 
-  const [queriedVideos, total] = await deps.prisma.$transaction([
-    deps.prisma.video.findMany({
-      where: pageFilter,
-      select: adminVideoSelect,
-      orderBy: [{ createdAt: direction }, { id: direction }],
-      take: pageSize + 1,
-    }),
-    deps.prisma.video.count({
-      where: resultFilter,
-    }),
-  ]);
+  const [queriedVideos, total] = await deps.prisma.$transaction(
+    async (tx) => {
+      await lockAuthorizedAdminActor(tx, actorUserId, MODERATION_ROLES);
+
+      return Promise.all([
+        tx.video.findMany({
+          where: pageFilter,
+          select: adminVideoSelect,
+          orderBy: [{ createdAt: direction }, { id: direction }],
+          take: pageSize + 1,
+        }),
+        tx.video.count({
+          where: resultFilter,
+        }),
+      ]);
+    },
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+    },
+  );
   const videos = queriedVideos.slice(0, pageSize);
   const lastVideo = videos.at(-1);
   const nextCursor =
@@ -213,12 +228,17 @@ const moderateAdminVideo = async (
   deps: AdminDependencies,
   input: ModerateAdminVideoInput,
 ): Promise<ModerateAdminVideoResult> => {
-  const { decision, videoId } = input;
+  const { actorUserId, decision, videoId } = input;
   const normalizedReason =
     decision === 'rejected' ? normalizeVideoRejectionReason(input.reason) : null;
   const now = deps.clock.now();
   const { rejectionNotification, video } = await deps.prisma.$transaction(async (tx) => {
     const currentVideo = await lockAdminVideo(tx, videoId);
+    await lockAuthorizedAdminActor(tx, actorUserId, MODERATION_ROLES);
+
+    if (!currentVideo) {
+      throw new VideoNotFoundError();
+    }
 
     const isNewRejection = decision === 'rejected' && currentVideo.moderationStatus !== 'rejected';
     const updatedVideo = await tx.video.update({
@@ -277,12 +297,17 @@ const moderateAdminVideo = async (
 
 const requestAdminVideoDeletion = async (
   deps: AdminDependencies,
-  { actorRole, reason, videoId }: RequestAdminVideoDeletionInput,
+  { actorUserId, reason, videoId }: RequestAdminVideoDeletionInput,
 ): Promise<RequestAdminVideoDeletionResult> => {
   const normalizedReason = normalizeVideoDeletionReason(reason);
   const now = deps.clock.now();
   const { deletionNotification, video } = await deps.prisma.$transaction(async (tx) => {
     const currentVideo = await lockAdminVideo(tx, videoId);
+    const actorRole = await lockAuthorizedAdminActor(tx, actorUserId, MODERATION_ROLES);
+
+    if (!currentVideo) {
+      throw new VideoNotFoundError();
+    }
 
     const isNewDeletionRequest = currentVideo.deletionRequestedAt === null;
     const updatedVideo = await tx.video.update({

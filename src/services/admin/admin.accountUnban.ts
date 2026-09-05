@@ -6,6 +6,8 @@ import {
   AdminSelfUnbanError,
 } from '../admin.errors.js';
 import type { AdminDependencies } from './admin.dependencies.js';
+import { ADMIN_ONLY_ROLES } from '../auth.roles.js';
+import { lockAuthorizedAdminActor } from './admin.actorAuthorization.js';
 import { UNBAN_ACCOUNT_SUCCESS_MESSAGE } from './admin.messages.js';
 import { canManageRole, getManageableRoles } from './admin.roleHierarchy.js';
 import type {
@@ -42,15 +44,15 @@ const toUnbannedAdminAccount = (account: UnbannedAccountRecord): UnbannedAdminAc
 
 export const unbanAdminAccount = async (
   deps: AdminDependencies,
-  { actorRole, actorUserId, targetUserId }: UnbanAdminAccountInput,
+  { actorUserId, targetUserId }: UnbanAdminAccountInput,
 ): Promise<UnbanAdminAccountResult> => {
   if (actorUserId === targetUserId) {
     throw new AdminSelfUnbanError();
   }
 
-  const unbannableRoles = getManageableRoles(actorRole);
-
   const account = await deps.prisma.$transaction(async (tx) => {
+    const actorRole = await lockAuthorizedAdminActor(tx, actorUserId, ADMIN_ONLY_ROLES);
+    const unbannableRoles = getManageableRoles(actorRole);
     const existingAccount = await tx.user.findUnique({
       where: { id: targetUserId },
       select: { id: true, isBanned: true, role: true },

@@ -30,6 +30,7 @@ type UpdateAccountRoleRequest = Request<
 export const createAdminAccountsController = (deps: AdminControllerDependencies) => {
   const listAccounts = async (req: ListAccountsRequest, res: Response, next: NextFunction) => {
     try {
+      const authenticatedReq = req as AuthenticatedRequest;
       const { banStatus, cursorCreatedAt, cursorId, limit, search } = req.query;
       const cursor =
         cursorCreatedAt !== undefined && cursorId !== undefined
@@ -39,6 +40,7 @@ export const createAdminAccountsController = (deps: AdminControllerDependencies)
             }
           : undefined;
       const result = await deps.adminService.listAccounts({
+        actorUserId: authenticatedReq.user.id,
         ...(cursor ? { cursor } : {}),
         ...(limit !== undefined ? { limit } : {}),
         ...(search !== undefined ? { search } : {}),
@@ -57,7 +59,6 @@ export const createAdminAccountsController = (deps: AdminControllerDependencies)
       const banReq = req as BanAccountRequest;
       const result = await deps.adminService.banAccount({
         actorUserId: authenticatedReq.user.id,
-        actorRole: authenticatedReq.user.role,
         targetUserId: banReq.params.userId,
         reason: banReq.body.reason,
       });
@@ -74,7 +75,6 @@ export const createAdminAccountsController = (deps: AdminControllerDependencies)
       const unbanReq = req as UnbanAccountRequest;
       const result = await deps.adminService.unbanAccount({
         actorUserId: authenticatedReq.user.id,
-        actorRole: authenticatedReq.user.role,
         targetUserId: unbanReq.params.userId,
       });
 
@@ -90,7 +90,6 @@ export const createAdminAccountsController = (deps: AdminControllerDependencies)
       const roleReq = req as UpdateAccountRoleRequest;
       const result = await deps.adminService.updateAccountRole({
         actorUserId: authenticatedReq.user.id,
-        actorRole: authenticatedReq.user.role,
         targetUserId: roleReq.params.userId,
         role: roleReq.body.role,
       });

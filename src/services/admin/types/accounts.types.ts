@@ -2,6 +2,7 @@ import type { AuthRole } from '../../auth.roles.js';
 import type { AdminAccountBanStatus } from '../admin.accountFilters.js';
 
 export type ListAdminAccountsInput = {
+  actorUserId: string;
   cursor?: {
     createdAt: Date;
     id: string;
@@ -28,20 +29,17 @@ export type AdminAccountSummary = {
 
 export type BanAdminAccountInput = {
   actorUserId: string;
-  actorRole: AuthRole;
   targetUserId: string;
   reason: string;
 };
 
 export type UnbanAdminAccountInput = {
   actorUserId: string;
-  actorRole: AuthRole;
   targetUserId: string;
 };
 
 export type UpdateAdminAccountRoleInput = {
   actorUserId: string;
-  actorRole: AuthRole;
   targetUserId: string;
   role: AuthRole;
 };

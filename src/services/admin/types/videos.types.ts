@@ -8,6 +8,7 @@ export type AdminVideoSort = 'newest' | 'oldest';
 export type VideoDeletionOrigin = 'moderator' | 'admin';
 
 export type ListAdminVideosInput = {
+  actorUserId: string;
   cursor?: {
     createdAt: Date;
     id: string;
@@ -47,23 +48,25 @@ export type ListAdminVideosResult = {
   } | null;
 };
 
-export type ModerateAdminVideoInput =
+export type ModerateAdminVideoInput = {
+  actorUserId: string;
+  videoId: string;
+} & (
   | {
-      videoId: string;
       decision: 'approved';
     }
   | {
-      videoId: string;
       decision: 'rejected';
       reason: string;
-    };
+    }
+);
 
 export type ModerateAdminVideoResult = {
   video: AdminVideoSummary;
 };
 
 export type RequestAdminVideoDeletionInput = {
-  actorRole: VideoDeletionOrigin;
+  actorUserId: string;
   reason: string;
   videoId: string;
 };

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { Prisma } from '@prisma/client';
 import type { AdminDependencies } from '../src/services/admin/admin.dependencies.js';
 import type { AuthRole } from '../src/services/auth.roles.js';
 import { createAdminService } from '../src/services/admin.service.js';
@@ -6,9 +7,9 @@ import {
   AdminAccountAlreadyBannedError,
   AdminAccountNotBannedError,
   AdminAccountNotFoundError,
+  AdminActorForbiddenError,
   AdminBanReasonInvalidError,
   AdminRoleAlreadyAssignedError,
-  AdminRoleAssignmentError,
   AdminRoleHierarchyError,
   AdminSelfBanError,
   AdminSelfUnbanError,
@@ -108,6 +109,7 @@ const createDeps = ({
   mailerError,
   revokedSessionsCount = 2,
   now = banTime,
+  actorAuthorization = { role: 'admin' as const, isBanned: false },
 }: {
   queriedAccounts?: ReturnType<typeof createAccountRecord>[];
   total?: number;
@@ -115,6 +117,7 @@ const createDeps = ({
   mailerError?: unknown;
   revokedSessionsCount?: number;
   now?: Date;
+  actorAuthorization?: { role: AuthRole; isBanned: boolean } | null;
 } = {}) => {
   let currentBanState = banTarget
     ? {
@@ -128,26 +131,34 @@ const createDeps = ({
     accountBanEmails: { email: string; reason: string }[];
     logs: { data: object; message: string }[];
     sessionUpdateMany?: unknown;
-    transactionOperationCount?: number;
+    transactionIsolationLevel?: Prisma.TransactionIsolationLevel;
     userFindUnique: unknown[];
     userCount?: unknown;
     userFindMany?: unknown;
     userUpdateMany?: unknown;
+    userAuthorizationLockCount: number;
   } = {
     accountBanEmails: [],
     logs: [],
     userFindUnique: [],
+    userAuthorizationLockCount: 0,
   };
   const deps = {
     prisma: {
-      $transaction: async (input: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>)) => {
-        if (Array.isArray(input)) {
-          calls.transactionOperationCount = input.length;
-
-          return Promise.all(input);
+      $transaction: async (
+        run: (tx: unknown) => Promise<unknown>,
+        options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
+      ) => {
+        if (options?.isolationLevel !== undefined) {
+          calls.transactionIsolationLevel = options.isolationLevel;
         }
 
-        return input(deps.prisma);
+        return run(deps.prisma);
+      },
+      $queryRaw: async () => {
+        calls.userAuthorizationLockCount += 1;
+
+        return actorAuthorization ? [actorAuthorization] : [];
       },
       session: {
         updateMany: async (args: unknown) => {
@@ -273,7 +284,7 @@ describe('admin service accounts', () => {
     const { calls, deps } = createDeps();
     const service = createAdminService(deps);
 
-    await expect(service.listAccounts({ limit: 2 })).resolves.toEqual({
+    await expect(service.listAccounts({ actorUserId, limit: 2 })).resolves.toEqual({
       accounts: [
         {
           id: '33333333-3333-4333-8333-333333333333',
@@ -339,7 +350,8 @@ describe('admin service accounts', () => {
       take: 3,
     });
     expect(calls.userCount).toBeUndefined();
-    expect(calls.transactionOperationCount).toBe(2);
+    expect(calls.userAuthorizationLockCount).toBe(1);
+    expect(calls.transactionIsolationLevel).toBe(Prisma.TransactionIsolationLevel.ReadCommitted);
   });
 
   test('applies cursor filtering and caps oversized limits', async () => {
@@ -350,7 +362,7 @@ describe('admin service accounts', () => {
       id: '99999999-9999-4999-8999-999999999999',
     };
 
-    await service.listAccounts({ cursor, limit: 10_000 });
+    await service.listAccounts({ actorUserId, cursor, limit: 10_000 });
 
     expect(calls.userFindMany).toEqual(
       expect.objectContaining({
@@ -388,6 +400,7 @@ describe('admin service accounts', () => {
     };
 
     await service.listAccounts({
+      actorUserId,
       banStatus: 'banned',
       cursor,
       limit: 2,
@@ -413,7 +426,7 @@ describe('admin service accounts', () => {
     const { calls, deps } = createDeps({ queriedAccounts: [] });
     const service = createAdminService(deps);
 
-    await service.listAccounts({ banStatus: 'notbanned' });
+    await service.listAccounts({ actorUserId, banStatus: 'notbanned' });
 
     expect(calls.userFindMany).toEqual(
       expect.objectContaining({
@@ -432,7 +445,6 @@ describe('admin service accounts', () => {
     await expect(
       service.banAccount({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
         reason: '  Repeated abusive behavior.  ',
       }),
@@ -491,7 +503,6 @@ describe('admin service accounts', () => {
     await expect(
       service.banAccount({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
         reason: 'Repeated abusive behavior.',
       }),
@@ -524,7 +535,6 @@ describe('admin service accounts', () => {
     await expect(
       service.banAccount({
         actorUserId: targetUserId,
-        actorRole: 'admin',
         targetUserId,
         reason: 'Compromised account.',
       }),
@@ -540,7 +550,6 @@ describe('admin service accounts', () => {
     await expect(
       createAdminService(unknownAccount.deps).banAccount({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
         reason: 'Policy violation.',
       }),
@@ -553,7 +562,6 @@ describe('admin service accounts', () => {
     await expect(
       createAdminService(alreadyBannedAccount.deps).banAccount({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
         reason: 'Policy violation.',
       }),
@@ -567,7 +575,6 @@ describe('admin service accounts', () => {
     await expect(
       createAdminService(deps).banAccount({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
         reason: '   ',
       }),
@@ -584,39 +591,12 @@ describe('admin service accounts', () => {
     await expect(
       createAdminService(equivalentAdmin.deps).banAccount({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
         reason: 'Policy violation.',
       }),
     ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
     expect(equivalentAdmin.calls.userUpdateMany).toBeUndefined();
     expect(equivalentAdmin.calls.accountBanEmails).toEqual([]);
-
-    const equivalentModerator = createDeps({
-      banTarget: createBanTargetRecord({ role: 'moderator' }),
-    });
-    await expect(
-      createAdminService(equivalentModerator.deps).banAccount({
-        actorUserId,
-        actorRole: 'moderator',
-        targetUserId,
-        reason: 'Policy violation.',
-      }),
-    ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
-    expect(equivalentModerator.calls.userUpdateMany).toBeUndefined();
-
-    const superiorAdmin = createDeps({
-      banTarget: createBanTargetRecord({ role: 'admin' }),
-    });
-    await expect(
-      createAdminService(superiorAdmin.deps).banAccount({
-        actorUserId,
-        actorRole: 'moderator',
-        targetUserId,
-        reason: 'Policy violation.',
-      }),
-    ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
-    expect(superiorAdmin.calls.userUpdateMany).toBeUndefined();
   });
 
   test('unbans a banned account and clears ban metadata', async () => {
@@ -628,7 +608,6 @@ describe('admin service accounts', () => {
     await expect(
       service.unbanAccount({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
       }),
     ).resolves.toEqual({
@@ -669,7 +648,6 @@ describe('admin service accounts', () => {
     await expect(
       createAdminService(deps).unbanAccount({
         actorUserId: targetUserId,
-        actorRole: 'admin',
         targetUserId,
       }),
     ).rejects.toBeInstanceOf(AdminSelfUnbanError);
@@ -683,7 +661,6 @@ describe('admin service accounts', () => {
     await expect(
       createAdminService(unknownAccount.deps).unbanAccount({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
       }),
     ).rejects.toBeInstanceOf(AdminAccountNotFoundError);
@@ -693,7 +670,6 @@ describe('admin service accounts', () => {
     await expect(
       createAdminService(alreadyUnbannedAccount.deps).unbanAccount({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
       }),
     ).rejects.toBeInstanceOf(AdminAccountNotBannedError);
@@ -708,24 +684,10 @@ describe('admin service accounts', () => {
     await expect(
       createAdminService(equivalentAdmin.deps).unbanAccount({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
       }),
     ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
     expect(equivalentAdmin.calls.userUpdateMany).toBeUndefined();
-
-    const superiorAdmin = createDeps({
-      banTarget: createBanTargetRecord({ isBanned: true, role: 'admin' }),
-    });
-
-    await expect(
-      createAdminService(superiorAdmin.deps).unbanAccount({
-        actorUserId,
-        actorRole: 'moderator',
-        targetUserId,
-      }),
-    ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
-    expect(superiorAdmin.calls.userUpdateMany).toBeUndefined();
   });
 
   test('updates an account role when the target current role is lower', async () => {
@@ -735,7 +697,6 @@ describe('admin service accounts', () => {
     await expect(
       service.updateAccountRole({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
         role: 'admin',
       }),
@@ -762,43 +723,23 @@ describe('admin service accounts', () => {
     });
   });
 
-  test('allows a moderator to update a user to moderator but not admin', async () => {
-    const promotion = createDeps();
+  test.each([
+    null,
+    { role: 'moderator' as const, isBanned: false },
+    { role: 'admin' as const, isBanned: true },
+  ])('rejects an actor whose administrative access was revoked', async (actorAuthorization) => {
+    const revokedActor = createDeps({ actorAuthorization });
 
     await expect(
-      createAdminService(promotion.deps).updateAccountRole({
+      createAdminService(revokedActor.deps).updateAccountRole({
         actorUserId,
-        actorRole: 'moderator',
         targetUserId,
         role: 'moderator',
       }),
-    ).resolves.toMatchObject({
-      account: {
-        role: 'moderator',
-      },
-    });
-    expect(promotion.calls.userUpdateMany).toEqual({
-      where: {
-        id: targetUserId,
-        role: { in: ['user'] },
-      },
-      data: {
-        role: 'moderator',
-      },
-    });
-
-    const escalation = createDeps();
-
-    await expect(
-      createAdminService(escalation.deps).updateAccountRole({
-        actorUserId,
-        actorRole: 'moderator',
-        targetUserId,
-        role: 'admin',
-      }),
-    ).rejects.toBeInstanceOf(AdminRoleAssignmentError);
-    expect(escalation.calls.userFindUnique).toEqual([]);
-    expect(escalation.calls.userUpdateMany).toBeUndefined();
+    ).rejects.toBeInstanceOf(AdminActorForbiddenError);
+    expect(revokedActor.calls.userAuthorizationLockCount).toBe(1);
+    expect(revokedActor.calls.userFindUnique).toEqual([]);
+    expect(revokedActor.calls.userUpdateMany).toBeUndefined();
   });
 
   test('rejects role updates against equivalent or higher current roles', async () => {
@@ -809,26 +750,11 @@ describe('admin service accounts', () => {
     await expect(
       createAdminService(equivalentAdmin.deps).updateAccountRole({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
         role: 'user',
       }),
     ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
     expect(equivalentAdmin.calls.userUpdateMany).toBeUndefined();
-
-    const superiorAdmin = createDeps({
-      banTarget: createBanTargetRecord({ role: 'admin' }),
-    });
-
-    await expect(
-      createAdminService(superiorAdmin.deps).updateAccountRole({
-        actorUserId,
-        actorRole: 'moderator',
-        targetUserId,
-        role: 'user',
-      }),
-    ).rejects.toBeInstanceOf(AdminRoleHierarchyError);
-    expect(superiorAdmin.calls.userUpdateMany).toBeUndefined();
   });
 
   test('rejects role update no-ops and missing accounts', async () => {
@@ -837,7 +763,6 @@ describe('admin service accounts', () => {
     await expect(
       createAdminService(sameRole.deps).updateAccountRole({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
         role: 'user',
       }),
@@ -849,7 +774,6 @@ describe('admin service accounts', () => {
     await expect(
       createAdminService(unknownAccount.deps).updateAccountRole({
         actorUserId,
-        actorRole: 'admin',
         targetUserId,
         role: 'moderator',
       }),

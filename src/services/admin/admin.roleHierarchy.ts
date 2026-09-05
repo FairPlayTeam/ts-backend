@@ -9,8 +9,5 @@ const ROLE_RANK = {
 export const canManageRole = (actorRole: AuthRole, targetRole: AuthRole): boolean =>
   ROLE_RANK[actorRole] > ROLE_RANK[targetRole];
 
-export const canAssignRole = (actorRole: AuthRole, assignedRole: AuthRole): boolean =>
-  ROLE_RANK[actorRole] >= ROLE_RANK[assignedRole];
-
 export const getManageableRoles = (actorRole: AuthRole): AuthRole[] =>
   AUTH_ROLES.filter((targetRole) => canManageRole(actorRole, targetRole));

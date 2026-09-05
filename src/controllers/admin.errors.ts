@@ -4,9 +4,9 @@ import {
   AdminAccountAlreadyBannedError,
   AdminAccountNotBannedError,
   AdminAccountNotFoundError,
+  AdminActorForbiddenError,
   AdminBanReasonInvalidError,
   AdminRoleAlreadyAssignedError,
-  AdminRoleAssignmentError,
   AdminRoleHierarchyError,
   AdminSelfBanError,
   AdminSelfUnbanError,
@@ -25,7 +25,7 @@ export function toAdminHttpError(err: unknown): Error {
   }
 
   if (
-    err instanceof AdminRoleAssignmentError ||
+    err instanceof AdminActorForbiddenError ||
     err instanceof AdminRoleHierarchyError ||
     err instanceof AdminSelfBanError ||
     err instanceof AdminSelfUnbanError

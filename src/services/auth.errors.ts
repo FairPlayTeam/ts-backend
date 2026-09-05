@@ -9,6 +9,7 @@ const PASSWORD_RESET_PASSWORD_REUSE_MESSAGE =
 const PASSWORD_RESET_STATE_CHANGED_MESSAGE =
   'Password state changed during reset. Please try again.';
 const AUTHENTICATED_USER_NOT_FOUND_MESSAGE = 'Authenticated user could not be found';
+export const INSUFFICIENT_PERMISSIONS_MESSAGE = 'Insufficient permissions';
 export const PROFILE_UPDATE_EMPTY_MESSAGE = 'At least one profile field must be provided';
 export const ACCOUNT_DELETION_TEMPORARILY_UNAVAILABLE_MESSAGE =
   'Account deletion is temporarily unavailable; please retry';

@@ -22,6 +22,11 @@ import {
 } from './support/runtime.js';
 import { coordinateGatedOperations } from './support/asyncBarriers.js';
 import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
+import {
+  beginHeldActorDowngrade,
+  waitForBlockedActorAuthorizationQuery,
+} from './support/actorAuthorization.js';
+import { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../../src/middleware/routeProtection.js';
 
 const waitForBlockedVideoQueries = async (
   runtime: TestRuntime,
@@ -359,6 +364,82 @@ describe('videos moderation integration', () => {
       total: 1,
       nextCursor: null,
     });
+  });
+
+  test('rejects an in-flight moderation decision when the actor downgrade commits first', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const activeRuntime = runtime;
+    const owner = await createVerifiedSession(runtime, {
+      email: 'actor-downgrade-owner@example.com',
+      username: 'actor_down_owner',
+    });
+    const moderator = await createVerifiedSession(runtime, {
+      email: 'actor-downgrade-moderator@example.com',
+      username: 'actor_down_mod',
+    });
+    await runtime.prisma.user.update({
+      where: { id: moderator.userId },
+      data: { role: 'moderator' },
+    });
+    const video = await runtime.videosService.createVideo({
+      userId: owner.userId,
+      title: 'Actor authorization lock boundary',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      allowComments: true,
+    });
+    const app = await createIntegrationApp(runtime);
+    const downgrade = beginHeldActorDowngrade(runtime, moderator.userId, 'user');
+
+    const [moderationResponse] = await coordinateGatedOperations({
+      cleanup: [downgrade.disconnect],
+      gateBarrierDescription: 'the uncommitted actor downgrade',
+      gateOperation: downgrade.transaction,
+      gatePaused: downgrade.paused,
+      releaseGate: downgrade.release,
+      runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
+        const moderationPromise = trackOperation(
+          request(app)
+            .post(`/moderation/videos/${video.video.id}/moderation`)
+            .set('Authorization', `Bearer ${moderator.sessionKey}`)
+            .send({ decision: 'rejected', reason: 'Must not be persisted.' })
+            .then((response) => response),
+        );
+        await waitForSignal({
+          description: 'moderation to wait on the locked actor row',
+          observe: (signal) => waitForBlockedActorAuthorizationQuery(activeRuntime, signal),
+        });
+
+        return [moderationPromise] as const;
+      },
+    });
+
+    expect(moderationResponse.status).toBe(403);
+    expect(moderationResponse.body).toEqual({
+      error: 'Forbidden',
+      message: INSUFFICIENT_PERMISSIONS_MESSAGE,
+    });
+    await expect(
+      runtime.prisma.video.findUniqueOrThrow({
+        where: { id: video.video.id },
+        select: {
+          moderationStatus: true,
+          rejectedAt: true,
+          rejectionReason: true,
+          visibility: true,
+        },
+      }),
+    ).resolves.toEqual({
+      moderationStatus: 'pending',
+      rejectedAt: null,
+      rejectionReason: null,
+      visibility: 'unlisted',
+    });
+    expect(runtime.delivered.videoRejection).toEqual([]);
   });
 
   test('keeps the first rejection timestamp and purges after its original seven-day window', async () => {
@@ -1009,6 +1090,10 @@ describe('videos moderation integration', () => {
       email: 'rejected-cleanup-owner@example.com',
       username: 'rejected_cleanup',
     });
+    await runtime.prisma.user.update({
+      where: { id: owner.userId },
+      data: { role: 'moderator' },
+    });
     const rejectedAt = new Date();
     const observedAt = new Date(rejectedAt.getTime() + 8 * 24 * HOUR_MS);
     const purged = await runtime.videosService.createVideo({
@@ -1076,6 +1161,7 @@ describe('videos moderation integration', () => {
       },
     });
     await runtime.adminService.moderateVideo({
+      actorUserId: owner.userId,
       videoId: reapproved.video.id,
       decision: 'approved',
     });
