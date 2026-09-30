@@ -385,9 +385,11 @@ business deletion.
 Profile JSON exposes opaque same-origin avatar and banner paths only when the corresponding asset
 row exists; building list responses never performs a storage HEAD. The public media routes use the
 dedicated profile-media storage client to read bounded bytes and proxy them through the API, so
-neither a signed destination nor a bucket/object key appears in `Location`. A missing database row
-or stored object returns 404 on the media route. This client remains separate from video/HLS
-storage even though both consumers share the neutral asset-link primitives.
+neither a signed destination nor a bucket/object key appears in `Location`. The media lookup uses
+the same verified, non-banned visibility scope as the public profile. A banned, unverified,
+missing, or medialess profile and a missing stored object all return the same 404 on the media
+route. This client remains separate from video/HLS storage even though both consumers share the
+neutral asset-link primitives.
 
 ## In-process video transcoding
 

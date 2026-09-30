@@ -220,6 +220,8 @@ describe('profiles service', () => {
           kind: 'avatar',
           user: {
             username: 'fairplay_user',
+            isVerified: true,
+            isBanned: false,
           },
         },
         select: {

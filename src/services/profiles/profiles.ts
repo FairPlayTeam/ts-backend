@@ -167,6 +167,7 @@ export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort 
         kind,
         user: {
           username: normalizeUsername(username),
+          ...PUBLIC_PROFILE_VISIBILITY_SCOPE,
         },
       },
       select: {

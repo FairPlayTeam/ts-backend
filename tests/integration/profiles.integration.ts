@@ -641,6 +641,74 @@ describe('profiles integration', () => {
     }
   });
 
+  test('returns identical media 404s for banned, unverified, missing, and medialess profiles', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const banned = await createVerifiedSession(runtime, {
+      email: 'profile-media-banned@example.com',
+      username: 'media_banned',
+    });
+    const unverified = await createVerifiedSession(runtime, {
+      email: 'profile-media-unverified@example.com',
+      username: 'media_unverified',
+    });
+    await createVerifiedSession(runtime, {
+      email: 'profile-media-empty@example.com',
+      username: 'media_empty',
+    });
+    const avatar = await createPng();
+    const banner = await createPng(1_600, 600);
+
+    await runtime.authService.uploadAvatar({
+      userId: banned.userId,
+      file: { buffer: avatar, size: avatar.length },
+    });
+    await runtime.authService.uploadBanner({
+      userId: unverified.userId,
+      file: { buffer: banner, size: banner.length },
+    });
+    await Promise.all([
+      runtime.prisma.user.update({
+        where: { id: banned.userId },
+        data: { isBanned: true, bannedAt: new Date('2026-07-04T00:00:00.000Z') },
+      }),
+      runtime.prisma.user.update({
+        where: { id: unverified.userId },
+        data: { isVerified: false },
+      }),
+    ]);
+    await expect(
+      runtime.prisma.userMediaAsset.findMany({
+        where: { userId: { in: [banned.userId, unverified.userId] } },
+        select: { kind: true, userId: true },
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        { kind: 'avatar', userId: banned.userId },
+        { kind: 'banner', userId: unverified.userId },
+      ]),
+    );
+
+    const app = await createIntegrationApp(runtime);
+    const expectedNotFound = {
+      error: 'NotFound',
+      message: PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE,
+    };
+
+    for (const path of [
+      '/profiles/media_banned/avatar',
+      '/profiles/media_unverified/banner',
+      '/profiles/media_missing/avatar',
+      '/profiles/media_empty/avatar',
+    ]) {
+      const response = await request(app).get(path).expect(404);
+
+      expect(response.body).toEqual(expectedNotFound);
+    }
+  });
+
   test('stores uploaded profile media in MinIO and proxies it through opaque profile paths', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
