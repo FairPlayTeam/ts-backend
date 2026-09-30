@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import nodemailer, { type SendMailOptions } from 'nodemailer';
 import {
   APP_PRODUCT_NAME,
   EMAIL_VERIFICATION_CODE_TTL_MINUTES,
@@ -19,7 +19,8 @@ import {
   type OperationLogger,
 } from '../../lib/operationMetrics.js';
 
-type MailTransporter = Pick<nodemailer.Transporter, 'sendMail'> & {
+type MailTransporter = {
+  sendMail(message: SendMailOptions): Promise<unknown>;
   close?(): void;
 };
 

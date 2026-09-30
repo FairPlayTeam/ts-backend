@@ -105,12 +105,18 @@ Current overrides:
 
 - `decode-uri-component@0.5.0`, pulled in by MinIO through `query-string`
 - `deepmerge-ts@8.0.2`, pulled in by Prisma through `@prisma/config`
-- `fast-uri@3.1.6`, pulled in through AJV by Prisma and ESLint
-- `mysql2@3.24.3`, pulled in directly by the Prisma CLI
-- `qs@6.16.0`, pulled in by Express and Supertest
+- `mysql2@3.24.5`, pulled in directly by the Prisma CLI
 
-Other patched transitive dependencies, including `nanoid`, resolve through their parent package's
-declared semver range and therefore do not require an override.
+Other patched transitive dependencies, including `@grpc/grpc-js`, `brace-expansion`, `fast-uri`,
+`ip-address`, `nanoid`, `qs`, and `undici`, resolve through their parent package's declared semver
+range and therefore do not require an override.
+
+`bun audit` currently retains the moderate `GHSA-528h-pc64-c93x` advisory for
+`minio > stream-json@1.9.1`. MinIO uses only the JSONL parser, while the vulnerable code is limited
+to the `pick`, `ignore`, `filter`, and `replace` path filters. The patched `stream-json` 3.x line is
+not API-compatible with MinIO's `jsonl/Parser.js` and `.make()` usage, so forcing it through an
+override would break the storage client. Keep this exception visible until MinIO publishes a
+compatible dependency range; do not silence it or force the major upgrade.
 
 See https://bun.sh/docs/pm/overrides for more details about overrides.
 

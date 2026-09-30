@@ -38,7 +38,6 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.2.0",
-    "@types/nodemailer": "^8.0.1",
     "@types/supertest": "^7.2.1",
     "@types/swagger-ui-express": "^4.1.8",
     "dotenv": "^17.4.2",
@@ -47,7 +46,7 @@
     "prettier": "^3.9.6",
     "prisma": "^7.10.0",
     "supertest": "^7.2.2",
-    "testcontainers": "^12.1.0",
+    "testcontainers": "^12.2.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.69.0",
     "vitest": "^4.1.11"
@@ -64,8 +63,8 @@
     "helmet": "^8.3.0",
     "ioredis": "^5.11.1",
     "minio": "^8.0.7",
-    "multer": "^2.3.0",
-    "nodemailer": "^9.1.1",
+    "multer": "^2.4.0",
+    "nodemailer": "^10.0.13",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "rate-limit-redis": "^5.0.0",
@@ -76,8 +75,6 @@
   "overrides": {
     "decode-uri-component": "0.5.0",
     "deepmerge-ts": "8.0.2",
-    "fast-uri": "3.1.6",
-    "mysql2": "3.24.3",
-    "qs": "6.16.0"
+    "mysql2": "3.24.5"
   }
 }
