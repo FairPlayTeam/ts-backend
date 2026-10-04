@@ -198,6 +198,18 @@ The health routes are:
 
 Production orchestrators should use `/health/ready` before routing traffic to an instance.
 
+When an established Redis connection is interrupted, new commands issued while the connection is
+unavailable fail fast instead of entering the offline queue. A command already sent but not yet
+acknowledged can still be resent by ioredis after reconnection, so its outcome remains ambiguous.
+The client retries the connection indefinitely with exponential full-jitter delays capped at five
+seconds, so a long outage cannot leave the process permanently disconnected. Redis readiness stays
+red during the outage and recovers on the same client after Redis becomes ready again. Explicit
+shutdown through `quit` or `disconnect` does not reconnect.
+
+Reconnection restores new Redis operations but does not assume that an in-flight lease survived the
+server outage. Lease holders still rely on token-checked renewal and treat a failed renewal or token
+mismatch as loss of ownership.
+
 ## App startup
 
 The entry point is [`src/index.ts`](src/index.ts), it:

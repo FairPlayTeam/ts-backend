@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
+import { getCappedExponentialFullJitterDelayMs } from './retryBackoff.js';
 
 const SERIALIZABLE_TRANSACTION_MAX_ATTEMPTS = 3;
 const SERIALIZABLE_TRANSACTION_RETRY_BASE_DELAY_MS = 5;
@@ -55,15 +56,13 @@ export const isSerializableTransactionConflictError = (err: unknown): boolean =>
 export const getSerializableTransactionRetryDelayMs = (
   attempt: number,
   random: () => number = Math.random,
-): number => {
-  const exponent = Math.max(0, attempt - 1);
-  const delayCeiling = Math.min(
+): number =>
+  getCappedExponentialFullJitterDelayMs(
+    attempt,
+    SERIALIZABLE_TRANSACTION_RETRY_BASE_DELAY_MS,
     SERIALIZABLE_TRANSACTION_RETRY_MAX_DELAY_MS,
-    SERIALIZABLE_TRANSACTION_RETRY_BASE_DELAY_MS * 2 ** exponent,
+    random,
   );
-
-  return Math.floor(random() * (delayCeiling + 1));
-};
 
 export const runSerializableTransaction = async <T>(
   prisma: Pick<PrismaClient, '$transaction'>,

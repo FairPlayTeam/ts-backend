@@ -6,6 +6,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import { HOUR_MS, MINUTE_MS } from '../../config/constants.js';
 import type { ObjectStorage } from '../../lib/objectStorage.js';
 import { runSerializableTransaction } from '../../lib/prismaTransactions.js';
+import { getCappedExponentialDelayMs } from '../../lib/retryBackoff.js';
 import {
   requestExternalResourceAbsence,
   type ExternalResourceReconciliationHandler,
@@ -112,7 +113,7 @@ const serializeError = (error: unknown): string =>
   (error instanceof Error ? error.message : String(error)).slice(0, LAST_ERROR_MAX_LENGTH);
 
 export const getVideoTranscodeRetryDelayMs = (attempts: number): number =>
-  Math.min(2 ** Math.max(attempts - 1, 0) * MINUTE_MS, TRANSCODE_RETRY_MAX_DELAY_MS);
+  getCappedExponentialDelayMs(attempts, MINUTE_MS, TRANSCODE_RETRY_MAX_DELAY_MS);
 
 export const getAvailableVideoTranscodeSlots = (
   maxConcurrentJobs: number,

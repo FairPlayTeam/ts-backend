@@ -4,12 +4,12 @@ import { promisify } from 'node:util';
 
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 import type { ObjectStorageConfig } from '../../../src/config/env.parsers.js';
+import { buildRedisTestUrl, startRedisTestContainer } from './redis.js';
 
 const execFileAsync = promisify(execFile);
 const projectRoot = fileURLToPath(new URL('../../..', import.meta.url));
 
 const POSTGRES_PORT = 5432;
-const REDIS_PORT = 6379;
 const MINIO_PORT = 9000;
 export const OBJECT_STORAGE_BUCKET = 'fairplay-integration-media';
 export const VIDEO_OBJECT_STORAGE_BUCKET = 'fairplay-integration-videos';
@@ -46,13 +46,6 @@ const buildDatabaseUrl = (container: StartedTestContainer): string => {
   const port = container.getMappedPort(POSTGRES_PORT);
 
   return `postgresql://user:password@${host}:${port}/fairplay?schema=public`;
-};
-
-const buildRedisUrl = (container: StartedTestContainer): string => {
-  const host = container.getHost();
-  const port = container.getMappedPort(REDIS_PORT);
-
-  return `redis://${host}:${port}`;
 };
 
 const buildObjectStorageConfig = (
@@ -100,12 +93,7 @@ export const startIntegrationInfrastructure = async (): Promise<{
       .withStartupTimeout(120_000)
       .start();
 
-    redisContainer = await new GenericContainer('redis:8-alpine')
-      .withCommand(['redis-server', '--save', '', '--appendonly', 'no'])
-      .withExposedPorts(REDIS_PORT)
-      .withWaitStrategy(Wait.forLogMessage(/Ready to accept connections/i))
-      .withStartupTimeout(60_000)
-      .start();
+    redisContainer = await startRedisTestContainer();
 
     minioContainer = await new GenericContainer('minio/minio:RELEASE.2025-09-07T16-13-09Z')
       .withEnvironment({
@@ -123,7 +111,7 @@ export const startIntegrationInfrastructure = async (): Promise<{
 
     const context: IntegrationInfrastructure = {
       databaseUrl,
-      redisUrl: buildRedisUrl(redisContainer),
+      redisUrl: buildRedisTestUrl(redisContainer),
       objectStorageConfig: buildObjectStorageConfig(minioContainer),
       videoObjectStorageConfig: buildObjectStorageConfig(
         minioContainer,

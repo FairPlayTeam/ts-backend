@@ -35,6 +35,7 @@ import {
   resetState,
   startRuntime,
   stopRuntime,
+  testLogger,
   type TestRuntime,
   VIDEO_TRANSCODE_TEST_CONFIG,
 } from './support/runtime.js';
@@ -505,8 +506,7 @@ describe('videos transcoding integration', () => {
         threadsPerJob: 1,
       },
       logger: {
-        info: () => undefined,
-        warn: () => undefined,
+        ...testLogger,
         error: (data) => {
           runnerErrors.push(data);
         },
@@ -669,11 +669,7 @@ describe('videos transcoding integration', () => {
         maxConcurrentJobs: 1,
         threadsPerJob: 1,
       },
-      logger: {
-        info: () => undefined,
-        warn: () => undefined,
-        error: () => undefined,
-      },
+      logger: testLogger,
     });
 
     runner.start();
@@ -762,11 +758,7 @@ describe('videos transcoding integration', () => {
         maxDurationSeconds: 1,
         threadsPerJob: 1,
       },
-      logger: {
-        info: () => undefined,
-        warn: () => undefined,
-        error: () => undefined,
-      },
+      logger: testLogger,
     });
 
     runner.start();
@@ -833,11 +825,7 @@ describe('videos transcoding integration', () => {
         maxConcurrentJobs: 1,
         threadsPerJob: 1,
       },
-      logger: {
-        info: () => undefined,
-        warn: () => undefined,
-        error: () => undefined,
-      },
+      logger: testLogger,
     });
 
     runner.start();
@@ -1003,8 +991,7 @@ describe('videos transcoding integration', () => {
         threadsPerJob: 1,
       },
       logger: {
-        info: () => undefined,
-        warn: () => undefined,
+        ...testLogger,
         error: (data) => {
           runnerErrors.push(data);
           runnerLifecycle.reject(
@@ -1562,8 +1549,7 @@ describe('videos transcoding integration', () => {
         threadsPerJob: 1,
       },
       logger: {
-        info: () => undefined,
-        warn: () => undefined,
+        ...testLogger,
         error: (data) => {
           runnerErrors.push(data);
           runnerFailed.reject(new Error('Transcode runner failed before graceful shutdown'));

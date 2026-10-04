@@ -1,32 +1,59 @@
 import { Redis } from 'ioredis';
 import type { Logger } from 'pino';
+import { getCappedExponentialFullJitterDelayMs } from './retryBackoff.js';
 
 export type RedisClient = Pick<Redis, 'call' | 'disconnect' | 'quit' | 'ping'>;
 type ConnectableRedisClient = Pick<Redis, 'connect' | 'status'>;
+
+const REDIS_RECONNECT_BASE_DELAY_MS = 100;
+const REDIS_RECONNECT_MAX_DELAY_MS = 5_000;
+
+export const getRedisReconnectDelayMs = (
+  attempt: number,
+  random: () => number = Math.random,
+): number =>
+  getCappedExponentialFullJitterDelayMs(
+    attempt,
+    REDIS_RECONNECT_BASE_DELAY_MS,
+    REDIS_RECONNECT_MAX_DELAY_MS,
+    random,
+  );
 
 export const createRedisClient = (
   redisUrl: string,
   logger: Pick<Logger, 'info' | 'error' | 'warn'>,
 ): Redis => {
+  let isUnavailable = false;
   const client = new Redis(redisUrl, {
     lazyConnect: true,
     enableReadyCheck: true,
     enableOfflineQueue: false,
     connectTimeout: 1_000,
     maxRetriesPerRequest: 1,
-    retryStrategy: () => null,
+    retryStrategy: getRedisReconnectDelayMs,
   });
 
-  client.on('connect', () => {
-    logger.info('Redis connected');
+  client.on('ready', () => {
+    logger.info(isUnavailable ? 'Redis connection recovered' : 'Redis ready');
+    isUnavailable = false;
   });
 
   client.on('error', (err) => {
+    if (isUnavailable) {
+      return;
+    }
+
+    isUnavailable = true;
     logger.error({ err }, 'Redis error');
   });
 
-  client.on('end', () => {
-    logger.warn('Redis connection closed');
+  client.on('reconnecting', () => {
+    if (isUnavailable) {
+      return;
+    }
+
+    isUnavailable = true;
+    logger.warn('Redis connection lost, reconnecting');
   });
 
   return client;

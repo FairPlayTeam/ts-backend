@@ -43,6 +43,9 @@ import type { VideosService } from '../../../src/services/videos.types.js';
 import type { ObjectStorageConfig } from '../../../src/config/env.parsers.js';
 import type { VideoTranscodeLimits } from '../../../src/services/videos/videoTranscode.js';
 import type { Redis } from 'ioredis';
+import { testLogger } from './logger.js';
+
+export { testLogger } from './logger.js';
 
 export const PROFILE_MEDIA_MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 export const AUTH_CODE_PEPPER = 'integration-auth-code-pepper-change-me';
@@ -108,12 +111,6 @@ export type TestRuntime = {
     videoRejection: DeliveredVideoRejectionEmail[];
     videoDeletion: DeliveredVideoDeletionEmail[];
   };
-};
-
-export const testLogger = {
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
 };
 
 export const createPostgresApplicationName = (): string => `fp-test-${randomUUID()}`;
@@ -205,9 +202,7 @@ export const createIntegrationAuthService = (
       passwordResetTokenTtlMs: PASSWORD_RESET_TOKEN_TTL_MS,
       sessionTtlMs: SESSION_TTL_MS,
     },
-    logger: {
-      warn: () => undefined,
-    },
+    logger: testLogger,
   });
 
 export const createIntegrationAdminService = (
@@ -231,9 +226,7 @@ export const createIntegrationAdminService = (
     clock: {
       now,
     },
-    logger: {
-      warn: () => undefined,
-    },
+    logger: testLogger,
   });
 
 export const createIntegrationProfilesService = (
@@ -273,9 +266,7 @@ export const createIntegrationVideosService = (
     publicIdGenerator: {
       generate: () => config.publicIds?.shift() ?? createVideoPublicId(),
     },
-    logger: {
-      warn: () => undefined,
-    },
+    logger: testLogger,
     config: {
       maxPartCount: 10_000,
       maxUploadBytes: config.maxUploadBytes ?? 3 * 1024 * 1024 * 1024,

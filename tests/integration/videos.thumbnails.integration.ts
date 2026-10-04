@@ -529,8 +529,7 @@ describe('videos thumbnails integration', () => {
         threadsPerJob: 1,
       },
       logger: {
-        info: () => undefined,
-        warn: () => undefined,
+        ...testLogger,
         error: (data) => {
           runnerErrors.push(data);
         },

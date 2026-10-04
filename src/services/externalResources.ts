@@ -8,6 +8,7 @@ import type {
 import { HOUR_MS, MINUTE_MS } from '../config/constants.js';
 import type { ObjectStorage, ObjectStorageObject } from '../lib/objectStorage.js';
 import { runSerializableTransaction } from '../lib/prismaTransactions.js';
+import { getCappedExponentialDelayMs } from '../lib/retryBackoff.js';
 
 const RECONCILIATION_LEASE_MS = 5 * MINUTE_MS;
 const RECONCILIATION_LIST_LIMIT = 100;
@@ -105,7 +106,7 @@ const normalizeLimit = (limit: number | undefined): number => {
 };
 
 export const getExternalResourceRetryDelayMs = (attempts: number): number =>
-  Math.min(2 ** Math.max(attempts - 1, 0) * MINUTE_MS, MAX_RETRY_DELAY_MS);
+  getCappedExponentialDelayMs(attempts, MINUTE_MS, MAX_RETRY_DELAY_MS);
 
 export const getExternalResourceQuiescenceNotBefore = (requestedAt: Date): Date =>
   new Date(requestedAt.getTime() + EXTERNAL_RESOURCE_QUIESCENCE_MS);
