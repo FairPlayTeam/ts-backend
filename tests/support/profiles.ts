@@ -5,7 +5,6 @@ import {
 } from '../../src/services/profiles/profiles.messages.js';
 
 const publicProfile = {
-  id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
   username: 'fairplay_user',
   displayName: 'FairPlay User',
   bio: 'Sharing project updates with my subscribers.',
@@ -18,7 +17,6 @@ const publicProfile = {
 };
 
 const followingProfile = {
-  id: '22222222-2222-4222-8222-222222222222',
   username: 'followed_creator',
   displayName: 'Followed Creator',
   avatarUrl: '/profiles/followed_creator/avatar',
@@ -31,6 +29,7 @@ export const createStubProfilesService = (): ProfilesPorts => ({
     mimeType: 'image/webp',
   }),
   getPublicProfile: async () => ({
+    profileUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
     profile: publicProfile,
   }),
   followPublicProfile: async () => ({

@@ -12,7 +12,7 @@ import {
   type ExternalResourceReconciliationHandler,
 } from '../externalResources.js';
 import { buildVideoArtifactManifest, type VideoArtifactManifest } from './videoObjectKeys.js';
-import { toVideoRenditionQuality } from './videoHls.js';
+import { createVideoHlsGenerationToken, toVideoRenditionQuality } from './videoHls.js';
 import {
   probeVideo,
   isTerminalVideoTranscodeError,
@@ -83,6 +83,7 @@ export type ClaimedVideoTranscodeJob = {
 
 type ReservedArtifactGeneration = {
   id: string;
+  publicToken: string;
   sourceUploadSessionId: string;
   userId: string;
   bucket: string;
@@ -335,7 +336,8 @@ const reserveArtifactGeneration = async (
   source: Awaited<ReturnType<typeof findCompletedSource>>,
 ): Promise<ReservedArtifactGeneration> => {
   const generationId = deps.generationIdGenerator?.generate() ?? randomUUID();
-  const manifest = buildVideoArtifactManifest(source.userId, job.videoId, generationId, []);
+  const generationPublicToken = createVideoHlsGenerationToken();
+  const manifest = buildVideoArtifactManifest(generationPublicToken, []);
   const now = deps.clock.now();
 
   await runSerializableTransaction(deps.prisma, async (tx) => {
@@ -369,6 +371,7 @@ const reserveArtifactGeneration = async (
     await tx.videoArtifactGeneration.create({
       data: {
         id: generationId,
+        publicToken: generationPublicToken,
         videoId: job.videoId,
         sourceUploadSessionId: source.id,
         transcodeJobId: job.id,
@@ -416,6 +419,7 @@ const reserveArtifactGeneration = async (
 
   return {
     id: generationId,
+    publicToken: generationPublicToken,
     sourceUploadSessionId: source.id,
     userId: source.userId,
     bucket: deps.objectStorage.bucket,
@@ -1020,12 +1024,7 @@ const processClaimedJob = async (
       signal: controller.signal,
     });
     const profiles = selectVideoTranscodeProfiles(probe);
-    const manifest = buildVideoArtifactManifest(
-      generation.userId,
-      job.videoId,
-      generation.id,
-      profiles,
-    );
+    const manifest = buildVideoArtifactManifest(generation.publicToken, profiles);
     const artifacts = await transcodeVideoArtifacts({
       ...(deps.binaries?.ffmpegPath ? { ffmpegPath: deps.binaries.ffmpegPath } : {}),
       inputPath,

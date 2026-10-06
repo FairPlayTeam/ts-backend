@@ -6,6 +6,7 @@ import {
   parseMailerConfig,
   parseIsProduction,
   parseJsonBodyLimitBytes,
+  parseFollowingCursorEncryptionKey,
   parseProfileMediaMaxUploadBytes,
   parseOptionalRedisUrl,
   parseOptionalObjectStorageConfig,
@@ -84,6 +85,10 @@ const config = {
   videoUpload,
   videoTranscode,
   authCodePepper: parseAuthCodePepper(process.env.AUTH_CODE_PEPPER, isProduction),
+  followingCursorEncryptionKey: parseFollowingCursorEncryptionKey(
+    process.env.FOLLOWING_CURSOR_ENCRYPTION_KEY,
+    isProduction,
+  ),
   rateLimitKeySecret: parseRateLimitKeySecret(process.env.RATE_LIMIT_KEY_SECRET, isProduction),
   sessionCleanupIntervalMs: parseSessionCleanupIntervalMs(
     process.env.SESSION_CLEANUP_INTERVAL_MINUTES,

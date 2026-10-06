@@ -165,7 +165,7 @@ describe('external resource reconciliation', () => {
     const deleted: string[][] = [];
     let listCalls = 0;
     const target = createTarget({
-      selector: 'users/video/generations/generation-id/',
+      selector: `artifacts/${'a'.repeat(64)}/`,
       selectorKind: 'prefix',
       role: 'hls_artifacts',
       expectedSizeBytes: null,

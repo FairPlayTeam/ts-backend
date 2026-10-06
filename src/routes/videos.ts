@@ -158,8 +158,8 @@ export const createRouter = ({
   );
   router.get('/:publicId/thumbnail', getThumbnail);
   router.get('/:publicId/hls/master.m3u8', getHlsMaster);
-  router.get('/:publicId/hls/:generationId/:quality/index.m3u8', getHlsRendition);
-  router.get('/:publicId/hls/:generationId/:quality/segments/:segment', getHlsSegment);
+  router.get('/:publicId/hls/:generationToken/:quality/index.m3u8', getHlsRendition);
+  router.get('/:publicId/hls/:generationToken/:quality/segments/:segment', getHlsSegment);
   router.post(
     '/:videoId/upload/multipart/init',
     ...protectedValidatedRoute(initVideoMultipartUploadSchema, initMultipartUpload),

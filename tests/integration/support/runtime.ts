@@ -33,6 +33,7 @@ import {
   VIDEO_EXTERNAL_RESOURCE_ROLES,
 } from '../../../src/services/externalResources.js';
 import { createProfilesService } from '../../../src/services/profiles.service.js';
+import { createFollowingProfilesCursorCodec } from '../../../src/services/profiles/followingProfilesCursor.js';
 import { createUserMediaProcessor } from '../../../src/services/userMedia/userMedia.processor.js';
 import { createVideosService } from '../../../src/services/videos.service.js';
 import { createVideoPublicId } from '../../../src/services/videos/videoPublicId.js';
@@ -236,6 +237,9 @@ export const createIntegrationProfilesService = (
   createProfilesService({
     prisma,
     objectStorage,
+    followingProfilesCursorCodec: createFollowingProfilesCursorCodec(
+      Buffer.from('22'.repeat(32), 'hex'),
+    ),
     maxProxyBytes: {
       avatar: PROFILE_MEDIA_MAX_UPLOAD_BYTES,
       banner: PROFILE_MEDIA_MAX_UPLOAD_BYTES,

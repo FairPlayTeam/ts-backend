@@ -8,6 +8,7 @@ export type PlayableVideo = {
   publicId: string;
   createdAt: Date;
   generationId: string;
+  generationToken: string;
   publishedAt: Date;
   sourceUploadSessionId: string;
   transcodeJobId: string;
@@ -76,6 +77,7 @@ export const createPlayableVideo = async (
   return {
     ...video,
     generationId: generation.generationId,
+    generationToken: generation.generationToken,
     publishedAt,
     sourceUploadSessionId: source.uploadSession.id,
     transcodeJobId: job.id,

@@ -167,7 +167,7 @@ describe('video deletion integration', () => {
       visibility: 'public',
     });
     const profile = hlsProfileForQuality('480p');
-    const manifest = buildVideoArtifactManifest(owner.userId, video.id, video.generationId, [
+    const manifest = buildVideoArtifactManifest(video.generationToken, [
       {
         quality: '480p',
         width: profile.width,

@@ -362,6 +362,13 @@ const PRODUCTION_AUTH_CODE_PEPPER_PLACEHOLDERS = new Set([
   'change-me-auth-code-pepper-32-characters',
   'local-compose-auth-code-pepper-4f9e1a7b2c8d0e6f',
 ]);
+const DEV_FOLLOWING_CURSOR_ENCRYPTION_KEY =
+  '646576656c6f706d656e742d666f6c6c6f77696e672d637572736f722d6b6579';
+const PRODUCTION_FOLLOWING_CURSOR_ENCRYPTION_KEY_PLACEHOLDERS = new Set([
+  DEV_FOLLOWING_CURSOR_ENCRYPTION_KEY,
+  '0000000000000000000000000000000000000000000000000000000000000000',
+  '78c1c8d89b9982db066232c742118a9dd8263a8f0671f840a88f45c595c45d8f',
+]);
 
 const parseSecret = ({
   rawValue,
@@ -419,6 +426,34 @@ export const parseAuthCodePepper = (rawValue: string | undefined, isProduction: 
     developmentFallback: DEV_AUTH_CODE_PEPPER,
     productionPlaceholders: PRODUCTION_AUTH_CODE_PEPPER_PLACEHOLDERS,
   });
+
+export const parseFollowingCursorEncryptionKey = (
+  rawValue: string | undefined,
+  isProduction: boolean,
+): Buffer => {
+  const value = rawValue?.trim() || DEV_FOLLOWING_CURSOR_ENCRYPTION_KEY;
+
+  if (!rawValue?.trim() && isProduction) {
+    throw new ServerConfigurationError('FOLLOWING_CURSOR_ENCRYPTION_KEY is required in production');
+  }
+
+  if (!/^[0-9a-f]{64}$/iu.test(value)) {
+    throw new ServerConfigurationError(
+      'FOLLOWING_CURSOR_ENCRYPTION_KEY must contain exactly 64 hexadecimal characters',
+    );
+  }
+
+  if (
+    isProduction &&
+    PRODUCTION_FOLLOWING_CURSOR_ENCRYPTION_KEY_PLACEHOLDERS.has(value.toLowerCase())
+  ) {
+    throw new ServerConfigurationError(
+      'FOLLOWING_CURSOR_ENCRYPTION_KEY must not use a default placeholder in production',
+    );
+  }
+
+  return Buffer.from(value, 'hex');
+};
 
 const parseObjectStorageRegion = (rawValue: string | undefined): string => {
   const value = rawValue?.trim() || DEFAULT_OBJECT_STORAGE_REGION;

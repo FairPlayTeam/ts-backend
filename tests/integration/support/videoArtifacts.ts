@@ -12,6 +12,7 @@ import {
   videoHlsSegmentObjectKey,
   type VideoObjectKeyQuality,
 } from '../../../src/services/videos/videoObjectKeys.js';
+import { createVideoHlsGenerationToken } from '../../../src/services/videos/videoHls.js';
 import { VIDEO_OBJECT_STORAGE_BUCKET } from './infrastructure.js';
 import type { TestRuntime } from './runtime.js';
 
@@ -81,8 +82,9 @@ export const seedHlsGeneration = async (
   },
 ) => {
   const generationId = randomUUID();
+  const generationToken = createVideoHlsGenerationToken();
   const profile = hlsProfileForQuality(quality);
-  const manifest = buildVideoArtifactManifest(userId, videoId, generationId, [
+  const manifest = buildVideoArtifactManifest(generationToken, [
     {
       quality,
       width: profile.width,
@@ -90,6 +92,15 @@ export const seedHlsGeneration = async (
       videoBitrate: profile.videoBitrate,
     },
   ]);
+  const serializedManifest = JSON.stringify(manifest);
+
+  if (
+    serializedManifest.includes(userId) ||
+    serializedManifest.includes(videoId) ||
+    serializedManifest.includes(generationId)
+  ) {
+    throw new Error('Public artifact keys must not contain internal UUIDs');
+  }
   const rendition = manifest.renditions[0];
 
   if (!rendition) {
@@ -99,6 +110,7 @@ export const seedHlsGeneration = async (
   await runtime.prisma.videoArtifactGeneration.create({
     data: {
       id: generationId,
+      publicToken: generationToken,
       videoId,
       sourceUploadSessionId,
       transcodeJobId,
@@ -168,6 +180,7 @@ export const seedHlsGeneration = async (
 
   return {
     generationId,
+    generationToken,
     manifest,
     quality,
     segmentBody,

@@ -670,39 +670,23 @@
                 {
                   "type": "object",
                   "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
-                    },
                     "followedAt": {
                       "type": "string",
                       "format": "date-time",
                       "example": "2026-01-01T00:00:00.000Z"
                     }
                   },
-                  "required": ["id", "followedAt"]
+                  "required": ["followedAt"]
                 }
               ]
             }
           },
           "total": { "type": "integer", "minimum": 0, "example": 42 },
           "nextCursor": {
-            "type": "object",
+            "type": "string",
             "nullable": true,
-            "properties": {
-              "followedAt": {
-                "type": "string",
-                "format": "date-time",
-                "example": "2026-01-01T00:00:00.000Z"
-              },
-              "id": {
-                "type": "string",
-                "format": "uuid",
-                "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
-              }
-            },
-            "required": ["followedAt", "id"]
+            "maxLength": 512,
+            "description": "Opaque cursor to pass as the cursor query parameter for the next page."
           }
         },
         "required": ["profiles", "total", "nextCursor"]
@@ -721,11 +705,6 @@
               {
                 "type": "object",
                 "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
-                  },
                   "bio": {
                     "type": "string",
                     "nullable": true,
@@ -747,7 +726,6 @@
                   }
                 },
                 "required": [
-                  "id",
                   "bio",
                   "bannerUrl",
                   "followerCount",
@@ -1186,11 +1164,6 @@
               {
                 "type": "object",
                 "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
-                  },
                   "bio": {
                     "type": "string",
                     "nullable": true,
@@ -1212,7 +1185,6 @@
                   }
                 },
                 "required": [
-                  "id",
                   "bio",
                   "bannerUrl",
                   "followerCount",
@@ -1916,11 +1888,6 @@
               {
                 "type": "object",
                 "properties": {
-                  "id": {
-                    "type": "string",
-                    "format": "uuid",
-                    "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
-                  },
                   "bio": {
                     "type": "string",
                     "nullable": true,
@@ -1942,7 +1909,6 @@
                   }
                 },
                 "required": [
-                  "id",
                   "bio",
                   "bannerUrl",
                   "followerCount",
@@ -4279,21 +4245,12 @@
           {
             "schema": {
               "type": "string",
-              "format": "date-time",
-              "example": "2026-01-01T00:00:00.000Z"
+              "maxLength": 512,
+              "description": "Opaque cursor returned by the previous page."
             },
             "required": false,
-            "name": "cursorFollowedAt",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "example": "9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f"
-            },
-            "required": false,
-            "name": "cursorId",
+            "description": "Opaque cursor returned by the previous page.",
+            "name": "cursor",
             "in": "query"
           }
         ],
@@ -5142,7 +5099,7 @@
         }
       }
     },
-    "/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8": {
+    "/videos/{publicId}/hls/{generationToken}/{quality}/index.m3u8": {
       "get": {
         "operationId": "getVideoHlsRenditionPlaylist",
         "summary": "Get an immutable public HLS rendition playlist",
@@ -5162,11 +5119,11 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid",
-              "example": "0d4e55cb-c278-4d74-a192-bf7c10888c7a"
+              "pattern": "^[0-9a-f]{64}$",
+              "example": "7f8a9b0c1d2e3f405162738495a6b7c87f8a9b0c1d2e3f405162738495a6b7c8"
             },
             "required": true,
-            "name": "generationId",
+            "name": "generationToken",
             "in": "path"
           },
           {
@@ -5212,7 +5169,7 @@
         }
       }
     },
-    "/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}": {
+    "/videos/{publicId}/hls/{generationToken}/{quality}/segments/{segment}": {
       "get": {
         "operationId": "getVideoHlsSegment",
         "summary": "Redirect to a signed immutable HLS segment",
@@ -5232,11 +5189,11 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid",
-              "example": "0d4e55cb-c278-4d74-a192-bf7c10888c7a"
+              "pattern": "^[0-9a-f]{64}$",
+              "example": "7f8a9b0c1d2e3f405162738495a6b7c87f8a9b0c1d2e3f405162738495a6b7c8"
             },
             "required": true,
-            "name": "generationId",
+            "name": "generationToken",
             "in": "path"
           },
           {

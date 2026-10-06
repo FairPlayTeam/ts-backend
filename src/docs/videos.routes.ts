@@ -257,7 +257,7 @@ export const routeDocs = [
   },
   {
     method: 'get',
-    path: '/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8',
+    path: '/videos/{publicId}/hls/{generationToken}/{quality}/index.m3u8',
     operationId: 'getVideoHlsRenditionPlaylist',
     summary: 'Get an immutable public HLS rendition playlist',
     tags: ['Videos'],
@@ -272,7 +272,7 @@ export const routeDocs = [
   },
   {
     method: 'get',
-    path: '/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}',
+    path: '/videos/{publicId}/hls/{generationToken}/{quality}/segments/{segment}',
     operationId: 'getVideoHlsSegment',
     summary: 'Redirect to a signed immutable HLS segment',
     tags: ['Videos'],

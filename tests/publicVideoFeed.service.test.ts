@@ -15,8 +15,7 @@ const records = createdAt.map((recordCreatedAt, index) => ({
   title: index === 0 ? 'Me at the zoo' : `Public feed video ${index + 1}`,
   description: 'Internal feed description',
   tags: ['internal-feed-tag'],
-  thumbnailObjectKey:
-    index === 0 ? `owner/video-${index}/generations/generation/thumbnail/poster.webp` : null,
+  thumbnailObjectKey: index === 0 ? `artifacts/${'a'.repeat(64)}/thumbnail/poster.webp` : null,
   ratingSum: 9,
   ratingCount: 2,
   viewCount: 128 - index,

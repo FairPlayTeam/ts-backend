@@ -529,7 +529,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
       const hlsReq = req as HlsRenditionRequest;
       const result = await videosService.getHlsRendition({
         publicId: hlsReq.params.publicId,
-        generationId: hlsReq.params.generationId,
+        generationToken: hlsReq.params.generationToken,
         quality: hlsReq.params.quality,
       });
 
@@ -548,7 +548,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
       const hlsReq = req as HlsSegmentRequest;
       const result = await videosService.getHlsSegment({
         publicId: hlsReq.params.publicId,
-        generationId: hlsReq.params.generationId,
+        generationToken: hlsReq.params.generationToken,
         quality: hlsReq.params.quality,
         segment: hlsReq.params.segment,
       });

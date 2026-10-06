@@ -14,6 +14,7 @@ import { OperationTimeoutError } from '../../src/lib/operationMetrics.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
 import { UPLOAD_AVATAR_SUCCESS_MESSAGE } from '../../src/services/auth/auth.messages.js';
 import {
+  INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
   PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE,
   SELF_FOLLOW_MESSAGE,
 } from '../../src/services/profiles.errors.js';
@@ -234,7 +235,6 @@ describe('profiles integration', () => {
       .expect((response) => {
         expect(response.body.profile).toEqual(
           expect.objectContaining({
-            id: creator.userId,
             username: 'profile_creator',
             followerCount: 0,
             followingCount: 0,
@@ -251,7 +251,6 @@ describe('profiles integration', () => {
           expect.objectContaining({
             message: FOLLOW_PROFILE_SUCCESS_MESSAGE,
             profile: expect.objectContaining({
-              id: creator.userId,
               followerCount: 1,
               followingCount: 0,
             }),
@@ -304,7 +303,6 @@ describe('profiles integration', () => {
         expect(response.body).toEqual({
           profiles: [
             {
-              id: creator.userId,
               username: 'profile_creator',
               displayName: 'profile_creator',
               avatarUrl: null,
@@ -359,6 +357,122 @@ describe('profiles integration', () => {
         total: 0,
         nextCursor: null,
       });
+  });
+
+  test('paginates followed profiles with an opaque cursor that survives boundary deletion', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+    const activeRuntime = runtime;
+
+    const follower = await createVerifiedSession(activeRuntime, {
+      email: 'following-cursor-follower@example.com',
+      username: 'following_cursor_follower',
+    });
+    const creators = await Promise.all(
+      ['alpha', 'bravo', 'charlie', 'delta'].map(async (suffix) => {
+        const username = `following_cursor_${suffix}`;
+
+        return {
+          ...(await createVerifiedSession(activeRuntime, {
+            email: `following-cursor-${suffix}@example.com`,
+            username,
+          })),
+          username,
+        };
+      }),
+    );
+    const followedAt = new Date('2026-08-01T12:00:00.000Z');
+    await activeRuntime.prisma.userFollow.createMany({
+      data: creators.map((creator) => ({
+        followerId: follower.userId,
+        followingId: creator.userId,
+        createdAt: followedAt,
+      })),
+    });
+    const app = await createIntegrationApp(activeRuntime);
+    const firstPage = await request(app)
+      .get('/profiles/me/following')
+      .query({ limit: 2 })
+      .set('Authorization', `Bearer ${follower.sessionKey}`)
+      .expect(200);
+
+    expect(firstPage.body.total).toBe(4);
+    expect(firstPage.body.profiles).toHaveLength(2);
+    for (const profile of firstPage.body.profiles as Array<Record<string, unknown>>) {
+      expect(Object.keys(profile).sort()).toEqual(
+        ['avatarUrl', 'displayName', 'followedAt', 'username'].sort(),
+      );
+      expect(profile.followedAt).toBe(followedAt.toISOString());
+    }
+
+    const cursor = firstPage.body.nextCursor as unknown;
+    expect(cursor).toEqual(expect.any(String));
+    expect(cursor).toMatch(/^[A-Za-z0-9_-]+$/u);
+    for (const creator of creators) {
+      expect(JSON.stringify(firstPage.body)).not.toContain(creator.userId);
+      expect(cursor).not.toContain(creator.userId);
+    }
+
+    if (typeof cursor !== 'string') {
+      throw new Error('Expected the first following page to return a cursor');
+    }
+
+    const tamperedCursor = `${cursor[0] === 'A' ? 'B' : 'A'}${cursor.slice(1)}`;
+    const invalidCursorBodies = await Promise.all(
+      [tamperedCursor, creators[0]?.userId ?? '', ''].map(async (invalidCursor) => {
+        const response = await request(app)
+          .get('/profiles/me/following')
+          .query({ cursor: invalidCursor })
+          .set('Authorization', `Bearer ${follower.sessionKey}`)
+          .expect(400);
+
+        return response.body;
+      }),
+    );
+    for (const body of invalidCursorBodies) {
+      expect(body).toEqual({
+        error: 'BadRequest',
+        message: INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
+      });
+    }
+
+    const boundaryUsername = firstPage.body.profiles[1]?.username as string | undefined;
+    const boundaryCreator = creators.find((creator) => creator.username === boundaryUsername);
+
+    if (!boundaryCreator) {
+      throw new Error('Could not resolve the following cursor boundary');
+    }
+
+    await activeRuntime.prisma.userFollow.delete({
+      where: {
+        followerId_followingId: {
+          followerId: follower.userId,
+          followingId: boundaryCreator.userId,
+        },
+      },
+    });
+
+    const secondPage = await request(app)
+      .get('/profiles/me/following')
+      .query({ cursor, limit: 2 })
+      .set('Authorization', `Bearer ${follower.sessionKey}`)
+      .expect(200);
+
+    expect(secondPage.body).toMatchObject({
+      total: 3,
+      nextCursor: null,
+    });
+    expect(secondPage.body.profiles).toHaveLength(2);
+    const returnedUsernames = [
+      ...firstPage.body.profiles.map((profile: { username: string }) => profile.username),
+      ...secondPage.body.profiles.map((profile: { username: string }) => profile.username),
+    ];
+    expect(new Set(returnedUsernames).size).toBe(4);
+    expect(returnedUsernames.sort()).toEqual(creators.map(({ username }) => username).sort());
+    for (const creator of creators) {
+      expect(JSON.stringify(secondPage.body)).not.toContain(creator.userId);
+    }
   });
 
   test('lists only one creator public catalog with stable pagination and the feed DTO', async () => {

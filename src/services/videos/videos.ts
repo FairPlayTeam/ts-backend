@@ -19,7 +19,7 @@ import {
   type VideoObjectKeyQuality,
 } from './videoObjectKeys.js';
 import {
-  isVideoHlsGenerationId,
+  isVideoHlsGenerationToken,
   parseVideoHlsQuality,
   parseVideoHlsSegmentName,
   rewriteVideoHlsMasterPlaylist,
@@ -1658,25 +1658,25 @@ const assertValidPublicHlsVideoId = (publicId: string): void => {
 const findPublicHlsRendition = async (
   deps: VideosDependencies,
   {
-    generationId,
+    generationToken,
     publicId,
     quality,
   }: {
-    generationId: string;
+    generationToken: string;
     publicId: string;
     quality: VideoObjectKeyQuality;
   },
 ) => {
   assertValidPublicHlsVideoId(publicId);
 
-  if (!isVideoHlsGenerationId(generationId)) {
+  if (!isVideoHlsGenerationToken(generationToken)) {
     throw new VideoNotFoundError();
   }
 
   const persistedQuality = toVideoRenditionQuality(quality);
   const generation = await deps.prisma.videoArtifactGeneration.findFirst({
     where: {
-      id: generationId,
+      publicToken: generationToken,
       state: {
         in: ['active', 'retiring'],
       },
@@ -1693,14 +1693,8 @@ const findPublicHlsRendition = async (
       },
     },
     select: {
-      id: true,
+      publicToken: true,
       bucket: true,
-      video: {
-        select: {
-          id: true,
-          ownerId: true,
-        },
-      },
       renditions: {
         where: {
           quality: persistedQuality,
@@ -1721,19 +1715,14 @@ const findPublicHlsRendition = async (
     throw new VideoNotFoundError();
   }
 
-  const manifest = buildVideoArtifactManifest(
-    generation.video.ownerId,
-    generation.video.id,
-    generation.id,
-    [
-      {
-        quality: toVideoObjectKeyQuality(persistedRendition.quality),
-        width: persistedRendition.width,
-        height: persistedRendition.height,
-        videoBitrate: persistedRendition.bitrate,
-      },
-    ],
-  );
+  const manifest = buildVideoArtifactManifest(generation.publicToken, [
+    {
+      quality: toVideoObjectKeyQuality(persistedRendition.quality),
+      width: persistedRendition.width,
+      height: persistedRendition.height,
+      videoBitrate: persistedRendition.bitrate,
+    },
+  ]);
   const rendition = manifest.renditions[0];
 
   if (!rendition) {
@@ -2163,12 +2152,10 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
         },
       },
       select: {
-        id: true,
-        ownerId: true,
         thumbnailObjectKey: true,
         activeArtifactGeneration: {
           select: {
-            id: true,
+            publicToken: true,
             bucket: true,
             thumbnailObjectKey: true,
           },
@@ -2181,8 +2168,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
       throw new VideoNotFoundError();
     }
 
-    const objectKey = buildVideoArtifactManifest(video.ownerId, video.id, generation.id, [])
-      .thumbnail.objectKey;
+    const objectKey = buildVideoArtifactManifest(generation.publicToken, []).thumbnail.objectKey;
 
     if (video.thumbnailObjectKey !== objectKey || generation.thumbnailObjectKey !== objectKey) {
       throw new VideoNotFoundError();
@@ -2216,11 +2202,9 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
         },
       },
       select: {
-        id: true,
-        ownerId: true,
         activeArtifactGeneration: {
           select: {
-            id: true,
+            publicToken: true,
             bucket: true,
             renditions: {
               select: {
@@ -2246,7 +2230,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
       height: rendition.height,
       videoBitrate: rendition.bitrate,
     }));
-    const manifest = buildVideoArtifactManifest(video.ownerId, video.id, generation.id, profiles);
+    const manifest = buildVideoArtifactManifest(generation.publicToken, profiles);
     const storedPlaylist = await readForProxy(
       deps.objectStorage,
       {
@@ -2263,14 +2247,14 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     return {
       playlist: rewriteVideoHlsMasterPlaylist(storedPlaylist.toString('utf8'), {
         publicId,
-        generationId: generation.id,
+        generationToken: generation.publicToken,
         qualities: profiles.map(({ quality }) => quality),
       }),
     };
   },
 
   async getHlsRendition({
-    generationId,
+    generationToken,
     publicId,
     quality: rawQuality,
   }: GetVideoHlsRenditionInput): Promise<VideoHlsPlaylistResult> {
@@ -2281,7 +2265,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     }
 
     const { bucket, rendition } = await findPublicHlsRendition(deps, {
-      generationId,
+      generationToken,
       publicId,
       quality,
     });
@@ -2301,14 +2285,14 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     return {
       playlist: rewriteVideoHlsRenditionPlaylist(storedPlaylist.toString('utf8'), {
         publicId,
-        generationId,
+        generationToken,
         quality,
       }),
     };
   },
 
   async getHlsSegment({
-    generationId,
+    generationToken,
     publicId,
     quality: rawQuality,
     segment: rawSegment,
@@ -2321,7 +2305,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     }
 
     const { bucket, rendition } = await findPublicHlsRendition(deps, {
-      generationId,
+      generationToken,
       publicId,
       quality,
     });

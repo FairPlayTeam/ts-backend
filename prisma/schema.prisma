@@ -360,6 +360,7 @@ model VideoTranscodeJob {
 
 model VideoArtifactGeneration {
   id                    String                       @id @default(uuid()) @db.Uuid
+  publicToken           String                       @unique @map("public_token") @db.VarChar(64)
   videoId               String                       @map("video_id") @db.Uuid
   sourceUploadSessionId String                       @map("source_upload_session_id") @db.Uuid
   transcodeJobId        String                       @map("transcode_job_id") @db.Uuid

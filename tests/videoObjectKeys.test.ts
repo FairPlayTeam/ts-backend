@@ -9,6 +9,7 @@ import {
 
 const userId = 'user-123';
 const videoId = 'video-456';
+const publicToken = 'a'.repeat(64);
 
 const profiles: VideoArtifactProfile[] = [
   {
@@ -42,15 +43,17 @@ describe('video object keys', () => {
   });
 
   test('builds one immutable artifact manifest for a generation', () => {
-    expect(buildVideoArtifactManifest(userId, videoId, 'generation-789', profiles)).toEqual({
-      hlsPrefix: 'user-123/video-456/generations/generation-789/hls/',
+    const manifest = buildVideoArtifactManifest(publicToken, profiles);
+
+    expect(manifest).toEqual({
+      hlsPrefix: `artifacts/${publicToken}/hls/`,
       master: {
-        objectKey: 'user-123/video-456/generations/generation-789/hls/master.m3u8',
+        objectKey: `artifacts/${publicToken}/hls/master.m3u8`,
         relativePath: 'hls/master.m3u8',
       },
-      thumbnailPrefix: 'user-123/video-456/generations/generation-789/thumbnail/',
+      thumbnailPrefix: `artifacts/${publicToken}/thumbnail/`,
       thumbnail: {
-        objectKey: 'user-123/video-456/generations/generation-789/thumbnail/poster.webp',
+        objectKey: `artifacts/${publicToken}/thumbnail/poster.webp`,
         relativePath: 'thumbnail/poster.webp',
       },
       renditions: [
@@ -59,9 +62,9 @@ describe('video object keys', () => {
           width: 854,
           height: 480,
           videoBitrate: 1_400_000,
-          playlistObjectKey: 'user-123/video-456/generations/generation-789/hls/480p/index.m3u8',
+          playlistObjectKey: `artifacts/${publicToken}/hls/480p/index.m3u8`,
           playlistRelativePath: 'hls/480p/index.m3u8',
-          segmentPrefix: 'user-123/video-456/generations/generation-789/hls/480p/segments/',
+          segmentPrefix: `artifacts/${publicToken}/hls/480p/segments/`,
           segmentRelativeDirectory: 'hls/480p/segments',
         },
         {
@@ -69,17 +72,19 @@ describe('video object keys', () => {
           width: 1280,
           height: 720,
           videoBitrate: 2_800_000,
-          playlistObjectKey: 'user-123/video-456/generations/generation-789/hls/720p/index.m3u8',
+          playlistObjectKey: `artifacts/${publicToken}/hls/720p/index.m3u8`,
           playlistRelativePath: 'hls/720p/index.m3u8',
-          segmentPrefix: 'user-123/video-456/generations/generation-789/hls/720p/segments/',
+          segmentPrefix: `artifacts/${publicToken}/hls/720p/segments/`,
           segmentRelativeDirectory: 'hls/720p/segments',
         },
       ],
     });
+    expect(JSON.stringify(manifest)).not.toContain(userId);
+    expect(JSON.stringify(manifest)).not.toContain(videoId);
   });
 
   test('builds the standard immutable rendition keys for 240p', () => {
-    const manifest = buildVideoArtifactManifest(userId, videoId, 'generation-240', [
+    const manifest = buildVideoArtifactManifest(publicToken, [
       {
         quality: '240p',
         width: 426,
@@ -90,28 +95,27 @@ describe('video object keys', () => {
 
     expect(manifest.renditions[0]).toMatchObject({
       quality: '240p',
-      playlistObjectKey: 'user-123/video-456/generations/generation-240/hls/240p/index.m3u8',
+      playlistObjectKey: `artifacts/${publicToken}/hls/240p/index.m3u8`,
       playlistRelativePath: 'hls/240p/index.m3u8',
-      segmentPrefix: 'user-123/video-456/generations/generation-240/hls/240p/segments/',
+      segmentPrefix: `artifacts/${publicToken}/hls/240p/segments/`,
       segmentRelativeDirectory: 'hls/240p/segments',
     });
   });
 
   test('rejects path separators and empty dynamic key segments', () => {
     expect(() => videoOriginalKey(userId, videoId, 'nested/upload')).toThrow('uploadSessionId');
-    expect(() => buildVideoArtifactManifest(userId, videoId, 'nested\\generation', [])).toThrow(
-      'generationId',
-    );
+    expect(() => buildVideoArtifactManifest('nested\\generation', [])).toThrow('publicToken');
+    expect(() => buildVideoArtifactManifest('A'.repeat(64), [])).toThrow('publicToken');
+    expect(() => buildVideoArtifactManifest('a'.repeat(63), [])).toThrow('publicToken');
     expect(() => videoOriginalKey('', videoId, 'upload')).toThrow('userId');
   });
 
   test('builds segment keys only from a manifest rendition and an exact generated name', () => {
-    const rendition = buildVideoArtifactManifest(userId, videoId, 'generation-789', profiles)
-      .renditions[0];
+    const rendition = buildVideoArtifactManifest(publicToken, profiles).renditions[0];
 
     expect(rendition).toBeDefined();
     expect(videoHlsSegmentObjectKey(rendition!, 'segment-00042.ts')).toBe(
-      'user-123/video-456/generations/generation-789/hls/480p/segments/segment-00042.ts',
+      `artifacts/${publicToken}/hls/480p/segments/segment-00042.ts`,
     );
     expect(() => videoHlsSegmentObjectKey(rendition!, '../segment-00042.ts')).toThrow(
       'segmentName',

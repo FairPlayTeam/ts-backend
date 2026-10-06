@@ -6,6 +6,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjectKeys.js';
+import { createVideoHlsGenerationToken } from '../../src/services/videos/videoHls.js';
 import {
   probeVideo,
   transcodeVideoArtifacts,
@@ -65,19 +66,14 @@ const transcodeWithRealFfmpeg = ({
       maxPixels: VIDEO_TRANSCODE_TEST_CONFIG.maxPixels,
       ...limits,
     },
-    manifest: buildVideoArtifactManifest(
-      'direct-transcode-user',
-      'direct-transcode-video',
-      'direct-transcode-generation',
-      [
-        {
-          quality: '240p',
-          width: 320,
-          height: 240,
-          videoBitrate: 700_000,
-        },
-      ],
-    ),
+    manifest: buildVideoArtifactManifest('a'.repeat(64), [
+      {
+        quality: '240p',
+        width: 320,
+        height: 240,
+        videoBitrate: 700_000,
+      },
+    ]),
     outputDirectory,
     probe: {
       width: 320,
@@ -225,6 +221,7 @@ const readTranscodePublicationSnapshot = (
         select: {
           hlsMasterObjectKey: true,
           id: true,
+          publicToken: true,
           renditions: {
             orderBy: { quality: 'asc' },
             select: {
@@ -265,13 +262,7 @@ const readTranscodePublicationSnapshot = (
 
 const expectNoPublishedOrStoredArtifacts = async (
   runtime: TestRuntime,
-  {
-    userId,
-    videoId,
-  }: {
-    userId: string;
-    videoId: string;
-  },
+  { videoId }: { videoId: string },
 ): Promise<void> => {
   const [video, generations] = await Promise.all([
     runtime.prisma.video.findUniqueOrThrow({
@@ -284,7 +275,7 @@ const expectNoPublishedOrStoredArtifacts = async (
     }),
     runtime.prisma.videoArtifactGeneration.findMany({
       where: { videoId },
-      select: { id: true, state: true },
+      select: { id: true, publicToken: true, state: true },
     }),
   ]);
 
@@ -297,7 +288,7 @@ const expectNoPublishedOrStoredArtifacts = async (
   expect(generations.every(({ state }) => state !== 'active')).toBe(true);
 
   for (const generation of generations) {
-    const manifest = buildVideoArtifactManifest(userId, videoId, generation.id, []);
+    const manifest = buildVideoArtifactManifest(generation.publicToken, []);
     const [hlsObjects, thumbnailObjects] = await Promise.all([
       runtime.videoObjectStorage.listObjects({
         bucket: VIDEO_OBJECT_STORAGE_BUCKET,
@@ -548,6 +539,8 @@ describe('videos transcoding integration', () => {
         renditions: true,
       },
     });
+    expect(activeGeneration.publicToken).toMatch(/^[0-9a-f]{64}$/u);
+    expect(activeGeneration.publicToken).not.toBe(activeGeneration.id);
     expect(activeGeneration.renditions).toEqual([
       expect.objectContaining({
         quality: 'p480',
@@ -610,12 +603,13 @@ describe('videos transcoding integration', () => {
     expect(masterPlaylist).not.toContain('720p/index.m3u8');
 
     const app = await createIntegrationApp(runtime);
-    const renditionPath = `/videos/${created.video.publicId}/hls/${activeGeneration.id}/480p/index.m3u8`;
+    const renditionPath = `/videos/${created.video.publicId}/hls/${activeGeneration.publicToken}/480p/index.m3u8`;
     await request(app)
       .get(`/videos/${created.video.publicId}/hls/master.m3u8`)
       .expect(200)
       .expect((response) => {
         expect(response.text).toContain(renditionPath);
+        expect(response.text).not.toContain(activeGeneration.id);
         expect(response.text).not.toContain('/720p/index.m3u8');
       });
     await request(app)
@@ -779,7 +773,6 @@ describe('videos transcoding integration', () => {
       }),
     ).resolves.toEqual({ attempts: 1, status: 'failed' });
     await expectNoPublishedOrStoredArtifacts(runtime, {
-      userId: owner.userId,
       videoId: created.video.id,
     });
   });
@@ -846,7 +839,6 @@ describe('videos transcoding integration', () => {
       }),
     ).resolves.toEqual({ attempts: 1, status: 'failed' });
     await expectNoPublishedOrStoredArtifacts(runtime, {
-      userId: owner.userId,
       videoId: created.video.id,
     });
   });
@@ -884,22 +876,19 @@ describe('videos transcoding integration', () => {
       },
     });
     const previousGenerationId = randomUUID();
-    const previousManifest = buildVideoArtifactManifest(
-      owner.userId,
-      created.video.id,
-      previousGenerationId,
-      [
-        {
-          quality: '480p',
-          width: 640,
-          height: 480,
-          videoBitrate: 1_400_000,
-        },
-      ],
-    );
+    const previousGenerationToken = createVideoHlsGenerationToken();
+    const previousManifest = buildVideoArtifactManifest(previousGenerationToken, [
+      {
+        quality: '480p',
+        width: 640,
+        height: 480,
+        videoBitrate: 1_400_000,
+      },
+    ]);
     await runtime.prisma.videoArtifactGeneration.create({
       data: {
         id: previousGenerationId,
+        publicToken: previousGenerationToken,
         videoId: created.video.id,
         sourceUploadSessionId: source.uploadSession.id,
         transcodeJobId: job.id,
@@ -1025,12 +1014,7 @@ describe('videos transcoding integration', () => {
         throw new Error('Pending transcode generation was not persisted');
       }
 
-      const pendingManifest = buildVideoArtifactManifest(
-        owner.userId,
-        created.video.id,
-        pendingGeneration.id,
-        [],
-      );
+      const pendingManifest = buildVideoArtifactManifest(pendingGeneration.publicToken, []);
       const pendingCurrentTargets = pendingSnapshot.artifactTargets.filter(
         ({ generation }) => generation === pendingGeneration.id,
       );
@@ -1240,19 +1224,14 @@ describe('videos transcoding integration', () => {
       ),
     ).toBe(true);
 
-    const activeManifest = buildVideoArtifactManifest(
-      owner.userId,
-      created.video.id,
-      activeGeneration.id,
-      [
-        {
-          quality: '480p',
-          width: 640,
-          height: 480,
-          videoBitrate: 1_400_000,
-        },
-      ],
-    );
+    const activeManifest = buildVideoArtifactManifest(activeGeneration.publicToken, [
+      {
+        quality: '480p',
+        width: 640,
+        height: 480,
+        videoBitrate: 1_400_000,
+      },
+    ]);
     const hlsObjects = await runtime.videoObjectStorage.listObjects({
       bucket: VIDEO_OBJECT_STORAGE_BUCKET,
       prefix: activeManifest.hlsPrefix,
@@ -1357,7 +1336,8 @@ describe('videos transcoding integration', () => {
     });
     const abandonedExecutionId = randomUUID();
     const generationId = randomUUID();
-    const manifest = buildVideoArtifactManifest(owner.userId, created.video.id, generationId, [
+    const generationToken = createVideoHlsGenerationToken();
+    const manifest = buildVideoArtifactManifest(generationToken, [
       {
         quality: '480p',
         width: 640,
@@ -1378,6 +1358,7 @@ describe('videos transcoding integration', () => {
     await runtime.prisma.videoArtifactGeneration.create({
       data: {
         id: generationId,
+        publicToken: generationToken,
         videoId: created.video.id,
         sourceUploadSessionId: source.uploadSession.id,
         transcodeJobId: storedJob.id,
@@ -1451,6 +1432,7 @@ describe('videos transcoding integration', () => {
         {
           generation: {
             id: generationId,
+            publicToken: generationToken,
             sourceUploadSessionId: source.uploadSession.id,
             userId: owner.userId,
             bucket: VIDEO_OBJECT_STORAGE_BUCKET,

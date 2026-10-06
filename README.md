@@ -79,6 +79,8 @@ Run the migrator image once per release, then run one or more replicas of the ru
 a reverse proxy or load balancer. Production requires shared PostgreSQL, Redis, and object storage
 instances, SMTP configuration, and a strong `RATE_LIMIT_KEY_SECRET`.
 Use a separate strong `AUTH_CODE_PEPPER` for email verification and password reset code hashing.
+Set the same random 64-hex-character `FOLLOWING_CURSOR_ENCRYPTION_KEY` on every API replica;
+rotating it invalidates followed-profile cursors that clients have not consumed yet.
 For a fully public Bearer-token API, set `CORS_ORIGINS=*`.
 Profile media uses the `user-media` bucket, while video sources and artifacts use `videos`.
 
@@ -231,6 +233,13 @@ thumbnail, completes the job, and moves the previous generation to `retiring` wi
 one-hour-delayed prefix cleanup. A late process from an execution taken over elsewhere therefore
 cannot publish.
 
+## Public profiles and followed profiles
+
+Public profile and followed-profile JSON is field-whitelisted and does not expose PostgreSQL user
+UUIDs. `GET /profiles/me/following` returns a single authenticated opaque cursor rather than its
+internal `(followedAt, followingId)` keyset. Invalid, altered, and obsolete cursors return the same
+generic 400 response.
+
 ## Public HLS playback
 
 `GET /videos` returns the public main feed in reverse creation order. It uses the same
@@ -287,9 +296,12 @@ identities are never exposed. All comment responses use `Cache-Control: no-store
 
 The public master URL is
 `GET /videos/:publicId/hls/master.m3u8`; it resolves the current active generation and needs no
-authentication. Rendition playlists and segments use generation-qualified immutable URLs. The API
-rewrites playlist URI lines, but segment bodies are never proxied: their route returns a temporary
-redirect to a freshly signed object-storage URL.
+authentication. Rendition playlists and segments use generation-qualified immutable URLs whose
+random public generation token is distinct from the internal generation UUID. The API rewrites
+playlist URI lines, but segment bodies are never proxied: their route returns a temporary redirect
+to a freshly signed object-storage URL. HLS and poster object keys use
+`artifacts/<public-generation-token>/`, so those redirects expose no user, video, or generation
+UUID.
 
 `GET /videos/:publicId/thumbnail` uses the same public/unlisted, readiness, and moderation policy
 and returns a temporary signed redirect to the active generation poster. Thumbnail and segment

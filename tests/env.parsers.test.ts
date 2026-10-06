@@ -5,6 +5,7 @@ import {
   assertProductionMailerConfig,
   parseAllowedOrigins,
   parseAuthCodePepper,
+  parseFollowingCursorEncryptionKey,
   parseIsProduction,
   parseJsonBodyLimitBytes,
   parseMailerConfig,
@@ -169,6 +170,28 @@ describe('env parsers', () => {
     );
     expect(() =>
       parseAuthCodePepper('local-compose-auth-code-pepper-4f9e1a7b2c8d0e6f', true),
+    ).toThrow(ServerConfigurationError);
+  });
+
+  test('parses following-profile cursor encryption keys', () => {
+    expect(parseFollowingCursorEncryptionKey(undefined, false)).toHaveLength(32);
+    expect(parseFollowingCursorEncryptionKey('ab'.repeat(32), true).toString('hex')).toBe(
+      'ab'.repeat(32),
+    );
+    expect(() => parseFollowingCursorEncryptionKey(undefined, true)).toThrow(
+      ServerConfigurationError,
+    );
+    expect(() => parseFollowingCursorEncryptionKey('not-hex', false)).toThrow(
+      ServerConfigurationError,
+    );
+    expect(() => parseFollowingCursorEncryptionKey('00'.repeat(32), true)).toThrow(
+      ServerConfigurationError,
+    );
+    expect(() =>
+      parseFollowingCursorEncryptionKey(
+        '78c1c8d89b9982db066232c742118a9dd8263a8f0671f840a88f45c595c45d8f',
+        true,
+      ),
     ).toThrow(ServerConfigurationError);
   });
 

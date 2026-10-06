@@ -277,7 +277,7 @@ export type GetVideoThumbnailInput = {
 
 export type GetVideoHlsRenditionInput = {
   publicId: string;
-  generationId: string;
+  generationToken: string;
   quality: string;
 };
 

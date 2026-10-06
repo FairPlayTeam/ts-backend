@@ -274,10 +274,10 @@ export const createStubVideosService = (): VideosPorts => ({
     url: 'http://localhost:9000/videos/thumbnail/poster.webp?signature=test',
   }),
   getHlsMaster: async ({ publicId }) => ({
-    playlist: `#EXTM3U\n/videos/${publicId}/hls/test-generation/480p/index.m3u8\n`,
+    playlist: `#EXTM3U\n/videos/${publicId}/hls/${'ab'.repeat(32)}/480p/index.m3u8\n`,
   }),
-  getHlsRendition: async ({ generationId, publicId, quality }) => ({
-    playlist: `#EXTM3U\n/videos/${publicId}/hls/${generationId}/${quality}/segments/segment-00000.ts\n`,
+  getHlsRendition: async ({ generationToken, publicId, quality }) => ({
+    playlist: `#EXTM3U\n/videos/${publicId}/hls/${generationToken}/${quality}/segments/segment-00000.ts\n`,
   }),
   getHlsSegment: async () => ({
     url: 'http://localhost:9000/videos/segment-00000.ts?signature=test',

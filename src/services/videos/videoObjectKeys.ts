@@ -1,6 +1,7 @@
 export type VideoObjectKeyQuality = '240p' | '480p' | '720p' | '1080p';
 
 export const VIDEO_HLS_SEGMENT_NAME_PATTERN = /^segment-\d{5}\.ts$/u;
+export const VIDEO_ARTIFACT_TOKEN_PATTERN = /^[0-9a-f]{64}$/;
 
 export type VideoArtifactProfile = {
   quality: VideoObjectKeyQuality;
@@ -70,13 +71,14 @@ export const videoSourceThumbnailKey = (
 };
 
 export const buildVideoArtifactManifest = (
-  userId: string,
-  videoId: string,
-  generationId: string,
+  publicToken: string,
   profiles: readonly VideoArtifactProfile[],
 ): VideoArtifactManifest => {
-  assertObjectKeySegment('generationId', generationId);
-  const rootPrefix = `${videoBasePrefix(userId, videoId)}/generations/${generationId}/`;
+  if (!VIDEO_ARTIFACT_TOKEN_PATTERN.test(publicToken)) {
+    throw new Error('publicToken must be a 64-character lowercase hexadecimal token');
+  }
+
+  const rootPrefix = `artifacts/${publicToken}/`;
   const hlsPrefix = `${rootPrefix}hls/`;
   const thumbnailPrefix = `${rootPrefix}thumbnail/`;
 

@@ -2,6 +2,7 @@ import { z } from '../../../docs/zod.js';
 import { VIDEO_LICENSES } from '../../../services/videos/videoLicenses.js';
 import { VIDEO_HLS_SEGMENT_NAME_PATTERN } from '../../../services/videos/videoObjectKeys.js';
 import { VIDEO_PUBLIC_ID_PATTERN } from '../../../services/videos/videoPublicId.js';
+import { VIDEO_HLS_GENERATION_TOKEN_PATTERN } from '../../../services/videos/videoHls.js';
 import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
 import { publicProfileIdentityResponseSchema } from '../../shared/profile.schemas.js';
 import { publicVideoSearchTextSchema } from '../../shared/search.schemas.js';
@@ -64,8 +65,8 @@ export const videoCommentParamsSchema = publicVideoIdParamsSchema
 
 export const videoHlsRenditionParamsSchema = publicVideoIdParamsSchema
   .extend({
-    generationId: z.string().uuid().openapi({
-      example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+    generationToken: z.string().regex(VIDEO_HLS_GENERATION_TOKEN_PATTERN).openapi({
+      example: '7f8a9b0c1d2e3f405162738495a6b7c87f8a9b0c1d2e3f405162738495a6b7c8',
     }),
     quality: z.enum(['240p', '480p', '720p', '1080p']).openapi({ example: '720p' }),
   })

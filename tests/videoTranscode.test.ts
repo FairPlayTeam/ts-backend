@@ -472,9 +472,7 @@ describe('video transcode profiles', () => {
       hasAudio: true,
     };
     const manifest = buildVideoArtifactManifest(
-      'user-id',
-      'video-id',
-      'generation-id',
+      'a'.repeat(64),
       selectVideoTranscodeProfiles(probe),
     );
     const args = buildVideoFfmpegArguments({
@@ -540,9 +538,7 @@ describe('video transcode profiles', () => {
       hasAudio: false,
     };
     const manifest = buildVideoArtifactManifest(
-      'user-id',
-      'video-id',
-      'generation-id',
+      'a'.repeat(64),
       selectVideoTranscodeProfiles(probe),
     );
     const args = buildVideoFfmpegArguments({
@@ -569,9 +565,7 @@ describe('video transcode profiles', () => {
       hasAudio: false,
     };
     const manifest = buildVideoArtifactManifest(
-      'user-id',
-      'video-id',
-      'generation-id',
+      'a'.repeat(64),
       selectVideoTranscodeProfiles(probe),
     );
     const args = buildVideoFfmpegArguments({

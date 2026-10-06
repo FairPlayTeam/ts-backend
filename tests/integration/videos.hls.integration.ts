@@ -6,6 +6,7 @@ import {
   videoHlsSegmentObjectKey,
   type VideoObjectKeyQuality,
 } from '../../src/services/videos/videoObjectKeys.js';
+import { createVideoHlsGenerationToken } from '../../src/services/videos/videoHls.js';
 import {
   claimNextVideoTranscodeJob,
   publishVideoArtifactGeneration,
@@ -49,8 +50,9 @@ const prepareHlsGenerationForPublication = async (
   },
 ) => {
   const generationId = randomUUID();
+  const generationToken = createVideoHlsGenerationToken();
   const profile = hlsProfileForQuality(quality);
-  const manifest = buildVideoArtifactManifest(userId, videoId, generationId, [
+  const manifest = buildVideoArtifactManifest(generationToken, [
     {
       quality,
       width: profile.width,
@@ -67,6 +69,7 @@ const prepareHlsGenerationForPublication = async (
   await runtime.prisma.videoArtifactGeneration.create({
     data: {
       id: generationId,
+      publicToken: generationToken,
       videoId,
       sourceUploadSessionId,
       transcodeJobId: job.id,
@@ -127,11 +130,13 @@ const prepareHlsGenerationForPublication = async (
   return {
     generation: {
       id: generationId,
+      publicToken: generationToken,
       sourceUploadSessionId,
       userId,
       bucket: VIDEO_OBJECT_STORAGE_BUCKET,
     },
     generationId,
+    generationToken,
     manifest,
     quality,
     segmentName,
@@ -271,8 +276,8 @@ describe('videos HLS integration', () => {
     });
 
     const masterPath = `/videos/${firstVideo.video.publicId}/hls/master.m3u8`;
-    const activeRenditionPath = `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480p/index.m3u8`;
-    const activeSegmentPath = `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480p/segments/${active.segmentName}`;
+    const activeRenditionPath = `/videos/${firstVideo.video.publicId}/hls/${active.generationToken}/480p/index.m3u8`;
+    const activeSegmentPath = `/videos/${firstVideo.video.publicId}/hls/${active.generationToken}/480p/segments/${active.segmentName}`;
     const thumbnailPath = `/videos/${firstVideo.video.publicId}/thumbnail`;
     const masterResponse = await request(app).get(masterPath).expect(200);
 
@@ -282,6 +287,7 @@ describe('videos HLS integration', () => {
       '#EXT-X-STREAM-INF:BANDWIDTH=1680800,RESOLUTION=854x480,CODECS="avc1.4d401f,mp4a.40.2"',
     );
     expect(masterResponse.text).toContain(activeRenditionPath);
+    expect(masterResponse.text).not.toContain(active.generationId);
     expect(masterResponse.text).not.toContain('\n480p/index.m3u8');
 
     const renditionResponse = await request(app).get(activeRenditionPath).expect(200);
@@ -297,6 +303,12 @@ describe('videos HLS integration', () => {
     expect(segmentRedirect.headers['cache-control']).toBe('no-store');
     expect(signedSegmentUrl).toBeDefined();
     expect(new URL(signedSegmentUrl ?? '').origin).toBe(runtime.objectStorageConfig.publicUrl);
+    const signedSegmentPath = decodeURIComponent(new URL(signedSegmentUrl ?? '').pathname);
+
+    expect(signedSegmentPath).toContain(`/artifacts/${active.generationToken}/`);
+    expect(signedSegmentPath).not.toContain(owner.userId);
+    expect(signedSegmentPath).not.toContain(firstVideo.video.id);
+    expect(signedSegmentPath).not.toContain(active.generationId);
     const segmentResponse = await fetch(signedSegmentUrl ?? '');
     expect(segmentResponse.status).toBe(200);
     expect(Buffer.from(await segmentResponse.arrayBuffer())).toEqual(active.segmentBody);
@@ -305,6 +317,12 @@ describe('videos HLS integration', () => {
 
     expect(thumbnailRedirect.headers['cache-control']).toBe('no-store');
     expect(signedThumbnailUrl).toBeDefined();
+    const signedThumbnailPath = decodeURIComponent(new URL(signedThumbnailUrl ?? '').pathname);
+
+    expect(signedThumbnailPath).toContain(`/artifacts/${active.generationToken}/`);
+    expect(signedThumbnailPath).not.toContain(owner.userId);
+    expect(signedThumbnailPath).not.toContain(firstVideo.video.id);
+    expect(signedThumbnailPath).not.toContain(active.generationId);
     const thumbnailResponse = await fetch(signedThumbnailUrl ?? '');
     expect(thumbnailResponse.status).toBe(200);
     expect(Buffer.from(await thumbnailResponse.arrayBuffer())).toEqual(
@@ -317,19 +335,23 @@ describe('videos HLS integration', () => {
     };
     const unavailableResponses = await Promise.all([
       request(app).get(
-        `/videos/${firstVideo.video.publicId}/hls/${otherVideoGeneration.generationId}/720p/index.m3u8`,
+        `/videos/${firstVideo.video.publicId}/hls/${otherVideoGeneration.generationToken}/720p/index.m3u8`,
       ),
       request(app).get(
-        `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/720p/index.m3u8`,
+        `/videos/${firstVideo.video.publicId}/hls/${active.generationToken}/720p/index.m3u8`,
       ),
       request(app).get(
-        `/videos/${firstVideo.video.publicId}/hls/${writing.generationId}/480p/index.m3u8`,
+        `/videos/${firstVideo.video.publicId}/hls/${writing.generationToken}/480p/index.m3u8`,
       ),
       request(app).get(
-        `/videos/${firstVideo.video.publicId}/hls/${retired.generationId}/480p/index.m3u8`,
+        `/videos/${firstVideo.video.publicId}/hls/${retired.generationToken}/480p/index.m3u8`,
       ),
       request(app).get(
-        `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480p/segments/segment-99999.ts`,
+        `/videos/${firstVideo.video.publicId}/hls/${active.generationToken}/480p/segments/segment-99999.ts`,
+      ),
+      // The internal generation PK must no longer be accepted as a public playback token.
+      request(app).get(
+        `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480p/index.m3u8`,
       ),
     ]);
 
@@ -338,7 +360,7 @@ describe('videos HLS integration', () => {
       expect(response.body).toEqual(notFoundBody);
     }
 
-    const retiringRenditionPath = `/videos/${firstVideo.video.publicId}/hls/${retiring.generationId}/480p/index.m3u8`;
+    const retiringRenditionPath = `/videos/${firstVideo.video.publicId}/hls/${retiring.generationToken}/480p/index.m3u8`;
     await request(app).get(retiringRenditionPath).expect(200).expect('Cache-Control', 'no-cache');
 
     await runtime.prisma.user.update({
@@ -375,18 +397,19 @@ describe('videos HLS integration', () => {
       data: { processingStatus: 'ready' },
     });
     const invalidPaths = [
-      `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480P/index.m3u8`,
-      `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/${encodeURIComponent('../480p')}/index.m3u8`,
-      `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/${encodeURIComponent('/480p')}/index.m3u8`,
-      `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480p/segments/segment-0000.ts`,
-      `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480p/segments/${encodeURIComponent('../segment-00000.ts')}`,
-      `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480p/segments/${encodeURIComponent('/segment-00000.ts')}`,
-      `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480p/segments/${encodeURIComponent('C:\\segment-00000.ts')}`,
+      `/videos/${firstVideo.video.publicId}/hls/${active.generationToken}/480P/index.m3u8`,
+      `/videos/${firstVideo.video.publicId}/hls/${active.generationToken}/${encodeURIComponent('../480p')}/index.m3u8`,
+      `/videos/${firstVideo.video.publicId}/hls/${active.generationToken}/${encodeURIComponent('/480p')}/index.m3u8`,
+      `/videos/${firstVideo.video.publicId}/hls/${active.generationToken}/480p/segments/segment-0000.ts`,
+      `/videos/${firstVideo.video.publicId}/hls/${active.generationToken}/480p/segments/${encodeURIComponent('../segment-00000.ts')}`,
+      `/videos/${firstVideo.video.publicId}/hls/${active.generationToken}/480p/segments/${encodeURIComponent('/segment-00000.ts')}`,
+      `/videos/${firstVideo.video.publicId}/hls/${active.generationToken}/480p/segments/${encodeURIComponent('C:\\segment-00000.ts')}`,
     ];
 
     for (const path of invalidPaths) {
       const response = await request(app).get(path);
       expect(response.status).toBe(404);
+      expect(response.body).toEqual(notFoundBody);
     }
 
     await runtime.prisma.video.update({
@@ -461,8 +484,8 @@ describe('videos HLS integration', () => {
     });
 
     const masterPath = `/videos/${created.video.publicId}/hls/master.m3u8`;
-    const oldRenditionPath = `/videos/${created.video.publicId}/hls/${generationA.generationId}/480p/index.m3u8`;
-    const oldSegmentPath = `/videos/${created.video.publicId}/hls/${generationA.generationId}/480p/segments/${generationA.segmentName}`;
+    const oldRenditionPath = `/videos/${created.video.publicId}/hls/${generationA.generationToken}/480p/index.m3u8`;
+    const oldSegmentPath = `/videos/${created.video.publicId}/hls/${generationA.generationToken}/480p/segments/${generationA.segmentName}`;
     const masterA = await request(app).get(masterPath).expect(200);
 
     expect(masterA.text).toContain(oldRenditionPath);
@@ -570,7 +593,7 @@ describe('videos HLS integration', () => {
       .expect(200)
       .expect((response) => {
         expect(response.text).toContain(
-          `/videos/${created.video.publicId}/hls/${generationB.generationId}/480p/index.m3u8`,
+          `/videos/${created.video.publicId}/hls/${generationB.generationToken}/480p/index.m3u8`,
         );
       });
   });
@@ -648,8 +671,8 @@ describe('videos HLS integration', () => {
     ]);
 
     const masterPath = `/videos/${created.video.publicId}/hls/master.m3u8`;
-    const oldRenditionPath = `/videos/${created.video.publicId}/hls/${generationA.generationId}/480p/index.m3u8`;
-    const oldSegmentPath = `/videos/${created.video.publicId}/hls/${generationA.generationId}/480p/segments/${generationA.segmentName}`;
+    const oldRenditionPath = `/videos/${created.video.publicId}/hls/${generationA.generationToken}/480p/index.m3u8`;
+    const oldSegmentPath = `/videos/${created.video.publicId}/hls/${generationA.generationToken}/480p/segments/${generationA.segmentName}`;
     await request(app).get(masterPath).expect(200);
     await request(app).get(oldRenditionPath).expect(200);
     await request(app).get(oldSegmentPath).redirects(0).expect(307);
@@ -728,8 +751,8 @@ describe('videos HLS integration', () => {
       },
     );
 
-    const newRenditionPath = `/videos/${created.video.publicId}/hls/${generationB.generationId}/480p/index.m3u8`;
-    const newSegmentPath = `/videos/${created.video.publicId}/hls/${generationB.generationId}/480p/segments/${generationB.segmentName}`;
+    const newRenditionPath = `/videos/${created.video.publicId}/hls/${generationB.generationToken}/480p/index.m3u8`;
+    const newSegmentPath = `/videos/${created.video.publicId}/hls/${generationB.generationToken}/480p/segments/${generationB.segmentName}`;
     await request(app)
       .get(masterPath)
       .expect(200)

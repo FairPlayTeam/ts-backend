@@ -3,7 +3,7 @@ import { createVideosService } from '../src/services/videos.service.js';
 
 const createdAt = new Date('2026-01-01T00:00:00.000Z');
 const updatedAt = new Date('2026-01-02T00:00:00.000Z');
-const rawThumbnailObjectKey = 'owner-id/video-id/generations/generation-id/thumbnail/poster.webp';
+const rawThumbnailObjectKey = `artifacts/${'a'.repeat(64)}/thumbnail/poster.webp`;
 const rawVideo = {
   id: '22222222-2222-4222-8222-222222222222',
   publicId: 'AbCdEf123_',

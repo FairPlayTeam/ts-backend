@@ -2,11 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../src/app.js';
-import { FOLLOWING_PROFILES_CURSOR_PAIR_MESSAGE } from '../src/controllers/profiles.schemas.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
 import { ObjectStorageUnavailableError } from '../src/lib/objectStorage.js';
 import {
+  INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
+  InvalidFollowingProfilesCursorError,
   PublicProfileMediaNotFoundError,
   PublicProfileNotFoundError,
 } from '../src/services/profiles.errors.js';
@@ -36,8 +37,7 @@ let receivedFollowProfileRequest: FollowPublicProfileInput | undefined;
 let receivedFollowingProfilesRequest: ListFollowingProfilesInput | undefined;
 let receivedUnfollowProfileRequest: FollowPublicProfileInput | undefined;
 let receivedSessionKey: string | undefined;
-const cursorFollowedAt = '2026-01-02T00:00:00.000Z';
-const cursorId = '22222222-2222-4222-8222-222222222222';
+const followingCursor = 'AQIDBAUGBwgJCgsMDQ4PEA';
 
 describe('profiles routes', () => {
   beforeAll(async () => {
@@ -100,6 +100,10 @@ describe('profiles routes', () => {
           listFollowingProfiles: async (input) => {
             receivedFollowingProfilesRequest = input;
 
+            if (input.cursor !== undefined && input.cursor !== followingCursor) {
+              throw new InvalidFollowingProfilesCursorError();
+            }
+
             return profilesService.listFollowingProfiles(input);
           },
           unfollowPublicProfile: async (input) => {
@@ -157,9 +161,10 @@ describe('profiles routes', () => {
     expect(observedProfileRequest).toEqual({
       username: 'fairplay_user',
     });
-    expect(await response.json()).toEqual({
+    const body = await response.json();
+    expect(JSON.stringify(body)).not.toContain('9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f');
+    expect(body).toEqual({
       profile: {
-        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
         username: 'fairplay_user',
         displayName: 'FairPlay User',
         bio: 'Sharing project updates with my subscribers.',
@@ -326,8 +331,7 @@ describe('profiles routes', () => {
     receivedProfileRequest = undefined;
     receivedSessionKey = undefined;
     const query = new URLSearchParams({
-      cursorFollowedAt,
-      cursorId,
+      cursor: followingCursor,
       limit: '10',
     });
 
@@ -347,15 +351,11 @@ describe('profiles routes', () => {
     expect(observedFollowingProfilesRequest).toEqual({
       userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
       limit: 10,
-      cursor: {
-        followedAt: new Date(cursorFollowedAt),
-        id: cursorId,
-      },
+      cursor: followingCursor,
     });
     expect(await response.json()).toEqual({
       profiles: [
         {
-          id: '22222222-2222-4222-8222-222222222222',
           username: 'followed_creator',
           displayName: 'Followed Creator',
           avatarUrl: '/profiles/followed_creator/avatar',
@@ -391,7 +391,6 @@ describe('profiles routes', () => {
     expect(await response.json()).toEqual({
       message: FOLLOW_PROFILE_SUCCESS_MESSAGE,
       profile: {
-        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
         username: 'fairplay_user',
         displayName: 'FairPlay User',
         bio: 'Sharing project updates with my subscribers.',
@@ -428,7 +427,6 @@ describe('profiles routes', () => {
     expect(await response.json()).toEqual({
       message: UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
       profile: {
-        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
         username: 'fairplay_user',
         displayName: 'FairPlay User',
         bio: 'Sharing project updates with my subscribers.',
@@ -509,29 +507,27 @@ describe('profiles routes', () => {
     });
   });
 
-  test('rejects malformed followed profiles pagination cursors', async () => {
-    receivedFollowingProfilesRequest = undefined;
-
-    const response = await fetch(
-      `${baseUrl}/profiles/me/following?cursorFollowedAt=${encodeURIComponent(cursorFollowedAt)}`,
-      {
+  test('returns one public error for malformed followed profiles pagination cursors', async () => {
+    for (const cursor of ['not=base64url', '', 'A']) {
+      receivedFollowingProfilesRequest = undefined;
+      const query = new URLSearchParams({ cursor });
+      const response = await fetch(`${baseUrl}/profiles/me/following?${query.toString()}`, {
         headers: {
           Authorization: 'Bearer route-session-key',
         },
-      },
-    );
+      });
 
-    expect(response.status).toBe(400);
-    expect(receivedFollowingProfilesRequest).toBeUndefined();
-    expect(await response.json()).toEqual({
-      error: 'ValidationError',
-      message: REQUEST_VALIDATION_FAILED_MESSAGE,
-      details: [
-        {
-          field: 'query',
-          message: FOLLOWING_PROFILES_CURSOR_PAIR_MESSAGE,
-        },
-      ],
-    });
+      expect(response.status).toBe(400);
+      const observedFollowingProfilesRequest = receivedFollowingProfilesRequest as
+        ListFollowingProfilesInput | undefined;
+      expect(observedFollowingProfilesRequest).toEqual({
+        userId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+        cursor,
+      });
+      expect(await response.json()).toEqual({
+        error: 'BadRequest',
+        message: INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
+      });
+    }
   });
 });

@@ -74,7 +74,7 @@ const videoId = '0d4e55cb-c278-4d74-a192-bf7c10888c7a';
 const uploadSessionId = '22222222-2222-4222-8222-222222222222';
 const authenticatedUserId = '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f';
 const publicId = 'AbCdEf123_';
-const generationId = '33333333-3333-4333-8333-333333333333';
+const generationToken = 'ab'.repeat(32);
 
 describe('videos routes multipart uploads', () => {
   beforeAll(async () => {
@@ -206,7 +206,7 @@ describe('videos routes multipart uploads', () => {
             receivedHlsMasterRequest = input;
 
             return {
-              playlist: `#EXTM3U\n/videos/${input.publicId}/hls/${generationId}/480p/index.m3u8\n`,
+              playlist: `#EXTM3U\n/videos/${input.publicId}/hls/${generationToken}/480p/index.m3u8\n`,
             };
           },
           getHlsRendition: async (input) => {
@@ -1176,10 +1176,10 @@ describe('videos routes multipart uploads', () => {
     expect(masterResponse.headers.get('content-type')).toContain('application/vnd.apple.mpegurl');
     const observedMasterRequest = receivedHlsMasterRequest as GetVideoHlsMasterInput | undefined;
     expect(observedMasterRequest).toEqual({ publicId });
-    expect(await masterResponse.text()).toContain(`/${generationId}/480p/index.m3u8`);
+    expect(await masterResponse.text()).toContain(`/${generationToken}/480p/index.m3u8`);
 
     const renditionResponse = await fetch(
-      `${baseUrl}/videos/${publicId}/hls/${generationId}/480p/index.m3u8`,
+      `${baseUrl}/videos/${publicId}/hls/${generationToken}/480p/index.m3u8`,
     );
 
     expect(renditionResponse.status).toBe(200);
@@ -1192,12 +1192,12 @@ describe('videos routes multipart uploads', () => {
       GetVideoHlsRenditionInput | undefined;
     expect(observedRenditionRequest).toEqual({
       publicId,
-      generationId,
+      generationToken,
       quality: '480p',
     });
 
     const segmentResponse = await fetch(
-      `${baseUrl}/videos/${publicId}/hls/${generationId}/480p/segments/segment-00000.ts`,
+      `${baseUrl}/videos/${publicId}/hls/${generationToken}/480p/segments/segment-00000.ts`,
       {
         redirect: 'manual',
       },
@@ -1212,7 +1212,7 @@ describe('videos routes multipart uploads', () => {
     const observedSegmentRequest = receivedHlsSegmentRequest as GetVideoHlsSegmentInput | undefined;
     expect(observedSegmentRequest).toEqual({
       publicId,
-      generationId,
+      generationToken,
       quality: '480p',
       segment: 'segment-00000.ts',
     });

@@ -1,5 +1,10 @@
 import type { VideoRenditionQuality } from '@prisma/client';
-import { VIDEO_HLS_SEGMENT_NAME_PATTERN, type VideoObjectKeyQuality } from './videoObjectKeys.js';
+import { generateToken } from '../../lib/crypto.js';
+import {
+  VIDEO_ARTIFACT_TOKEN_PATTERN,
+  VIDEO_HLS_SEGMENT_NAME_PATTERN,
+  type VideoObjectKeyQuality,
+} from './videoObjectKeys.js';
 
 export const VIDEO_HLS_PLAYLIST_MAX_BYTES = 512 * 1024;
 export const VIDEO_HLS_MASTER_CACHE_CONTROL = 'no-cache';
@@ -9,8 +14,7 @@ export const VIDEO_THUMBNAIL_REDIRECT_CACHE_CONTROL = 'no-store';
 export const VIDEO_HLS_CONTENT_TYPE = 'application/vnd.apple.mpegurl';
 
 const VIDEO_HLS_QUALITY_PATTERN = /^(?:240p|480p|720p|1080p)$/u;
-const VIDEO_HLS_GENERATION_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+export const VIDEO_HLS_GENERATION_TOKEN_PATTERN = VIDEO_ARTIFACT_TOKEN_PATTERN;
 const MASTER_RENDITION_URI_PATTERN = /^(240p|480p|720p|1080p)\/index\.m3u8$/u;
 const RENDITION_SEGMENT_URI_PATTERN = /^segments\/([^/]+)$/u;
 
@@ -20,8 +24,10 @@ export const parseVideoHlsQuality = (value: string): VideoObjectKeyQuality | nul
 export const parseVideoHlsSegmentName = (value: string): string | null =>
   VIDEO_HLS_SEGMENT_NAME_PATTERN.test(value) ? value : null;
 
-export const isVideoHlsGenerationId = (value: string): boolean =>
-  VIDEO_HLS_GENERATION_ID_PATTERN.test(value);
+export const createVideoHlsGenerationToken = (): string => generateToken();
+
+export const isVideoHlsGenerationToken = (value: string): boolean =>
+  VIDEO_HLS_GENERATION_TOKEN_PATTERN.test(value);
 
 export const toVideoObjectKeyQuality = (quality: VideoRenditionQuality): VideoObjectKeyQuality => {
   switch (quality) {
@@ -66,27 +72,27 @@ const replacePlaylistUriLines = (playlist: string, replaceUri: (uri: string) => 
 };
 
 const publicHlsGenerationPath = ({
-  generationId,
+  generationToken,
   publicId,
 }: {
-  generationId: string;
+  generationToken: string;
   publicId: string;
-}): string => `/videos/${encodeURIComponent(publicId)}/hls/${encodeURIComponent(generationId)}`;
+}): string => `/videos/${encodeURIComponent(publicId)}/hls/${encodeURIComponent(generationToken)}`;
 
 export const rewriteVideoHlsMasterPlaylist = (
   playlist: string,
   {
-    generationId,
+    generationToken,
     publicId,
     qualities,
   }: {
-    generationId: string;
+    generationToken: string;
     publicId: string;
     qualities: readonly VideoObjectKeyQuality[];
   },
 ): string => {
   const persistedQualities = new Set(qualities);
-  const generationPath = publicHlsGenerationPath({ generationId, publicId });
+  const generationPath = publicHlsGenerationPath({ generationToken, publicId });
 
   return replacePlaylistUriLines(playlist, (uri) => {
     const match = MASTER_RENDITION_URI_PATTERN.exec(uri);
@@ -103,16 +109,16 @@ export const rewriteVideoHlsMasterPlaylist = (
 export const rewriteVideoHlsRenditionPlaylist = (
   playlist: string,
   {
-    generationId,
+    generationToken,
     publicId,
     quality,
   }: {
-    generationId: string;
+    generationToken: string;
     publicId: string;
     quality: VideoObjectKeyQuality;
   },
 ): string => {
-  const renditionPath = `${publicHlsGenerationPath({ generationId, publicId })}/${quality}`;
+  const renditionPath = `${publicHlsGenerationPath({ generationToken, publicId })}/${quality}`;
 
   return replacePlaylistUriLines(playlist, (uri) => {
     const match = RENDITION_SEGMENT_URI_PATTERN.exec(uri);

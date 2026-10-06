@@ -189,8 +189,8 @@ describe('OpenAPI generation', () => {
       '/videos/{publicId}/comments/{commentId}/like',
       '/videos/{publicId}/comments/{rootCommentId}/replies',
       '/videos/{publicId}/hls/master.m3u8',
-      '/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8',
-      '/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}',
+      '/videos/{publicId}/hls/{generationToken}/{quality}/index.m3u8',
+      '/videos/{publicId}/hls/{generationToken}/{quality}/segments/{segment}',
       '/videos/{publicId}/rating',
       '/videos/{publicId}/rating/me',
       '/videos/{publicId}/thumbnail',
@@ -254,6 +254,27 @@ describe('OpenAPI generation', () => {
       type: 'string',
       nullable: true,
     });
+    expect(
+      document.paths['/profiles/me/following']?.get?.parameters?.map(
+        (parameter: { name?: string }) => parameter.name,
+      ),
+    ).toEqual(['limit', 'cursor']);
+    expect(
+      document.paths['/profiles/me/following']?.get?.parameters?.find(
+        (parameter: { name?: string }) => parameter.name === 'cursor',
+      )?.schema,
+    ).toMatchObject({
+      type: 'string',
+      maxLength: 512,
+    });
+    for (const schemaName of [
+      'PublicProfileResponse',
+      'FollowPublicProfileResponse',
+      'UnfollowPublicProfileResponse',
+      'FollowingProfilesResponse',
+    ]) {
+      expect(JSON.stringify(document.components.schemas[schemaName])).not.toContain('"id"');
+    }
     expect(document.components.schemas.PublicVideoSearchResponse.properties.creators).toMatchObject(
       {
         type: 'array',
@@ -357,13 +378,22 @@ describe('OpenAPI generation', () => {
       ],
     ).toBeDefined();
     expect(
-      document.paths['/videos/{publicId}/hls/{generationId}/{quality}/segments/{segment}']?.get
+      document.paths['/videos/{publicId}/hls/{generationToken}/{quality}/segments/{segment}']?.get
         ?.responses?.[307],
     ).toBeDefined();
     expect(
-      document.paths['/videos/{publicId}/hls/{generationId}/{quality}/index.m3u8']?.get?.parameters,
+      document.paths['/videos/{publicId}/hls/{generationToken}/{quality}/index.m3u8']?.get
+        ?.parameters,
     ).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          in: 'path',
+          name: 'generationToken',
+          required: true,
+          schema: expect.objectContaining({
+            pattern: '^[0-9a-f]{64}$',
+          }),
+        }),
         expect.objectContaining({
           in: 'path',
           name: 'quality',
@@ -621,11 +651,7 @@ describe('OpenAPI generation', () => {
           in: 'query',
         }),
         expect.objectContaining({
-          name: 'cursorFollowedAt',
-          in: 'query',
-        }),
-        expect.objectContaining({
-          name: 'cursorId',
+          name: 'cursor',
           in: 'query',
         }),
       ]),

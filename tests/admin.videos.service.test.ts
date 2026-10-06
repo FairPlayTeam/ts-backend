@@ -25,8 +25,7 @@ const records = videoIds.map((id, index) => ({
   processingStatus: 'ready' as const,
   visibility: 'unlisted' as const,
   createdAt: createdAt[index] ?? createdAt[0],
-  thumbnailObjectKey:
-    index === 0 ? 'owner/video/generations/generation/thumbnail/poster.webp' : null,
+  thumbnailObjectKey: index === 0 ? `artifacts/${'a'.repeat(64)}/thumbnail/poster.webp` : null,
   publishedAt: null,
   rejectedAt: null,
   rejectionReason: null,

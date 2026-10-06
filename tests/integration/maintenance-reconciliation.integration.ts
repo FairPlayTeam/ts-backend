@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjectKeys.js';
+import { createVideoHlsGenerationToken } from '../../src/services/videos/videoHls.js';
 import { createObjectStorage, ObjectStorageUnavailableError } from '../../src/lib/objectStorage.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
 import {
@@ -654,10 +655,12 @@ describe('maintenance and reconciliation integration', () => {
       }
 
       const generationId = randomUUID();
-      const manifest = buildVideoArtifactManifest(owner.userId, created.video.id, generationId, []);
+      const generationToken = createVideoHlsGenerationToken();
+      const manifest = buildVideoArtifactManifest(generationToken, []);
       await runtime.prisma.videoArtifactGeneration.create({
         data: {
           id: generationId,
+          publicToken: generationToken,
           videoId: created.video.id,
           sourceUploadSessionId: source.uploadSession.id,
           transcodeJobId: job.id,
@@ -949,11 +952,11 @@ describe('maintenance and reconciliation integration', () => {
       }),
     ]);
     const generation = randomUUID();
-    const generationPrefix = `${owner.userId}/${created.video.id}/generations/${generation}/hls/`;
-    const thumbnailPrefix = `${owner.userId}/${created.video.id}/generations/${generation}/thumbnail/`;
-    const masterObjectKey = `${generationPrefix}master.m3u8`;
-    const segmentObjectKey = `${generationPrefix}480p/segment-000.ts`;
-    const thumbnailObjectKey = `${thumbnailPrefix}poster.webp`;
+    const generationToken = createVideoHlsGenerationToken();
+    const manifest = buildVideoArtifactManifest(generationToken, []);
+    const masterObjectKey = manifest.master.objectKey;
+    const segmentObjectKey = `${manifest.hlsPrefix}480p/segment-000.ts`;
+    const thumbnailObjectKey = manifest.thumbnail.objectKey;
 
     await Promise.all([
       runtime.videoObjectStorage.putObject({
@@ -976,6 +979,7 @@ describe('maintenance and reconciliation integration', () => {
     const artifactGeneration = await runtime.prisma.videoArtifactGeneration.create({
       data: {
         id: generation,
+        publicToken: generationToken,
         videoId: created.video.id,
         sourceUploadSessionId: source.uploadSession.id,
         transcodeJobId: transcodeJob.id,
@@ -1005,7 +1009,7 @@ describe('maintenance and reconciliation integration', () => {
             userId: owner.userId,
             videoId: created.video.id,
             bucket: VIDEO_OBJECT_STORAGE_BUCKET,
-            selector: generationPrefix,
+            selector: manifest.hlsPrefix,
             selectorKind: 'prefix',
             role: 'hls_artifacts',
             generation,
@@ -1018,7 +1022,7 @@ describe('maintenance and reconciliation integration', () => {
             userId: owner.userId,
             videoId: created.video.id,
             bucket: VIDEO_OBJECT_STORAGE_BUCKET,
-            selector: thumbnailPrefix,
+            selector: manifest.thumbnailPrefix,
             selectorKind: 'prefix',
             role: 'thumbnail_prefix',
             generation,
@@ -1116,14 +1120,14 @@ describe('maintenance and reconciliation integration', () => {
       expect(
         runtime.videoObjectStorage.listObjects({
           bucket: VIDEO_OBJECT_STORAGE_BUCKET,
-          prefix: generationPrefix,
+          prefix: manifest.hlsPrefix,
           limit: 1,
         }),
       ).resolves.toEqual({ objects: [], truncated: false }),
       expect(
         runtime.videoObjectStorage.listObjects({
           bucket: VIDEO_OBJECT_STORAGE_BUCKET,
-          prefix: thumbnailPrefix,
+          prefix: manifest.thumbnailPrefix,
           limit: 1,
         }),
       ).resolves.toEqual({ objects: [], truncated: false }),

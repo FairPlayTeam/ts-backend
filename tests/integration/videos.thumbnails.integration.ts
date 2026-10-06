@@ -557,16 +557,11 @@ describe('videos thumbnails integration', () => {
       },
       select: {
         bucket: true,
-        id: true,
+        publicToken: true,
         thumbnailObjectKey: true,
       },
     });
-    const manifest = buildVideoArtifactManifest(
-      owner.userId,
-      created.video.id,
-      activeGeneration.id,
-      [],
-    );
+    const manifest = buildVideoArtifactManifest(activeGeneration.publicToken, []);
 
     expect(activeGeneration.thumbnailObjectKey).toBe(manifest.thumbnail.objectKey);
     await expect(
@@ -1481,15 +1476,11 @@ describe('videos thumbnails integration', () => {
       },
       select: {
         bucket: true,
-        id: true,
+        publicToken: true,
       },
     });
-    const fallbackObjectKey = buildVideoArtifactManifest(
-      owner.userId,
-      created.video.id,
-      activeGeneration.id,
-      [],
-    ).thumbnail.objectKey;
+    const fallbackObjectKey = buildVideoArtifactManifest(activeGeneration.publicToken, []).thumbnail
+      .objectKey;
     const fallbackThumbnail = await readStoredObjectBuffer(
       runtime.videoObjectStorage,
       activeGeneration.bucket,

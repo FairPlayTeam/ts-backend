@@ -403,6 +403,16 @@ missing, or medialess profile and a missing stored object all return the same 40
 route. This client remains separate from video/HLS storage even though both consumers share the
 neutral asset-link primitives.
 
+Public-profile, follow-mutation, and followed-profile responses are serialized through explicit
+field whitelists and never include the PostgreSQL user UUID. The profile service may return that
+UUID separately to the profile-video controller for its internal owner filter, but response mappers
+cannot serialize it. `GET /profiles/me/following` keeps the database keyset
+`(UserFollow.createdAt, UserFollow.followingId)` while exposing it only as a versioned,
+AES-256-GCM-authenticated opaque cursor. Every replica must use the same 32-byte
+`FOLLOWING_CURSOR_ENCRYPTION_KEY`; rotating the key deliberately invalidates cursors already issued.
+Empty, malformed, altered, obsolete, and raw-UUID cursor inputs all converge on the same generic
+400 response.
+
 ## In-process video transcoding
 
 There is no separate transcode worker service or queue runtime. Each backend process may claim
@@ -494,6 +504,11 @@ video is readable while it still exists, its processing status is `ready`, and i
 be `active` or `retiring`. All unavailable, cross-video, cross-generation, and cross-rendition
 cases return the same 404. The master resolves only the current active generation;
 generation-qualified rendition and segment URLs remain usable while that generation is retiring.
+Those public URLs contain a random 256-bit lowercase-hex generation token with a unique database
+constraint, never `VideoArtifactGeneration.id`. The lookup binds the token to the requested video,
+readability scope, generation lifecycle, and rendition. Generated HLS and poster objects live under
+`artifacts/<publicToken>/`; signed redirect URLs therefore contain only that public token and never
+the user, video, or generation UUID. Those UUIDs remain internal relational/lifecycle identifiers.
 
 `GET /videos` and `GET /videos/search` share one concrete public-catalog query path: the
 `public` + `approved` + `ready` scope, `(createdAt, publicId)` cursor, bounded page size,
@@ -519,15 +534,6 @@ discoverability or readability predicates without adding `owner.is_banned` or
 profile lookup by the public-profile visibility scope. This asymmetry is intentional, not an omitted
 owner filter: banning controls account access and public-profile visibility, while every video
 surface remains governed solely by its established video moderation and lifecycle predicates.
-
-Known security backlog — public profile responses predate the current rule against exposing
-internal UUIDs. `GET /profiles/:username`, followed-profile entries, and the current
-`(followedAt, id)` pagination cursor still serialize database account identifiers. The creator
-section of `GET /videos/search` does not repeat that exposure, but the existing profile contract
-must be addressed in a separate, explicitly planned breaking-change chantier: inventory frontend
-consumers, replace response serialization with field whitelists, remove account UUIDs, and design an
-opaque replacement for the followed-profile cursor before updating OpenAPI and generated clients.
-It is intentionally not changed as part of the creator-search extension.
 
 Video title/description search and partial creator username/display-name search currently use
 escaped literal `ILIKE` contains predicates without trigram indexes. Page and creator limits bound
@@ -605,9 +611,9 @@ upload sessions and their parts. A dedicated completeness chantier must add and 
 sections; they are intentionally not folded into the comments/export-memory work.
 
 `GET /videos/:publicId/thumbnail` applies the same readiness and visibility rule, without a stricter
-moderation rule, and requires an active generation. It rebuilds the generation thumbnail key from `buildVideoArtifactManifest`,
-checks the object with HEAD, and returns a non-cacheable temporary redirect to a freshly signed
-object-storage URL; Express never proxies the image bytes.
+moderation rule, and requires an active generation. It rebuilds the opaque-token thumbnail key from
+`buildVideoArtifactManifest`, checks the object with HEAD, and returns a non-cacheable temporary
+redirect to a freshly signed object-storage URL; Express never proxies the image bytes.
 
 Readability is deliberately distinct from discoverability and rating write eligibility. Public
 search continues to require `public` + `approved` + `ready`. Rating reads use the same readability
@@ -776,12 +782,13 @@ change should place an inexpensive coarse admission limiter before body parsing 
 more specific authenticated and route-level limiters afterward.
 
 Playlist reads are capped at 512 KiB. URI lines are rewritten to API routes while all FFmpeg HLS
-tags remain untouched. Every object key is rebuilt from `buildVideoArtifactManifest`; rendition
-existence and generation ownership are checked in PostgreSQL first. Segment names must match the
-generated `segment-NNNNN.ts` shape, the reconstructed object is checked with HEAD, and the API then
-returns a temporary redirect to a fresh signed GET instead of proxying bytes. Master and rendition
-playlists are `no-cache`; segment redirects are `no-store` because their signed destination is
-short-lived even though generation object keys are immutable.
+tags remain untouched. Every artifact object key is rebuilt from `buildVideoArtifactManifest` using
+the persisted public generation token; rendition existence and generation ownership are checked in
+PostgreSQL first. Segment names must match the generated `segment-NNNNN.ts` shape, the reconstructed
+object is checked with HEAD, and the API then returns a temporary redirect to a fresh signed GET
+instead of proxying bytes. Master and rendition playlists are `no-cache`; segment redirects are
+`no-store` because their signed destination is short-lived even though generation object keys are
+immutable.
 
 Segment bytes come from the MinIO/S3 origin after the redirect, so the bucket itself must allow
 cross-origin browser reads from every deployed player origin. Configure bucket CORS with `GET` and

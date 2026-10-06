@@ -83,11 +83,11 @@ export const createProfilesController = (deps: ProfilesControllerDependencies) =
     try {
       const listReq = req as ListPublicProfileVideosRequest;
       const { cursorCreatedAt, cursorPublicId, limit } = listReq.query;
-      const { profile } = await deps.profilesService.getPublicProfile({
+      const { profileUserId } = await deps.profilesService.getPublicProfile({
         username: listReq.params.username,
       });
       const result = await deps.videosService.listPublicProfileVideos({
-        ownerId: profile.id,
+        ownerId: profileUserId,
         ...(limit === undefined ? {} : { limit }),
         ...(cursorCreatedAt !== undefined && cursorPublicId !== undefined
           ? {
@@ -124,17 +124,10 @@ export const createProfilesController = (deps: ProfilesControllerDependencies) =
     try {
       const authenticatedReq = req as AuthenticatedRequest;
       const followingReq = req as ListFollowingProfilesRequest;
-      const { cursorFollowedAt, cursorId, limit } = followingReq.query;
-      const cursor =
-        cursorFollowedAt !== undefined && cursorId !== undefined
-          ? {
-              followedAt: new Date(cursorFollowedAt),
-              id: cursorId,
-            }
-          : undefined;
+      const { cursor, limit } = followingReq.query;
       const result = await deps.profilesService.listFollowingProfiles({
         userId: authenticatedReq.user.id,
-        ...(cursor ? { cursor } : {}),
+        ...(cursor !== undefined ? { cursor } : {}),
         ...(limit !== undefined ? { limit } : {}),
       });
 

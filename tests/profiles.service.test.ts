@@ -10,12 +10,16 @@ import {
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
 } from '../src/services/profiles/profiles.messages.js';
 import type { ProfilesDependencies } from '../src/services/profiles/profiles.dependencies.js';
+import { createFollowingProfilesCursorCodec } from '../src/services/profiles/followingProfilesCursor.js';
 
 const profileCreatedAt = new Date('2026-01-01T00:00:00.000Z');
 const firstFollowedAt = new Date('2026-01-04T00:00:00.000Z');
 const secondFollowedAt = new Date('2026-01-03T00:00:00.000Z');
 const thirdFollowedAt = new Date('2026-01-02T00:00:00.000Z');
 const followerUserId = '11111111-1111-4111-8111-111111111111';
+const followingProfilesCursorCodec = createFollowingProfilesCursorCodec(
+  Buffer.from('11'.repeat(32), 'hex'),
+);
 
 const createProfileRecord = ({
   id = '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
@@ -192,6 +196,7 @@ const createDeps = ({
         return Buffer.from('avatar-data');
       },
     },
+    followingProfilesCursorCodec,
     maxProxyBytes,
   };
 
@@ -300,8 +305,8 @@ describe('profiles service', () => {
         username: ' FairPlay_User ',
       }),
     ).resolves.toEqual({
+      profileUserId: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
       profile: {
-        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
         username: 'fairplay_user',
         displayName: 'FairPlay User',
         bio: 'Sharing project updates with my subscribers.',
@@ -406,22 +411,20 @@ describe('profiles service', () => {
   test('lists followed public profiles with stable cursor pagination and relative avatar paths', async () => {
     const { calls, deps } = createDeps();
 
-    await expect(
-      createProfilesService(deps).listFollowingProfiles({
-        userId: followerUserId,
-        limit: 2,
-      }),
-    ).resolves.toEqual({
+    const result = await createProfilesService(deps).listFollowingProfiles({
+      userId: followerUserId,
+      limit: 2,
+    });
+
+    expect(result).toEqual({
       profiles: [
         {
-          id: '33333333-3333-4333-8333-333333333333',
           username: 'followed_3333',
           displayName: 'First Followed',
           avatarUrl: '/profiles/followed_3333/avatar',
           followedAt: firstFollowedAt,
         },
         {
-          id: '22222222-2222-4222-8222-222222222222',
           username: 'followed_2222',
           displayName: null,
           avatarUrl: null,
@@ -429,10 +432,11 @@ describe('profiles service', () => {
         },
       ],
       total: 3,
-      nextCursor: {
-        followedAt: secondFollowedAt,
-        id: '22222222-2222-4222-8222-222222222222',
-      },
+      nextCursor: expect.any(String),
+    });
+    expect(followingProfilesCursorCodec.decode(result.nextCursor ?? '')).toEqual({
+      followedAt: secondFollowedAt,
+      id: '22222222-2222-4222-8222-222222222222',
     });
 
     const publicFollowingFilter = {
@@ -449,7 +453,6 @@ describe('profiles service', () => {
         followingId: true,
         following: {
           select: {
-            id: true,
             username: true,
             displayName: true,
             mediaAssets: {
@@ -480,10 +483,11 @@ describe('profiles service', () => {
       followedAt: new Date('2026-01-10T00:00:00.000Z'),
       id: '99999999-9999-4999-8999-999999999999',
     };
+    const opaqueCursor = followingProfilesCursorCodec.encode(cursor);
 
     await createProfilesService(deps).listFollowingProfiles({
       userId: followerUserId,
-      cursor,
+      cursor: opaqueCursor,
       limit: 10_000,
     });
 
@@ -518,7 +522,6 @@ describe('profiles service', () => {
     ).resolves.toEqual({
       message: FOLLOW_PROFILE_SUCCESS_MESSAGE,
       profile: {
-        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
         username: 'fairplay_user',
         displayName: 'FairPlay User',
         bio: 'Sharing project updates with my subscribers.',

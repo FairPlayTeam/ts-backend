@@ -7,9 +7,7 @@ import {
 import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
 import { publicProfileIdentityResponseSchema } from '../../shared/profile.schemas.js';
 import { publicVideosQuerySchema } from '../../videos/schemas/video.schemas.js';
-
-export const FOLLOWING_PROFILES_CURSOR_PAIR_MESSAGE =
-  'cursorFollowedAt and cursorId must be provided together';
+import { FOLLOWING_PROFILES_CURSOR_MAX_LENGTH } from '../../../services/profiles/followingProfilesCursor.js';
 
 export const publicProfileParamsSchema = z
   .object({
@@ -42,19 +40,12 @@ export const unfollowPublicProfileSchema = z.object({
 export const followingProfilesQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(100).optional().openapi({ example: 20 }),
-    cursorFollowedAt: z.string().datetime().optional().openapi({
-      example: '2026-01-01T00:00:00.000Z',
+    cursor: z.string().optional().openapi({
+      description: 'Opaque cursor returned by the previous page.',
+      maxLength: FOLLOWING_PROFILES_CURSOR_MAX_LENGTH,
     }),
-    cursorId: z
-      .string()
-      .uuid('Cursor profile id must be a valid UUID')
-      .optional()
-      .openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
   })
   .strict()
-  .refine((query) => (query.cursorFollowedAt === undefined) === (query.cursorId === undefined), {
-    message: FOLLOWING_PROFILES_CURSOR_PAIR_MESSAGE,
-  })
   .openapi('FollowingProfilesQuery');
 
 export const listFollowingProfilesSchema = z.object({
@@ -64,7 +55,6 @@ export const listFollowingProfilesSchema = z.object({
 const publicProfileDateTimeSchema = z.string().datetime();
 
 const publicProfileSchema = publicProfileIdentityResponseSchema.extend({
-  id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
   bio: z.string().nullable().openapi({
     example: 'Sharing project updates with my subscribers.',
   }),
@@ -78,7 +68,6 @@ const publicProfileSchema = publicProfileIdentityResponseSchema.extend({
 });
 
 const followingProfileSchema = publicProfileIdentityResponseSchema.extend({
-  id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
   followedAt: publicProfileDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
 
@@ -110,12 +99,9 @@ export const followingProfilesResponseSchema = z
   .object({
     profiles: z.array(followingProfileSchema),
     total: z.number().int().nonnegative().openapi({ example: 42 }),
-    nextCursor: z
-      .object({
-        followedAt: publicProfileDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
-        id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
-      })
-      .nullable(),
+    nextCursor: z.string().max(FOLLOWING_PROFILES_CURSOR_MAX_LENGTH).nullable().openapi({
+      description: 'Opaque cursor to pass as the cursor query parameter for the next page.',
+    }),
   })
   .openapi('FollowingProfilesResponse');
 

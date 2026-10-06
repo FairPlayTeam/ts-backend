@@ -565,7 +565,7 @@ describe('public video detail integration', () => {
       .get(detail.body.video.hlsMasterPath as string)
       .expect(200);
     expect(master.text).toContain(
-      `/videos/${raceVideo.publicId}/hls/${nextGeneration.generationId}/480p/index.m3u8`,
+      `/videos/${raceVideo.publicId}/hls/${nextGeneration.generationToken}/480p/index.m3u8`,
     );
   });
 

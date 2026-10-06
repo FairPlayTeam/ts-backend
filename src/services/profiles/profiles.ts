@@ -67,7 +67,6 @@ const followingProfileSelect = {
   followingId: true,
   following: {
     select: {
-      id: true,
       username: true,
       displayName: true,
       mediaAssets: profileAvatarMediaAssetsSelection,
@@ -101,18 +100,18 @@ const findPublicProfileRecord = (
     select: publicProfileSelect,
   });
 
-const toPublicProfile = (
-  { _count, mediaAssets, ...profile }: PublicProfileRecord,
-  isFollowing = false,
-): PublicProfile => {
-  const { avatarUrl, bannerUrl } = toProfileMediaUrls(profile.username, mediaAssets);
+const toPublicProfile = (profile: PublicProfileRecord, isFollowing = false): PublicProfile => {
+  const { avatarUrl, bannerUrl } = toProfileMediaUrls(profile.username, profile.mediaAssets);
 
   return {
-    ...profile,
+    username: profile.username,
+    displayName: profile.displayName,
+    bio: profile.bio,
+    createdAt: profile.createdAt,
     avatarUrl,
     bannerUrl,
-    followerCount: _count.followers,
-    followingCount: _count.following,
+    followerCount: profile._count.followers,
+    followingCount: profile._count.following,
     isFollowing,
   };
 };
@@ -121,7 +120,6 @@ const toFollowingProfile = ({
   createdAt,
   following,
 }: FollowingProfileRecord): FollowingProfile => ({
-  id: following.id,
   username: following.username,
   displayName: following.displayName,
   avatarUrl: toProfileMediaUrl(following.username, 'avatar', following.mediaAssets[0]),
@@ -225,7 +223,10 @@ export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort 
           )
         : false;
 
-    return { profile: toPublicProfile(profile, isFollowing) };
+    return {
+      profileUserId: profile.id,
+      profile: toPublicProfile(profile, isFollowing),
+    };
   },
 
   async followPublicProfile(input: FollowPublicProfileInput): Promise<FollowPublicProfileResult> {
@@ -262,6 +263,8 @@ export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort 
     userId,
   }: ListFollowingProfilesInput): Promise<ListFollowingProfilesResult> {
     const pageSize = normalizeFollowingProfilesLimit(limit);
+    const decodedCursor =
+      cursor !== undefined ? deps.followingProfilesCursorCodec.decode(cursor) : undefined;
     const resultFilter = {
       followerId: userId,
       following: {
@@ -271,11 +274,14 @@ export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort 
     } satisfies Prisma.UserFollowWhereInput;
     const pageFilter = {
       ...resultFilter,
-      ...(cursor
+      ...(decodedCursor
         ? {
             OR: [
-              { createdAt: { lt: cursor.followedAt } },
-              { createdAt: cursor.followedAt, followingId: { lt: cursor.id } },
+              { createdAt: { lt: decodedCursor.followedAt } },
+              {
+                createdAt: decodedCursor.followedAt,
+                followingId: { lt: decodedCursor.id },
+              },
             ],
           }
         : {}),
@@ -297,7 +303,10 @@ export const createProfilesService = (deps: ProfilesDependencies): ProfilesPort 
     const lastFollow = follows.at(-1);
     const nextCursor =
       queriedFollows.length > pageSize && lastFollow
-        ? { followedAt: lastFollow.createdAt, id: lastFollow.followingId }
+        ? deps.followingProfilesCursorCodec.encode({
+            followedAt: lastFollow.createdAt,
+            id: lastFollow.followingId,
+          })
         : null;
 
     return {
