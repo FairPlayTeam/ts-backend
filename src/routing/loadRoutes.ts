@@ -1,4 +1,4 @@
-import type { Express, RequestHandler, Router as ExpressRouter } from 'express';
+import type { Express, Router as ExpressRouter } from 'express';
 import { readdir, stat } from 'node:fs/promises';
 import { logger } from '../lib/logger.js';
 import type { RouteDoc } from '../docs/registry.js';
@@ -95,7 +95,6 @@ async function loadRoutes<TContext>(
   app: Express,
   routesDirUrl: URL,
   context: TContext,
-  apiLimiter: RequestHandler,
 ): Promise<LoadedRoutes> {
   try {
     await stat(routesDirUrl);
@@ -118,14 +117,14 @@ async function loadRoutes<TContext>(
       const createdRouter = routerFactory(context);
 
       if (createdRouter && typeof createdRouter === 'function') {
-        app.use(routePath, apiLimiter, createdRouter as ExpressRouter);
+        app.use(routePath, createdRouter as ExpressRouter);
         logger.info({ file: relativeFile, route: routePath }, 'route mounted');
         routeLoaded = true;
       } else {
         logger.warn({ file: relativeFile }, 'Skipped route factory, no Router returned');
       }
     } else if (router && typeof router === 'function') {
-      app.use(routePath, apiLimiter, router as ExpressRouter);
+      app.use(routePath, router as ExpressRouter);
       logger.info({ file: relativeFile, route: routePath }, 'route mounted');
       routeLoaded = true;
     } else if (typeof mod.register === 'function') {

@@ -6,6 +6,8 @@ import type { SendCommandFn } from 'rate-limit-redis';
 import type { RedisClient } from '../lib/redis.js';
 import type { Logger } from 'pino';
 import {
+  API_RATE_LIMIT_MAX,
+  API_RATE_LIMIT_WINDOW_MS,
   EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_MAX,
   EXPENSIVE_AUTH_MUTATION_RATE_LIMIT_WINDOW_MS,
   LOGIN_IDENTIFIER_RATE_LIMIT_MAX,
@@ -199,8 +201,8 @@ export function createLimiters(deps: {
 
   return {
     apiLimiter: rateLimit({
-      windowMs: 15 * 60 * 1000,
-      limit: 1200,
+      windowMs: API_RATE_LIMIT_WINDOW_MS,
+      limit: API_RATE_LIMIT_MAX,
       standardHeaders: 'draft-7',
       legacyHeaders: false,
       passOnStoreError: true,

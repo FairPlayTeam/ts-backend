@@ -208,38 +208,34 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     }),
   );
 
+  app.use(apiLimiter);
   app.use(express.json({ limit: config.jsonBodyLimitBytes }));
 
-  const { openApiRouteDocs } = await loadRoutes(
-    app,
-    new URL('./routes/', import.meta.url),
-    {
-      adminService: deps.adminService,
-      authService: deps.authService,
-      profilesService: deps.profilesService,
-      videosService: deps.videosService,
-      videoCommentMutationLimiter,
-      profileMediaMaxUploadBytes: config.profileMediaMaxUploadBytes,
-      authLimiter,
-      profileMediaUploadLimiter,
-      expensiveAuthMutationLimiter,
-      registrationIdentifierLimiter,
-      loginIdentifierLimiter,
-      verifyEmailIdentifierLimiter,
-      passwordResetEmailCooldown,
-      passwordResetIdentifierLimiter,
-      resetPasswordIdentifierLimiter,
-      readinessChecks: deps.readinessChecks ?? null,
-      resendVerificationEmailCooldown,
-      resendVerificationIdentifierLimiter,
-      userAccountOperationGuard,
-    },
-    apiLimiter,
-  );
+  const { openApiRouteDocs } = await loadRoutes(app, new URL('./routes/', import.meta.url), {
+    adminService: deps.adminService,
+    authService: deps.authService,
+    profilesService: deps.profilesService,
+    videosService: deps.videosService,
+    videoCommentMutationLimiter,
+    profileMediaMaxUploadBytes: config.profileMediaMaxUploadBytes,
+    authLimiter,
+    profileMediaUploadLimiter,
+    expensiveAuthMutationLimiter,
+    registrationIdentifierLimiter,
+    loginIdentifierLimiter,
+    verifyEmailIdentifierLimiter,
+    passwordResetEmailCooldown,
+    passwordResetIdentifierLimiter,
+    resetPasswordIdentifierLimiter,
+    readinessChecks: deps.readinessChecks ?? null,
+    resendVerificationEmailCooldown,
+    resendVerificationIdentifierLimiter,
+    userAccountOperationGuard,
+  });
 
   const openApiDoc = generateOpenApi({ routeDocs: openApiRouteDocs, serverUrl: config.baseUrl });
 
-  app.get('/openapi.json', apiLimiter, (_req, res) => {
+  app.get('/openapi.json', (_req, res) => {
     res.set(
       'Cache-Control',
       config.isProduction ? 'public, max-age=300, stale-while-revalidate=60' : 'no-store',
@@ -250,7 +246,6 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
 
   app.use(
     '/docs',
-    apiLimiter,
     swaggerUi.serve,
     swaggerUi.setup(openApiDoc, {
       explorer: true,

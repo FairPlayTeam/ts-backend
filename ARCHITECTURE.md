@@ -774,12 +774,14 @@ define normal behavior without silently claiming stronger guarantees.
 | Shared mutation quota              | Root creation, replies, deletion, like, and unlike share 30 actions per user per ten minutes. This intentionally includes moderation deletions by moderators and administrators; operational moderation tooling may eventually require a consciously separate quota.                                                                                                                                |
 | Public `Comment.id` UUID           | Comment UUID is the opaque public identifier, an explicit exception to the repository convention. Every operation still revalidates exact video and thread context, so UUID possession grants no access or authority; never generalize this exception to resources lacking those checks.                                                                                                            |
 
-Global request-body admission is a separate infrastructure backlog item. `express.json` currently
-runs before the route-mounted API limiter, so an unauthenticated client can make the server read and
-allocate a body up to the configured 1 MiB limit before that request consumes rate-limit quota. This
-predates comments and is not corrected by their per-user mutation limits. A dedicated hardening
-change should place an inexpensive coarse admission limiter before body parsing while preserving the
-more specific authenticated and route-level limiters afterward.
+The shared API IP limiter (1,200 requests per 15 minutes) runs after CORS and before `express.json`,
+so requests consume their coarse admission quota before JSON bodies are read and parsed. It covers
+all application routes, including route modules registered directly on the app; route-specific,
+authenticated, and identifier-based limiters remain later in the middleware chain where they can
+inspect parsed bodies or authenticated users. Its IP key follows Express `trust proxy` configuration,
+which must match the actual private proxy topology. The API limiter intentionally passes requests
+through if Redis errors; during a Redis outage, only the per-body size limit and upstream proxy
+controls bound this parsing workload, rather than distributed request admission.
 
 Playlist reads are capped at 512 KiB. URI lines are rewritten to API routes while all FFmpeg HLS
 tags remain untouched. Every artifact object key is rebuilt from `buildVideoArtifactManifest` using

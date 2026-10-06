@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../src/app.js';
+import { API_RATE_LIMIT_MAX } from '../src/config/constants.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
@@ -176,5 +177,24 @@ describe('health routes', () => {
         objectStorage: 'error',
       },
     });
+  });
+
+  test('applies the shared IP admission limit before parsing JSON exactly once', async () => {
+    const { baseUrl, server } = await createTestServer();
+    currentServer = server;
+
+    for (let index = 0; index < API_RATE_LIMIT_MAX; index += 1) {
+      const response = await fetch(`${baseUrl}/health/live`);
+      expect(response.status).toBe(200);
+    }
+
+    const response = await fetch(`${baseUrl}/health/live`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{',
+    });
+
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({ error: 'TooManyRequests' });
   });
 });
