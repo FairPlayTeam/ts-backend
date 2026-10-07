@@ -5,7 +5,10 @@ import { createApp } from '../src/app.js';
 import { VIDEO_COMMENT_MAX_LENGTH } from '../src/config/constants.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
-import { VideoNotFoundError } from '../src/services/videos.errors.js';
+import {
+  VideoNotFoundError,
+  VideoTranscodeAdmissionFullError,
+} from '../src/services/videos.errors.js';
 import { VIDEO_LICENSES } from '../src/services/videos/videoLicenses.js';
 import type {
   AbortVideoMultipartUploadInput,
@@ -69,6 +72,7 @@ let receivedHlsRenditionRequest: GetVideoHlsRenditionInput | undefined;
 let receivedHlsSegmentRequest: GetVideoHlsSegmentInput | undefined;
 let receivedThumbnailReadRequest: GetVideoThumbnailInput | undefined;
 let receivedSessionKey: string | undefined;
+let transcodeAdmissionFull = false;
 
 const videoId = '0d4e55cb-c278-4d74-a192-bf7c10888c7a';
 const uploadSessionId = '22222222-2222-4222-8222-222222222222';
@@ -226,6 +230,10 @@ describe('videos routes multipart uploads', () => {
           },
           initMultipartUpload: async (input) => {
             receivedInitRequest = input;
+
+            if (transcodeAdmissionFull) {
+              throw new VideoTranscodeAdmissionFullError();
+            }
 
             if (input.videoId === '11111111-1111-4111-8111-111111111111') {
               throw new VideoNotFoundError();
@@ -1287,6 +1295,29 @@ describe('videos routes multipart uploads', () => {
       error: 'Unauthorized',
       message: AUTH_SESSION_REQUIRED_MESSAGE,
     });
+  });
+
+  test('returns one generic retryable response when transcode admission is full', async () => {
+    transcodeAdmissionFull = true;
+
+    try {
+      const response = await fetch(`${baseUrl}/videos/${videoId}/upload/multipart/init`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer route-session-key',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sizeBytes: 67_108_864 }),
+      });
+
+      expect(response.status).toBe(429);
+      expect(await response.json()).toEqual({
+        error: 'TooManyRequests',
+        message: 'Video processing capacity is temporarily full; please retry later',
+      });
+    } finally {
+      transcodeAdmissionFull = false;
+    }
   });
 
   test('rejects invalid declared upload sizes before calling the service', async () => {

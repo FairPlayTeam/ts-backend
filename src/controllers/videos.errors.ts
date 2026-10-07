@@ -16,6 +16,7 @@ import {
   VideoUploadSizeMismatchError,
   VideoUploadSessionExpiredError,
   VideoUploadSessionNotFoundError,
+  VideoTranscodeAdmissionFullError,
 } from '../services/videos.errors.js';
 import {
   UserMediaFileRequiredError,
@@ -55,6 +56,10 @@ export function toVideosHttpError(err: unknown): Error {
 
   if (err instanceof VideoUploadSizeExceededError) {
     return new HttpError(413, 'PayloadTooLarge', err.message, { cause: err });
+  }
+
+  if (err instanceof VideoTranscodeAdmissionFullError) {
+    return new HttpError(429, 'TooManyRequests', err.message, { cause: err });
   }
 
   if (err instanceof UserMediaFileTooLargeError) {

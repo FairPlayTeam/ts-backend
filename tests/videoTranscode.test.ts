@@ -597,6 +597,29 @@ describe('video transcode process and artifact limits', () => {
     ).rejects.toThrow('Invalid video process timeout');
   });
 
+  test('does not pass backend secrets through to ffprobe or ffmpeg child processes', async () => {
+    const secretName = 'FAIRPLAY_TRANSCODE_CHILD_SECRET_TEST';
+    const previousSecret = process.env[secretName];
+    process.env[secretName] = 'must-not-reach-video-process';
+
+    try {
+      const result = await runVideoProcess({
+        command: process.execPath,
+        args: ['-e', `process.stdout.write(String(process.env.${secretName} ?? 'absent'))`],
+        signal: new AbortController().signal,
+        timeoutMs: 5_000,
+      });
+
+      expect(result.stdout).toBe('absent');
+    } finally {
+      if (previousSecret === undefined) {
+        delete process.env[secretName];
+      } else {
+        process.env[secretName] = previousSecret;
+      }
+    }
+  });
+
   test('terminates a real child process after its own timeout', async () => {
     const controller = new AbortController();
     const startedAt = Date.now();

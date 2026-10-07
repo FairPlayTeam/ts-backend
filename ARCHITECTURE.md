@@ -8,11 +8,13 @@ The backend is organized around small composable factories and dependencies are 
 
 ```mermaid
 flowchart TD
-index["src/index.ts<br/>Bootstrap runtime"] --> app["createApp()"]
+index["src/index.ts<br/>Bootstrap runtime"] --> role["RUNTIME_ROLE"]
+role --> app["API / combined: createApp()"]
+role --> worker["transcoder: runner only"]
 index --> authInstance["auth.instance.ts"]
-index --> cleanup["createMaintenanceCleanupJob()"]
+app --> cleanup["API/combined maintenance job"]
 index --> readiness["Readiness checks"]
-index --> transcodeRunner["In-process transcode runner"]
+worker --> transcodeRunner["Isolated transcode runner"]
 
 authInstance --> authService["createAuthService()"]
 authService --> prisma["Prisma"]
@@ -41,8 +43,8 @@ The backend supports three common runtime modes:
   versions of the external infrastructure through Docker Compose
 - local full stack: Docker Compose builds and runs the backend, the one-shot migrator, PostgreSQL,
   Redis, and MinIO on the same local Docker network
-- production: the runtime image runs behind a reverse proxy or load balancer, with shared
-  PostgreSQL, Redis, and object storage infrastructure
+- production: API and transcoder use separate runtime images/processes; only the API sits behind a
+  reverse proxy, while PostgreSQL, Redis, and object storage are shared cloud services
 
 The same application code is used in every mode. The differences are the process manager, network
 addresses, and environment variables.
@@ -51,30 +53,27 @@ addresses, and environment variables.
 
 ```mermaid
 flowchart TD
-client["Client / Frontend"] --> proxy["Load balancer"]
-proxy --> apiA["Backend instance A<br/>runtime image"]
-proxy --> apiB["Backend instance B<br/>runtime image"]
-
-apiA --> db["Shared PostgreSQL"]
-apiB --> db
-
-apiA --> redis["Shared Redis"]
-apiB --> redis
-apiA --> objectStore["Shared object storage"]
-apiB --> objectStore
-
+client["Client / Frontend"] --> proxy["Reverse proxy"]
+proxy --> api["API container<br/>runtime target; 0 transcode slots"]
+worker["Transcoder container<br/>transcoder target; no HTTP listener"] --> db["Cloud PostgreSQL"]
+api --> db
+api --> redis["Cloud Redis"]
+api --> objectStore["Backblaze B2<br/>S3-compatible object storage"]
+worker --> objectStore
 migrator["Migrator image<br/>run once per release"] --> db
 ```
 
-The backend instances are designed to be horizontally scalable as long as every instance uses the
-same PostgreSQL, Redis, and object storage services:
+API instances are designed to be horizontally scalable as long as every instance uses the same
+PostgreSQL, Redis, and object storage services. Transcoder instances share the PostgreSQL job table
+and object storage but must not be exposed to HTTP traffic:
 
 - user data, sessions, verification tokens, and password reset tokens are stored in PostgreSQL
 - Redis stores distributed rate limit state, cooldown state, and the renewable maintenance lock
 - user-uploaded profile media and immutable video sources are stored in shared S3-compatible
   object storage, using independently configurable buckets
-- the maintenance job can run in every process, but only the instance holding the Redis lock runs
-  its ordered auth, media, multipart, generation, and reconciliation steps
+- the API runs the maintenance job; only the instance holding the Redis lock runs its ordered auth,
+  media, multipart, generation, and reconciliation steps
+- the transcoder does not connect to Redis and does not create an Express app or HTTP listener
 - migrations are not run by every backend instance; they are run once through the migrator image
   before the new runtime replicas are started
 
@@ -135,7 +134,7 @@ The local Compose stack contains these services by default:
 
 ```mermaid
 flowchart LR
-backend["backend<br/>runtime target"] --> postgres["postgres:5432"]
+backend["backend<br/>combined target"] --> postgres["postgres:5432"]
 backend --> redis["redis:6379"]
 backend --> minio["minio:9000"]
 migrate["migrate<br/>migrator target"] --> postgres
@@ -156,9 +155,9 @@ Within this Docker network, services use Docker DNS names:
 - `OBJECT_STORAGE_ENDPOINT=http://minio:9000`
 
 Docker Compose is a local development and verification tool for this repository. It is not the
-production deployment model. The production runtime receives the same standard runtime variables
-(`DATABASE_URL`, `REDIS_URL`, `OBJECT_STORAGE_*`) from the orchestrator or secret manager and points
-to shared infrastructure directly.
+production deployment model. Production receives standard runtime variables (`DATABASE_URL`,
+`REDIS_URL`, `OBJECT_STORAGE_*`) from protected environment files and points to shared cloud
+infrastructure directly.
 
 The `COMPOSE_OBJECT_STORAGE_*` variables in `docker-compose.yml` are only Compose interpolation
 inputs. They keep host development values such as `OBJECT_STORAGE_ENDPOINT=http://localhost:9000`
@@ -174,18 +173,77 @@ file should use host-reachable addresses instead:
 
 ### Production image layout
 
-The Dockerfile exposes two deployment targets:
+The Dockerfile exposes four deployment targets:
 
 - `runtime`: production API image with compiled `dist`, production dependencies, Prisma client,
-  FFmpeg/ffprobe, non-root `bun` user, and a `/health/ready` healthcheck
+  non-root `bun` user, and a `/health/ready` healthcheck; it does not contain FFmpeg/ffprobe
+- `transcoder`: the runtime image plus FFmpeg/ffprobe, with the HTTP healthcheck disabled
+- `combined`: local-only runtime plus FFmpeg/ffprobe and API healthcheck for Docker Compose
 - `migrator`: one-shot image that runs `bun run prisma:migrate:deploy`
 
 The production release order is:
 
-1. Build and publish the `runtime` and `migrator` images for the same source revision.
+1. Build and publish the `runtime`, `transcoder`, and `migrator` images for the same source revision.
 2. Run the migrator image once with production database credentials.
-3. Start or roll the runtime replicas.
-4. Route traffic through the reverse proxy or load balancer after readiness checks pass.
+3. Start the API and transcoder processes with their distinct runtime roles.
+4. Route traffic only to the API after `/health/ready` passes. The transcoder has no port mapping.
+
+### First production host: DL360 without an orchestrator
+
+`deploy/systemd/fairplay-api.service` and `deploy/systemd/fairplay-transcoder.service` are sample
+systemd units for the initial single-host deployment. They run separate Docker containers from the
+two production targets. The reverse proxy points only to `127.0.0.1:3000`; the worker publishes no
+port and its application role does not bind an HTTP socket. The worker also has no Redis connection.
+
+The initial DL360 budget is deliberately conservative: the API is limited to four CPU-equivalents
+and 8 GiB RAM (4 GiB soft reservation); the worker is limited to two CPU-equivalents and 8 GiB RAM
+(4 GiB soft reservation), with one job and two FFmpeg threads. These are cgroup limits, not pinned
+physical cores. Docker CPU shares give the API four times the relative weight of the worker during
+contention; shares are priority, not a guaranteed CPU reservation. API and worker CPU time is
+bounded independently. The 64 GiB host RAM leaves substantial headroom above the combined 16 GiB
+hard container limits.
+
+Object data stays in Backblaze B2 through its S3-compatible endpoint. Transcoding still downloads a
+source and writes generated HLS locally before uploading it, so the worker's `TMPDIR` must be a
+separate 32 GiB filesystem mounted at `/srv/fairplay-transcoder-tmp`. The worker unit asserts that
+this is a mount point before starting and bind-mounts it into the container; a missing mount cannot
+silently consume the host root filesystem. The 32 GiB filesystem is a hard storage ceiling, not a
+tmpfs/RAM allocation. Set its directory ownership to the `bun` UID used by the image.
+
+The dedicated filesystem bounds capacity, not I/O bandwidth. The backing block-device/RAID layout
+was not provided, so these units do not apply an ungrounded read/write rate limit; local HLS writes
+can still contend with API/log I/O on the same physical device. Before public launch, verify API
+latency and disk queue/load during one representative encode. If contention is measurable, place
+worker scratch on a separate device or add a device-specific cgroup I/O limit based on that
+measurement. Graceful shutdown removes job scratch; a sudden host power loss can leave stale
+directories. Monitor this mount's free space and remove stale `fairplay-transcode-*` directories
+only after stopping the worker and confirming no job is active.
+
+Both production containers run as the non-root `bun` user with all Linux capabilities dropped, no
+new privileges, and a 256-process ceiling. `ffprobe`/`ffmpeg` receive only executable lookup and
+temporary-directory environment variables, not API secrets. This is resource/process isolation, not
+a complete sandbox for native media parsers: the worker still needs PostgreSQL and Backblaze
+credentials plus outbound network access. A parser exploit could therefore act with those worker
+credentials; the local-only input protocol and MP4 demuxer restriction do not prevent code execution
+inside FFmpeg itself.
+
+To prepare the host, build/tag the API and worker targets as `fairplay-backend:production-api` and
+`fairplay-backend:production-transcoder`, create `/etc/fairplay/runtime.env` with shared non-API
+settings, database and object-storage credentials (mode `0600`), and create `/etc/fairplay/api.env`
+with Redis, SMTP, `RATE_LIMIT_KEY_SECRET`, `AUTH_CODE_PEPPER`, and
+`FOLLOWING_CURSOR_ENCRYPTION_KEY` (also mode `0600`). The worker receives only the shared file; it
+does not receive Redis, SMTP, or API signing/sealing secrets. Install the two unit files, then enable
+them with systemd. The image tags must be updated to the same release before rolling both services.
+The worker unit enforces `RUNTIME_ROLE=transcoder`, one slot and its dedicated temporary directory;
+the API unit enforces `RUNTIME_ROLE=api` and `VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=0`. The application
+rejects an API configured with a non-zero slot, a production combined role, a worker configured
+with anything other than one slot, or more than two threads per production job.
+
+Both processes write structured Pino logs to stdout/stderr, which systemd captures in journald for
+collection by the host's Grafana/Loki agent. The API retains the HTTP readiness probe. The worker's
+process is supervised by systemd; it intentionally has no HTTP readiness endpoint. Operators should
+alert on worker restarts, sustained container memory/CPU limits, and the dedicated filesystem's
+free space. Cloud PostgreSQL and Redis are outside the host's local storage and CPU budget.
 
 ## Health checks
 
@@ -196,7 +254,9 @@ The health routes are:
   every configured object storage bucket
 - `/health`: lightweight process status
 
-Production orchestrators should use `/health/ready` before routing traffic to an instance.
+Production proxies should use `/health/ready` before routing traffic to an API instance. The worker
+does not expose an HTTP health route; its startup checks PostgreSQL and object storage before it
+starts claiming work, and systemd supervises its process.
 
 When an established Redis connection is interrupted, new commands issued while the connection is
 unavailable fail fast instead of entering the offline queue. A command already sent but not yet
@@ -217,17 +277,17 @@ The entry point is [`src/index.ts`](src/index.ts), it:
 - reads the config
 - creates external clients like Redis and object storage when configured
 - prepares readiness checks
-- assembles the Express app
-- starts the server
-- starts the periodic maintenance job and in-process transcode runner only after the server is
-  listening
+- API/combined roles assemble and start the Express app; the API-only production role has zero
+  transcode slots
+- the API starts its periodic maintenance job after listening; the production transcoder checks
+  PostgreSQL and object storage, then starts its runner without creating an app or listener
 - on shutdown, stops maintenance, drains and requeues owned transcodes, closes the HTTP server,
   then disconnects Prisma and Redis
 
-In production, Redis and object storage are required. In development, Redis can be unavailable; the
-backend then falls back to in-memory rate limiting and skips distributed maintenance locks. Object
-storage-dependent routes return a service-level error when object storage is not configured or not
-ready.
+In production, the API requires Redis and object storage; the transcoder requires object storage but
+does not connect to Redis. In development, Redis can be unavailable; the backend then falls back to
+in-memory rate limiting and skips distributed maintenance locks. Object storage-dependent routes
+return a service-level error when object storage is not configured or not ready.
 
 ## Maintenance lifecycle
 
@@ -413,12 +473,36 @@ AES-256-GCM-authenticated opaque cursor. Every replica must use the same 32-byte
 Empty, malformed, altered, obsolete, and raw-UUID cursor inputs all converge on the same generic
 400 response.
 
-## In-process video transcoding
+## Video transcoding and admission
 
-There is no separate transcode worker service or queue runtime. Each backend process may claim
-PostgreSQL jobs up to its local `VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS` limit, which is held for the
-entire source download, probe, FFmpeg execution, artifact upload, verification, and publication
-cycle. A value of `0` disables claims on that replica.
+Production separates the HTTP API from the transcode runner with `RUNTIME_ROLE=api` and
+`RUNTIME_ROLE=transcoder`. The API must use `VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=0`; the initial
+DL360 worker uses exactly one slot. A slot is held for the entire source download, probe, FFmpeg
+execution, artifact upload, verification, and publication cycle. `RUNTIME_ROLE=transcoder` does not
+create Express, bind a socket, start the maintenance loop, or connect to Redis. The development-only
+`combined` role keeps local Compose convenient and is rejected in production.
+
+Before S3 multipart initialization, one serializable transaction counts queued/processing jobs and
+upload sessions that reserve a future job. Initializing, initiated, and uploading sessions count
+only while their expiry is in the future; a `completing` session counts regardless of its expiry.
+Admission is refused when the configured global limit (10 by default) or per-user limit (2 by
+default) is already full, returning one generic 429. The transaction creates the upload reservation
+only after this check, so a rejected request does not create a target/session or contact object
+storage. On successful upload completion, the same transaction changes the session to `completed`
+and inserts the queued job, transferring rather than releasing the capacity reservation. This
+bounds the number of admitted sources as well as queued work. The existing due-time/id claim order
+remains; the per-user ceiling prevents one account from occupying more than two of ten admitted
+slots, but it is not a weighted round-robin scheduler.
+
+A `completing` session is intentionally retained as a capacity reservation while the durable source
+target is being reconciled: the external multipart completion may have succeeded even when the API
+did not observe its result. Reconciliation retries failed targets with a capped delay but no
+terminal attempt limit. If the object store keeps returning a permanent error (for example, the
+completed source remains absent), that session can therefore retain its account and global slots
+indefinitely, even after its upload expiry. It is not safe to release the slot based only on age,
+because later reconciliation could still publish the source and enqueue its job. Operators must
+investigate sustained failures for completing source targets and resolve them through the existing
+reconciliation/cleanup flow; do not free capacity by editing the session or target rows directly.
 
 ```mermaid
 sequenceDiagram
@@ -460,31 +544,38 @@ transaction that activates the generation. Encoder and filter threads are bounde
 `VIDEO_TRANSCODE_THREADS_PER_JOB`; child output retained in memory is also bounded. Abort sends
 `SIGTERM`, followed by `SIGKILL` after five seconds if necessary.
 
-The default media policy accepts at most one hour, 3840 pixels on either raster or square-pixel
+The launch media policy accepts at most 30 minutes, 3840 pixels on either raster or square-pixel
 display dimension, 8,294,400 raster or display pixels, a 4:1 raster or display aspect ratio in
-either orientation, and 60 average FPS. An FFmpeg `max_pixels` decoder option repeats the metadata
+either orientation, and 30 average FPS. An FFmpeg `max_pixels` decoder option repeats the metadata
 pixel ceiling. Display dimensions include the sample aspect ratio and quarter-turn container
 rotation; FFmpeg autorotation plus rendition and fallback-thumbnail filters normalize the result to
 square pixels. Other rotation angles are rejected. FFprobe has a 30-second deadline and FFmpeg a
-six-hour deadline; either deadline terminates the child with the same `SIGTERM` then `SIGKILL`
+two-hour deadline; either deadline terminates the child with the same `SIGTERM` then `SIGKILL`
 sequence. Inputs are restricted to the local `file` protocol and the MP4-family `mov` demuxer, so a
 probed upload cannot select a playlist demuxer or make FFmpeg fetch remote network resources.
-FFmpeg repeats the one-hour and 60 FPS ceilings on rendition outputs and combines CRF with
+FFmpeg repeats the 30-minute and 30 FPS ceilings on rendition outputs and combines CRF with
 per-rendition VBV `maxrate`/`bufsize` limits. After generation, the runner sums every playlist,
-segment, and thumbnail and refuses to upload anything when the total exceeds 8 GiB. Invalid or
+segment, and thumbnail and refuses to upload anything when the total exceeds 4 GiB. Invalid or
 out-of-policy media, ordinary ffprobe rejections, child timeouts, and oversized artifact sets fail
 permanently. An unexpected signal termination, a non-zero FFmpeg exit, or process spawn failure
 remains retryable because it can represent a transient infrastructure error. All values are
 startup-validated `VIDEO_TRANSCODE_*` settings documented in `.env.example`.
 
+Artifact upload is not fully streaming yet: the runner buffers one generated file at a time before
+calling object storage. With the current six-second, VBV-limited HLS segments this normally bounds
+the buffer to one segment rather than the full generation, and the worker memory cgroup contains
+an unexpectedly large file to the worker. The upload implementation remains a memory-scaling limit
+if segmenting or bitrate policy changes; do not relax the worker memory limit based only on the
+cumulative artifact-size ceiling.
+
 The cumulative artifact check runs after local generation and before upload; it is not an operating
-system filesystem quota. Duration, FPS, and VBV rate bounds keep the standard one-hour ladder below
-the 8 GiB ceiling. The peak temporary footprint nevertheless includes both the downloaded source
-and artifacts being generated. Deployments must therefore reserve at least
-`VIDEO_UPLOAD_MAX_BYTES + VIDEO_TRANSCODE_MAX_ARTIFACT_BYTES` per active local transcode job,
-multiplied by `VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS`. Because the application checks the artifact cap
-only after FFmpeg exits, customized limits also require either additional headroom derived from the
-duration/VBV bounds or an equivalent container ephemeral-storage quota.
+system filesystem quota. At the launch defaults, the expected upper bound per slot includes the
+3 GiB source and 4 GiB generated artifacts (about 7 GiB, plus a small thumbnail). The worker's
+separate 32 GiB mounted filesystem is the actual hard ceiling and keeps an unexpected temporary
+spike off the API/root filesystem. The artifact-size check remains post-generation; the filesystem
+ceiling is therefore the final protection if customized media settings or FFmpeg behavior exceed
+the expected bound. Do not increase concurrent worker slots without resizing/restricting temporary
+storage for their combined peak.
 
 Each execution writes to a unique generation namespace. Its database generation and prefix cleanup
 targets are reserved before any potentially ambiguous artifact upload. The runner verifies the

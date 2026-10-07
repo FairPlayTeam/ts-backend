@@ -57,6 +57,7 @@ import {
   VideoUploadSessionNotFoundError,
   VideoUploadSizeExceededError,
   VideoUploadSizeMismatchError,
+  VideoTranscodeAdmissionFullError,
 } from '../videos.errors.js';
 import type {
   AbortVideoMultipartUploadInput,
@@ -1110,6 +1111,52 @@ const assertUserStorageQuota = async (
 
   if (reservedBytes + BigInt(sizeBytes) > BigInt(userStorageQuotaBytes)) {
     throw new VideoStorageQuotaExceededError();
+  }
+};
+
+const assertVideoTranscodeAdmissionCapacity = async (
+  tx: Pick<TransactionClient, 'videoTranscodeJob' | 'videoUploadSession'>,
+  userId: string,
+  now: Date,
+  {
+    maxTranscodeOutstandingJobs,
+    maxTranscodeOutstandingJobsPerUser,
+  }: Pick<
+    VideosDependencies['config'],
+    'maxTranscodeOutstandingJobs' | 'maxTranscodeOutstandingJobsPerUser'
+  >,
+): Promise<void> => {
+  const activeUploadSessionWhere: Prisma.VideoUploadSessionWhereInput = {
+    OR: [
+      { status: 'completing' },
+      {
+        status: { in: [...EXPIRABLE_UPLOAD_SESSION_STATUSES] },
+        expiresAt: { gt: now },
+      },
+    ],
+  };
+  const outstandingJobWhere: Prisma.VideoTranscodeJobWhereInput = {
+    status: { in: ['queued', 'processing'] },
+  };
+  const [userJobCount, userSessionCount, totalJobCount, totalSessionCount] = await Promise.all([
+    tx.videoTranscodeJob.count({
+      where: {
+        ...outstandingJobWhere,
+        video: { is: { ownerId: userId } },
+      },
+    }),
+    tx.videoUploadSession.count({
+      where: { ...activeUploadSessionWhere, userId },
+    }),
+    tx.videoTranscodeJob.count({ where: outstandingJobWhere }),
+    tx.videoUploadSession.count({ where: activeUploadSessionWhere }),
+  ]);
+
+  if (
+    userJobCount + userSessionCount >= maxTranscodeOutstandingJobsPerUser ||
+    totalJobCount + totalSessionCount >= maxTranscodeOutstandingJobs
+  ) {
+    throw new VideoTranscodeAdmissionFullError();
   }
 };
 
@@ -2365,6 +2412,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
           throw new ActiveVideoUploadSessionExistsError();
         }
 
+        await assertVideoTranscodeAdmissionCapacity(tx, userId, now, deps.config);
         await assertUserStorageQuota(tx, userId, sizeBytes, deps.config.userStorageQuotaBytes);
 
         const target = await tx.externalResourceTarget.create({

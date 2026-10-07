@@ -33,14 +33,10 @@ RUN bun install --frozen-lockfile --production --omit=peer
 FROM oven/bun:1.3.10-debian AS runtime
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/* \
-    && ffmpeg -version \
-    && ffprobe -version
-
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV RUNTIME_ROLE=api
+ENV VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=0
 
 COPY --from=prod-deps --chown=bun:bun /app/node_modules ./node_modules
 COPY --from=build --chown=bun:bun /app/node_modules/.prisma ./node_modules/.prisma
@@ -56,3 +52,22 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD bun -e "const port=process.env.PORT||3000; const r=await fetch(`http://127.0.0.1:${port}/health/ready`).catch(()=>null); process.exit(r?.ok ? 0 : 1)"
 
 CMD ["bun", "dist/index.js"]
+
+FROM runtime AS transcoder
+ENV RUNTIME_ROLE=transcoder
+ENV VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=1
+USER root
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && ffmpeg -version \
+    && ffprobe -version
+
+USER bun
+HEALTHCHECK NONE
+
+FROM transcoder AS combined
+ENV RUNTIME_ROLE=combined
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD bun -e "const port=process.env.PORT||3000; const r=await fetch(`http://127.0.0.1:${port}/health/ready`).catch(()=>null); process.exit(r?.ok ? 0 : 1)"

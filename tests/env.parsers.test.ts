@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   ALL_CORS_ORIGINS,
   ServerConfigurationError,
+  assertRuntimeRoleTranscodeConfig,
   assertProductionMailerConfig,
   parseAllowedOrigins,
   parseAuthCodePepper,
@@ -11,6 +12,7 @@ import {
   parseMailerConfig,
   parseOptionalObjectStorageConfig,
   parseOptionalRedisUrl,
+  parseRuntimeRole,
   parseProfileMediaMaxUploadBytes,
   parseRateLimitKeySecret,
   parseRequiredHttpOriginUrl,
@@ -35,6 +37,8 @@ import {
   DEFAULT_VIDEO_TRANSCODE_MAX_DURATION_SECONDS,
   DEFAULT_VIDEO_TRANSCODE_MAX_FPS,
   DEFAULT_VIDEO_TRANSCODE_MAX_HEIGHT,
+  DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER,
   DEFAULT_VIDEO_TRANSCODE_MAX_PIXELS,
   DEFAULT_VIDEO_TRANSCODE_MAX_WIDTH,
   DEFAULT_VIDEO_TRANSCODE_THREADS_PER_JOB,
@@ -62,6 +66,38 @@ const EMPTY_VIDEO_TRANSCODE_CONFIG = {
 };
 
 describe('env parsers', () => {
+  test('requires an explicit production role and keeps combined mode development-only', () => {
+    expect(() => parseRuntimeRole(undefined, true)).toThrow(ServerConfigurationError);
+    expect(parseRuntimeRole(undefined, false)).toBe('combined');
+    expect(parseRuntimeRole('transcoder', true)).toBe('transcoder');
+    expect(() => parseRuntimeRole('combined', true)).toThrow(ServerConfigurationError);
+    expect(() => parseRuntimeRole('unknown', false)).toThrow(ServerConfigurationError);
+    expect(() =>
+      assertRuntimeRoleTranscodeConfig({
+        runtimeRole: 'api',
+        isProduction: true,
+        maxConcurrentJobs: 0,
+        threadsPerJob: 2,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertRuntimeRoleTranscodeConfig({
+        runtimeRole: 'api',
+        isProduction: true,
+        maxConcurrentJobs: 1,
+        threadsPerJob: 2,
+      }),
+    ).toThrow(ServerConfigurationError);
+    expect(() =>
+      assertRuntimeRoleTranscodeConfig({
+        runtimeRole: 'transcoder',
+        isProduction: true,
+        maxConcurrentJobs: 1,
+        threadsPerJob: 3,
+      }),
+    ).toThrow(ServerConfigurationError);
+  });
+
   test('keeps the official object storage bucket defaults', () => {
     expect(DEFAULT_OBJECT_STORAGE_BUCKET).toBe('user-media');
     expect(DEFAULT_VIDEO_OBJECT_STORAGE_BUCKET).toBe('videos');
@@ -460,6 +496,8 @@ describe('env parsers', () => {
         partSizeBytes: undefined,
         maxPartCount: undefined,
         maxUploadBytes: undefined,
+        maxTranscodeOutstandingJobs: undefined,
+        maxTranscodeOutstandingJobsPerUser: undefined,
         userStorageQuotaBytes: undefined,
         sessionTtlSeconds: undefined,
       }),
@@ -468,6 +506,8 @@ describe('env parsers', () => {
       partSizeBytes: DEFAULT_VIDEO_UPLOAD_PART_SIZE_BYTES,
       maxPartCount: DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
       maxUploadBytes: DEFAULT_VIDEO_UPLOAD_MAX_BYTES,
+      maxTranscodeOutstandingJobs: DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS,
+      maxTranscodeOutstandingJobsPerUser: DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER,
       userStorageQuotaBytes: DEFAULT_VIDEO_USER_STORAGE_QUOTA_BYTES,
       sessionTtlSeconds: DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
     });
@@ -478,6 +518,8 @@ describe('env parsers', () => {
         partSizeBytes: String(95 * 1024 * 1024),
         maxPartCount: '5000',
         maxUploadBytes: String(4 * 1024 * 1024 * 1024),
+        maxTranscodeOutstandingJobs: '20',
+        maxTranscodeOutstandingJobsPerUser: '3',
         userStorageQuotaBytes: String(10 * 1024 * 1024 * 1024),
         sessionTtlSeconds: '3600',
       }),
@@ -486,6 +528,8 @@ describe('env parsers', () => {
       partSizeBytes: 95 * 1024 * 1024,
       maxPartCount: 5000,
       maxUploadBytes: 4 * 1024 * 1024 * 1024,
+      maxTranscodeOutstandingJobs: 20,
+      maxTranscodeOutstandingJobsPerUser: 3,
       userStorageQuotaBytes: 10 * 1024 * 1024 * 1024,
       sessionTtlSeconds: 3600,
     });
@@ -496,6 +540,8 @@ describe('env parsers', () => {
         partSizeBytes: undefined,
         maxPartCount: undefined,
         maxUploadBytes: undefined,
+        maxTranscodeOutstandingJobs: undefined,
+        maxTranscodeOutstandingJobsPerUser: undefined,
         userStorageQuotaBytes: undefined,
         sessionTtlSeconds: undefined,
       }),
@@ -506,6 +552,8 @@ describe('env parsers', () => {
         partSizeBytes: String(100 * 1024 * 1024),
         maxPartCount: undefined,
         maxUploadBytes: undefined,
+        maxTranscodeOutstandingJobs: undefined,
+        maxTranscodeOutstandingJobsPerUser: undefined,
         userStorageQuotaBytes: undefined,
         sessionTtlSeconds: undefined,
       }),
@@ -516,6 +564,8 @@ describe('env parsers', () => {
         partSizeBytes: undefined,
         maxPartCount: '10001',
         maxUploadBytes: undefined,
+        maxTranscodeOutstandingJobs: undefined,
+        maxTranscodeOutstandingJobsPerUser: undefined,
         userStorageQuotaBytes: undefined,
         sessionTtlSeconds: undefined,
       }),
@@ -526,6 +576,8 @@ describe('env parsers', () => {
         partSizeBytes: undefined,
         maxPartCount: undefined,
         maxUploadBytes: '1024',
+        maxTranscodeOutstandingJobs: undefined,
+        maxTranscodeOutstandingJobsPerUser: undefined,
         userStorageQuotaBytes: '512',
         sessionTtlSeconds: undefined,
       }),

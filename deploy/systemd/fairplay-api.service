@@ -1,0 +1,33 @@
+[Unit]
+Description=FairPlay API
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+TimeoutStopSec=60
+ExecStartPre=-/usr/bin/docker rm -f fairplay-api
+ExecStart=/usr/bin/docker run --rm --init \
+    --name fairplay-api \
+    --publish 127.0.0.1:3000:3000 \
+    --cpus=4 \
+    --cpu-shares=2048 \
+    --memory=8g \
+    --memory-reservation=4g \
+    --pids-limit=256 \
+    --cap-drop=ALL \
+    --security-opt=no-new-privileges \
+    --env-file=/etc/fairplay/runtime.env \
+    --env-file=/etc/fairplay/api.env \
+    --env=RUNTIME_ROLE=api \
+    --env=VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=0 \
+    --env=PORT=3000 \
+    fairplay-backend:production-api
+ExecStop=/usr/bin/docker stop --time 45 fairplay-api
+ExecStopPost=-/usr/bin/docker rm -f fairplay-api
+
+[Install]
+WantedBy=multi-user.target

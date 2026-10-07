@@ -21,7 +21,10 @@ import { runRuntimeShutdownSteps } from './runtimeShutdown.js';
 
 const SHUTDOWN_TIMEOUT_MS = 30_000;
 
-let redisClient = config.redisUrl ? createRedisClient(config.redisUrl, logger) : null;
+let redisClient =
+  config.runtimeRole !== 'transcoder' && config.redisUrl
+    ? createRedisClient(config.redisUrl, logger)
+    : null;
 
 if (redisClient && config.redisUrl) {
   try {
@@ -60,46 +63,61 @@ const readinessChecks = {
     : {}),
 };
 
-const app = await createApp(config, {
-  adminService,
-  authService,
-  profilesService,
-  videosService,
-  redisClient,
-  readinessChecks,
-});
-const maintenanceCleanupJob = createMaintenanceCleanupJob({
-  authService,
-  videosService,
-  clock: {
-    now: () => new Date(),
-  },
-  config: {
-    intervalMs: config.sessionCleanupIntervalMs,
-    inactiveRetentionMs: config.sessionCleanupInactiveRetentionMs,
-  },
-  lock: redisClient
-    ? createRedisMaintenanceCleanupLock({
+const app =
+  config.runtimeRole === 'transcoder'
+    ? null
+    : await createApp(config, {
+        adminService,
+        authService,
+        profilesService,
+        videosService,
         redisClient,
-        ttlMs: MAINTENANCE_CLEANUP_LOCK_TTL_MS,
-      })
-    : null,
-  logger,
-});
-const videoTranscodeRunner = videoObjectStorage
-  ? createVideoTranscodeRunner({
-      prisma,
-      objectStorage: videoObjectStorage,
+        readinessChecks,
+      });
+const maintenanceCleanupJob = app
+  ? createMaintenanceCleanupJob({
+      authService,
+      videosService,
       clock: {
         now: () => new Date(),
       },
-      config: config.videoTranscode,
+      config: {
+        intervalMs: config.sessionCleanupIntervalMs,
+        inactiveRetentionMs: config.sessionCleanupInactiveRetentionMs,
+      },
+      lock: redisClient
+        ? createRedisMaintenanceCleanupLock({
+            redisClient,
+            ttlMs: MAINTENANCE_CLEANUP_LOCK_TTL_MS,
+          })
+        : null,
       logger,
     })
   : null;
+const videoTranscodeRunner =
+  config.runtimeRole !== 'api' && videoObjectStorage
+    ? createVideoTranscodeRunner({
+        prisma,
+        objectStorage: videoObjectStorage,
+        clock: {
+          now: () => new Date(),
+        },
+        config: config.videoTranscode,
+        logger,
+      })
+    : null;
 
 let isShuttingDown = false;
 let server: Server | null = null;
+
+if (config.runtimeRole === 'transcoder') {
+  if (!videoObjectStorage || !videoTranscodeRunner) {
+    throw new Error('The transcoder runtime requires configured video object storage');
+  }
+
+  await prisma.$queryRaw`SELECT 1`;
+  await videoObjectStorage.checkReady();
+}
 
 const closeServerIfListening = async (server: Server | null): Promise<void> => {
   if (!server?.listening) {
@@ -138,7 +156,7 @@ const shutdown = async (reason: NodeJS.Signals | 'server_error', exitCode = 0): 
       [
         {
           name: 'maintenance',
-          run: () => maintenanceCleanupJob.stop(),
+          run: () => maintenanceCleanupJob?.stop() ?? Promise.resolve(),
         },
         {
           name: 'transcodes',
@@ -181,15 +199,20 @@ const shutdown = async (reason: NodeJS.Signals | 'server_error', exitCode = 0): 
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 
-server = app.listen(config.port);
+if (app) {
+  server = app.listen(config.port);
 
-server.once('listening', () => {
-  logger.info({ port: config.port }, 'Server started');
-  maintenanceCleanupJob.start();
+  server.once('listening', () => {
+    logger.info({ port: config.port, runtimeRole: config.runtimeRole }, 'Server started');
+    maintenanceCleanupJob?.start();
+    videoTranscodeRunner?.start();
+  });
+
+  server.on('error', (error) => {
+    logger.fatal({ err: error }, 'Server failed to start');
+    void shutdown('server_error', 1);
+  });
+} else {
+  logger.info({ runtimeRole: config.runtimeRole }, 'Transcoder runtime started without HTTP');
   videoTranscodeRunner?.start();
-});
-
-server.on('error', (error) => {
-  logger.fatal({ err: error }, 'Server failed to start');
-  void shutdown('server_error', 1);
-});
+}

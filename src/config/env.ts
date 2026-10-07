@@ -1,4 +1,5 @@
 import {
+  assertRuntimeRoleTranscodeConfig,
   assertProductionMailerConfig,
   parseAuthCodePepper,
   parseBcryptRounds,
@@ -10,6 +11,7 @@ import {
   parseProfileMediaMaxUploadBytes,
   parseOptionalRedisUrl,
   parseOptionalObjectStorageConfig,
+  parseRuntimeRole,
   parseRateLimitKeySecret,
   parseRequiredHttpUrl,
   parseServerPort,
@@ -23,6 +25,8 @@ import {
 } from './env.parsers.js';
 
 const isProduction = parseIsProduction(process.env.NODE_ENV);
+const runtimeRole = parseRuntimeRole(process.env.RUNTIME_ROLE, isProduction);
+const isProductionApi = isProduction && runtimeRole !== 'transcoder';
 
 const mailer = parseMailerConfig({
   smtpHost: process.env.SMTP_HOST,
@@ -50,6 +54,8 @@ const videoUpload = parseVideoUploadConfig({
   partSizeBytes: process.env.VIDEO_UPLOAD_PART_SIZE_BYTES,
   maxPartCount: process.env.VIDEO_UPLOAD_MAX_PARTS,
   maxUploadBytes: process.env.VIDEO_UPLOAD_MAX_BYTES,
+  maxTranscodeOutstandingJobs: process.env.VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS,
+  maxTranscodeOutstandingJobsPerUser: process.env.VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER,
   userStorageQuotaBytes: process.env.VIDEO_USER_STORAGE_QUOTA_BYTES,
   sessionTtlSeconds: process.env.VIDEO_UPLOAD_SESSION_TTL_SECONDS,
 });
@@ -79,17 +85,18 @@ const config = {
     process.env.PROFILE_MEDIA_MAX_UPLOAD_BYTES,
   ),
   isProduction,
+  runtimeRole,
   allowedOrigins: parseAllowedOrigins(process.env.CORS_ORIGINS),
   redisUrl: parseOptionalRedisUrl(process.env.REDIS_URL, 'REDIS_URL'),
   objectStorage,
   videoUpload,
   videoTranscode,
-  authCodePepper: parseAuthCodePepper(process.env.AUTH_CODE_PEPPER, isProduction),
+  authCodePepper: parseAuthCodePepper(process.env.AUTH_CODE_PEPPER, isProductionApi),
   followingCursorEncryptionKey: parseFollowingCursorEncryptionKey(
     process.env.FOLLOWING_CURSOR_ENCRYPTION_KEY,
-    isProduction,
+    isProductionApi,
   ),
-  rateLimitKeySecret: parseRateLimitKeySecret(process.env.RATE_LIMIT_KEY_SECRET, isProduction),
+  rateLimitKeySecret: parseRateLimitKeySecret(process.env.RATE_LIMIT_KEY_SECRET, isProductionApi),
   sessionCleanupIntervalMs: parseSessionCleanupIntervalMs(
     process.env.SESSION_CLEANUP_INTERVAL_MINUTES,
   ),
@@ -100,10 +107,12 @@ const config = {
 };
 
 if (isProduction) {
-  assertProductionMailerConfig(mailer);
+  if (runtimeRole !== 'transcoder') {
+    assertProductionMailerConfig(mailer);
+  }
 }
 
-if (isProduction && !config.redisUrl) {
+if (isProduction && runtimeRole !== 'transcoder' && !config.redisUrl) {
   throw new ServerConfigurationError(
     'REDIS_URL is required in production for distributed rate limiting.',
   );
@@ -114,6 +123,13 @@ if (isProduction && !config.objectStorage) {
     'Object storage must be configured in production. Set OBJECT_STORAGE_ENDPOINT, OBJECT_STORAGE_ACCESS_KEY, and OBJECT_STORAGE_SECRET_KEY.',
   );
 }
+
+assertRuntimeRoleTranscodeConfig({
+  runtimeRole: config.runtimeRole,
+  isProduction,
+  maxConcurrentJobs: config.videoTranscode.maxConcurrentJobs,
+  threadsPerJob: config.videoTranscode.threadsPerJob,
+});
 
 export type Config = typeof config;
 

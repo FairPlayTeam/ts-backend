@@ -7,6 +7,8 @@ import { inject } from 'vitest';
 
 import { createApp } from '../../../src/app.js';
 import {
+  DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER,
   EMAIL_VERIFICATION_TOKEN_TTL_MS,
   PASSWORD_RESET_TOKEN_TTL_MS,
   SESSION_TTL_MS,
@@ -252,6 +254,8 @@ export const createIntegrationVideosService = (
   externalResources: ExternalResourceReconciler,
   config: {
     maxUploadBytes?: number;
+    maxTranscodeOutstandingJobs?: number;
+    maxTranscodeOutstandingJobsPerUser?: number;
     now?: () => Date;
     publicIds?: string[];
     userStorageQuotaBytes?: number;
@@ -274,6 +278,11 @@ export const createIntegrationVideosService = (
     config: {
       maxPartCount: 10_000,
       maxUploadBytes: config.maxUploadBytes ?? 3 * 1024 * 1024 * 1024,
+      maxTranscodeOutstandingJobs:
+        config.maxTranscodeOutstandingJobs ?? DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS,
+      maxTranscodeOutstandingJobsPerUser:
+        config.maxTranscodeOutstandingJobsPerUser ??
+        DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER,
       partSizeBytes: 67_108_864,
       sessionTtlSeconds: 86_400,
       userStorageQuotaBytes: config.userStorageQuotaBytes ?? 100 * 1024 * 1024 * 1024,

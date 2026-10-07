@@ -16,6 +16,8 @@ import {
   DEFAULT_VIDEO_TRANSCODE_MAX_DURATION_SECONDS,
   DEFAULT_VIDEO_TRANSCODE_MAX_FPS,
   DEFAULT_VIDEO_TRANSCODE_MAX_HEIGHT,
+  DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS,
+  DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER,
   DEFAULT_VIDEO_TRANSCODE_MAX_PIXELS,
   DEFAULT_VIDEO_TRANSCODE_MAX_WIDTH,
   DEFAULT_VIDEO_TRANSCODE_THREADS_PER_JOB,
@@ -62,9 +64,14 @@ export type VideoUploadConfig = {
   partSizeBytes: number;
   maxPartCount: number;
   maxUploadBytes: number;
+  maxTranscodeOutstandingJobs: number;
+  maxTranscodeOutstandingJobsPerUser: number;
   userStorageQuotaBytes: number;
   sessionTtlSeconds: number;
 };
+
+export const RUNTIME_ROLES = ['api', 'transcoder', 'combined'] as const;
+export type RuntimeRole = (typeof RUNTIME_ROLES)[number];
 
 type VideoTranscodeConfig = {
   ffmpegTimeoutMs: number;
@@ -316,6 +323,60 @@ const parseExternalOperationTimeoutMs = (
 export const parseIsProduction = (rawValue: string | undefined): boolean =>
   rawValue === 'production';
 
+export const parseRuntimeRole = (
+  rawValue: string | undefined,
+  isProduction: boolean,
+): RuntimeRole => {
+  const configuredValue = rawValue?.trim();
+
+  if (!configuredValue && isProduction) {
+    throw new ServerConfigurationError('RUNTIME_ROLE is required in production');
+  }
+
+  const value = configuredValue || 'combined';
+  const runtimeRole = RUNTIME_ROLES.find((role) => role === value);
+
+  if (!runtimeRole) {
+    throw new ServerConfigurationError(`RUNTIME_ROLE must be one of: ${RUNTIME_ROLES.join(', ')}`);
+  }
+
+  if (isProduction && runtimeRole === 'combined') {
+    throw new ServerConfigurationError('RUNTIME_ROLE=combined is not allowed in production');
+  }
+
+  return runtimeRole;
+};
+
+export const assertRuntimeRoleTranscodeConfig = ({
+  runtimeRole,
+  isProduction,
+  maxConcurrentJobs,
+  threadsPerJob,
+}: {
+  runtimeRole: RuntimeRole;
+  isProduction: boolean;
+  maxConcurrentJobs: number;
+  threadsPerJob: number;
+}): void => {
+  if (runtimeRole === 'api' && maxConcurrentJobs !== 0) {
+    throw new ServerConfigurationError(
+      'VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS must be 0 when RUNTIME_ROLE=api',
+    );
+  }
+
+  if (runtimeRole === 'transcoder' && maxConcurrentJobs !== 1) {
+    throw new ServerConfigurationError(
+      'VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS must be 1 when RUNTIME_ROLE=transcoder',
+    );
+  }
+
+  if (runtimeRole === 'transcoder' && isProduction && threadsPerJob > 2) {
+    throw new ServerConfigurationError(
+      'VIDEO_TRANSCODE_THREADS_PER_JOB must be at most 2 on the production transcoder',
+    );
+  }
+};
+
 export const ALL_CORS_ORIGINS = '*' as const;
 
 type AllowedCorsOrigins = typeof ALL_CORS_ORIGINS | string[];
@@ -528,6 +589,8 @@ type RawVideoUploadConfig = {
   partSizeBytes: string | undefined;
   maxPartCount: string | undefined;
   maxUploadBytes: string | undefined;
+  maxTranscodeOutstandingJobs: string | undefined;
+  maxTranscodeOutstandingJobsPerUser: string | undefined;
   userStorageQuotaBytes: string | undefined;
   sessionTtlSeconds: string | undefined;
 };
@@ -617,6 +680,18 @@ export const parseVideoUploadConfig = (rawConfig: RawVideoUploadConfig): VideoUp
       'VIDEO_UPLOAD_MAX_BYTES',
       'bytes',
       Number.MAX_SAFE_INTEGER,
+    ),
+    maxTranscodeOutstandingJobs: parsePositiveInteger(
+      rawConfig.maxTranscodeOutstandingJobs,
+      DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS,
+      'VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS',
+      'jobs',
+    ),
+    maxTranscodeOutstandingJobsPerUser: parsePositiveInteger(
+      rawConfig.maxTranscodeOutstandingJobsPerUser,
+      DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER,
+      'VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER',
+      'jobs',
     ),
     userStorageQuotaBytes: parsePositiveInteger(
       rawConfig.userStorageQuotaBytes,

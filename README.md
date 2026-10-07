@@ -20,7 +20,7 @@ This repository contains the FairPlay backend API built with:
 - PostgreSQL
 - Prisma
 - S3-compatible object storage, with MinIO as the local default
-- FFmpeg and ffprobe for in-process video transcoding
+- FFmpeg and ffprobe in the isolated video-transcoder image
 - Bun
 - Pino
 
@@ -51,8 +51,8 @@ bun run dev
 
 The API runs on http://localhost:3000 and logs are pretty-printed by the development entrypoint.
 MinIO runs locally on http://localhost:9000 for object storage and http://localhost:9001 for its
-console. Host-based development also requires `ffmpeg` and `ffprobe` on `PATH`; the production
-runtime image installs both tools.
+console. Host-based development also requires `ffmpeg` and `ffprobe` on `PATH`; the local Compose
+combined image and production transcoder image install both tools.
 
 ### Docker Compose stack
 
@@ -60,7 +60,7 @@ runtime image installs both tools.
 docker compose up --build
 ```
 
-The Compose stack builds the runtime image, starts local PostgreSQL, Redis, and MinIO services on
+The Compose stack builds the local combined image, starts local PostgreSQL, Redis, and MinIO services on
 the same Docker network, runs the Prisma migrations once through the `migrate` service, then starts
 the API on http://localhost:3000.
 
@@ -68,26 +68,32 @@ Make sure to read [CONTRIBUTING.md](CONTRIBUTING.md) for more complete setup ins
 
 ## Deployment
 
-Production deployments should use the Dockerfile targets:
+The Dockerfile separates the production API from the transcoder:
 
 ```bash
-docker build --target runtime -t fairplay-backend:<tag> .
+docker build --target runtime -t fairplay-backend:production-api .
+docker build --target transcoder -t fairplay-backend:production-transcoder .
 docker build --target migrator -t fairplay-backend-migrator:<tag> .
 ```
 
-Run the migrator image once per release, then run one or more replicas of the runtime image behind
-a reverse proxy or load balancer. Production requires shared PostgreSQL, Redis, and object storage
-instances, SMTP configuration, and a strong `RATE_LIMIT_KEY_SECRET`.
+Run the migrator image once per release. Start the API with `RUNTIME_ROLE=api` and
+`VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=0` behind a reverse proxy; start one isolated worker with
+`RUNTIME_ROLE=transcoder` and one slot. The API image does not contain FFmpeg. The worker image has
+no Docker HTTP healthcheck and does not bind a port. The initial no-orchestrator DL360 deployment
+uses the example [systemd units](deploy/systemd); its resource budget and temporary-filesystem setup
+are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
+
+Production requires shared cloud PostgreSQL, Redis (API only), and S3-compatible object storage,
+SMTP configuration for the API, and a strong `RATE_LIMIT_KEY_SECRET`.
 Use a separate strong `AUTH_CODE_PEPPER` for email verification and password reset code hashing.
 Set the same random 64-hex-character `FOLLOWING_CURSOR_ENCRYPTION_KEY` on every API replica;
 rotating it invalidates followed-profile cursors that clients have not consumed yet.
 For a fully public Bearer-token API, set `CORS_ORIGINS=*`.
 Profile media uses the `user-media` bucket, while video sources and artifacts use `videos`.
 
-Managed PostgreSQL, Redis, and S3-compatible object storage providers are supported. For example,
-Neon can provide PostgreSQL, Upstash can provide Redis, and Infomaniak Object Storage or another
-S3-compatible provider can provide object storage. Keep provider credentials in deployment
-environment files or secret managers, never in Git.
+Managed PostgreSQL, Redis, and S3-compatible object storage providers are supported. The initial
+production setup uses cloud PostgreSQL and Redis, with Backblaze B2 for all object data. Keep
+provider credentials in protected deployment environment files or secret managers, never in Git.
 
 Cloudflare Tunnel deployments should prefer `TRUST_PROXY=loopback` when `cloudflared` forwards to
 the backend over `127.0.0.1:3000`. Use `/health/ready` for origin health checks.
@@ -197,11 +203,19 @@ rows while external-resource targets survive until S3 confirms every object or p
 
 ## Video transcoding
 
-Transcoding runs inside the backend process with direct, supervised `ffprobe` and `ffmpeg` child
-processes. PostgreSQL claims queued work with `FOR UPDATE SKIP LOCKED`; stale heartbeats make an
-abandoned job claimable again under a new `executionId`. The per-process concurrency setting covers
-the complete download, probe, encode, upload, verification, and publication cycle. Setting
-`VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=0` keeps a replica from claiming work.
+Production transcoding runs in a dedicated worker process and Docker image with direct, supervised
+`ffprobe` and `ffmpeg` child processes. The API uses `RUNTIME_ROLE=api` and
+`VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=0`; the worker uses `RUNTIME_ROLE=transcoder` and one job slot.
+The worker does not create Express, bind a socket, or connect to Redis. PostgreSQL claims queued
+work with `FOR UPDATE SKIP LOCKED`; stale heartbeats make an abandoned job claimable again under a
+new `executionId`. A slot covers the complete download, probe, encode, upload, verification, and
+publication cycle.
+
+Multipart initialization is admitted before object storage is contacted. The serializable
+transaction counts queued/processing jobs and active upload reservations, with defaults of ten
+outstanding globally and two per account. Capacity transfers atomically from an upload reservation
+to its queued job when completion commits. A full limit returns the same retryable 429 and does not
+create an S3 multipart upload.
 
 Every execution reserves a durable `writing` generation and its cleanup prefixes before creating
 or uploading artifacts. FFmpeg creates a 240p-only rendition for sources from 240p through 479p;
@@ -210,18 +224,21 @@ Sources below 240p fail permanently. Renditions use six-second HLS VOD segments,
 audio, and a WebP thumbnail. All artifacts use an immutable generation namespace and are checked
 in object storage before publication.
 
-Before encoding, ffprobe rejects sources longer than one hour, wider or taller than 3840 pixels,
+Before encoding, ffprobe rejects sources longer than 30 minutes, wider or taller than 3840 pixels,
 above 8,294,400 raster or square-pixel display pixels, above a 4:1 raster or display aspect ratio in
-either orientation, or above 60 average FPS. An FFmpeg decoder-level pixel ceiling repeats the
+either orientation, or above 30 average FPS. An FFmpeg decoder-level pixel ceiling repeats the
 metadata pixel check, and anamorphic inputs are normalized to square-pixel artifacts. FFprobe and
 FFmpeg also account for quarter-turn container rotation before producing oriented square-pixel
-artifacts; other rotation angles are rejected. They have independent 30-second and six-hour
+artifacts; other rotation angles are rejected. They have independent 30-second and two-hour
 deadlines. Both accept only the local `file` input protocol and the MP4-family `mov` demuxer;
-FFmpeg also caps every rendition at 60 FPS and applies a VBV maximum rate and buffer alongside CRF.
-A generation whose cumulative local artifacts exceeds 8 GiB is rejected before any artifact
+FFmpeg also caps every rendition at 30 FPS and applies a VBV maximum rate and buffer alongside CRF.
+A generation whose cumulative local artifacts exceeds 4 GiB is rejected before any artifact
 upload. These defaults are configurable through the
 `VIDEO_TRANSCODE_MAX_*`, `VIDEO_TRANSCODE_FFPROBE_TIMEOUT_MS`, and
 `VIDEO_TRANSCODE_FFMPEG_TIMEOUT_MS` variables listed in `.env.example`.
+The 3 GiB source and 4 GiB artifact ceiling imply about 7 GiB of expected local temporary data per
+slot. The initial worker's `TMPDIR` is bound to a dedicated 32 GiB filesystem, so local scratch
+remains bounded even though all durable object data is stored in Backblaze B2.
 
 A confirmed custom thumbnail replaces the local FFmpeg poster before upload, so the final bytes
 are copied into each generation's own immutable thumbnail key. Its temporary source object becomes

@@ -39,6 +39,7 @@ describe('owned video deletion authorization', () => {
       videoArtifactGeneration: prisma.videoArtifactGeneration,
       videoRating: prisma.videoRating,
       videoSourceThumbnail: prisma.videoSourceThumbnail,
+      videoTranscodeJob: prisma.videoTranscodeJob,
       videoUploadSession: prisma.videoUploadSession,
     } satisfies VideosDependencies['prisma'];
     const findCandidate = spyOn(testPrisma.video, 'findFirst').mockResolvedValue(null);
@@ -60,6 +61,8 @@ describe('owned video deletion authorization', () => {
       config: {
         maxPartCount: config.videoUpload.maxPartCount,
         maxUploadBytes: config.videoUpload.maxUploadBytes,
+        maxTranscodeOutstandingJobs: config.videoUpload.maxTranscodeOutstandingJobs,
+        maxTranscodeOutstandingJobsPerUser: config.videoUpload.maxTranscodeOutstandingJobsPerUser,
         partSizeBytes: config.videoUpload.partSizeBytes,
         sessionTtlSeconds: config.videoUpload.sessionTtlSeconds,
         userStorageQuotaBytes: config.videoUpload.userStorageQuotaBytes,

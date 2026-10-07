@@ -17,6 +17,8 @@ export const VIDEO_UPLOAD_STATE_MESSAGE = 'Video is not in a valid upload state'
 const VIDEO_UPLOAD_SIZE_EXCEEDED_MESSAGE = 'Declared video size exceeds the upload limit';
 const VIDEO_STORAGE_QUOTA_EXCEEDED_MESSAGE = 'Video storage quota exceeded';
 const VIDEO_UPLOAD_SIZE_MISMATCH_MESSAGE = 'Uploaded video size does not match the declared size';
+const VIDEO_TRANSCODE_ADMISSION_FULL_MESSAGE =
+  'Video processing capacity is temporarily full; please retry later';
 
 export class VideoNotFoundError extends Error {
   constructor() {
@@ -120,5 +122,12 @@ export class VideoUploadSizeMismatchError extends Error {
   constructor() {
     super(VIDEO_UPLOAD_SIZE_MISMATCH_MESSAGE);
     this.name = 'VideoUploadSizeMismatchError';
+  }
+}
+
+export class VideoTranscodeAdmissionFullError extends Error {
+  constructor() {
+    super(VIDEO_TRANSCODE_ADMISSION_FULL_MESSAGE);
+    this.name = 'VideoTranscodeAdmissionFullError';
   }
 }

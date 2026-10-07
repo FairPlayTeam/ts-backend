@@ -467,6 +467,7 @@ model VideoUploadSession {
   @@index([videoId, status])
   @@index([userId, createdAt, id])
   @@index([expiresAt])
+  @@index([status, expiresAt])
   @@map("video_upload_sessions")
 }
 

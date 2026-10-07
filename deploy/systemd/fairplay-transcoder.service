@@ -1,0 +1,33 @@
+[Unit]
+Description=FairPlay video transcoder
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+AssertPathIsMountPoint=/srv/fairplay-transcoder-tmp
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+TimeoutStopSec=60
+ExecStartPre=-/usr/bin/docker rm -f fairplay-transcoder
+ExecStart=/usr/bin/docker run --rm --init \
+    --name fairplay-transcoder \
+    --cpus=2 \
+    --cpu-shares=512 \
+    --memory=8g \
+    --memory-reservation=4g \
+    --pids-limit=256 \
+    --cap-drop=ALL \
+    --security-opt=no-new-privileges \
+    --mount=type=bind,src=/srv/fairplay-transcoder-tmp,dst=/transcode-tmp \
+    --env-file=/etc/fairplay/runtime.env \
+    --env=RUNTIME_ROLE=transcoder \
+    --env=VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=1 \
+    --env=TMPDIR=/transcode-tmp \
+    fairplay-backend:production-transcoder
+ExecStop=/usr/bin/docker stop --time 45 fairplay-transcoder
+ExecStopPost=-/usr/bin/docker rm -f fairplay-transcoder
+
+[Install]
+WantedBy=multi-user.target

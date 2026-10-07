@@ -17,6 +17,7 @@ type Prisma = Pick<
   | 'videoArtifactGeneration'
   | 'videoRating'
   | 'videoSourceThumbnail'
+  | 'videoTranscodeJob'
   | 'videoUploadSession'
 >;
 
@@ -46,6 +47,8 @@ export type VideosDependencies = {
     VideoUploadConfig,
     | 'maxPartCount'
     | 'maxUploadBytes'
+    | 'maxTranscodeOutstandingJobs'
+    | 'maxTranscodeOutstandingJobsPerUser'
     | 'partSizeBytes'
     | 'sessionTtlSeconds'
     | 'userStorageQuotaBytes'

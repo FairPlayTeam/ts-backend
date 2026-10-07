@@ -8,6 +8,7 @@ import {
   ActiveVideoUploadSessionExistsError,
   InvalidVideoUploadSessionStateError,
   VideoStorageQuotaExceededError,
+  VideoTranscodeAdmissionFullError,
   VideoUploadSizeMismatchError,
 } from '../../src/services/videos.errors.js';
 import { createVerifiedSession, uploadVideoSource } from './support/fixtures.js';
@@ -30,9 +31,10 @@ import {
 
 const createUploadReservationBarrierPrisma = (
   prisma: PrismaClient,
-  afterFirstReservation: () => Promise<void>,
+  afterReservation: () => Promise<void>,
+  reservationsToPause = 1,
 ): PrismaClient => {
-  let reservationObserved = false;
+  let reservationCount = 0;
 
   return new Proxy(prisma, {
     get(target, property) {
@@ -53,9 +55,9 @@ const createUploadReservationBarrierPrisma = (
                         ): Promise<Awaited<ReturnType<typeof sessionTarget.create>>> => {
                           const result = await sessionTarget.create(args);
 
-                          if (!reservationObserved) {
-                            reservationObserved = true;
-                            await afterFirstReservation();
+                          if (reservationCount < reservationsToPause) {
+                            reservationCount += 1;
+                            await afterReservation();
                           }
 
                           return result;
@@ -291,6 +293,190 @@ describe('videos upload integration', () => {
       _sum: { expectedSizeBytes: true },
     });
     expect(afterCleanup._sum.expectedSizeBytes).toBe(BigInt(secondBody.length));
+  });
+
+  test('counts queued jobs against the account admission cap before starting another multipart upload', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+    const activeRuntime = runtime;
+
+    const owner = await createVerifiedSession(activeRuntime, {
+      email: 'video-transcode-account-cap@example.com',
+      username: 'video_transcode_cap',
+    });
+    const [firstVideo, secondVideo] = await Promise.all([
+      activeRuntime.videosService.createVideo({
+        userId: owner.userId,
+        title: 'Queued job',
+        description: null,
+        tags: [],
+        license: 'all_rights_reserved',
+        allowComments: true,
+      }),
+      activeRuntime.videosService.createVideo({
+        userId: owner.userId,
+        title: 'Rejected reservation',
+        description: null,
+        tags: [],
+        license: 'all_rights_reserved',
+        allowComments: true,
+      }),
+    ]);
+
+    await uploadVideoSource(activeRuntime.videosService, {
+      body: Buffer.from('queued source'),
+      userId: owner.userId,
+      videoId: firstVideo.video.id,
+    });
+
+    let multipartInitializations = 0;
+    const observedStorage: ObjectStorage = {
+      ...activeRuntime.videoObjectStorage,
+      initiateMultipartUpload: async (input) => {
+        multipartInitializations += 1;
+        return activeRuntime.videoObjectStorage.initiateMultipartUpload(input);
+      },
+    };
+    const service = createIntegrationVideosService(
+      activeRuntime.prisma,
+      observedStorage,
+      activeRuntime.videoExternalResources,
+      {
+        maxTranscodeOutstandingJobs: 10,
+        maxTranscodeOutstandingJobsPerUser: 1,
+      },
+    );
+
+    await expect(
+      service.initMultipartUpload({
+        userId: owner.userId,
+        videoId: secondVideo.video.id,
+        sizeBytes: 32,
+      }),
+    ).rejects.toBeInstanceOf(VideoTranscodeAdmissionFullError);
+    expect(multipartInitializations).toBe(0);
+    await expect(
+      activeRuntime.prisma.videoTranscodeJob.count({
+        where: { videoId: firstVideo.video.id, status: 'queued' },
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      activeRuntime.prisma.videoUploadSession.count({
+        where: { videoId: secondVideo.video.id },
+      }),
+    ).resolves.toBe(0);
+  });
+
+  test('admits only one cross-account transcode reservation under concurrent PostgreSQL transactions', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+    const activeRuntime = runtime;
+    const [firstOwner, secondOwner] = await Promise.all([
+      createVerifiedSession(activeRuntime, {
+        email: 'video-transcode-global-cap-a@example.com',
+        username: 'video_transcode_global_a',
+      }),
+      createVerifiedSession(activeRuntime, {
+        email: 'video-transcode-global-cap-b@example.com',
+        username: 'video_transcode_global_b',
+      }),
+    ]);
+    const [firstVideo, secondVideo] = await Promise.all([
+      activeRuntime.videosService.createVideo({
+        userId: firstOwner.userId,
+        title: 'First global reservation',
+        description: null,
+        tags: [],
+        license: 'all_rights_reserved',
+        allowComments: true,
+      }),
+      activeRuntime.videosService.createVideo({
+        userId: secondOwner.userId,
+        title: 'Second global reservation',
+        description: null,
+        tags: [],
+        license: 'all_rights_reserved',
+        allowComments: true,
+      }),
+    ]);
+    const firstClient = createPrismaClient(activeRuntime.databaseUrl);
+    const secondClient = createPrismaClient(activeRuntime.databaseUrl);
+    const bothReservationsCreated = Promise.withResolvers<void>();
+    let reservationsCreated = 0;
+    const waitUntilBothReservationsExist = async (): Promise<void> => {
+      reservationsCreated += 1;
+
+      if (reservationsCreated === 2) {
+        bothReservationsCreated.resolve();
+      }
+
+      await bothReservationsCreated.promise;
+    };
+    const firstObservedClient = createUploadReservationBarrierPrisma(
+      firstClient,
+      waitUntilBothReservationsExist,
+      2,
+    );
+    const secondObservedClient = createUploadReservationBarrierPrisma(
+      secondClient,
+      waitUntilBothReservationsExist,
+      2,
+    );
+    let multipartInitializations = 0;
+    const observedStorage: ObjectStorage = {
+      ...activeRuntime.videoObjectStorage,
+      initiateMultipartUpload: async (input) => {
+        multipartInitializations += 1;
+        return activeRuntime.videoObjectStorage.initiateMultipartUpload(input);
+      },
+    };
+    const makeService = (prisma: PrismaClient) =>
+      createIntegrationVideosService(
+        prisma,
+        observedStorage,
+        createExternalResourceReconciler({
+          prisma,
+          objectStorage: observedStorage,
+          clock: { now: () => new Date() },
+          logger: testLogger,
+        }),
+        {
+          maxTranscodeOutstandingJobs: 1,
+          maxTranscodeOutstandingJobsPerUser: 1,
+        },
+      );
+    const firstService = makeService(firstObservedClient);
+    const secondService = makeService(secondObservedClient);
+
+    try {
+      const results = await Promise.allSettled([
+        firstService.initMultipartUpload({
+          userId: firstOwner.userId,
+          videoId: firstVideo.video.id,
+          sizeBytes: 32,
+        }),
+        secondService.initMultipartUpload({
+          userId: secondOwner.userId,
+          videoId: secondVideo.video.id,
+          sizeBytes: 32,
+        }),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.find((result) => result.status === 'rejected');
+      expect(rejected?.status).toBe('rejected');
+
+      if (rejected?.status === 'rejected') {
+        expect(rejected.reason).toBeInstanceOf(VideoTranscodeAdmissionFullError);
+      }
+      expect(multipartInitializations).toBe(1);
+      await expect(activeRuntime.prisma.videoUploadSession.count()).resolves.toBe(1);
+      await expect(activeRuntime.prisma.externalMultipartHandle.count()).resolves.toBe(1);
+    } finally {
+      await Promise.all([firstClient.$disconnect(), secondClient.$disconnect()]);
+    }
   });
 
   test('keeps an S3 initialization failure durably scheduled after the PostgreSQL reservation', async () => {

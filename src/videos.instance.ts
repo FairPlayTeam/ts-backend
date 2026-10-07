@@ -25,6 +25,8 @@ export const videosService = createVideosService({
   config: {
     maxPartCount: config.videoUpload.maxPartCount,
     maxUploadBytes: config.videoUpload.maxUploadBytes,
+    maxTranscodeOutstandingJobs: config.videoUpload.maxTranscodeOutstandingJobs,
+    maxTranscodeOutstandingJobsPerUser: config.videoUpload.maxTranscodeOutstandingJobsPerUser,
     partSizeBytes: config.videoUpload.partSizeBytes,
     sessionTtlSeconds: config.videoUpload.sessionTtlSeconds,
     userStorageQuotaBytes: config.videoUpload.userStorageQuotaBytes,

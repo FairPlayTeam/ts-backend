@@ -11,6 +11,7 @@ import {
 const PROCESS_OUTPUT_LIMIT_BYTES = 256 * 1024;
 const PROCESS_ABORT_KILL_DELAY_MS = 5_000;
 const MAX_PROCESS_TIMEOUT_MS = 2_147_483_647;
+const VIDEO_PROCESS_ENV_KEYS = ['PATH', 'SystemRoot', 'WINDIR', 'TMPDIR', 'TMP', 'TEMP'] as const;
 const HLS_SEGMENT_DURATION_SECONDS = 6;
 const INPUT_FORMAT_WHITELIST = 'mov';
 const INPUT_PROTOCOL_WHITELIST = 'file';
@@ -235,6 +236,20 @@ const toBoundedOutput = (current: Buffer, chunk: Buffer): Buffer => {
     : combined.subarray(combined.length - PROCESS_OUTPUT_LIMIT_BYTES);
 };
 
+const getVideoProcessEnvironment = (): NodeJS.ProcessEnv => {
+  const environment: NodeJS.ProcessEnv = {};
+
+  for (const key of VIDEO_PROCESS_ENV_KEYS) {
+    const value = process.env[key];
+
+    if (value !== undefined) {
+      environment[key] = value;
+    }
+  }
+
+  return environment;
+};
+
 export const runVideoProcess = async ({
   args,
   command,
@@ -266,6 +281,7 @@ export const runVideoProcess = async ({
       ...(cwd ? { cwd } : {}),
       shell: false,
       windowsHide: true,
+      env: getVideoProcessEnvironment(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout: Buffer<ArrayBufferLike> = Buffer.alloc(0);
