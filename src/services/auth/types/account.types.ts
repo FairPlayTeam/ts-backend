@@ -1,5 +1,11 @@
+import type {
+  VideoDeletionOrigin,
+  VideoLicense,
+  VideoModerationStatus,
+  VideoProcessingStatus,
+  VideoVisibility,
+} from '@prisma/client';
 import type { AuthRole } from './user.types.js';
-import type { UserMediaKind } from '../../userMedia/userMedia.types.js';
 
 export type ExportUserDataInput = {
   userId: string;
@@ -34,6 +40,38 @@ export type ExportUserVideoViewData = {
   viewedOn: Date;
 };
 
+export type ExportUserFollowData = {
+  username: string;
+  displayName: string | null;
+  createdAt: Date;
+};
+
+export type ExportUserVideoData = {
+  publicId: string;
+  title: string;
+  description: string | null;
+  tags: string[];
+  license: VideoLicense;
+  visibility: VideoVisibility;
+  allowComments: boolean;
+  processingStatus: VideoProcessingStatus;
+  moderationStatus: VideoModerationStatus;
+  durationSeconds: number | null;
+  width: number | null;
+  height: number | null;
+  viewCount: number;
+  ratingCount: number;
+  commentCount: number;
+  publishedAt: Date | null;
+  rejectedAt: Date | null;
+  rejectionReason: string | null;
+  deletionRequestedAt: Date | null;
+  deletionReason: string | null;
+  deletionOrigin: VideoDeletionOrigin | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export type ExportUserSessionData = {
   id: string;
   sessionKeySuffix: string | null;
@@ -60,21 +98,14 @@ export type ExportUserDataResult = {
     isVerified: boolean;
     isBanned: boolean;
     bannedAt: Date | null;
+    banReason: string | null;
     createdAt: Date;
     updatedAt: Date;
     lastLogin: Date | null;
   };
-  mediaAssets: {
-    id: string;
-    kind: UserMediaKind;
-    url: string;
-    mimeType: string;
-    sizeBytes: number;
-    width: number;
-    height: number;
-    createdAt: Date;
-    updatedAt: Date;
-  }[];
+  following: AsyncIterable<ExportUserFollowData>;
+  followers: AsyncIterable<ExportUserFollowData>;
+  videos: AsyncIterable<ExportUserVideoData>;
   videoRatings: AsyncIterable<ExportUserVideoRatingData>;
   videoViews: AsyncIterable<ExportUserVideoViewData>;
   comments: AsyncIterable<ExportUserCommentData>;

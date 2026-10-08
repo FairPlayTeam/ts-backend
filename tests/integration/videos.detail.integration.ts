@@ -690,6 +690,14 @@ describe('public video detail integration', () => {
           durationSeconds: 19,
         },
       });
+      await runtime.prisma.videoTranscodeJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'completed',
+          attempts: 1,
+          completedAt: new Date(),
+        },
+      });
 
       const [persisted, detail] = await Promise.all([
         runtime.prisma.video.findUniqueOrThrow({

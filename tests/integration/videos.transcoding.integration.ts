@@ -1034,6 +1034,7 @@ describe('videos transcoding integration', () => {
       expect(pendingSnapshot.generations).toContainEqual({
         hlsMasterObjectKey: previousManifest.master.objectKey,
         id: previousGenerationId,
+        publicToken: previousGenerationToken,
         renditions: [],
         state: 'active',
         thumbnailObjectKey: previousManifest.thumbnail.objectKey,
@@ -1041,6 +1042,7 @@ describe('videos transcoding integration', () => {
       expect(pendingGeneration).toEqual({
         hlsMasterObjectKey: pendingManifest.master.objectKey,
         id: pendingGeneration.id,
+        publicToken: pendingGeneration.publicToken,
         renditions: [],
         state: 'writing',
         thumbnailObjectKey: pendingManifest.thumbnail.objectKey,

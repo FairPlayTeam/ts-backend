@@ -247,7 +247,7 @@ describe('auth routes', () => {
     expect(bodyText.endsWith('\n')).toBe(true);
     expect(response.headers.get('content-length')).toBeNull();
     expect(response.headers.get('transfer-encoding')).toBe('chunked');
-    const body = JSON.parse(bodyText) as { [key: string]: unknown; mediaAssets: unknown[] };
+    const body = JSON.parse(bodyText) as { [key: string]: unknown };
     expect(body).toEqual({
       exportedAt: '2026-01-01T00:00:00.000Z',
       user: {
@@ -260,30 +260,48 @@ describe('auth routes', () => {
         isVerified: true,
         isBanned: false,
         bannedAt: null,
+        banReason: null,
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
         lastLogin: '2026-01-01T00:00:00.000Z',
       },
-      mediaAssets: [
+      following: [
         {
-          id: '11111111-1111-4111-8111-111111111111',
-          kind: 'avatar',
-          url: '/profiles/fairplay_user/avatar',
-          mimeType: 'image/webp',
-          sizeBytes: 1234,
-          width: 512,
-          height: 512,
+          username: 'followed_user',
+          displayName: 'Followed User',
           createdAt: '2026-01-01T00:00:00.000Z',
-          updatedAt: '2026-01-01T00:00:00.000Z',
         },
+      ],
+      followers: [
         {
-          id: '22222222-2222-4222-8222-222222222222',
-          kind: 'banner',
-          url: '/profiles/fairplay_user/banner',
-          mimeType: 'image/webp',
-          sizeBytes: 2345,
-          width: 1500,
-          height: 500,
+          username: 'follower_user',
+          displayName: 'Follower User',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      videos: [
+        {
+          publicId: 'vid_01JGF2KQ4X8T7M6N5P3R2S1ABC',
+          title: 'Exported video',
+          description: null,
+          tags: [],
+          license: 'all_rights_reserved',
+          visibility: 'unlisted',
+          allowComments: true,
+          processingStatus: 'ready',
+          moderationStatus: 'approved',
+          durationSeconds: 120,
+          width: 1920,
+          height: 1080,
+          viewCount: 4,
+          ratingCount: 1,
+          commentCount: 2,
+          publishedAt: '2026-01-01T00:00:00.000Z',
+          rejectedAt: null,
+          rejectionReason: null,
+          deletionRequestedAt: null,
+          deletionReason: null,
+          deletionOrigin: null,
           createdAt: '2026-01-01T00:00:00.000Z',
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
@@ -337,8 +355,10 @@ describe('auth routes', () => {
       emailVerificationToken: null,
       passwordResetToken: null,
     });
-    expect(JSON.stringify(body.mediaAssets)).not.toContain('objectKey');
-    expect(JSON.stringify(body.mediaAssets)).not.toContain('bucket');
+    expect(body).not.toHaveProperty('mediaAssets');
+    expect(bodyText).not.toContain('objectKey');
+    expect(bodyText).not.toContain('bucket');
+    expect(bodyText).not.toContain('internal-video-id');
   });
 
   test('requires a bearer session to export current user data', async () => {

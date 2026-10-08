@@ -670,16 +670,21 @@ inside the same serializable transaction used to repair rating aggregates. A use
 are included only in the authenticated `/auth/me/export`; public contracts expose the aggregate,
 never viewer identities or dates.
 
-`POST /auth/me/export` reads ratings, view facts, attributed comments (including soft-deleted
-tombstones), personal comment likes, and sessions with bounded keyset cursors and streams every
-entry to the HTTP response.
+`POST /auth/me/export` includes the account ban reason, both directions of follow relations, and
+metadata for videos owned by the account, alongside ratings, view facts, attributed comments
+(including soft-deleted tombstones), personal comment likes, and sessions. Collection data is read
+with bounded keyset cursors and streamed to the HTTP response. Follow relations expose usernames
+and display names, not internal user IDs. Video metadata uses the public video ID and excludes
+media bytes, storage keys, and other media assets by design.
 It never builds an unbounded fact array or pretty-prints the complete document in memory; HTTP
-backpressure limits production to the client's consumption rate. Only the bounded profile, media,
-and latest-token metadata are serialized before streaming starts. Each exported fact table has a
+backpressure limits production to the client's consumption rate. Only bounded account fields and
+latest-token metadata are serialized before streaming starts. Each exported fact table has a
 composite index matching its user filter and stable cursor order. Cursor queries repeat the temporal
 lower bound outside their tie-break `OR`, allowing PostgreSQL to seek to that boundary instead of
 rescanning and sorting all earlier facts; only rows sharing the exact boundary value need the final
-tie-break filter. One per-user local mutex covers both export and account deletion in a process;
+tie-break filter. The reverse follow index supports the same bounded ordering for followers as the
+existing index does for following. One per-user local mutex covers both export and account deletion
+in a process;
 when Redis is configured, the same lease is shared
 across instances and renewed until the controller's operation promise settles. A client disconnect
 after the operation starts does not release either lock while export generation or account deletion
@@ -696,10 +701,8 @@ If a database error occurs after headers have been sent, the server logs it stru
 the chunked response without the final JSON delimiter; clients must treat the interrupted transport
 or invalid JSON as an incomplete export and retry.
 
-Personal-export completeness remains a separate backlog item. The current contract does not yet
-include the account ban reason, following/follower relations, videos owned by the user, or multipart
-upload sessions and their parts. A dedicated completeness chantier must add and review those
-sections; they are intentionally not folded into the comments/export-memory work.
+Multipart upload sessions and their parts remain outside the export contract; they are not added by
+this change. Media assets and video bytes are also intentionally excluded, as requested.
 
 `GET /videos/:publicId/thumbnail` applies the same readiness and visibility rule, without a stricter
 moderation rule, and requires an active generation. It rebuilds the opaque-token thumbnail key from

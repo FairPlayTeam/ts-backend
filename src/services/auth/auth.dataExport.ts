@@ -4,17 +4,29 @@ import type {
   AuthAccountPort,
   ExportUserCommentData,
   ExportUserCommentLikeData,
+  ExportUserFollowData,
   ExportUserSessionData,
+  ExportUserVideoData,
   ExportUserVideoRatingData,
   ExportUserVideoViewData,
   ExportUserDataInput,
 } from './types/account.types.js';
 import { AuthenticatedUserNotFoundError } from '../auth.errors.js';
-import { profileAvatarPath, profileBannerPath } from '../assets/assetLinks.js';
 
 type DataExportService = Pick<AuthAccountPort, 'exportUserData'>;
 
 const USER_DATA_EXPORT_BATCH_SIZE = 250;
+type FollowingExportRow = {
+  followingId: string;
+  createdAt: Date;
+  following: Pick<ExportUserFollowData, 'username' | 'displayName'>;
+};
+type FollowerExportRow = {
+  followerId: string;
+  createdAt: Date;
+  follower: Pick<ExportUserFollowData, 'username' | 'displayName'>;
+};
+type OwnedVideoExportRow = ExportUserVideoData & { id: string };
 
 const createPaginatedExport = <TRow>(
   loadPage: (cursor: TRow | undefined) => Promise<TRow[]>,
@@ -36,6 +48,17 @@ const createPaginatedExport = <TRow>(
       if (!cursor) {
         return;
       }
+    }
+  },
+});
+
+const projectExport = <TRow, TExport>(
+  rows: AsyncIterable<TRow>,
+  project: (row: TRow) => TExport,
+): AsyncIterable<TExport> => ({
+  async *[Symbol.asyncIterator]() {
+    for await (const row of rows) {
+      yield project(row);
     }
   },
 });
@@ -204,6 +227,120 @@ const createSessionExport = (
     }));
   });
 
+const createFollowingExport = (
+  deps: AuthDependencies,
+  userId: string,
+): AsyncIterable<ExportUserFollowData> =>
+  projectExport<FollowingExportRow, ExportUserFollowData>(
+    createPaginatedExport<FollowingExportRow>((cursor) =>
+      deps.prisma.userFollow.findMany({
+        where: {
+          followerId: userId,
+          ...(cursor
+            ? {
+                createdAt: { gte: cursor.createdAt },
+                OR: [
+                  { createdAt: { gt: cursor.createdAt } },
+                  { createdAt: cursor.createdAt, followingId: { gt: cursor.followingId } },
+                ],
+              }
+            : {}),
+        },
+        select: {
+          followingId: true,
+          createdAt: true,
+          following: { select: { username: true, displayName: true } },
+        },
+        orderBy: [{ createdAt: 'asc' }, { followingId: 'asc' }],
+        take: USER_DATA_EXPORT_BATCH_SIZE,
+      }),
+    ),
+    ({ following, createdAt }) => ({ ...following, createdAt }),
+  );
+
+const createFollowerExport = (
+  deps: AuthDependencies,
+  userId: string,
+): AsyncIterable<ExportUserFollowData> =>
+  projectExport<FollowerExportRow, ExportUserFollowData>(
+    createPaginatedExport<FollowerExportRow>((cursor) =>
+      deps.prisma.userFollow.findMany({
+        where: {
+          followingId: userId,
+          ...(cursor
+            ? {
+                createdAt: { gte: cursor.createdAt },
+                OR: [
+                  { createdAt: { gt: cursor.createdAt } },
+                  { createdAt: cursor.createdAt, followerId: { gt: cursor.followerId } },
+                ],
+              }
+            : {}),
+        },
+        select: {
+          followerId: true,
+          createdAt: true,
+          follower: { select: { username: true, displayName: true } },
+        },
+        orderBy: [{ createdAt: 'asc' }, { followerId: 'asc' }],
+        take: USER_DATA_EXPORT_BATCH_SIZE,
+      }),
+    ),
+    ({ follower, createdAt }) => ({ ...follower, createdAt }),
+  );
+
+const createOwnedVideoExport = (
+  deps: AuthDependencies,
+  userId: string,
+): AsyncIterable<ExportUserVideoData> =>
+  projectExport<OwnedVideoExportRow, ExportUserVideoData>(
+    createPaginatedExport<OwnedVideoExportRow>((cursor) =>
+      deps.prisma.video.findMany({
+        where: {
+          ownerId: userId,
+          ...(cursor
+            ? {
+                createdAt: { gte: cursor.createdAt },
+                OR: [
+                  { createdAt: { gt: cursor.createdAt } },
+                  { createdAt: cursor.createdAt, id: { gt: cursor.id } },
+                ],
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          publicId: true,
+          title: true,
+          description: true,
+          tags: true,
+          license: true,
+          visibility: true,
+          allowComments: true,
+          processingStatus: true,
+          moderationStatus: true,
+          durationSeconds: true,
+          width: true,
+          height: true,
+          viewCount: true,
+          ratingCount: true,
+          commentCount: true,
+          publishedAt: true,
+          rejectedAt: true,
+          rejectionReason: true,
+          deletionRequestedAt: true,
+          deletionReason: true,
+          deletionOrigin: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: USER_DATA_EXPORT_BATCH_SIZE,
+      }),
+    ),
+    ({ id: _id, ...video }) => video,
+  );
+
 export const createDataExportService = (deps: AuthDependencies): DataExportService => ({
   async exportUserData({ userId, currentSessionId, currentPassword }: ExportUserDataInput) {
     await reauthenticateSensitiveAction(deps, { userId, currentPassword });
@@ -222,22 +359,10 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
         isVerified: true,
         isBanned: true,
         bannedAt: true,
+        banReason: true,
         createdAt: true,
         updatedAt: true,
         lastLogin: true,
-        mediaAssets: {
-          select: {
-            id: true,
-            kind: true,
-            mimeType: true,
-            sizeBytes: true,
-            width: true,
-            height: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-          orderBy: [{ kind: 'asc' }, { id: 'asc' }],
-        },
         emailVerificationTokens: {
           select: {
             id: true,
@@ -261,26 +386,13 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
       throw new AuthenticatedUserNotFoundError();
     }
 
-    const { emailVerificationTokens, mediaAssets, passwordResetToken, ...exportedUser } = user;
+    const { emailVerificationTokens, passwordResetToken, ...exportedUser } = user;
     return {
       exportedAt,
       user: exportedUser,
-      mediaAssets: mediaAssets.map(
-        ({ id, kind, mimeType, sizeBytes, width, height, createdAt, updatedAt }) => ({
-          id,
-          kind,
-          url:
-            kind === 'avatar'
-              ? profileAvatarPath(exportedUser.username)
-              : profileBannerPath(exportedUser.username),
-          mimeType,
-          sizeBytes,
-          width,
-          height,
-          createdAt,
-          updatedAt,
-        }),
-      ),
+      following: createFollowingExport(deps, userId),
+      followers: createFollowerExport(deps, userId),
+      videos: createOwnedVideoExport(deps, userId),
       videoRatings: createVideoRatingExport(deps, userId),
       videoViews: createVideoViewExport(deps, userId),
       comments: createCommentExport(deps, userId),

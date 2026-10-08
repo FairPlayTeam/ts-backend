@@ -163,8 +163,8 @@ model UserFollow {
   following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
 
   @@id([followerId, followingId])
-  @@index([followingId])
   @@index([followerId, createdAt, followingId])
+  @@index([followingId, createdAt, followerId])
   @@map("user_follows")
 }
 

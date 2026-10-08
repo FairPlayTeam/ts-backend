@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { hashAuthCode, hashToken } from '../../src/lib/crypto.js';
@@ -21,10 +22,13 @@ import {
   INVALID_CREDENTIALS_MESSAGE,
 } from '../../src/services/auth.errors.js';
 import { REGISTRATION_IDENTIFIER_RATE_LIMIT_MAX } from '../../src/config/constants.js';
-import { INITIAL_PASSWORD } from './support/fixtures.js';
+import { createVideoPublicId } from '../../src/services/videos/videoPublicId.js';
+import { createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import {
   AUTH_CODE_PEPPER,
   createIntegrationApp,
+  createIntegrationAuthService,
+  createQueryObservedPrismaClient,
   resetState,
   startRuntime,
   stopRuntime,
@@ -37,6 +41,44 @@ const TEST_EMAIL = 'integration@example.com';
 const TEST_USERNAME = 'integration_user';
 
 const NEXT_PASSWORD = 'NewPassword1!';
+const USER_DATA_EXPORT_BATCH_SIZE = 250;
+
+const readTwoPageExport = async <T>(
+  values: AsyncIterable<T>,
+  queryCount: () => number,
+  expectedCount: number,
+): Promise<T[]> => {
+  const initialQueryCount = queryCount();
+  const iterator = values[Symbol.asyncIterator]();
+  const exported: T[] = [];
+
+  try {
+    for (let index = 0; index < USER_DATA_EXPORT_BATCH_SIZE; index += 1) {
+      const item = await iterator.next();
+      expect(item.done).toBe(false);
+
+      if (!item.done) {
+        exported.push(item.value);
+      }
+    }
+
+    expect(queryCount() - initialQueryCount).toBe(1);
+    const lastPageItem = await iterator.next();
+    expect(lastPageItem.done).toBe(false);
+
+    if (!lastPageItem.done) {
+      exported.push(lastPageItem.value);
+    }
+
+    expect(queryCount() - initialQueryCount).toBe(2);
+    expect(await iterator.next()).toMatchObject({ done: true });
+    expect(exported).toHaveLength(expectedCount);
+
+    return exported;
+  } finally {
+    await iterator.return?.();
+  }
+};
 
 describe('auth integration', () => {
   let runtime: TestRuntime | null = null;
@@ -229,6 +271,124 @@ describe('auth integration', () => {
         sessionKey: expect.stringMatching(/^[a-f0-9]{64}$/),
       }),
     );
+  });
+
+  test('exports all follow relations and owned video metadata across real PostgreSQL cursor pages', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const suffix = randomUUID().replaceAll('-', '').slice(0, 8);
+    const owner = await createVerifiedSession(runtime, {
+      email: `export-owner-${suffix}@example.com`,
+      username: `export_${suffix}`,
+    });
+    const cursorTimestamp = new Date('2026-01-01T00:00:00.000Z');
+    const createRelationUsers = (direction: 'to' | 'from') =>
+      Array.from({ length: USER_DATA_EXPORT_BATCH_SIZE + 1 }, (_, index) => ({
+        id: randomUUID(),
+        email: `export-${direction}-${suffix}-${index}@example.com`,
+        username: `${direction}_${suffix}_${String(index).padStart(3, '0')}`,
+        passwordHash: 'unused-integration-test-hash',
+      }));
+    const followingUsers = createRelationUsers('to');
+    const followerUsers = createRelationUsers('from');
+
+    await runtime.prisma.user.createMany({ data: [...followingUsers, ...followerUsers] });
+    await runtime.prisma.userFollow.createMany({
+      data: [
+        ...followingUsers.map(({ id }) => ({
+          followerId: owner.userId,
+          followingId: id,
+          createdAt: cursorTimestamp,
+        })),
+        ...followerUsers.map(({ id }) => ({
+          followerId: id,
+          followingId: owner.userId,
+          createdAt: cursorTimestamp,
+        })),
+      ],
+    });
+
+    const videos = Array.from({ length: USER_DATA_EXPORT_BATCH_SIZE + 1 }, (_, index) => ({
+      id: randomUUID(),
+      publicId: createVideoPublicId(),
+      ownerId: owner.userId,
+      title: `Export pagination video ${index}`,
+      createdAt: cursorTimestamp,
+      updatedAt: cursorTimestamp,
+    }));
+    await runtime.prisma.video.createMany({ data: videos });
+
+    const queryEvents: string[] = [];
+    const observedPrisma = createQueryObservedPrismaClient(runtime.databaseUrl, ({ query }) => {
+      queryEvents.push(query);
+    });
+
+    try {
+      const exportService = createIntegrationAuthService(
+        observedPrisma,
+        runtime.objectStorage,
+        runtime.delivered,
+        runtime.userMediaExternalResources,
+      );
+      const currentSession = await observedPrisma.session.findFirstOrThrow({
+        where: { userId: owner.userId },
+        select: { id: true },
+      });
+      const exported = await exportService.exportUserData({
+        userId: owner.userId,
+        currentSessionId: currentSession.id,
+        currentPassword: INITIAL_PASSWORD,
+      });
+      const countQueriesForTable = (table: string) =>
+        queryEvents.filter((query) => query.includes(`"${table}"`)).length;
+
+      const following = await readTwoPageExport(
+        exported.following,
+        () => countQueriesForTable('user_follows'),
+        followingUsers.length,
+      );
+      const followers = await readTwoPageExport(
+        exported.followers,
+        () => countQueriesForTable('user_follows'),
+        followerUsers.length,
+      );
+      const exportedVideos = await readTwoPageExport(
+        exported.videos,
+        () => countQueriesForTable('videos'),
+        videos.length,
+      );
+
+      expect(following.map(({ username }) => username).sort()).toEqual(
+        followingUsers.map(({ username }) => username).sort(),
+      );
+      expect(followers.map(({ username }) => username).sort()).toEqual(
+        followerUsers.map(({ username }) => username).sort(),
+      );
+      expect(exportedVideos.map(({ publicId }) => publicId).sort()).toEqual(
+        videos.map(({ publicId }) => publicId).sort(),
+      );
+      expect(exportedVideos.map(({ publicId, title }) => `${publicId}:${title}`).sort()).toEqual(
+        videos.map(({ publicId, title }) => `${publicId}:${title}`).sort(),
+      );
+      expect(new Set(following.map(({ username }) => username)).size).toBe(followingUsers.length);
+      expect(new Set(followers.map(({ username }) => username)).size).toBe(followerUsers.length);
+      expect(new Set(exportedVideos.map(({ publicId }) => publicId)).size).toBe(videos.length);
+
+      const serializedFollows = JSON.stringify({ following, followers });
+      const serializedVideos = JSON.stringify(exportedVideos);
+      expect(serializedFollows).not.toContain(owner.userId);
+      expect(
+        [...followingUsers, ...followerUsers].some(({ id }) => serializedFollows.includes(id)),
+      ).toBe(false);
+      expect(videos.every(({ id }) => !serializedVideos.includes(id))).toBe(true);
+      expect(exportedVideos.every((video) => !('id' in video))).toBe(true);
+      expect(serializedVideos).not.toContain('objectKey');
+      expect(exported).not.toHaveProperty('mediaAssets');
+    } finally {
+      await observedPrisma.$disconnect();
+    }
   });
 
   test('shares auth rate limits across two app instances through Redis', async () => {

@@ -568,7 +568,12 @@ describe('OpenAPI generation', () => {
     const userDataExportSchema = JSON.stringify(
       document.components?.schemas?.UserDataExportResponse,
     );
-    expect(userDataExportSchema).toContain('"url"');
+    expect(userDataExportSchema).toContain('"banReason"');
+    expect(userDataExportSchema).toContain('"following"');
+    expect(userDataExportSchema).toContain('"followers"');
+    expect(userDataExportSchema).toContain('"videos"');
+    expect(userDataExportSchema).toContain('"publicId"');
+    expect(userDataExportSchema).not.toContain('"mediaAssets"');
     expect(userDataExportSchema).not.toContain('objectKey');
     expect(userDataExportSchema).not.toContain('"bucket"');
     expect(document.paths['/auth/sessions']?.get?.requestBody).toBeUndefined();

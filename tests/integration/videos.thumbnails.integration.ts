@@ -277,6 +277,8 @@ describe('videos thumbnails integration', () => {
       runtime.videoObjectStorage,
       runtime.videoExternalResources,
       {
+        maxTranscodeOutstandingJobs: 3,
+        maxTranscodeOutstandingJobsPerUser: 3,
         userStorageQuotaBytes: quotaBytes,
       },
     );

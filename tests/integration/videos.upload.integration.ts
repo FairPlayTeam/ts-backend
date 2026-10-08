@@ -246,6 +246,8 @@ describe('videos upload integration', () => {
       runtime.videoExternalResources,
       {
         maxUploadBytes: 1,
+        maxTranscodeOutstandingJobs: 3,
+        maxTranscodeOutstandingJobsPerUser: 3,
         userStorageQuotaBytes: firstBody.length + secondBody.length,
       },
     );
@@ -376,11 +378,11 @@ describe('videos upload integration', () => {
     const [firstOwner, secondOwner] = await Promise.all([
       createVerifiedSession(activeRuntime, {
         email: 'video-transcode-global-cap-a@example.com',
-        username: 'video_transcode_global_a',
+        username: 'tx_global_a',
       }),
       createVerifiedSession(activeRuntime, {
         email: 'video-transcode-global-cap-b@example.com',
-        username: 'video_transcode_global_b',
+        username: 'tx_global_b',
       }),
     ]);
     const [firstVideo, secondVideo] = await Promise.all([

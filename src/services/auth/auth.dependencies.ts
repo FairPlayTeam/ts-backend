@@ -13,7 +13,9 @@ type Prisma = Pick<
   | 'passwordResetToken'
   | 'session'
   | 'user'
+  | 'userFollow'
   | 'userMediaAsset'
+  | 'video'
   | 'videoRating'
   | 'videoView'
 >;

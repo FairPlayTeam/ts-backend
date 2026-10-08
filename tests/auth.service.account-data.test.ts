@@ -60,18 +60,28 @@ describe('auth service account data', () => {
     });
 
     expect(result.exportedAt).toEqual(fixedNow);
-    expect(result.mediaAssets).toEqual([
+    expect(result.user).toMatchObject({
+      isBanned: false,
+      bannedAt: null,
+      banReason: null,
+    });
+    expect(await collectAsync(result.following)).toEqual([
+      { username: 'followed_user', displayName: 'Followed User', createdAt: fixedNow },
+    ]);
+    expect(await collectAsync(result.followers)).toEqual([
+      { username: 'follower_user', displayName: 'Follower User', createdAt: fixedNow },
+    ]);
+    const videos = await collectAsync(result.videos);
+    expect(videos).toEqual([
       expect.objectContaining({
-        kind: 'avatar',
-        url: '/profiles/fairplay_user/avatar',
-      }),
-      expect.objectContaining({
-        kind: 'banner',
-        url: '/profiles/fairplay_user/banner',
+        publicId: 'AbCdEf123_',
+        title: 'My exported video',
+        moderationStatus: 'approved',
+        viewCount: 10,
       }),
     ]);
-    expect(JSON.stringify(result.mediaAssets)).not.toContain('objectKey');
-    expect(JSON.stringify(result.mediaAssets)).not.toContain('bucket');
+    expect(JSON.stringify(videos)).not.toContain('internal-video-id');
+    expect(JSON.stringify(videos)).not.toContain('objectKey');
     expect(await collectAsync(result.videoRatings)).toEqual([
       {
         videoId: '33333333-3333-4333-8333-333333333333',
@@ -124,21 +134,32 @@ describe('auth service account data', () => {
     expect(calls.userFindUnique).toEqual({
       where: { id: 'user-id' },
       select: expect.objectContaining({
-        mediaAssets: {
-          select: {
-            id: true,
-            kind: true,
-            mimeType: true,
-            sizeBytes: true,
-            width: true,
-            height: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-          orderBy: [{ kind: 'asc' }, { id: 'asc' }],
-        },
+        banReason: true,
       }),
     });
+    expect(JSON.stringify(calls.userFindUnique)).not.toContain('mediaAssets');
+    expect(calls.userFollowFindMany).toHaveLength(2);
+    expect(calls.userFollowFindMany[0]).toEqual(
+      expect.objectContaining({
+        where: { followerId: 'user-id' },
+        orderBy: [{ createdAt: 'asc' }, { followingId: 'asc' }],
+        take: 250,
+      }),
+    );
+    expect(calls.userFollowFindMany[1]).toEqual(
+      expect.objectContaining({
+        where: { followingId: 'user-id' },
+        orderBy: [{ createdAt: 'asc' }, { followerId: 'asc' }],
+        take: 250,
+      }),
+    );
+    expect(calls.videoFindMany).toEqual([
+      expect.objectContaining({
+        where: { ownerId: 'user-id' },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: 250,
+      }),
+    ]);
     expect(calls.videoRatingFindMany).toEqual([
       expect.objectContaining({ where: { userId: 'user-id' }, take: 250 }),
     ]);

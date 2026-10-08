@@ -73,6 +73,14 @@ export const createPlayableVideo = async (
       createdAt: true,
     },
   });
+  await runtime.prisma.videoTranscodeJob.update({
+    where: { id: job.id },
+    data: {
+      status: 'completed',
+      attempts: 1,
+      completedAt: new Date(),
+    },
+  });
 
   return {
     ...video,

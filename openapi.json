@@ -2202,6 +2202,7 @@
                 "format": "date-time",
                 "example": null
               },
+              "banReason": { "type": "string", "nullable": true, "example": null },
               "createdAt": {
                 "type": "string",
                 "format": "date-time",
@@ -2229,45 +2230,148 @@
               "isVerified",
               "isBanned",
               "bannedAt",
+              "banReason",
               "createdAt",
               "updatedAt",
               "lastLogin"
             ]
           },
-          "mediaAssets": {
+          "following": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "id": {
+                "username": { "type": "string", "example": "fairplay_creator" },
+                "displayName": {
                   "type": "string",
-                  "format": "uuid",
-                  "example": "9c1a78ff-8c35-4b2f-9ae0-289b4cfdbf38"
+                  "nullable": true,
+                  "example": "Fairplay Creator"
                 },
-                "kind": { "type": "string", "enum": ["avatar", "banner"], "example": "avatar" },
-                "url": {
+                "createdAt": {
                   "type": "string",
-                  "pattern": "^\\/(?!\\/)[^\\s]*$",
-                  "example": "/profiles/fairplay_creator/avatar"
+                  "format": "date-time",
+                  "example": "2026-01-01T00:00:00.000Z"
+                }
+              },
+              "required": ["username", "displayName", "createdAt"]
+            }
+          },
+          "followers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "username": { "type": "string", "example": "fairplay_creator" },
+                "displayName": {
+                  "type": "string",
+                  "nullable": true,
+                  "example": "Fairplay Creator"
                 },
-                "mimeType": { "type": "string", "enum": ["image/webp"], "example": "image/webp" },
-                "sizeBytes": {
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "example": "2026-01-01T00:00:00.000Z"
+                }
+              },
+              "required": ["username", "displayName", "createdAt"]
+            }
+          },
+          "videos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "publicId": { "type": "string", "example": "AbCdEf123_" },
+                "title": { "type": "string", "example": "My video" },
+                "description": {
+                  "type": "string",
+                  "nullable": true,
+                  "example": "A video description."
+                },
+                "tags": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "example": ["travel", "family"]
+                },
+                "license": {
+                  "type": "string",
+                  "enum": [
+                    "all_rights_reserved",
+                    "cc_by",
+                    "cc_by_sa",
+                    "cc_by_nd",
+                    "cc_by_nc",
+                    "cc_by_nc_sa",
+                    "cc_by_nc_nd",
+                    "cc0"
+                  ],
+                  "example": "all_rights_reserved"
+                },
+                "visibility": {
+                  "type": "string",
+                  "enum": ["public", "unlisted"],
+                  "example": "unlisted"
+                },
+                "allowComments": { "type": "boolean", "example": true },
+                "processingStatus": {
+                  "type": "string",
+                  "enum": ["draft", "uploading", "queued", "processing", "ready", "failed"],
+                  "example": "ready"
+                },
+                "moderationStatus": {
+                  "type": "string",
+                  "enum": ["pending", "approved", "rejected"],
+                  "example": "approved"
+                },
+                "durationSeconds": {
                   "type": "integer",
+                  "nullable": true,
                   "minimum": 0,
                   "exclusiveMinimum": true,
-                  "example": 18342
+                  "example": 120
                 },
                 "width": {
                   "type": "integer",
+                  "nullable": true,
                   "minimum": 0,
                   "exclusiveMinimum": true,
-                  "example": 512
+                  "example": 1920
                 },
                 "height": {
                   "type": "integer",
+                  "nullable": true,
                   "minimum": 0,
                   "exclusiveMinimum": true,
-                  "example": 512
+                  "example": 1080
+                },
+                "viewCount": { "type": "integer", "minimum": 0, "example": 42 },
+                "ratingCount": { "type": "integer", "minimum": 0, "example": 5 },
+                "commentCount": { "type": "integer", "minimum": 0, "example": 3 },
+                "publishedAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "format": "date-time",
+                  "example": null
+                },
+                "rejectedAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "format": "date-time",
+                  "example": null
+                },
+                "rejectionReason": { "type": "string", "nullable": true, "example": null },
+                "deletionRequestedAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "format": "date-time",
+                  "example": null
+                },
+                "deletionReason": { "type": "string", "nullable": true, "example": null },
+                "deletionOrigin": {
+                  "type": "string",
+                  "nullable": true,
+                  "enum": ["moderator", "admin", null],
+                  "example": null
                 },
                 "createdAt": {
                   "type": "string",
@@ -2281,13 +2385,27 @@
                 }
               },
               "required": [
-                "id",
-                "kind",
-                "url",
-                "mimeType",
-                "sizeBytes",
+                "publicId",
+                "title",
+                "description",
+                "tags",
+                "license",
+                "visibility",
+                "allowComments",
+                "processingStatus",
+                "moderationStatus",
+                "durationSeconds",
                 "width",
                 "height",
+                "viewCount",
+                "ratingCount",
+                "commentCount",
+                "publishedAt",
+                "rejectedAt",
+                "rejectionReason",
+                "deletionRequestedAt",
+                "deletionReason",
+                "deletionOrigin",
                 "createdAt",
                 "updatedAt"
               ]
@@ -2517,7 +2635,9 @@
         "required": [
           "exportedAt",
           "user",
-          "mediaAssets",
+          "following",
+          "followers",
+          "videos",
           "videoRatings",
           "videoViews",
           "comments",

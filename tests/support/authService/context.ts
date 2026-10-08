@@ -53,6 +53,8 @@ export type AuthServiceTestCalls = {
   sessionDeleteMany: unknown;
   videoRatingFindMany: unknown[];
   videoViewFindMany: unknown[];
+  userFollowFindMany: unknown[];
+  videoFindMany: unknown[];
   putObject: unknown;
   signedUrlObjectKey: unknown;
   signedUrlObjectKeys: string[];
@@ -104,6 +106,8 @@ export const createAuthServiceTestCalls = (): AuthServiceTestCalls => ({
   sessionDeleteMany: undefined,
   videoRatingFindMany: [],
   videoViewFindMany: [],
+  userFollowFindMany: [],
+  videoFindMany: [],
   putObject: undefined,
   signedUrlObjectKey: undefined,
   signedUrlObjectKeys: [],

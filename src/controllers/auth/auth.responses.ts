@@ -4,7 +4,9 @@ import type {
   ExportUserCommentData,
   ExportUserCommentLikeData,
   ExportUserDataResult,
+  ExportUserFollowData,
   ExportUserSessionData,
+  ExportUserVideoData,
   ExportUserVideoRatingData,
   ExportUserVideoViewData,
   ListUserSessionsResult,
@@ -75,7 +77,10 @@ const toUserDataExportTokenResponse = (token: UserDataExportToken | null) =>
 const toUserDataExportBaseResponse = ({
   commentLikes: _commentLikes,
   comments: _comments,
+  followers: _followers,
+  following: _following,
   sessions: _sessions,
+  videos: _videos,
   videoRatings: _videoRatings,
   videoViews: _videoViews,
   ...result
@@ -88,11 +93,6 @@ const toUserDataExportBaseResponse = ({
     updatedAt: toIsoString(result.user.updatedAt),
     lastLogin: toNullableIsoString(result.user.lastLogin),
   },
-  mediaAssets: result.mediaAssets.map((asset) => ({
-    ...asset,
-    createdAt: toIsoString(asset.createdAt),
-    updatedAt: toIsoString(asset.updatedAt),
-  })),
   emailVerificationToken: toUserDataExportTokenResponse(result.emailVerificationToken),
   passwordResetToken: toUserDataExportTokenResponse(result.passwordResetToken),
 });
@@ -125,6 +125,20 @@ const toUserDataExportSessionResponse = (session: ExportUserSessionData) => ({
   updatedAt: toIsoString(session.updatedAt),
   lastUsedAt: toIsoString(session.lastUsedAt),
   expiresAt: toIsoString(session.expiresAt),
+});
+
+const toUserDataExportFollowResponse = (follow: ExportUserFollowData) => ({
+  ...follow,
+  createdAt: toIsoString(follow.createdAt),
+});
+
+const toUserDataExportVideoResponse = (video: ExportUserVideoData) => ({
+  ...video,
+  publishedAt: toNullableIsoString(video.publishedAt),
+  rejectedAt: toNullableIsoString(video.rejectedAt),
+  deletionRequestedAt: toNullableIsoString(video.deletionRequestedAt),
+  createdAt: toIsoString(video.createdAt),
+  updatedAt: toIsoString(video.updatedAt),
 });
 
 const writeResponseChunk = async (res: Response, chunk: string): Promise<boolean> => {
@@ -204,6 +218,9 @@ export const streamUserDataExportResponse = async (
   };
 
   if (
+    !(await writeArray('following', result.following, toUserDataExportFollowResponse)) ||
+    !(await writeArray('followers', result.followers, toUserDataExportFollowResponse)) ||
+    !(await writeArray('videos', result.videos, toUserDataExportVideoResponse)) ||
     !(await writeArray('videoRatings', result.videoRatings, toUserDataExportVideoRatingResponse)) ||
     !(await writeArray('videoViews', result.videoViews, toUserDataExportVideoViewResponse)) ||
     !(await writeArray('comments', result.comments, toUserDataExportCommentResponse)) ||

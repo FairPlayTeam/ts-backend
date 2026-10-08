@@ -11,7 +11,7 @@ import {
 } from '../../../services/auth/auth.messages.js';
 import { PROFILE_UPDATE_EMPTY_MESSAGE } from '../../../services/auth.errors.js';
 import { AUTH_ROLES } from '../../../services/auth.roles.js';
-import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
+import { VIDEO_LICENSES } from '../../../services/videos/videoLicenses.js';
 import {
   authSessionResponseSchema,
   authUserProfileResponseSchema,
@@ -54,18 +54,6 @@ const userDataExportTokenSchema = z.object({
   expiresAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-08T00:00:00.000Z' }),
 });
 
-const userDataExportMediaAssetSchema = z.object({
-  id: z.string().uuid().openapi({ example: '9c1a78ff-8c35-4b2f-9ae0-289b4cfdbf38' }),
-  kind: z.enum(['avatar', 'banner']).openapi({ example: 'avatar' }),
-  url: relativeAssetPathSchema.openapi({ example: '/profiles/fairplay_creator/avatar' }),
-  mimeType: z.literal('image/webp').openapi({ example: 'image/webp' }),
-  sizeBytes: z.number().int().positive().openapi({ example: 18342 }),
-  width: z.number().int().positive().openapi({ example: 512 }),
-  height: z.number().int().positive().openapi({ example: 512 }),
-  createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
-  updatedAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
-});
-
 const userDataExportVideoRatingSchema = z.object({
   videoId: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
   value: z.number().int().min(1).max(5).openapi({ example: 5 }),
@@ -102,6 +90,40 @@ const userDataExportCommentLikeSchema = z.object({
   createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
 
+const userDataExportFollowSchema = z.object({
+  username: z.string().openapi({ example: 'fairplay_creator' }),
+  displayName: z.string().nullable().openapi({ example: 'Fairplay Creator' }),
+  createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+});
+
+const userDataExportVideoSchema = z.object({
+  publicId: z.string().openapi({ example: 'AbCdEf123_' }),
+  title: z.string().openapi({ example: 'My video' }),
+  description: z.string().nullable().openapi({ example: 'A video description.' }),
+  tags: z.array(z.string()).openapi({ example: ['travel', 'family'] }),
+  license: z.enum(VIDEO_LICENSES).openapi({ example: 'all_rights_reserved' }),
+  visibility: z.enum(['public', 'unlisted']).openapi({ example: 'unlisted' }),
+  allowComments: z.boolean().openapi({ example: true }),
+  processingStatus: z
+    .enum(['draft', 'uploading', 'queued', 'processing', 'ready', 'failed'])
+    .openapi({ example: 'ready' }),
+  moderationStatus: z.enum(['pending', 'approved', 'rejected']).openapi({ example: 'approved' }),
+  durationSeconds: z.number().int().positive().nullable().openapi({ example: 120 }),
+  width: z.number().int().positive().nullable().openapi({ example: 1920 }),
+  height: z.number().int().positive().nullable().openapi({ example: 1080 }),
+  viewCount: z.number().int().nonnegative().openapi({ example: 42 }),
+  ratingCount: z.number().int().nonnegative().openapi({ example: 5 }),
+  commentCount: z.number().int().nonnegative().openapi({ example: 3 }),
+  publishedAt: nullableUserDataExportDateTimeSchema.openapi({ example: null }),
+  rejectedAt: nullableUserDataExportDateTimeSchema.openapi({ example: null }),
+  rejectionReason: z.string().nullable().openapi({ example: null }),
+  deletionRequestedAt: nullableUserDataExportDateTimeSchema.openapi({ example: null }),
+  deletionReason: z.string().nullable().openapi({ example: null }),
+  deletionOrigin: z.enum(['moderator', 'admin']).nullable().openapi({ example: null }),
+  createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+  updatedAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
+});
+
 export const userDataExportResponseSchema = z
   .object({
     exportedAt: userDataExportDateTimeSchema.openapi({
@@ -119,13 +141,16 @@ export const userDataExportResponseSchema = z
       isVerified: z.boolean().openapi({ example: true }),
       isBanned: z.boolean().openapi({ example: false }),
       bannedAt: nullableUserDataExportDateTimeSchema.openapi({ example: null }),
+      banReason: z.string().nullable().openapi({ example: null }),
       createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
       updatedAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
       lastLogin: nullableUserDataExportDateTimeSchema.openapi({
         example: '2026-01-01T00:00:00.000Z',
       }),
     }),
-    mediaAssets: z.array(userDataExportMediaAssetSchema),
+    following: z.array(userDataExportFollowSchema),
+    followers: z.array(userDataExportFollowSchema),
+    videos: z.array(userDataExportVideoSchema),
     videoRatings: z.array(userDataExportVideoRatingSchema),
     videoViews: z.array(userDataExportVideoViewSchema),
     comments: z.array(userDataExportCommentSchema).openapi({

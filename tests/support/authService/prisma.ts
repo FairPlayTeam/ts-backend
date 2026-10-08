@@ -226,6 +226,51 @@ const exportableVideoViews = [
   },
 ];
 
+const exportableFollowing = [
+  {
+    followingId: 'following-internal-id',
+    createdAt: fixedNow,
+    following: { username: 'followed_user', displayName: 'Followed User' },
+  },
+];
+
+const exportableFollowers = [
+  {
+    followerId: 'follower-internal-id',
+    createdAt: fixedNow,
+    follower: { username: 'follower_user', displayName: 'Follower User' },
+  },
+];
+
+const exportableVideos = [
+  {
+    id: 'internal-video-id',
+    publicId: 'AbCdEf123_',
+    title: 'My exported video',
+    description: 'Description',
+    tags: ['test'],
+    license: 'all_rights_reserved',
+    visibility: 'unlisted',
+    allowComments: true,
+    processingStatus: 'ready',
+    moderationStatus: 'approved',
+    durationSeconds: 120,
+    width: 1920,
+    height: 1080,
+    viewCount: 10,
+    ratingCount: 2,
+    commentCount: 3,
+    publishedAt: fixedNow,
+    rejectedAt: null,
+    rejectionReason: null,
+    deletionRequestedAt: null,
+    deletionReason: null,
+    deletionOrigin: null,
+    createdAt: fixedNow,
+    updatedAt: fixedNow,
+  },
+];
+
 const exportableSessions = [
   {
     id: 'session-id',
@@ -263,35 +308,10 @@ const createExportableUser = () => ({
   isVerified: true,
   isBanned: false,
   bannedAt: null,
+  banReason: null,
   createdAt: fixedNow,
   updatedAt: fixedNow,
   lastLogin: fixedNow,
-  mediaAssets: [
-    {
-      id: '11111111-1111-4111-8111-111111111111',
-      kind: 'avatar',
-      objectKey: 'users/user-id/avatar/current-avatar.webp',
-      bucket: 'user-media',
-      mimeType: 'image/webp',
-      sizeBytes: 1234,
-      width: 512,
-      height: 512,
-      createdAt: fixedNow,
-      updatedAt: fixedNow,
-    },
-    {
-      id: '22222222-2222-4222-8222-222222222222',
-      kind: 'banner',
-      objectKey: 'users/user-id/banner/current-banner.webp',
-      bucket: 'user-media',
-      mimeType: 'image/webp',
-      sizeBytes: 2345,
-      width: 1500,
-      height: 500,
-      createdAt: fixedNow,
-      updatedAt: fixedNow,
-    },
-  ],
   emailVerificationTokens: [
     {
       id: 'verification-token-id',
@@ -324,6 +344,21 @@ export const createBaseAuthPrisma = (calls: AuthServiceTestCalls): AuthDeps['pri
         calls.commentLikeFindMany.push(args);
 
         return exportableCommentLikes;
+      },
+    },
+    userFollow: {
+      findMany: async (args: unknown) => {
+        calls.userFollowFindMany.push(args);
+        const select = (args as { select?: { following?: unknown } }).select;
+
+        return select?.following ? exportableFollowing : exportableFollowers;
+      },
+    },
+    video: {
+      findMany: async (args: unknown) => {
+        calls.videoFindMany.push(args);
+
+        return exportableVideos;
       },
     },
     videoRating: {

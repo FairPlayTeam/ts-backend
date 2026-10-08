@@ -367,11 +367,11 @@ describe('profiles integration', () => {
 
     const follower = await createVerifiedSession(activeRuntime, {
       email: 'following-cursor-follower@example.com',
-      username: 'following_cursor_follower',
+      username: 'cursor_follower',
     });
     const creators = await Promise.all(
       ['alpha', 'bravo', 'charlie', 'delta'].map(async (suffix) => {
-        const username = `following_cursor_${suffix}`;
+        const username = `cursor_${suffix}`;
 
         return {
           ...(await createVerifiedSession(activeRuntime, {
