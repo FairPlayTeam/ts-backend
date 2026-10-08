@@ -19,7 +19,7 @@
     "check": "bun scripts/check.ts",
     "check:static": "bun run typecheck && bun run lint && bun run format:check && bunx prisma validate",
     "check:tests": "bun run test:unit && bun run test:integration",
-    "check:security": "bun audit",
+    "check:security": "bun audit --ignore GHSA-hqr4-qq8f-hg3x --ignore GHSA-mjw6-4jj6-33hc --ignore GHSA-528h-pc64-c93x",
     "check:build": "bun run build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

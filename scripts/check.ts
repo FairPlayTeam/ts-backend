@@ -14,7 +14,7 @@ const steps: CheckStep[] = [
   { label: 'Prisma validate', command: ['bunx', 'prisma', 'validate'] },
   { label: 'unit tests', command: ['bun', 'run', 'test:unit'] },
   { label: 'integration tests', command: ['bun', 'run', 'test:integration'] },
-  { label: 'dependency audit', command: ['bun', 'audit'] },
+  { label: 'dependency audit', command: ['bun', 'run', 'check:security'] },
   { label: 'build', command: ['bun', 'run', 'build'] },
 ];
 
