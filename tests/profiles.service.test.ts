@@ -2,13 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import {
   createFollowingProfilesCursorCodec,
   createProfilesService,
-  FOLLOW_PROFILE_SUCCESS_MESSAGE,
   PublicProfileMediaNotFoundError,
   PublicProfileNotFoundError,
   SelfFollowError,
-  UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
   type ProfilesDependencies,
 } from '../src/modules/profiles/index.js';
+import {
+  EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE,
+  EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+} from './support/profiles.js';
 
 const profileCreatedAt = new Date('2026-01-01T00:00:00.000Z');
 const firstFollowedAt = new Date('2026-01-04T00:00:00.000Z');
@@ -518,7 +520,7 @@ describe('profiles service', () => {
         username: ' FairPlay_User ',
       }),
     ).resolves.toEqual({
-      message: FOLLOW_PROFILE_SUCCESS_MESSAGE,
+      message: EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE,
       profile: {
         username: 'fairplay_user',
         displayName: 'FairPlay User',
@@ -575,7 +577,7 @@ describe('profiles service', () => {
         username: 'fairplay_user',
       }),
     ).resolves.toMatchObject({
-      message: UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+      message: EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
       profile: {
         followerCount: 11,
       },

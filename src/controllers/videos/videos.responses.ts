@@ -12,8 +12,8 @@ import type {
   UploadVideoSourceThumbnailResult,
   VideoUploadSessionResult,
   VideoComment,
+  PublicProfileIdentity,
 } from '../../services/videos.types.js';
-import type { PublicProfileIdentity } from '../../modules/profiles/index.js';
 
 const toPublicProfileIdentityResponse = ({
   avatarUrl,

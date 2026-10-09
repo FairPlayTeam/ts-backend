@@ -13,14 +13,11 @@ import { ObjectStorageUnavailableError } from '../../src/lib/objectStorage.js';
 import { OperationTimeoutError } from '../../src/lib/operationMetrics.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
 import { UPLOAD_AVATAR_SUCCESS_MESSAGE } from '../../src/services/auth/auth.messages.js';
-import {
-  FOLLOW_PROFILE_SUCCESS_MESSAGE,
-  INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
-  PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE,
-  SELF_FOLLOW_MESSAGE,
-  UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
-} from '../../src/modules/profiles/index.js';
 import type { VideosService } from '../../src/services/videos.types.js';
+import {
+  EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE,
+  EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+} from '../support/profiles.js';
 import { createPng, createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import { OBJECT_STORAGE_BUCKET } from './support/infrastructure.js';
 import {
@@ -42,6 +39,10 @@ import {
   testLogger,
   type TestRuntime,
 } from './support/runtime.js';
+
+const EXPECTED_INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE = 'Invalid pagination cursor';
+const EXPECTED_PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE = 'Profile media not found';
+const EXPECTED_SELF_FOLLOW_MESSAGE = 'Profiles cannot follow themselves';
 
 const createMediaPersistenceBarrierPrisma = (
   prisma: PrismaClient,
@@ -247,7 +248,7 @@ describe('profiles integration', () => {
       .expect((response) => {
         expect(response.body).toEqual(
           expect.objectContaining({
-            message: FOLLOW_PROFILE_SUCCESS_MESSAGE,
+            message: EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE,
             profile: expect.objectContaining({
               followerCount: 1,
               followingCount: 0,
@@ -318,7 +319,7 @@ describe('profiles integration', () => {
       .expect(400)
       .expect({
         error: 'BadRequest',
-        message: SELF_FOLLOW_MESSAGE,
+        message: EXPECTED_SELF_FOLLOW_MESSAGE,
       });
 
     await request(app)
@@ -328,7 +329,7 @@ describe('profiles integration', () => {
       .expect((response) => {
         expect(response.body).toEqual(
           expect.objectContaining({
-            message: UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+            message: EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
             profile: expect.objectContaining({
               followerCount: 0,
             }),
@@ -431,7 +432,7 @@ describe('profiles integration', () => {
     for (const body of invalidCursorBodies) {
       expect(body).toEqual({
         error: 'BadRequest',
-        message: INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
+        message: EXPECTED_INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
       });
     }
 
@@ -806,7 +807,7 @@ describe('profiles integration', () => {
     const app = await createIntegrationApp(runtime);
     const expectedNotFound = {
       error: 'NotFound',
-      message: PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE,
+      message: EXPECTED_PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE,
     };
 
     for (const path of [
@@ -1211,7 +1212,7 @@ describe('profiles integration', () => {
       .expect(404)
       .expect({
         error: 'NotFound',
-        message: PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE,
+        message: EXPECTED_PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE,
       });
   });
 

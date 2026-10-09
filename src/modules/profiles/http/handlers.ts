@@ -17,13 +17,19 @@ import type {
   AuthenticatedRequest,
   OptionallyAuthenticatedRequest,
 } from '../../../middleware/auth.js';
-import type { ProfilesControllerDependencies } from './controller.types.js';
+import type { VideosRoutePort } from '../../../services/videos.types.js';
+import type { ProfilesPort } from '../types.js';
 import {
   toFollowingProfilesResponse,
   toFollowPublicProfileResponse,
   toPublicProfileResponse,
 } from './responses.js';
 import { toPublicVideosResponse } from '../../../controllers/videos/videos.responses.js';
+
+type ProfilesControllerDependencies = {
+  profilesService: ProfilesPort;
+  videosService: Pick<VideosRoutePort, 'listPublicProfileVideos'>;
+};
 
 type GetPublicProfileRequest = Request<GetPublicProfileParams>;
 type ListPublicProfileVideosRequest = Request<

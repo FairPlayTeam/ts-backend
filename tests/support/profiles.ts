@@ -1,8 +1,9 @@
 import {
-  FOLLOW_PROFILE_SUCCESS_MESSAGE,
-  type ProfilesPorts,
-  UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+  type ProfilesPort,
 } from '../../src/modules/profiles/index.js';
+
+export const EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE = 'Profile followed successfully';
+export const EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE = 'Profile unfollowed successfully';
 
 const publicProfile = {
   username: 'fairplay_user',
@@ -23,7 +24,7 @@ const followingProfile = {
   followedAt: new Date('2026-01-02T00:00:00.000Z'),
 };
 
-export const createStubProfilesService = (): ProfilesPorts => ({
+export const createStubProfilesService = (): ProfilesPort => ({
   getProfileMedia: async ({ kind }) => ({
     body: Buffer.from(`${kind}-bytes`),
     mimeType: 'image/webp',
@@ -33,7 +34,7 @@ export const createStubProfilesService = (): ProfilesPorts => ({
     profile: publicProfile,
   }),
   followPublicProfile: async () => ({
-    message: FOLLOW_PROFILE_SUCCESS_MESSAGE,
+    message: EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE,
     profile: {
       ...publicProfile,
       followerCount: publicProfile.followerCount + 1,
@@ -41,7 +42,7 @@ export const createStubProfilesService = (): ProfilesPorts => ({
     },
   }),
   unfollowPublicProfile: async () => ({
-    message: UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+    message: EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
     profile: { ...publicProfile, isFollowing: false },
   }),
   listFollowingProfiles: async () => ({

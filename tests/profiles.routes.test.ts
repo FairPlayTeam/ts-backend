@@ -6,22 +6,19 @@ import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
 import { ObjectStorageUnavailableError } from '../src/lib/objectStorage.js';
 import {
-  FOLLOW_PROFILE_SUCCESS_MESSAGE,
-  INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
   InvalidFollowingProfilesCursorError,
   PublicProfileMediaNotFoundError,
   PublicProfileNotFoundError,
-  UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
-  type FollowPublicProfileInput,
-  type GetProfileMediaInput,
-  type GetPublicProfileInput,
-  type ListFollowingProfilesInput,
-  type ProfilesPorts,
+  type ProfilesPort,
 } from '../src/modules/profiles/index.js';
 import type { ListPublicProfileVideosInput } from '../src/services/videos.types.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
-import { createStubProfilesService } from './support/profiles.js';
+import {
+  createStubProfilesService,
+  EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE,
+  EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+} from './support/profiles.js';
 import { createStubVideosService } from './support/videos.js';
 
 let server: Server;
@@ -34,6 +31,11 @@ let receivedFollowingProfilesRequest: ListFollowingProfilesInput | undefined;
 let receivedUnfollowProfileRequest: FollowPublicProfileInput | undefined;
 let receivedSessionKey: string | undefined;
 const followingCursor = 'AQIDBAUGBwgJCgsMDQ4PEA';
+const EXPECTED_INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE = 'Invalid pagination cursor';
+type GetProfileMediaInput = Parameters<ProfilesPort['getProfileMedia']>[0];
+type GetPublicProfileInput = Parameters<ProfilesPort['getPublicProfile']>[0];
+type FollowPublicProfileInput = Parameters<ProfilesPort['followPublicProfile']>[0];
+type ListFollowingProfilesInput = Parameters<ProfilesPort['listFollowingProfiles']>[0];
 
 describe('profiles routes', () => {
   beforeAll(async () => {
@@ -111,7 +113,7 @@ describe('profiles routes', () => {
 
             return profilesService.unfollowPublicProfile(input);
           },
-        } satisfies ProfilesPorts,
+        } satisfies ProfilesPort,
         videosService: {
           ...videosService,
           listPublicProfileVideos: async (input) => {
@@ -385,7 +387,7 @@ describe('profiles routes', () => {
       username: 'creator_user',
     });
     expect(await response.json()).toEqual({
-      message: FOLLOW_PROFILE_SUCCESS_MESSAGE,
+      message: EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE,
       profile: {
         username: 'fairplay_user',
         displayName: 'FairPlay User',
@@ -421,7 +423,7 @@ describe('profiles routes', () => {
       username: 'creator_user',
     });
     expect(await response.json()).toEqual({
-      message: UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
+      message: EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
       profile: {
         username: 'fairplay_user',
         displayName: 'FairPlay User',
@@ -522,7 +524,7 @@ describe('profiles routes', () => {
       });
       expect(await response.json()).toEqual({
         error: 'BadRequest',
-        message: INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
+        message: EXPECTED_INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
       });
     }
   });

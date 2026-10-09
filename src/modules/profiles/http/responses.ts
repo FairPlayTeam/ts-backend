@@ -3,7 +3,7 @@ import type {
   FollowPublicProfileResult,
   GetPublicProfileResult,
   ListFollowingProfilesResult,
-} from '../index.js';
+} from '../types.js';
 
 const toPublicProfileBody = ({
   avatarUrl,

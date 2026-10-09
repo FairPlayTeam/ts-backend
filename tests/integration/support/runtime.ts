@@ -37,7 +37,7 @@ import {
 import {
   createFollowingProfilesCursorCodec,
   createProfilesService,
-  type ProfilesPorts,
+  type ProfilesPort,
 } from '../../../src/modules/profiles/index.js';
 import { createUserMediaProcessor } from '../../../src/services/userMedia/userMedia.processor.js';
 import { createVideosService } from '../../../src/services/videos.service.js';
@@ -107,7 +107,7 @@ export type TestRuntime = {
   videoExternalResources: ExternalResourceReconciler;
   adminService: AdminPorts;
   authService: AuthPorts;
-  profilesService: ProfilesPorts;
+  profilesService: ProfilesPort;
   videosService: VideosService;
   delivered: {
     verification: DeliveredEmail[];
@@ -237,7 +237,7 @@ export const createIntegrationAdminService = (
 export const createIntegrationProfilesService = (
   prisma: PrismaClient,
   objectStorage: ObjectStorage,
-): ProfilesPorts =>
+): ProfilesPort =>
   createProfilesService({
     prisma,
     objectStorage,

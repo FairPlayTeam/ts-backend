@@ -17,7 +17,7 @@ import { ALL_CORS_ORIGINS } from './config/env.parsers.js';
 import type { RedisClient } from './lib/redis.js';
 import type { AdminRoutePort } from './services/admin.types.js';
 import type { AuthRoutePort } from './services/auth.types.js';
-import type { ProfilesRoutePort } from './modules/profiles/index.js';
+import type { ProfilesPort } from './modules/profiles/index.js';
 import type { VideosRoutePort } from './services/videos.types.js';
 import helmet from 'helmet';
 import {
@@ -44,7 +44,7 @@ type CreateAppConfig = Pick<
 type CreateAppDependencies = {
   adminService: AdminRoutePort;
   authService: AuthRoutePort;
-  profilesService: ProfilesRoutePort;
+  profilesService: ProfilesPort;
   videosService: VideosRoutePort;
   redisClient?: RedisClient | null;
   readinessChecks?: ReadinessChecks | null;

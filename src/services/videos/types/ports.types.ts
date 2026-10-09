@@ -1,6 +1,6 @@
 import type { VideoLicense } from '../videoLicenses.js';
 import type { AuthRole } from '../../auth.roles.js';
-import type { PublicProfileIdentity } from '../../../modules/profiles/index.js';
+import type { ProfilesPort } from '../../../modules/profiles/index.js';
 
 export type VideoUploadSessionStatus =
   | 'initializing'
@@ -14,6 +14,13 @@ export type VideoUploadSessionStatus =
   | 'expired';
 
 export type VideoVisibility = 'public' | 'unlisted';
+
+type PublicProfile = Awaited<ReturnType<ProfilesPort['getPublicProfile']>>['profile'];
+
+export type PublicProfileIdentity = Pick<
+  PublicProfile,
+  'avatarUrl' | 'displayName' | 'username'
+>;
 
 export type VideoProcessingStatus =
   'draft' | 'uploading' | 'queued' | 'processing' | 'ready' | 'failed';
