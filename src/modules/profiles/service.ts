@@ -14,10 +14,7 @@ import {
 import { readForProxy } from '../../services/assets/assetLinks.js';
 import type { ProfilesDependencies } from './dependencies.js';
 import { PUBLIC_PROFILE_VISIBILITY_SCOPE } from './publicVisibility.js';
-import {
-  FOLLOW_PROFILE_SUCCESS_MESSAGE,
-  UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
-} from './constants.js';
+import { FOLLOW_PROFILE_SUCCESS_MESSAGE, UNFOLLOW_PROFILE_SUCCESS_MESSAGE } from './constants.js';
 import type {
   FollowPublicProfileInput,
   FollowPublicProfileResult,

@@ -17,10 +17,7 @@ export type VideoVisibility = 'public' | 'unlisted';
 
 type PublicProfile = Awaited<ReturnType<ProfilesPort['getPublicProfile']>>['profile'];
 
-export type PublicProfileIdentity = Pick<
-  PublicProfile,
-  'avatarUrl' | 'displayName' | 'username'
->;
+export type PublicProfileIdentity = Pick<PublicProfile, 'avatarUrl' | 'displayName' | 'username'>;
 
 export type VideoProcessingStatus =
   'draft' | 'uploading' | 'queued' | 'processing' | 'ready' | 'failed';

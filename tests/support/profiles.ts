@@ -1,6 +1,4 @@
-import {
-  type ProfilesPort,
-} from '../../src/modules/profiles/index.js';
+import type { ProfilesPort } from '../../src/modules/profiles/index.js';
 
 export const EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE = 'Profile followed successfully';
 export const EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE = 'Profile unfollowed successfully';

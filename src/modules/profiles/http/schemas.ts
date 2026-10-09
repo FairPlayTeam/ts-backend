@@ -1,9 +1,6 @@
 import { z } from '../../../docs/zod.js';
 import { usernameSchema } from '../../../controllers/shared/user.schemas.js';
-import {
-  FOLLOW_PROFILE_SUCCESS_MESSAGE,
-  UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
-} from '../constants.js';
+import { FOLLOW_PROFILE_SUCCESS_MESSAGE, UNFOLLOW_PROFILE_SUCCESS_MESSAGE } from '../constants.js';
 import { relativeAssetPathSchema } from '../../../controllers/shared/asset.schemas.js';
 import { publicProfileIdentityResponseSchema } from '../../../controllers/shared/profile.schemas.js';
 import { publicVideosQuerySchema } from '../../../controllers/videos/schemas/video.schemas.js';

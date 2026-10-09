@@ -6,9 +6,7 @@ import {
   createRouter as createModerationRouter,
   routeDocs as moderationRouteDocs,
 } from './moderation.js';
-import {
-  profilesHttpModule,
-} from '../modules/profiles/index.js';
+import { profilesHttpModule } from '../modules/profiles/index.js';
 import { createRouter as createVideosRouter, routeDocs as videosRouteDocs } from './videos.js';
 import type { RouteDoc } from '../docs/registry.js';
 

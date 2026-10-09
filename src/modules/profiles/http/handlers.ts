@@ -1,4 +1,4 @@
-import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import type { Request, RequestHandler, Response } from 'express';
 import type {
   FollowPublicProfileParams,
   GetProfileMediaParams,
@@ -25,6 +25,7 @@ import {
   toPublicProfileResponse,
 } from './responses.js';
 import { toPublicVideosResponse } from '../../../controllers/videos/videos.responses.js';
+import { mapHandlerErrors } from '../../../shared/http/mapHandlerErrors.js';
 
 type ProfilesControllerDependencies = {
   profilesService: ProfilesPort;
@@ -44,35 +45,27 @@ type ListFollowingProfilesRequest = Request<unknown, unknown, unknown, ListFollo
 type UnfollowPublicProfileRequest = Request<UnfollowPublicProfileParams>;
 
 export const createProfilesController = (deps: ProfilesControllerDependencies) => {
-  const getProfileMedia =
-    (kind: 'avatar' | 'banner'): RequestHandler =>
-    async (req, res, next) => {
-      try {
-        const mediaReq = req as GetProfileMediaRequest;
-        const result = await deps.profilesService.getProfileMedia({
-          username: mediaReq.params.username,
-          kind,
-        });
+  const getProfileMedia = (kind: 'avatar' | 'banner'): RequestHandler =>
+    mapHandlerErrors(toProfilesHttpError, async (req, res) => {
+      const mediaReq = req as GetProfileMediaRequest;
+      const result = await deps.profilesService.getProfileMedia({
+        username: mediaReq.params.username,
+        kind,
+      });
 
-        return allowPublicCrossOriginMedia(res)
-          .status(200)
-          .set('Cache-Control', 'private, no-cache')
-          .set('Content-Length', String(result.body.length))
-          .type(result.mimeType)
-          .send(result.body);
-      } catch (err) {
-        next(toProfilesHttpError(err));
-      }
-    };
+      return allowPublicCrossOriginMedia(res)
+        .status(200)
+        .set('Cache-Control', 'private, no-cache')
+        .set('Content-Length', String(result.body.length))
+        .type(result.mimeType)
+        .send(result.body);
+    });
   const getAvatar = getProfileMedia('avatar');
   const getBanner = getProfileMedia('banner');
 
-  const getPublicProfile = async (
-    req: GetPublicProfileRequest,
-    res: Response,
-    next: NextFunction,
-  ) => {
-    try {
+  const getPublicProfile = mapHandlerErrors(
+    toProfilesHttpError,
+    async (req: GetPublicProfileRequest, res: Response) => {
       const optionallyAuthenticatedReq = req as GetPublicProfileRequest &
         OptionallyAuthenticatedRequest;
       const result = await deps.profilesService.getPublicProfile({
@@ -83,13 +76,12 @@ export const createProfilesController = (deps: ProfilesControllerDependencies) =
       });
 
       return sendNoStoreJson(res, 200, toPublicProfileResponse(result));
-    } catch (err) {
-      next(toProfilesHttpError(err));
-    }
-  };
+    },
+  );
 
-  const listPublicProfileVideos: RequestHandler = async (req, res, next) => {
-    try {
+  const listPublicProfileVideos: RequestHandler = mapHandlerErrors(
+    toProfilesHttpError,
+    async (req, res) => {
       const listReq = req as ListPublicProfileVideosRequest;
       const { cursorCreatedAt, cursorPublicId, limit } = listReq.query;
       const { profileUserId } = await deps.profilesService.getPublicProfile({
@@ -109,13 +101,12 @@ export const createProfilesController = (deps: ProfilesControllerDependencies) =
       });
 
       return sendNoStoreJson(res, 200, toPublicVideosResponse(result));
-    } catch (err) {
-      next(toProfilesHttpError(err));
-    }
-  };
+    },
+  );
 
-  const followPublicProfile: RequestHandler = async (req, res, next) => {
-    try {
+  const followPublicProfile: RequestHandler = mapHandlerErrors(
+    toProfilesHttpError,
+    async (req, res) => {
       const authenticatedReq = req as AuthenticatedRequest;
       const followReq = req as FollowPublicProfileRequest;
       const result = await deps.profilesService.followPublicProfile({
@@ -124,13 +115,12 @@ export const createProfilesController = (deps: ProfilesControllerDependencies) =
       });
 
       return sendNoStoreJson(res, 200, toFollowPublicProfileResponse(result));
-    } catch (err) {
-      next(toProfilesHttpError(err));
-    }
-  };
+    },
+  );
 
-  const listFollowingProfiles: RequestHandler = async (req, res, next) => {
-    try {
+  const listFollowingProfiles: RequestHandler = mapHandlerErrors(
+    toProfilesHttpError,
+    async (req, res) => {
       const authenticatedReq = req as AuthenticatedRequest;
       const followingReq = req as ListFollowingProfilesRequest;
       const { cursor, limit } = followingReq.query;
@@ -141,13 +131,12 @@ export const createProfilesController = (deps: ProfilesControllerDependencies) =
       });
 
       return sendNoStoreJson(res, 200, toFollowingProfilesResponse(result));
-    } catch (err) {
-      next(toProfilesHttpError(err));
-    }
-  };
+    },
+  );
 
-  const unfollowPublicProfile: RequestHandler = async (req, res, next) => {
-    try {
+  const unfollowPublicProfile: RequestHandler = mapHandlerErrors(
+    toProfilesHttpError,
+    async (req, res) => {
       const authenticatedReq = req as AuthenticatedRequest;
       const unfollowReq = req as UnfollowPublicProfileRequest;
       const result = await deps.profilesService.unfollowPublicProfile({
@@ -156,10 +145,8 @@ export const createProfilesController = (deps: ProfilesControllerDependencies) =
       });
 
       return sendNoStoreJson(res, 200, toFollowPublicProfileResponse(result));
-    } catch (err) {
-      next(toProfilesHttpError(err));
-    }
-  };
+    },
+  );
 
   return {
     followPublicProfile,
