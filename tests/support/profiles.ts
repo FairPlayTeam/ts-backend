@@ -2,6 +2,9 @@ import type { ProfilesPort } from '../../src/modules/profiles/index.js';
 
 export const EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE = 'Profile followed successfully';
 export const EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE = 'Profile unfollowed successfully';
+export const EXPECTED_INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE = 'Invalid pagination cursor';
+export const EXPECTED_PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE = 'Profile media not found';
+export const EXPECTED_SELF_FOLLOW_MESSAGE = 'Profiles cannot follow themselves';
 
 const publicProfile = {
   username: 'fairplay_user',

@@ -16,6 +16,9 @@ import { UPLOAD_AVATAR_SUCCESS_MESSAGE } from '../../src/services/auth/auth.mess
 import type { VideosService } from '../../src/services/videos.types.js';
 import {
   EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE,
+  EXPECTED_INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
+  EXPECTED_PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE,
+  EXPECTED_SELF_FOLLOW_MESSAGE,
   EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
 } from '../support/profiles.js';
 import { createPng, createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
@@ -39,10 +42,6 @@ import {
   testLogger,
   type TestRuntime,
 } from './support/runtime.js';
-
-const EXPECTED_INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE = 'Invalid pagination cursor';
-const EXPECTED_PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE = 'Profile media not found';
-const EXPECTED_SELF_FOLLOW_MESSAGE = 'Profiles cannot follow themselves';
 
 const createMediaPersistenceBarrierPrisma = (
   prisma: PrismaClient,
