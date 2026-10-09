@@ -67,9 +67,12 @@ const createUploadSessionResult = (
 
 const listMyVideosResult = (): ListMyVideosResult => ({
   videos: [
-    createVideoResult({
-      processingStatus: 'uploading',
-    }).video,
+    {
+      ...createVideoResult({
+        processingStatus: 'uploading',
+      }).video,
+      deletionRequestedAt: null,
+    },
   ],
   total: 1,
   nextCursor: null,

@@ -518,7 +518,10 @@ describe('video deletion integration', () => {
       .set('Authorization', `Bearer ${owner.sessionKey}`)
       .expect(200);
     expect(ownerVideos.body.videos).toHaveLength(1);
-    expect(ownerVideos.body.videos[0]).not.toHaveProperty('deletionRequestedAt');
+    expect(ownerVideos.body.videos[0]).toHaveProperty(
+      'deletionRequestedAt',
+      deletionRequestedAt.toISOString(),
+    );
     expect(ownerVideos.body.videos[0]).not.toHaveProperty('deletionReason');
     expect(ownerVideos.body.videos[0]).not.toHaveProperty('deletionOrigin');
     const feed = await request(app).get('/videos').expect(200);

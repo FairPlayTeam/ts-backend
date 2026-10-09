@@ -197,6 +197,11 @@ const videoSelect = {
   updatedAt: true,
 } satisfies Prisma.VideoSelect;
 
+const myVideoSelect = {
+  ...videoSelect,
+  deletionRequestedAt: true,
+} satisfies Prisma.VideoSelect;
+
 const publicVideoCatalogSelect = {
   publicId: true,
   title: true,
@@ -380,6 +385,10 @@ type VideoMetadataRecord = Prisma.VideoGetPayload<{
   select: typeof videoSelect;
 }>;
 
+type MyVideoMetadataRecord = Prisma.VideoGetPayload<{
+  select: typeof myVideoSelect;
+}>;
+
 type TransactionClient = Prisma.TransactionClient;
 
 const isUniqueConstraintError = (err: unknown): err is Prisma.PrismaClientKnownRequestError =>
@@ -479,6 +488,14 @@ const toVideoMetadata = ({
 
 const toCreateVideoResult = (video: VideoMetadataRecord): CreateVideoResult => ({
   video: toVideoMetadata(video),
+});
+
+const toMyVideoMetadata = ({
+  deletionRequestedAt,
+  ...video
+}: MyVideoMetadataRecord): ListMyVideosResult['videos'][number] => ({
+  ...toVideoMetadata(video),
+  deletionRequestedAt,
 });
 
 const normalizeMyVideosLimit = (limit: number | undefined): number => {
@@ -1874,7 +1891,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
     const [queriedVideos, total] = await deps.prisma.$transaction([
       deps.prisma.video.findMany({
         where: pageFilter,
-        select: videoSelect,
+        select: myVideoSelect,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: pageSize + 1,
       }),
@@ -1890,7 +1907,7 @@ export const createVideosService = (deps: VideosDependencies): VideosService => 
         : null;
 
     return {
-      videos: videos.map(toVideoMetadata),
+      videos: videos.map(toMyVideoMetadata),
       total,
       nextCursor,
     };

@@ -39,6 +39,10 @@ export type CreatedVideo = {
   updatedAt: Date;
 };
 
+export type MyVideo = CreatedVideo & {
+  deletionRequestedAt: Date | null;
+};
+
 export type VideoPaginationCursor = {
   createdAt: Date;
   id: string;
@@ -254,7 +258,7 @@ export type CreateVideoResult = {
 };
 
 export type ListMyVideosResult = {
-  videos: CreatedVideo[];
+  videos: MyVideo[];
   total: number;
   nextCursor: VideoPaginationCursor | null;
 };

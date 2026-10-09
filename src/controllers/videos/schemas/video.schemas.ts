@@ -380,9 +380,17 @@ export const createVideoResponseSchema = z
   })
   .openapi('CreateVideoResponse');
 
+const myVideoResponseBodySchema = videoResponseBodySchema.extend({
+  deletionRequestedAt: z.string().datetime().nullable().openapi({
+    description:
+      'When set, the video is hidden from discovery and scheduled for permanent deletion after the retention period.',
+    example: null,
+  }),
+});
+
 export const myVideosResponseSchema = z
   .object({
-    videos: z.array(videoResponseBodySchema),
+    videos: z.array(myVideoResponseBodySchema),
     total: z.number().int().nonnegative().openapi({ example: 42 }),
     nextCursor: z
       .object({

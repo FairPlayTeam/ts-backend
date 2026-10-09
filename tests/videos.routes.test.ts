@@ -523,6 +523,7 @@ describe('videos routes multipart uploads', () => {
           visibility: 'unlisted',
           processingStatus: 'uploading',
           moderationStatus: 'pending',
+          deletionRequestedAt: null,
         },
       ],
       total: 1,

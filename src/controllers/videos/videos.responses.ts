@@ -101,7 +101,10 @@ export const toVideoCommentRepliesResponse = ({
 });
 
 export const toMyVideosResponse = ({ nextCursor, total, videos }: ListMyVideosResult) => ({
-  videos: videos.map((video) => toVideoResponse(video)),
+  videos: videos.map((video) => ({
+    ...toVideoResponse(video),
+    deletionRequestedAt: toNullableIsoString(video.deletionRequestedAt),
+  })),
   total,
   nextCursor: nextCursor
     ? {
