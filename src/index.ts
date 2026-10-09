@@ -66,7 +66,7 @@ const readinessChecks = {
 const app =
   config.runtimeRole === 'transcoder'
     ? null
-    : await createApp(config, {
+    : createApp(config, {
         adminService,
         authService,
         profilesService,

@@ -6,7 +6,6 @@ import swaggerUi from 'swagger-ui-express';
 import crypto from 'node:crypto';
 import { pinoHttp } from 'pino-http';
 import { logger } from './lib/logger.js';
-import loadRoutes from './routing/loadRoutes.js';
 import { generateOpenApi } from './docs/openapi.js';
 import { HttpError } from './errors/http.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
@@ -29,6 +28,7 @@ import {
   RESEND_VERIFICATION_EMAIL_MESSAGE,
   RESET_PASSWORD_EMAIL_MESSAGE,
 } from './services/auth/auth.messages.js';
+import { httpRouteDocs, httpRouteModules } from './routes/registry.js';
 
 type CreateAppConfig = Pick<
   Config,
@@ -94,7 +94,7 @@ type SerializedResponseInput = {
 const serializeStringProperty = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
 
-export async function createApp(config: CreateAppConfig, deps: CreateAppDependencies) {
+export function createApp(config: CreateAppConfig, deps: CreateAppDependencies) {
   const app = express();
   const {
     apiLimiter,
@@ -211,7 +211,7 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
   app.use(apiLimiter);
   app.use(express.json({ limit: config.jsonBodyLimitBytes }));
 
-  const { openApiRouteDocs } = await loadRoutes(app, new URL('./routes/', import.meta.url), {
+  const routeContext = {
     adminService: deps.adminService,
     authService: deps.authService,
     profilesService: deps.profilesService,
@@ -231,9 +231,17 @@ export async function createApp(config: CreateAppConfig, deps: CreateAppDependen
     resendVerificationEmailCooldown,
     resendVerificationIdentifierLimiter,
     userAccountOperationGuard,
-  });
+  };
 
-  const openApiDoc = generateOpenApi({ routeDocs: openApiRouteDocs, serverUrl: config.baseUrl });
+  for (const routeModule of httpRouteModules) {
+    app.use(routeModule.mountPath, routeModule.createRouter(routeContext));
+    logger.info(
+      { module: routeModule.name, route: routeModule.mountPath },
+      'HTTP route module mounted',
+    );
+  }
+
+  const openApiDoc = generateOpenApi({ routeDocs: httpRouteDocs, serverUrl: config.baseUrl });
 
   app.get('/openapi.json', (_req, res) => {
     res.set(

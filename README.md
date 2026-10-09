@@ -388,12 +388,17 @@ bun run test:integration
 
 ## Routes
 
-Route files under `src/routes` are mounted automatically from their file path. For example:
+The seven HTTP modules are declared explicitly in `src/routes/registry.ts`. This registry is the
+single source of truth for their mount paths, mount order, and OpenAPI documentation:
 
 ```text
-src/routes/index.ts -> /
-src/routes/auth.ts -> /auth
-src/routes/health.ts -> /health
+/admin
+/auth
+/health
+/moderation
+/profiles
+/videos
+/
 ```
 
 ## License

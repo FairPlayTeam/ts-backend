@@ -5,7 +5,7 @@ import { jsonResponse } from '../src/docs/openapi.helpers.js';
 import { generateOpenApi } from '../src/docs/openapi.js';
 import type { RouteDoc } from '../src/docs/registry.js';
 import { z } from '../src/docs/zod.js';
-import { discoverRouteFiles } from '../src/routing/loadRoutes.js';
+import { httpRouteModules } from '../src/routes/registry.js';
 import { AUTH_ROLES } from '../src/services/auth.roles.js';
 import { VIDEO_LICENSES } from '../src/services/videos/videoLicenses.js';
 import { createStubAdminService } from './support/admin.js';
@@ -14,6 +14,15 @@ import { createStubProfilesService } from './support/profiles.js';
 import { createStubVideosService } from './support/videos.js';
 
 const documentedHttpMethods = new Set(['delete', 'get', 'patch', 'post', 'put']);
+const expectedMountPaths = [
+  '/admin',
+  '/auth',
+  '/health',
+  '/moderation',
+  '/profiles',
+  '/videos',
+  '/',
+] satisfies Array<(typeof httpRouteModules)[number]['mountPath']>;
 
 type RuntimeRouteLayer = {
   handle?: {
@@ -91,18 +100,17 @@ const getRuntimeRouterLayers = (
   );
 };
 
-const getRuntimeRouteOperations = async (
+const getRuntimeRouteOperations = (
   app: Awaited<ReturnType<typeof createOpenApiTestApp>>,
-): Promise<string[]> => {
-  const routeFiles = await discoverRouteFiles(new URL('../src/routes/', import.meta.url));
+): string[] => {
   const routerLayers = getRuntimeRouterLayers(app);
 
-  expect(routerLayers).toHaveLength(routeFiles.length);
+  expect(routerLayers).toHaveLength(httpRouteModules.length);
 
   const operations = routerLayers.flatMap((routerLayer, index) => {
-    const routeFile = routeFiles[index];
+    const routeModule = httpRouteModules[index];
 
-    if (!routeFile) {
+    if (!routeModule) {
       return [];
     }
 
@@ -113,7 +121,7 @@ const getRuntimeRouteOperations = async (
 
       return toRoutePathList(routeLayer.route?.path).flatMap((routePath) =>
         methods.map((method) =>
-          formatRouteOperation(method, joinRoutePaths(routeFile.routePath, routePath)),
+          formatRouteOperation(method, joinRoutePaths(routeModule.mountPath, routePath)),
         ),
       );
     });
@@ -139,11 +147,28 @@ const getOpenApiOperationIds = (document: OpenApiDocument): unknown[] =>
   );
 
 describe('OpenAPI generation', () => {
-  test('includes auto-loaded routes and Zod request schemas', async () => {
+  test('declares unique mount paths in the significant runtime order', () => {
+    const mountPaths = httpRouteModules.map(({ mountPath }) => mountPath);
+
+    expect(mountPaths).toEqual(expectedMountPaths);
+    expect(new Set(mountPaths).size).toBe(mountPaths.length);
+  });
+
+  test('includes every registered route module and its Zod request schemas', async () => {
     const app = await createOpenApiTestApp();
 
     const response = await request(app).get('/openapi.json').expect(200);
     const document = response.body;
+
+    for (const routeModule of httpRouteModules) {
+      expect(routeModule.routeDocs.length).toBeGreaterThan(0);
+
+      for (const routeDoc of routeModule.routeDocs) {
+        expect(document.paths?.[routeDoc.path]?.[routeDoc.method]?.operationId).toBe(
+          routeDoc.operationId,
+        );
+      }
+    }
 
     expect(JSON.stringify(document)).not.toContain('thumbnailObjectKey');
     expect(JSON.stringify(document)).not.toContain('user-media/users/');
@@ -870,7 +895,7 @@ describe('OpenAPI generation', () => {
     const app = await createOpenApiTestApp();
     const response = await request(app).get('/openapi.json').expect(200);
 
-    await expect(getRuntimeRouteOperations(app)).resolves.toEqual(
+    expect(getRuntimeRouteOperations(app)).toEqual(
       getOpenApiRouteOperations(response.body as OpenApiDocument),
     );
   });
