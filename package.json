@@ -15,7 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun run test:unit",
     "test:unit": "bun scripts/run-with-sharp-concurrency.ts bun test",
-    "test:integration": "bun scripts/run-with-sharp-concurrency.ts vitest run --config vitest.config.ts",
+    "test:integration": "bun scripts/run-with-sharp-concurrency.ts vitest run --config tests/vitest.config.ts",
     "check": "bun scripts/check.ts",
     "check:static": "bun run typecheck && bun run lint && bun run format:check && bunx prisma validate",
     "check:tests": "bun run test:unit && bun run test:integration",
