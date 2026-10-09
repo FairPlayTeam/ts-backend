@@ -1,11 +1,11 @@
-import { HttpError } from '../errors/http.js';
-import { ObjectStorageUnavailableError } from '../lib/objectStorage.js';
+import { HttpError } from '../../../errors/http.js';
+import { ObjectStorageUnavailableError } from '../../../lib/objectStorage.js';
 import {
   InvalidFollowingProfilesCursorError,
   PublicProfileMediaNotFoundError,
   PublicProfileNotFoundError,
   SelfFollowError,
-} from '../services/profiles.errors.js';
+} from '../errors.js';
 
 export function toProfilesHttpError(err: unknown): Error {
   if (err instanceof SelfFollowError || err instanceof InvalidFollowingProfilesCursorError) {

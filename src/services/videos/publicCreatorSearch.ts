@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
-import { PUBLIC_PROFILE_VISIBILITY_SCOPE } from '../profiles/publicProfileVisibility.js';
+import { PUBLIC_PROFILE_VISIBILITY_SCOPE } from '../../modules/profiles/index.js';
 import {
   profileAvatarMediaAssetsSelection,
   toProfileMediaUrl,

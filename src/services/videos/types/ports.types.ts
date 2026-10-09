@@ -1,6 +1,6 @@
 import type { VideoLicense } from '../videoLicenses.js';
 import type { AuthRole } from '../../auth.roles.js';
-import type { PublicProfileIdentity } from '../../profiles/types/profile.types.js';
+import type { PublicProfileIdentity } from '../../../modules/profiles/index.js';
 
 export type VideoUploadSessionStatus =
   | 'initializing'

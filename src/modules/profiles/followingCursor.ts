@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, type CipherGCMTypes } from 'node:crypto';
-import { InvalidFollowingProfilesCursorError } from '../profiles.errors.js';
+import { InvalidFollowingProfilesCursorError } from './errors.js';
 
 export const FOLLOWING_PROFILES_CURSOR_MAX_LENGTH = 512;
 

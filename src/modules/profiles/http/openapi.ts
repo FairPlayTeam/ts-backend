@@ -5,14 +5,18 @@ import {
   publicProfileParamsSchema,
   publicProfileResponseSchema,
   unfollowPublicProfileResponseSchema,
-} from '../controllers/profiles.schemas.js';
+} from './schemas.js';
 import {
   publicVideosQuerySchema,
   publicVideosResponseSchema,
-} from '../controllers/videos.schemas.js';
-import { jsonResponse } from './openapi.helpers.js';
-import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from './registry.js';
-import { z } from './zod.js';
+} from '../../../controllers/videos.schemas.js';
+import { jsonResponse } from '../../../docs/openapi.helpers.js';
+import {
+  ApiErrorSchema,
+  ApiOrValidationErrorSchema,
+  type RouteDoc,
+} from '../../../docs/registry.js';
+import { z } from '../../../docs/zod.js';
 
 const profileMediaResponse = (description: string) => ({
   description,

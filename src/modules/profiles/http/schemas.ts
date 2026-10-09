@@ -1,13 +1,13 @@
 import { z } from '../../../docs/zod.js';
-import { usernameSchema } from '../../shared/user.schemas.js';
+import { usernameSchema } from '../../../controllers/shared/user.schemas.js';
 import {
   FOLLOW_PROFILE_SUCCESS_MESSAGE,
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
-} from '../../../services/profiles/profiles.messages.js';
-import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
-import { publicProfileIdentityResponseSchema } from '../../shared/profile.schemas.js';
-import { publicVideosQuerySchema } from '../../videos/schemas/video.schemas.js';
-import { FOLLOWING_PROFILES_CURSOR_MAX_LENGTH } from '../../../services/profiles/followingProfilesCursor.js';
+} from '../constants.js';
+import { relativeAssetPathSchema } from '../../../controllers/shared/asset.schemas.js';
+import { publicProfileIdentityResponseSchema } from '../../../controllers/shared/profile.schemas.js';
+import { publicVideosQuerySchema } from '../../../controllers/videos/schemas/video.schemas.js';
+import { FOLLOWING_PROFILES_CURSOR_MAX_LENGTH } from '../followingCursor.js';
 
 export const publicProfileParamsSchema = z
   .object({

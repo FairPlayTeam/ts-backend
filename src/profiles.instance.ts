@@ -2,8 +2,10 @@ import config from './config/env.js';
 import { objectStorage } from './objectStorage.instance.js';
 import { createUnavailableObjectStorage } from './lib/objectStorage.js';
 import { prisma } from './lib/prisma.js';
-import { createProfilesService } from './services/profiles.service.js';
-import { createFollowingProfilesCursorCodec } from './services/profiles/followingProfilesCursor.js';
+import {
+  createFollowingProfilesCursorCodec,
+  createProfilesService,
+} from './modules/profiles/index.js';
 
 export const profilesService = createProfilesService({
   prisma,

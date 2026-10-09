@@ -1,1 +1,1 @@
-export * from './profiles/schemas/profile.schemas.js';
+export * from '../modules/profiles/http/schemas.js';

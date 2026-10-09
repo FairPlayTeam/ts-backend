@@ -1,5 +1,5 @@
 import { Router, type RequestHandler } from 'express';
-import { createProfilesController } from '../controllers/profiles.controller.js';
+import { createProfilesController } from './handlers.js';
 import {
   followPublicProfileSchema,
   getProfileMediaSchema,
@@ -7,13 +7,13 @@ import {
   listPublicProfileVideosSchema,
   listFollowingProfilesSchema,
   unfollowPublicProfileSchema,
-} from '../controllers/profiles.schemas.js';
-import { createRouteProtector } from '../middleware/routeProtection.js';
-import { createOptionalAuthenticateSession } from '../middleware/auth.js';
-import { validate } from '../middleware/validation.js';
-import type { AuthSessionValidationPort } from '../services/auth.types.js';
-import type { ProfilesRoutePort } from '../services/profiles.types.js';
-import type { VideosRoutePort } from '../services/videos.types.js';
+} from './schemas.js';
+import { createRouteProtector } from '../../../middleware/routeProtection.js';
+import { createOptionalAuthenticateSession } from '../../../middleware/auth.js';
+import { validate } from '../../../middleware/validation.js';
+import type { AuthSessionValidationPort } from '../../../services/auth.types.js';
+import type { ProfilesRoutePort } from '../index.js';
+import type { VideosRoutePort } from '../../../services/videos.types.js';
 
 type ProfilesRouterDependencies = {
   authService: AuthSessionValidationPort;
@@ -71,4 +71,4 @@ export const createRouter = ({
   return router;
 };
 
-export { routeDocs } from '../docs/profiles.routes.js';
+export { routeDocs } from './openapi.js';

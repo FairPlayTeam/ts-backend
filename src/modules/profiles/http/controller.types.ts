@@ -1,5 +1,5 @@
-import type { ProfilesRoutePort } from '../../services/profiles.types.js';
-import type { VideosRoutePort } from '../../services/videos.types.js';
+import type { ProfilesRoutePort } from '../index.js';
+import type { VideosRoutePort } from '../../../services/videos.types.js';
 
 export type ProfilesControllerDependencies = {
   profilesService: ProfilesRoutePort;

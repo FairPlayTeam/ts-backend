@@ -1,1 +1,1 @@
-export { createProfilesService } from './profiles/profiles.js';
+export { createProfilesService } from '../modules/profiles/service.js';

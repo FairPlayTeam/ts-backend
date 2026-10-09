@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { InvalidFollowingProfilesCursorError } from '../src/services/profiles.errors.js';
-import { createFollowingProfilesCursorCodec } from '../src/services/profiles/followingProfilesCursor.js';
+import {
+  createFollowingProfilesCursorCodec,
+  InvalidFollowingProfilesCursorError,
+} from '../src/modules/profiles/index.js';
 
 const cursor = {
   followedAt: new Date('2026-01-03T00:00:00.000Z'),

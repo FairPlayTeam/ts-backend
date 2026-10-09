@@ -6,22 +6,18 @@ import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
 import { ObjectStorageUnavailableError } from '../src/lib/objectStorage.js';
 import {
+  FOLLOW_PROFILE_SUCCESS_MESSAGE,
   INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
   InvalidFollowingProfilesCursorError,
   PublicProfileMediaNotFoundError,
   PublicProfileNotFoundError,
-} from '../src/services/profiles.errors.js';
-import {
-  FOLLOW_PROFILE_SUCCESS_MESSAGE,
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
-} from '../src/services/profiles/profiles.messages.js';
-import type {
-  FollowPublicProfileInput,
-  GetProfileMediaInput,
-  GetPublicProfileInput,
-  ListFollowingProfilesInput,
-  ProfilesPorts,
-} from '../src/services/profiles.types.js';
+  type FollowPublicProfileInput,
+  type GetProfileMediaInput,
+  type GetPublicProfileInput,
+  type ListFollowingProfilesInput,
+  type ProfilesPorts,
+} from '../src/modules/profiles/index.js';
 import type { ListPublicProfileVideosInput } from '../src/services/videos.types.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';

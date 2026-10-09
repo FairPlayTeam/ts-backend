@@ -14,14 +14,12 @@ import { OperationTimeoutError } from '../../src/lib/operationMetrics.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
 import { UPLOAD_AVATAR_SUCCESS_MESSAGE } from '../../src/services/auth/auth.messages.js';
 import {
+  FOLLOW_PROFILE_SUCCESS_MESSAGE,
   INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,
   PUBLIC_PROFILE_MEDIA_NOT_FOUND_MESSAGE,
   SELF_FOLLOW_MESSAGE,
-} from '../../src/services/profiles.errors.js';
-import {
-  FOLLOW_PROFILE_SUCCESS_MESSAGE,
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
-} from '../../src/services/profiles/profiles.messages.js';
+} from '../../src/modules/profiles/index.js';
 import type { VideosService } from '../../src/services/videos.types.js';
 import { createPng, createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import { OBJECT_STORAGE_BUCKET } from './support/infrastructure.js';

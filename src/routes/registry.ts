@@ -7,9 +7,8 @@ import {
   routeDocs as moderationRouteDocs,
 } from './moderation.js';
 import {
-  createRouter as createProfilesRouter,
-  routeDocs as profilesRouteDocs,
-} from './profiles.js';
+  profilesHttpModule,
+} from '../modules/profiles/index.js';
 import { createRouter as createVideosRouter, routeDocs as videosRouteDocs } from './videos.js';
 import type { RouteDoc } from '../docs/registry.js';
 
@@ -38,12 +37,7 @@ export const httpRouteModules = [
     createRouter: createModerationRouter,
     routeDocs: moderationRouteDocs,
   },
-  {
-    name: 'profiles',
-    mountPath: '/profiles',
-    createRouter: createProfilesRouter,
-    routeDocs: profilesRouteDocs,
-  },
+  profilesHttpModule,
   {
     name: 'videos',
     mountPath: '/videos',

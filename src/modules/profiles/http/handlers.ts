@@ -7,20 +7,23 @@ import type {
   ListPublicProfileVideosQuery,
   ListFollowingProfilesQuery,
   UnfollowPublicProfileParams,
-} from '../profiles.schemas.js';
-import { allowPublicCrossOriginMedia, sendNoStoreJson } from '../http.responses.js';
-import { toProfilesHttpError } from '../profiles.errors.js';
+} from './schemas.js';
+import {
+  allowPublicCrossOriginMedia,
+  sendNoStoreJson,
+} from '../../../controllers/http.responses.js';
+import { toProfilesHttpError } from './errorMapper.js';
 import type {
   AuthenticatedRequest,
   OptionallyAuthenticatedRequest,
-} from '../../middleware/auth.js';
-import type { ProfilesControllerDependencies } from './profiles.controller.types.js';
+} from '../../../middleware/auth.js';
+import type { ProfilesControllerDependencies } from './controller.types.js';
 import {
   toFollowingProfilesResponse,
   toFollowPublicProfileResponse,
   toPublicProfileResponse,
-} from './profiles.responses.js';
-import { toPublicVideosResponse } from '../videos/videos.responses.js';
+} from './responses.js';
+import { toPublicVideosResponse } from '../../../controllers/videos/videos.responses.js';
 
 type GetPublicProfileRequest = Request<GetPublicProfileParams>;
 type ListPublicProfileVideosRequest = Request<

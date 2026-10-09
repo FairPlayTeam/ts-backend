@@ -1,4 +1,4 @@
-import type { ProfilesPort } from './profile.types.js';
+import type { ProfilesPort } from './types.js';
 
 export type ProfilesRoutePort = ProfilesPort;
 

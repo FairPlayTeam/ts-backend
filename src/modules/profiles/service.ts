@@ -5,19 +5,19 @@ import {
   profileMediaAssetWhere,
   toProfileMediaUrl,
   toProfileMediaUrls,
-} from '../userMedia/userMedia.profileAssets.js';
+} from '../../services/userMedia/userMedia.profileAssets.js';
 import {
   PublicProfileMediaNotFoundError,
   PublicProfileNotFoundError,
   SelfFollowError,
-} from '../profiles.errors.js';
-import { readForProxy } from '../assets/assetLinks.js';
-import type { ProfilesDependencies } from './profiles.dependencies.js';
-import { PUBLIC_PROFILE_VISIBILITY_SCOPE } from './publicProfileVisibility.js';
+} from './errors.js';
+import { readForProxy } from '../../services/assets/assetLinks.js';
+import type { ProfilesDependencies } from './dependencies.js';
+import { PUBLIC_PROFILE_VISIBILITY_SCOPE } from './publicVisibility.js';
 import {
   FOLLOW_PROFILE_SUCCESS_MESSAGE,
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
-} from './profiles.messages.js';
+} from './constants.js';
 import type {
   FollowPublicProfileInput,
   FollowPublicProfileResult,
@@ -30,7 +30,7 @@ import type {
   ListFollowingProfilesResult,
   PublicProfile,
   ProfilesPort,
-} from './types/profile.types.js';
+} from './types.js';
 
 const DEFAULT_FOLLOWING_PROFILES_LIMIT = 20;
 const MAX_FOLLOWING_PROFILES_LIMIT = 100;

@@ -1,2 +1,2 @@
-export type * from './profiles/types/profile.types.js';
-export type * from './profiles/types/ports.types.js';
+export type * from '../modules/profiles/types.js';
+export type * from '../modules/profiles/ports.types.js';

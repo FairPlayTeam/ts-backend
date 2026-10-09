@@ -13,7 +13,7 @@ import type {
   VideoUploadSessionResult,
   VideoComment,
 } from '../../services/videos.types.js';
-import type { PublicProfileIdentity } from '../../services/profiles.types.js';
+import type { PublicProfileIdentity } from '../../modules/profiles/index.js';
 
 const toPublicProfileIdentityResponse = ({
   avatarUrl,

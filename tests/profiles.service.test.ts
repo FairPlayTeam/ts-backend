@@ -1,16 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { createProfilesService } from '../src/services/profiles.service.js';
 import {
+  createFollowingProfilesCursorCodec,
+  createProfilesService,
+  FOLLOW_PROFILE_SUCCESS_MESSAGE,
   PublicProfileMediaNotFoundError,
   PublicProfileNotFoundError,
   SelfFollowError,
-} from '../src/services/profiles.errors.js';
-import {
-  FOLLOW_PROFILE_SUCCESS_MESSAGE,
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
-} from '../src/services/profiles/profiles.messages.js';
-import type { ProfilesDependencies } from '../src/services/profiles/profiles.dependencies.js';
-import { createFollowingProfilesCursorCodec } from '../src/services/profiles/followingProfilesCursor.js';
+  type ProfilesDependencies,
+} from '../src/modules/profiles/index.js';
 
 const profileCreatedAt = new Date('2026-01-01T00:00:00.000Z');
 const firstFollowedAt = new Date('2026-01-04T00:00:00.000Z');

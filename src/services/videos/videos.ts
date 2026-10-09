@@ -43,8 +43,10 @@ import {
   type ExternalResourceReconciliationHandler,
 } from '../externalResources.js';
 import { isPrismaForeignKeyConstraintError } from '../auth/auth.prismaErrors.js';
-import { PublicProfileNotFoundError } from '../profiles.errors.js';
-import { PUBLIC_PROFILE_VISIBILITY_SCOPE } from '../profiles/publicProfileVisibility.js';
+import {
+  PublicProfileNotFoundError,
+  PUBLIC_PROFILE_VISIBILITY_SCOPE,
+} from '../../modules/profiles/index.js';
 import {
   ActiveVideoUploadSessionExistsError,
   InvalidVideoUploadSessionStateError,

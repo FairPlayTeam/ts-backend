@@ -1,9 +1,9 @@
-import { toIsoString } from '../http.responses.js';
+import { toIsoString } from '../../../controllers/http.responses.js';
 import type {
   FollowPublicProfileResult,
   GetPublicProfileResult,
   ListFollowingProfilesResult,
-} from '../../services/profiles.types.js';
+} from '../index.js';
 
 const toPublicProfileBody = ({
   avatarUrl,

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
 import type { VideosDependencies } from '../src/services/videos/videos.dependencies.js';
 import { createVideosService } from '../src/services/videos.service.js';
-import { PublicProfileNotFoundError } from '../src/services/profiles.errors.js';
+import { PublicProfileNotFoundError } from '../src/modules/profiles/index.js';
 
 const createdAt = [
   new Date('2026-01-03T00:00:00.000Z'),

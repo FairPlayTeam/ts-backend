@@ -1,8 +1,8 @@
-import type { ProfilesPorts } from '../../src/services/profiles.types.js';
 import {
   FOLLOW_PROFILE_SUCCESS_MESSAGE,
+  type ProfilesPorts,
   UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
-} from '../../src/services/profiles/profiles.messages.js';
+} from '../../src/modules/profiles/index.js';
 
 const publicProfile = {
   username: 'fairplay_user',

@@ -34,14 +34,16 @@ import {
   USER_MEDIA_EXTERNAL_RESOURCE_ROLES,
   VIDEO_EXTERNAL_RESOURCE_ROLES,
 } from '../../../src/services/externalResources.js';
-import { createProfilesService } from '../../../src/services/profiles.service.js';
-import { createFollowingProfilesCursorCodec } from '../../../src/services/profiles/followingProfilesCursor.js';
+import {
+  createFollowingProfilesCursorCodec,
+  createProfilesService,
+  type ProfilesPorts,
+} from '../../../src/modules/profiles/index.js';
 import { createUserMediaProcessor } from '../../../src/services/userMedia/userMedia.processor.js';
 import { createVideosService } from '../../../src/services/videos.service.js';
 import { createVideoPublicId } from '../../../src/services/videos/videoPublicId.js';
 import type { AdminPorts } from '../../../src/services/admin.types.js';
 import type { AuthPorts } from '../../../src/services/auth.types.js';
-import type { ProfilesPorts } from '../../../src/services/profiles.types.js';
 import type { VideosService } from '../../../src/services/videos.types.js';
 import type { ObjectStorageConfig } from '../../../src/config/env.parsers.js';
 import type { VideoTranscodeLimits } from '../../../src/services/videos/videoTranscode.js';

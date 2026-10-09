@@ -1,4 +1,4 @@
-import type { UserMediaKind } from '../../userMedia/userMedia.types.js';
+import type { UserMediaKind } from '../../services/userMedia/userMedia.types.js';
 
 export type GetPublicProfileInput = {
   username: string;

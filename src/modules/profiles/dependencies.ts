@@ -1,6 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import type { ObjectStorage } from '../../lib/objectStorage.js';
-import type { FollowingProfilesCursorCodec } from './followingProfilesCursor.js';
+import type { FollowingProfilesCursorCodec } from './followingCursor.js';
 
 type Prisma = Pick<PrismaClient, '$transaction' | 'user' | 'userFollow' | 'userMediaAsset'>;
 
