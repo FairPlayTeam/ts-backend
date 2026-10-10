@@ -45,7 +45,7 @@ import { createVideoPublicId } from '../../../src/services/videos/videoPublicId.
 import type { AdminPorts } from '../../../src/services/admin.types.js';
 import type { AuthPorts } from '../../../src/services/auth.types.js';
 import type { VideosService } from '../../../src/services/videos.types.js';
-import type { ObjectStorageConfig } from '../../../src/config/env.parsers.js';
+import type { ObjectStorageConfig } from '../../../src/config/env.schema.js';
 import type { VideoTranscodeLimits } from '../../../src/services/videos/videoTranscode.js';
 import type { Redis } from 'ioredis';
 import { testLogger } from './logger.js';

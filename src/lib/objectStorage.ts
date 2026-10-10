@@ -8,7 +8,7 @@ import {
 import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
 import type { Readable } from 'node:stream';
 import { Client } from 'minio';
-import type { ObjectStorageConfig } from '../config/env.parsers.js';
+import type { ObjectStorageConfig } from '../config/env.schema.js';
 import {
   observeOperation,
   type OperationLogger,

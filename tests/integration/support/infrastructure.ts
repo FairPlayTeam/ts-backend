@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
-import type { ObjectStorageConfig } from '../../../src/config/env.parsers.js';
+import type { ObjectStorageConfig } from '../../../src/config/env.schema.js';
 import { buildRedisTestUrl, startRedisTestContainer } from './redis.js';
 
 const execFileAsync = promisify(execFile);

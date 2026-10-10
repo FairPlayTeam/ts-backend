@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { once } from 'node:events';
 import { createServer, type Agent as HttpAgent } from 'node:http';
 import { Readable } from 'node:stream';
-import type { ObjectStorageConfig } from '../src/config/env.parsers.js';
+import type { ObjectStorageConfig } from '../src/config/env.schema.js';
 import {
   ObjectStorageUnavailableError,
   createMinioClient,

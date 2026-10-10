@@ -13,7 +13,7 @@ import { createLimiters } from './middleware/limiters.js';
 import { createEmailCooldown } from './middleware/abuseProtection.js';
 import { createUserAccountOperationGuard } from './middleware/userAccountOperationGuard.js';
 import type { Config } from './config/env.js';
-import { ALL_CORS_ORIGINS } from './config/env.parsers.js';
+import { ALL_CORS_ORIGINS } from './config/env.schema.js';
 import type { RedisClient } from './lib/redis.js';
 import type { AdminRoutePort } from './services/admin.types.js';
 import type { AuthRoutePort } from './services/auth.types.js';

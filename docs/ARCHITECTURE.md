@@ -49,6 +49,16 @@ The backend supports three common runtime modes:
 The same application code is used in every mode. The differences are the process manager, network
 addresses, and environment variables.
 
+## Runtime configuration
+
+`src/config/env.schema.ts` owns the known runtime variables, their defaults, normalization, and
+cross-variable validation. Its `parseEnvironment(environment)` function is pure and ignores unrelated
+keys supplied by the process environment. `src/config/env.ts` is the application bootstrap boundary
+that reads `process.env` and exports the parsed configuration; tests pass explicit environment
+objects to the parser. Shared default values live in `src/config/constants.ts`. Logger settings,
+Sharp concurrency, script-only variables, and the package version remain outside this bootstrap
+schema because they are read by separate early-startup or tooling paths.
+
 ## Deployment architecture
 
 ```mermaid
