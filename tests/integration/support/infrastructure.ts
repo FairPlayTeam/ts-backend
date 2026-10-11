@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -10,11 +11,14 @@ const execFileAsync = promisify(execFile);
 const projectRoot = fileURLToPath(new URL('../../..', import.meta.url));
 
 const POSTGRES_PORT = 5432;
-const MINIO_PORT = 9000;
+const GARAGE_S3_PORT = 3900;
 export const OBJECT_STORAGE_BUCKET = 'fairplay-integration-media';
 export const VIDEO_OBJECT_STORAGE_BUCKET = 'fairplay-integration-videos';
 const OBJECT_STORAGE_ACCESS_KEY = 'fairplay';
-const OBJECT_STORAGE_SECRET_KEY = 'fairplay-minio-secret';
+const OBJECT_STORAGE_SECRET_KEY = 'fairplay-integration-secret';
+const GARAGE_RPC_SECRET = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+export const GARAGE_IMAGE =
+  'dxflrs/garage@sha256:9c96caa2612d3411acc5b0e6701fb238dbfba33e533a6d7d3d811a4b12d0d020';
 
 export type IntegrationInfrastructure = {
   databaseUrl: string;
@@ -48,11 +52,11 @@ const buildDatabaseUrl = (container: StartedTestContainer): string => {
   return `postgresql://user:password@${host}:${port}/fairplay?schema=public`;
 };
 
-const buildObjectStorageConfig = (
+export const buildObjectStorageConfig = (
   container: StartedTestContainer,
   bucket = OBJECT_STORAGE_BUCKET,
 ): ObjectStorageConfig => {
-  const origin = `http://${container.getHost()}:${container.getMappedPort(MINIO_PORT)}`;
+  const origin = `http://${container.getHost()}:${container.getMappedPort(GARAGE_S3_PORT)}`;
   const publicOrigin = new URL(origin);
 
   if (publicOrigin.hostname === 'localhost') {
@@ -73,13 +77,47 @@ const buildObjectStorageConfig = (
   };
 };
 
+export const startGarageContainer = async (
+  dataDirectory?: string,
+): Promise<StartedTestContainer> => {
+  let container = new GenericContainer(GARAGE_IMAGE)
+    .withEnvironment({
+      GARAGE_RPC_SECRET,
+      GARAGE_DEFAULT_ACCESS_KEY: OBJECT_STORAGE_ACCESS_KEY,
+      GARAGE_DEFAULT_SECRET_KEY: OBJECT_STORAGE_SECRET_KEY,
+      GARAGE_DEFAULT_BUCKET: 'garage-default',
+    })
+    .withCommand(['/garage', 'server', '--single-node', '--default-bucket'])
+    .withCopyFilesToContainer([
+      {
+        source: join(projectRoot, 'docker', 'garage.toml'),
+        target: '/etc/garage.toml',
+      },
+    ])
+    .withExposedPorts(GARAGE_S3_PORT)
+    .withWaitStrategy(Wait.forHttp('/', GARAGE_S3_PORT).forStatusCode(403))
+    .withStartupTimeout(60_000);
+
+  if (dataDirectory) {
+    container = container.withBindMounts([
+      {
+        source: dataDirectory,
+        target: '/var/lib/garage',
+        mode: 'rw',
+      },
+    ]);
+  }
+
+  return container.start();
+};
+
 export const startIntegrationInfrastructure = async (): Promise<{
   context: IntegrationInfrastructure;
   stop: () => Promise<void>;
 }> => {
   let postgresContainer: StartedTestContainer | null = null;
   let redisContainer: StartedTestContainer | null = null;
-  let minioContainer: StartedTestContainer | null = null;
+  let objectStorageContainer: StartedTestContainer | null = null;
 
   try {
     postgresContainer = await new GenericContainer('postgres:17-alpine')
@@ -95,16 +133,7 @@ export const startIntegrationInfrastructure = async (): Promise<{
 
     redisContainer = await startRedisTestContainer();
 
-    minioContainer = await new GenericContainer('minio/minio:RELEASE.2025-09-07T16-13-09Z')
-      .withEnvironment({
-        MINIO_ROOT_USER: OBJECT_STORAGE_ACCESS_KEY,
-        MINIO_ROOT_PASSWORD: OBJECT_STORAGE_SECRET_KEY,
-      })
-      .withCommand(['server', '/data', '--console-address', ':9001'])
-      .withExposedPorts(MINIO_PORT)
-      .withWaitStrategy(Wait.forHttp('/minio/health/ready', MINIO_PORT).forStatusCode(200))
-      .withStartupTimeout(60_000)
-      .start();
+    objectStorageContainer = await startGarageContainer();
 
     const databaseUrl = buildDatabaseUrl(postgresContainer);
     await runPrismaMigrations(databaseUrl);
@@ -112,9 +141,9 @@ export const startIntegrationInfrastructure = async (): Promise<{
     const context: IntegrationInfrastructure = {
       databaseUrl,
       redisUrl: buildRedisTestUrl(redisContainer),
-      objectStorageConfig: buildObjectStorageConfig(minioContainer),
+      objectStorageConfig: buildObjectStorageConfig(objectStorageContainer),
       videoObjectStorageConfig: buildObjectStorageConfig(
-        minioContainer,
+        objectStorageContainer,
         VIDEO_OBJECT_STORAGE_BUCKET,
       ),
       postgresContainerId: postgresContainer.getId(),
@@ -123,13 +152,13 @@ export const startIntegrationInfrastructure = async (): Promise<{
     return {
       context,
       stop: async () => {
-        await minioContainer?.stop();
+        await objectStorageContainer?.stop();
         await redisContainer?.stop();
         await postgresContainer?.stop();
       },
     };
   } catch (error) {
-    await minioContainer?.stop();
+    await objectStorageContainer?.stop();
     await redisContainer?.stop();
     await postgresContainer?.stop();
     throw error;

@@ -19,7 +19,7 @@ Node.js, Bun (1.3.10), Docker, `ffmpeg`, and `ffprobe` are required for the host
 The Docker runtime image already contains the FFmpeg tools.
 
 The recommended development setup runs the API with Bun on the host and runs the local dependency
-services with Docker Compose: PostgreSQL, Redis, and MinIO for S3-compatible object storage.
+services with Docker Compose: PostgreSQL, Redis, and Garage for S3-compatible object storage.
 
 ```
 # install dependencies
@@ -29,7 +29,7 @@ bun install
 cp .env.example .env
 
 # start only the local dependencies
-docker compose up -d postgres redis minio
+docker compose up -d postgres redis object-storage
 
 # migrate the Prisma schema to PostgreSQL
 bunx prisma migrate dev
@@ -40,8 +40,7 @@ bun run dev
 
 The backend will listen on http://localhost:3000. In this mode, `.env` should use host-reachable
 URLs such as `postgresql://user:password@localhost:5432/fairplay?schema=public` and
-`redis://localhost:6379`. MinIO is reachable at `http://localhost:9000`, with the console at
-`http://localhost:9001`.
+`redis://localhost:6379`. Garage is reachable at `http://localhost:9000` through its S3 API.
 
 ### Full Docker Compose stack
 
@@ -55,14 +54,14 @@ This starts five services on the `fairplay-backend-network` Docker network:
 
 - `postgres`, backed by the `postgres_data` volume
 - `redis`, backed by the `redis_data` volume and append-only persistence
-- `minio`, backed by the `minio_data` volume
+- `object-storage`, backed by the new `object_storage_data` volume
 - `migrate`, a one-shot Prisma migration service
 - `backend`, the API runtime image
 
 Inside the Compose network, the backend connects to PostgreSQL through `postgres:5432`, Redis
-through `redis:6379`, and, by default, MinIO through `minio:9000`. The database, Redis, and MinIO
-ports are bound to `127.0.0.1` by default so local tools can still access them without exposing
-them on the machine network.
+through `redis:6379`, and, by default, Garage through `object-storage:3900`. The database, Redis,
+and S3 API ports are bound to `127.0.0.1` by default so local tools can still access them without
+exposing them on the machine network.
 
 Useful commands:
 
@@ -70,11 +69,11 @@ Useful commands:
 docker compose ps
 docker compose logs -f backend
 docker compose stop backend
-docker compose stop postgres redis minio
+docker compose stop postgres redis object-storage
 docker compose down
 ```
 
-`docker compose down -v` also deletes the PostgreSQL, Redis, and MinIO volumes. Use it only when
+`docker compose down -v` also deletes the PostgreSQL, Redis, and Garage volumes. Use it only when
 local data should be removed.
 
 Docker Compose is only a local development and verification setup. Production does not use this
@@ -83,7 +82,7 @@ directly from the deployment environment or secret manager.
 
 The `COMPOSE_OBJECT_STORAGE_*` variables are only interpolation inputs for the local Compose file.
 They keep host values such as `OBJECT_STORAGE_ENDPOINT=http://localhost:9000` separate from
-container-network values such as `http://minio:9000`. The backend process itself always reads the
+container-network values such as `http://object-storage:3900`. The backend process itself always reads the
 standard runtime variables named `OBJECT_STORAGE_*`.
 
 ### Production deployment
@@ -240,7 +239,7 @@ The full Swagger UI documentation will be available at /docs.
 - `AUTH_CODE_PEPPER` secret used as the HMAC key for email verification and password reset codes.
   It must be at least 32 characters and must not be a placeholder in production.
 - `OBJECT_STORAGE_ENDPOINT` internal HTTP(S) origin for S3-compatible object storage, for example
-  `http://localhost:9000` locally, `http://minio:9000` in the local Compose network, or a managed
+  `http://localhost:9000` locally, `http://object-storage:3900` in the local Compose network, or a managed
   S3-compatible origin such as `https://s3.pub1.infomaniak.cloud`.
 - `OBJECT_STORAGE_PUBLIC_URL` optional public HTTP(S) origin used when generating signed media URLs.
   If omitted, `OBJECT_STORAGE_ENDPOINT` is used.

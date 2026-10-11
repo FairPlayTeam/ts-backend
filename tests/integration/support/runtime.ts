@@ -20,8 +20,8 @@ import {
   hashToken,
 } from '../../../src/lib/crypto.js';
 import {
-  createMinioClient,
-  createMinioSigningClient,
+  createS3ObjectStorageClient,
+  createS3SigningClient,
   createObjectStorage,
   type ObjectStorage,
 } from '../../../src/lib/objectStorage.js';
@@ -98,11 +98,13 @@ export type TestRuntime = {
   postgresApplicationName: string;
   redisUrl: string;
   objectStorageConfig: ObjectStorageConfig;
+  videoObjectStorageConfig: ObjectStorageConfig;
   postgresContainerId: string;
   prisma: PrismaClient;
   redisClient: Redis;
   objectStorage: ObjectStorage;
   videoObjectStorage: ObjectStorage;
+  closeObjectStorageClients(): void;
   userMediaExternalResources: ExternalResourceReconciler;
   videoExternalResources: ExternalResourceReconciler;
   adminService: AdminPorts;
@@ -414,17 +416,19 @@ export const startRuntime = async (): Promise<TestRuntime> => {
     applicationName: postgresApplicationName,
   });
   const redisClient = createRedisClient(infrastructure.redisUrl, testLogger);
+  const objectStorageClient = createS3ObjectStorageClient(infrastructure.objectStorageConfig);
+  const objectStorageSigningClient = createS3SigningClient(infrastructure.objectStorageConfig);
   const objectStorage = createObjectStorage(
     infrastructure.objectStorageConfig,
-    createMinioClient(infrastructure.objectStorageConfig),
+    objectStorageClient,
     testLogger,
-    createMinioSigningClient(infrastructure.objectStorageConfig),
+    objectStorageSigningClient,
   );
   const videoObjectStorage = createObjectStorage(
     infrastructure.videoObjectStorageConfig,
-    createMinioClient(infrastructure.videoObjectStorageConfig),
+    objectStorageClient,
     testLogger,
-    createMinioSigningClient(infrastructure.videoObjectStorageConfig),
+    objectStorageSigningClient,
   );
   const userMediaExternalResources = createExternalResourceReconciler({
     prisma,
@@ -459,11 +463,16 @@ export const startRuntime = async (): Promise<TestRuntime> => {
     postgresApplicationName,
     redisUrl: infrastructure.redisUrl,
     objectStorageConfig: infrastructure.objectStorageConfig,
+    videoObjectStorageConfig: infrastructure.videoObjectStorageConfig,
     postgresContainerId: infrastructure.postgresContainerId,
     prisma,
     redisClient,
     objectStorage,
     videoObjectStorage,
+    closeObjectStorageClients: () => {
+      objectStorageClient.destroy();
+      objectStorageSigningClient.destroy();
+    },
     userMediaExternalResources,
     videoExternalResources,
     adminService: createIntegrationAdminService(prisma, delivered),
@@ -490,6 +499,7 @@ export const stopRuntime = async (runtime: TestRuntime | null): Promise<void> =>
 
   await runtime.prisma.$disconnect();
   await closeRedisClient(runtime.redisClient, testLogger);
+  runtime.closeObjectStorageClients();
 };
 
 export const resetState = async (runtime: TestRuntime): Promise<void> => {

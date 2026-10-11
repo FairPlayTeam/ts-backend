@@ -849,10 +849,10 @@ describe('maintenance and reconciliation integration', () => {
       runtime.objectStorageConfig,
       {
         bucketExists: async () => true,
-        makeBucket: async () => undefined,
+        createBucket: async () => undefined,
         putObject: async () => undefined,
-        removeObject: async () => undefined,
-        statObject: async () => {
+        deleteObject: async () => undefined,
+        headObject: async () => {
           const err = new Error('proxy route missing') as Error & {
             code: string;
             statusCode: number;
@@ -861,7 +861,7 @@ describe('maintenance and reconciliation integration', () => {
           err.statusCode = 404;
           throw err;
         },
-        presignedGetObject: async () => 'http://localhost/not-used',
+        signGetObjectUrl: async () => 'http://localhost/not-used',
       },
       testLogger,
     );

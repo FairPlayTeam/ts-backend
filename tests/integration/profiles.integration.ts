@@ -821,15 +821,15 @@ describe('profiles integration', () => {
     }
   });
 
-  test('stores uploaded profile media in MinIO and proxies it through opaque profile paths', async () => {
+  test('stores uploaded profile media in object storage and proxies it through opaque profile paths', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
 
     const app = await createIntegrationApp(runtime);
     const { sessionKey, userId } = await createVerifiedSession(runtime, {
-      email: 'minio-media@example.com',
-      username: 'minio_media_user',
+      email: 's3-media@example.com',
+      username: 's3_media_user',
     });
     const avatarInput = await createPng();
 
@@ -857,7 +857,7 @@ describe('profiles integration', () => {
       sizeBytes: number;
       url: string;
     };
-    expect(uploadedAvatar.url).toBe('/profiles/minio_media_user/avatar');
+    expect(uploadedAvatar.url).toBe('/profiles/s3_media_user/avatar');
     const bannerInput = await createPng(1_600, 600);
     await request(app)
       .put('/auth/me/banner')
@@ -902,8 +902,8 @@ describe('profiles integration', () => {
       .expect(200);
     const avatarUrl = profileResponse.body.user.avatarUrl as string;
     const bannerUrl = profileResponse.body.user.bannerUrl as string;
-    expect(avatarUrl).toBe('/profiles/minio_media_user/avatar');
-    expect(bannerUrl).toBe('/profiles/minio_media_user/banner');
+    expect(avatarUrl).toBe('/profiles/s3_media_user/avatar');
+    expect(bannerUrl).toBe('/profiles/s3_media_user/banner');
 
     const mediaResponse = await request(app)
       .get(avatarUrl)

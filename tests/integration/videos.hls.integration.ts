@@ -162,7 +162,7 @@ describe('videos HLS integration', () => {
     await stopRuntime(runtime);
   });
 
-  test('serves public generation-scoped HLS safely through PostgreSQL and MinIO', async () => {
+  test('serves public generation-scoped HLS safely through PostgreSQL and object storage', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }

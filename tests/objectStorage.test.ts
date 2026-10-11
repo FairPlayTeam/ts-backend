@@ -1,38 +1,47 @@
 import { describe, expect, test } from 'bun:test';
 import { once } from 'node:events';
-import { createServer, type Agent as HttpAgent } from 'node:http';
+import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 import type { ObjectStorageConfig } from '../src/config/env.schema.js';
 import {
   ObjectStorageUnavailableError,
-  createMinioClient,
+  createS3ObjectStorageClient,
+  createS3SigningClient,
   createObjectStorage,
 } from '../src/lib/objectStorage.js';
 import { OperationTimeoutError } from '../src/lib/operationMetrics.js';
 import { createOperationLogCollector } from './support/logCollector.js';
 
 const createConfig = (overrides: Partial<ObjectStorageConfig> = {}): ObjectStorageConfig => ({
-  endpoint: 'http://minio:9000',
+  endpoint: 'http://object-storage:9000',
   publicUrl: 'http://localhost:9000',
   region: 'us-east-1',
   bucket: 'user-media',
   accessKey: 'fairplay',
-  secretKey: 'fairplay-minio-secret',
+  secretKey: 'fairplay-object-storage-secret',
   signedUrlTtlSeconds: 900,
   operationTimeoutMs: 5_000,
   ...overrides,
 });
 
 describe('object storage', () => {
-  test('configures the MinIO transport agent with the object storage timeout', () => {
-    const client = createMinioClient(
+  test('signs path-style URLs against the configured public S3 endpoint', async () => {
+    const signer = createS3SigningClient(
       createConfig({
-        endpoint: 'https://s3.example.com',
-        operationTimeoutMs: 2_500,
+        publicUrl: 'https://s3.example.com',
       }),
-    ) as unknown as { transportAgent: { options: { timeout?: number } } };
+    );
 
-    expect(client.transportAgent.options.timeout).toBe(2_500);
+    try {
+      const signedUrl = await signer.signGetObjectUrl('user-media', 'users/user/avatar.webp', 120);
+      const url = new URL(signedUrl);
+
+      expect(url.origin).toBe('https://s3.example.com');
+      expect(url.pathname).toBe('/user-media/users/user/avatar.webp');
+      expect(url.searchParams.get('X-Amz-Algorithm')).toBe('AWS4-HMAC-SHA256');
+    } finally {
+      signer.destroy();
+    }
   });
 
   test('ensures the bucket once before writes and signs GET URLs with the public client', async () => {
@@ -43,8 +52,8 @@ describe('object storage', () => {
         calls.push(['bucketExists', bucket]);
         return false;
       },
-      makeBucket: async (bucket: string, region?: string) => {
-        calls.push(['makeBucket', bucket, region]);
+      createBucket: async (bucket: string) => {
+        calls.push(['createBucket', bucket]);
       },
       putObject: async (
         bucket: string,
@@ -55,20 +64,20 @@ describe('object storage', () => {
       ) => {
         calls.push(['putObject', bucket, objectKey, body.toString('utf8'), size, metadata]);
       },
-      removeObject: async (bucket: string, objectKey: string) => {
-        calls.push(['removeObject', bucket, objectKey]);
+      deleteObject: async (bucket: string, objectKey: string) => {
+        calls.push(['deleteObject', bucket, objectKey]);
       },
-      statObject: async (bucket: string, objectKey: string) => {
-        calls.push(['statObject', bucket, objectKey]);
+      headObject: async (bucket: string, objectKey: string) => {
+        calls.push(['headObject', bucket, objectKey]);
       },
-      presignedGetObject: async (bucket: string, objectKey: string, expires?: number) => {
-        calls.push(['presignedGetObject', bucket, objectKey, expires]);
-        return `http://minio:9000/${bucket}/${objectKey}?signature=test`;
+      signGetObjectUrl: async (bucket: string, objectKey: string, expires: number) => {
+        calls.push(['signGetObjectUrl', bucket, objectKey, expires]);
+        return `http://object-storage:9000/${bucket}/${objectKey}?signature=test`;
       },
     };
     const signingClient = {
-      presignedGetObject: async (bucket: string, objectKey: string, expires?: number) => {
-        calls.push(['signer.presignedGetObject', bucket, objectKey, expires]);
+      signGetObjectUrl: async (bucket: string, objectKey: string, expires: number) => {
+        calls.push(['signer.signGetObjectUrl', bucket, objectKey, expires]);
         return `http://localhost:9000/${bucket}/${objectKey}?signature=test`;
       },
     };
@@ -87,7 +96,7 @@ describe('object storage', () => {
     );
     expect(calls).toEqual([
       ['bucketExists', 'user-media'],
-      ['makeBucket', 'user-media', 'us-east-1'],
+      ['createBucket', 'user-media'],
       [
         'putObject',
         'user-media',
@@ -99,7 +108,7 @@ describe('object storage', () => {
           'Cache-Control': 'private, max-age=900',
         },
       ],
-      ['signer.presignedGetObject', 'user-media', 'users/user-id/avatar/current-avatar.webp', 900],
+      ['signer.signGetObjectUrl', 'user-media', 'users/user-id/avatar/current-avatar.webp', 900],
     ]);
     expect(
       logs.map(({ level, data, message }) => ({ level, operation: data.operation, message })),
@@ -130,21 +139,21 @@ describe('object storage', () => {
         timeoutMs: 5_000,
       },
     });
-    expect(JSON.stringify(logs)).not.toContain('fairplay-minio-secret');
+    expect(JSON.stringify(logs)).not.toContain('fairplay-object-storage-secret');
   });
 
   test('treats missing objects as already deleted', async () => {
     const client = {
       bucketExists: async () => true,
-      makeBucket: async () => undefined,
+      createBucket: async () => undefined,
       putObject: async () => undefined,
-      removeObject: async () => {
+      deleteObject: async () => {
         const err = new Error('missing') as Error & { code: string };
         err.code = 'NoSuchKey';
         throw err;
       },
-      statObject: async () => undefined,
-      presignedGetObject: async () => 'http://minio:9000/test',
+      headObject: async () => undefined,
+      signGetObjectUrl: async () => 'http://object-storage:9000/test',
     };
     const storage = createObjectStorage(
       createConfig(),
@@ -161,17 +170,17 @@ describe('object storage', () => {
     const calls: unknown[] = [];
     const client = {
       bucketExists: async () => true,
-      makeBucket: async () => undefined,
+      createBucket: async () => undefined,
       putObject: async () => undefined,
-      removeObject: async () => undefined,
-      statObject: async () => undefined,
-      presignedGetObject: async () => 'http://minio:9000/test',
-      initiateNewMultipartUpload: async (
+      deleteObject: async () => undefined,
+      headObject: async () => undefined,
+      signGetObjectUrl: async () => 'http://object-storage:9000/test',
+      initiateMultipartUpload: async (
         bucket: string,
         objectKey: string,
         headers: Record<string, string>,
       ) => {
-        calls.push(['initiateNewMultipartUpload', bucket, objectKey, headers]);
+        calls.push(['initiateMultipartUpload', bucket, objectKey, headers]);
 
         return 'upload-id';
       },
@@ -188,17 +197,24 @@ describe('object storage', () => {
       },
     };
     const signingClient = {
-      presignedGetObject: async () => 'http://localhost:9000/test',
-      presignedUrl: async (
-        method: string,
+      signGetObjectUrl: async () => 'http://localhost:9000/test',
+      signMultipartUploadPartUrl: async (
         bucket: string,
         objectKey: string,
-        expires?: number,
-        reqParams?: Record<string, string>,
+        uploadId: string,
+        partNumber: number,
+        expires: number,
       ) => {
-        calls.push(['presignedUrl', method, bucket, objectKey, expires, reqParams]);
+        calls.push([
+          'signMultipartUploadPartUrl',
+          bucket,
+          objectKey,
+          uploadId,
+          partNumber,
+          expires,
+        ]);
 
-        return `http://localhost:9000/${bucket}/${objectKey}?partNumber=${reqParams?.partNumber}&uploadId=${reqParams?.uploadId}`;
+        return `http://localhost:9000/${bucket}/${objectKey}?partNumber=${partNumber}&uploadId=${uploadId}`;
       },
     };
     const storage = createObjectStorage(
@@ -244,18 +260,18 @@ describe('object storage', () => {
 
     expect(calls).toEqual([
       [
-        'initiateNewMultipartUpload',
+        'initiateMultipartUpload',
         'videos',
         'user-id/video-id/original.mp4',
         { 'Content-Type': 'video/mp4' },
       ],
       [
-        'presignedUrl',
-        'PUT',
+        'signMultipartUploadPartUrl',
         'videos',
         'user-id/video-id/original.mp4',
+        'upload-id',
+        1,
         900,
-        { partNumber: '1', uploadId: 'upload-id' },
       ],
       [
         'completeMultipartUpload',
@@ -275,11 +291,11 @@ describe('object storage', () => {
         calls.push(['bucketExists', bucket]);
         return true;
       },
-      makeBucket: async () => undefined,
+      createBucket: async () => undefined,
       putObject: async () => undefined,
-      removeObject: async () => undefined,
-      statObject: async (bucket: string, objectKey: string) => {
-        calls.push(['statObject', bucket, objectKey]);
+      deleteObject: async () => undefined,
+      headObject: async (bucket: string, objectKey: string) => {
+        calls.push(['headObject', bucket, objectKey]);
 
         if (objectKey === 'missing') {
           const err = new Error('missing') as Error & { code: string };
@@ -289,9 +305,9 @@ describe('object storage', () => {
 
         return { size: 12 };
       },
-      presignedGetObject: async () => 'http://minio:9000/test',
-      fGetObject: async (bucket: string, objectKey: string, destinationPath: string) => {
-        calls.push(['fGetObject', bucket, objectKey, destinationPath]);
+      signGetObjectUrl: async () => 'http://object-storage:9000/test',
+      downloadObject: async (bucket: string, objectKey: string, destinationPath: string) => {
+        calls.push(['downloadObject', bucket, objectKey, destinationPath]);
       },
       getObject: async (bucket: string, objectKey: string) => {
         calls.push(['getObject', bucket, objectKey]);
@@ -304,8 +320,8 @@ describe('object storage', () => {
 
         return Readable.from([Buffer.from('bounded object')]);
       },
-      listObjectsV2: (bucket: string, prefix: string, recursive: boolean) => {
-        calls.push(['listObjectsV2', bucket, prefix, recursive]);
+      listObjects: (bucket: string, prefix: string) => {
+        calls.push(['listObjects', bucket, prefix]);
 
         return Readable.from([
           { name: `${prefix}a`, size: 1 },
@@ -313,8 +329,8 @@ describe('object storage', () => {
           { name: `${prefix}c`, size: 3 },
         ]);
       },
-      listIncompleteUploads: (bucket: string, prefix: string, recursive: boolean) => {
-        calls.push(['listIncompleteUploads', bucket, prefix, recursive]);
+      listMultipartUploads: (bucket: string, prefix: string) => {
+        calls.push(['listMultipartUploads', bucket, prefix]);
 
         return Readable.from([
           { key: `${prefix}a`, uploadId: 'upload-a', size: 1 },
@@ -382,9 +398,78 @@ describe('object storage', () => {
     });
 
     expect(calls).toContainEqual(['bucketExists', 'videos']);
-    expect(calls).toContainEqual(['fGetObject', 'videos', 'source.mp4', 'C:\\tmp\\source.mp4']);
+    expect(calls).toContainEqual(['downloadObject', 'videos', 'source.mp4', 'C:\\tmp\\source.mp4']);
     expect(calls).toContainEqual(['getObject', 'videos', 'playlist.m3u8']);
   });
+
+  for (const missingMarker of ['key', 'upload ID'] as const) {
+    test(`rejects a truncated multipart page without its ${missingMarker} marker`, async () => {
+      const listingRequests: string[] = [];
+      const nextKeyMarker =
+        missingMarker === 'key' ? '' : '<NextKeyMarker>same-key.bin</NextKeyMarker>';
+      const nextUploadIdMarker =
+        missingMarker === 'upload ID' ? '' : '<NextUploadIdMarker>upload-1</NextUploadIdMarker>';
+      const missingMarkerMessage =
+        missingMarker === 'key'
+          ? 'Object storage returned a truncated multipart page without a key marker'
+          : 'Object storage returned a truncated multipart page without an upload ID marker';
+      const server = createServer((request, response) => {
+        if (request.method === 'HEAD') {
+          response.writeHead(200).end();
+          return;
+        }
+
+        if (request.method === 'GET') {
+          listingRequests.push(request.url ?? '');
+          response
+            .writeHead(200, { 'content-type': 'application/xml' })
+            .end(
+              `<?xml version="1.0" encoding="UTF-8"?>` +
+                `<ListMultipartUploadsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">` +
+                `<IsTruncated>true</IsTruncated>${nextKeyMarker}${nextUploadIdMarker}` +
+                `<Upload><Key>same-key.bin</Key><UploadId>upload-1</UploadId></Upload>` +
+                `</ListMultipartUploadsResult>`,
+            );
+          return;
+        }
+
+        response.writeHead(404).end();
+      });
+
+      server.listen(0, '127.0.0.1');
+      await once(server, 'listening');
+      const address = server.address();
+
+      if (!address || typeof address === 'string') {
+        server.close();
+        throw new Error('Expected the storage test server to listen on a TCP port');
+      }
+
+      const config = createConfig({ endpoint: `http://127.0.0.1:${address.port}` });
+      const storageClient = createS3ObjectStorageClient(config);
+      const storage = createObjectStorage(
+        config,
+        storageClient,
+        createOperationLogCollector().logger,
+      );
+
+      try {
+        await expect(
+          storage.listMultipartUploads({ prefix: 'same-key', limit: 10 }),
+        ).rejects.toMatchObject({
+          cause: expect.objectContaining({
+            message: missingMarkerMessage,
+          }),
+        });
+        expect(listingRequests).toHaveLength(1);
+      } finally {
+        storageClient.destroy();
+        const serverClosed = new Promise<void>((resolve) => server.close(() => resolve()));
+        server.closeAllConnections();
+        await serverClosed;
+      }
+    });
+  }
 
   test('readiness accepts a missing sentinel object after bucket creation succeeds', async () => {
     const calls: unknown[] = [];
@@ -393,17 +478,17 @@ describe('object storage', () => {
         calls.push('bucketExists');
         return true;
       },
-      makeBucket: async () => undefined,
+      createBucket: async () => undefined,
       putObject: async () => undefined,
-      removeObject: async () => undefined,
-      statObject: async (_bucket: string, objectKey: string) => {
-        calls.push(['statObject', objectKey]);
+      deleteObject: async () => undefined,
+      headObject: async (_bucket: string, objectKey: string) => {
+        calls.push(['headObject', objectKey]);
         const err = new Error('missing') as Error & { code: string; statusCode: number };
         err.code = 'NoSuchKey';
         err.statusCode = 404;
         throw err;
       },
-      presignedGetObject: async () => 'http://minio:9000/test',
+      signGetObjectUrl: async () => 'http://object-storage:9000/test',
     };
     const storage = createObjectStorage(
       createConfig(),
@@ -412,16 +497,16 @@ describe('object storage', () => {
     );
 
     await expect(storage.checkReady()).resolves.toBeUndefined();
-    expect(calls).toEqual(['bucketExists', ['statObject', '.readiness']]);
+    expect(calls).toEqual(['bucketExists', ['headObject', '.readiness']]);
   });
 
   test('keeps an unrecognized proxy 404 retryable instead of treating it as absence', async () => {
     const client = {
       bucketExists: async () => true,
-      makeBucket: async () => undefined,
+      createBucket: async () => undefined,
       putObject: async () => undefined,
-      removeObject: async () => undefined,
-      statObject: async () => {
+      deleteObject: async () => undefined,
+      headObject: async () => {
         const err = new Error('proxy route missing') as Error & {
           code: string;
           statusCode: number;
@@ -430,7 +515,7 @@ describe('object storage', () => {
         err.statusCode = 404;
         throw err;
       },
-      presignedGetObject: async () => 'http://minio:9000/test',
+      signGetObjectUrl: async () => 'http://object-storage:9000/test',
     };
     const storage = createObjectStorage(
       createConfig(),
@@ -450,13 +535,13 @@ describe('object storage', () => {
     const { logger, logs } = createOperationLogCollector();
     const client = {
       bucketExists: async () => true,
-      makeBucket: async () => undefined,
+      createBucket: async () => undefined,
       putObject: async () => {
         throw new Error('connect ECONNREFUSED');
       },
-      removeObject: async () => undefined,
-      statObject: async () => undefined,
-      presignedGetObject: async () => 'http://minio:9000/test',
+      deleteObject: async () => undefined,
+      headObject: async () => undefined,
+      signGetObjectUrl: async () => 'http://object-storage:9000/test',
     };
     const storage = createObjectStorage(createConfig(), client, logger);
 
@@ -481,18 +566,14 @@ describe('object storage', () => {
     expect(logs.at(-1)?.data.err).toBeInstanceOf(Error);
   });
 
-  test('times out slow storage client operations without aborting the shared client', async () => {
-    let abortCalls = 0;
+  test('times out slow fake storage operations and preserves the timeout cause', async () => {
     const client = {
-      abortActiveRequests: () => {
-        abortCalls += 1;
-      },
       bucketExists: async () => true,
-      makeBucket: async () => undefined,
+      createBucket: async () => undefined,
       putObject: () => new Promise((resolve) => setTimeout(resolve, 50)),
-      removeObject: async () => undefined,
-      statObject: async () => undefined,
-      presignedGetObject: async () => 'http://minio:9000/test',
+      deleteObject: async () => undefined,
+      headObject: async () => undefined,
+      signGetObjectUrl: async () => 'http://object-storage:9000/test',
     };
     const storage = createObjectStorage(
       createConfig({ operationTimeoutMs: 1 }),
@@ -510,11 +591,10 @@ describe('object storage', () => {
     } catch (err) {
       expect(err).toBeInstanceOf(ObjectStorageUnavailableError);
       expect((err as Error).cause).toBeInstanceOf(OperationTimeoutError);
-      expect(abortCalls).toBe(0);
     }
   });
 
-  test('cancels only the timed-out request while a healthy request keeps using the same agent', async () => {
+  test('cancels only the timed-out S3 request while a concurrent read remains healthy', async () => {
     let markPutStarted: (() => void) | undefined;
     let markReadStarted: (() => void) | undefined;
     let markPutCancelled: (() => void) | undefined;
@@ -539,12 +619,7 @@ describe('object storage', () => {
 
       if (request.method === 'PUT') {
         markPutStarted?.();
-        const acknowledgeCancellation = (): void => {
-          markPutCancelled?.();
-          response.destroy();
-        };
-        request.once('aborted', acknowledgeCancellation);
-        request.once('close', acknowledgeCancellation);
+        request.once('aborted', () => markPutCancelled?.());
         return;
       }
 
@@ -572,15 +647,18 @@ describe('object storage', () => {
       endpoint: `http://127.0.0.1:${address.port}`,
       operationTimeoutMs: 300,
     });
-    const minioClient = createMinioClient(config);
-    const agent = (minioClient as unknown as { transportAgent: HttpAgent }).transportAgent;
-    const storage = createObjectStorage(config, minioClient, createOperationLogCollector().logger);
+    const storageClient = createS3ObjectStorageClient(config);
+    const storage = createObjectStorage(
+      config,
+      storageClient,
+      createOperationLogCollector().logger,
+    );
 
     try {
       await storage.ensureBucket();
       const timedOutWrite = storage.putObject({
         objectKey: 'users/user-id/avatar/replacement.webp',
-        body: Buffer.from('replacement'),
+        body: Buffer.alloc(32 * 1024 * 1024),
         contentType: 'image/webp',
       });
       await putStarted;
@@ -597,7 +675,7 @@ describe('object storage', () => {
       await putCancelled;
     } finally {
       releaseRead?.();
-      agent.destroy();
+      storageClient.destroy();
       const serverClosed = new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections();
       await serverClosed;
@@ -605,13 +683,9 @@ describe('object storage', () => {
   });
 
   test('retries bucket initialization after a timed-out attempt', async () => {
-    let abortCalls = 0;
     let bucketExistsCalls = 0;
     let putObjectCalls = 0;
     const client = {
-      abortActiveRequests: () => {
-        abortCalls += 1;
-      },
       bucketExists: () => {
         bucketExistsCalls += 1;
 
@@ -621,13 +695,13 @@ describe('object storage', () => {
 
         return Promise.resolve(true);
       },
-      makeBucket: async () => undefined,
+      createBucket: async () => undefined,
       putObject: async () => {
         putObjectCalls += 1;
       },
-      removeObject: async () => undefined,
-      statObject: async () => undefined,
-      presignedGetObject: async () => 'http://minio:9000/test',
+      deleteObject: async () => undefined,
+      headObject: async () => undefined,
+      signGetObjectUrl: async () => 'http://object-storage:9000/test',
     };
     const storage = createObjectStorage(
       createConfig({ operationTimeoutMs: 1 }),
@@ -651,7 +725,6 @@ describe('object storage', () => {
       }),
     ).resolves.toBeUndefined();
 
-    expect(abortCalls).toBe(0);
     expect(bucketExistsCalls).toBe(2);
     expect(putObjectCalls).toBe(1);
   });

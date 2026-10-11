@@ -39,10 +39,10 @@ videoService --> externalTargets["Durable external resource targets"]
 
 The backend supports three common runtime modes:
 
-- local development: Bun runs on the host, while PostgreSQL, Redis, and MinIO provide local
+- local development: Bun runs on the host, while PostgreSQL, Redis, and Garage provide local
   versions of the external infrastructure through Docker Compose
 - local full stack: Docker Compose builds and runs the backend, the one-shot migrator, PostgreSQL,
-  Redis, and MinIO on the same local Docker network
+  Redis, and Garage on the same local Docker network
 - production: API and transcoder use separate runtime images/processes; only the API sits behind a
   reverse proxy, while PostgreSQL, Redis, and object storage are shared cloud services
 
@@ -94,7 +94,7 @@ long as it can reach the shared database.
 ### Managed data services
 
 PostgreSQL, Redis, and S3-compatible object storage are external data services. Each one may be
-self-hosted or provided by a managed service; MinIO is simply the local S3-compatible implementation
+self-hosted or provided by a managed service; Garage is the local S3-compatible implementation
 used by Compose, the same way the Compose `postgres` and `redis` services are local implementations
 of PostgreSQL and Redis:
 
@@ -146,7 +146,7 @@ The local Compose stack contains these services by default:
 flowchart LR
 backend["backend<br/>combined target"] --> postgres["postgres:5432"]
 backend --> redis["redis:6379"]
-backend --> minio["minio:9000"]
+backend --> objectStorage["object-storage:3900"]
 migrate["migrate<br/>migrator target"] --> postgres
 
 subgraph network["fairplay-backend-network"]
@@ -154,7 +154,7 @@ backend
 migrate
 postgres
 redis
-minio
+objectStorage
 end
 ```
 
@@ -162,7 +162,7 @@ Within this Docker network, services use Docker DNS names:
 
 - `DATABASE_URL=postgresql://user:password@postgres:5432/fairplay?schema=public`
 - `REDIS_URL=redis://redis:6379`
-- `OBJECT_STORAGE_ENDPOINT=http://minio:9000`
+- `OBJECT_STORAGE_ENDPOINT=http://object-storage:3900`
 
 Docker Compose is a local development and verification tool for this repository. It is not the
 production deployment model. Production receives standard runtime variables (`DATABASE_URL`,
@@ -171,8 +171,36 @@ infrastructure directly.
 
 The `COMPOSE_OBJECT_STORAGE_*` variables in `docker-compose.yml` are only Compose interpolation
 inputs. They keep host development values such as `OBJECT_STORAGE_ENDPOINT=http://localhost:9000`
-separate from container-network values such as `http://minio:9000`. They should be treated like
+separate from container-network values such as `http://object-storage:3900`. They should be treated like
 local Compose plumbing, not as a production configuration layer.
+
+The Compose object-storage service runs Garage v2.4.1 as a single node, with its image pinned to
+the tested manifest digest. `--single-node --default-bucket` initializes the local node and its
+default bucket; `docker/garage.toml` persists metadata and object data under
+`/var/lib/garage` in the new `object_storage_data` volume. Garage's S3 API is mapped from container
+port `3900` to host port `9000`; signed URLs use `http://localhost:9000`, while backend requests
+use the private `http://object-storage:3900` address. This single-node setup has no storage
+redundancy and is for local development and CI only, not production.
+
+The application uses AWS SDK for JavaScript v3 (`@aws-sdk/client-s3` and
+`@aws-sdk/s3-request-presigner`) against the S3 endpoint. `forcePathStyle` is enabled for Garage and
+Backblaze compatibility. Request checksum calculation is restricted to operations that require it:
+the SDK otherwise adds a zero-value CRC32 checksum when presigning an `UploadPart` without a body,
+which Garage correctly rejects when the browser later uploads the real bytes.
+
+The CI admission test creates 1,001 incomplete multipart uploads on the same object key and proves
+the two-marker pagination boundary against Garage itself. It checks the first 1,000 entries and
+both next markers, then verifies that the second page contains the final upload without repeats.
+The application adapter also follows both markers and rejects a repeated or missing marker rather
+than silently looping.
+
+Garage CORS is exercised through real signed GET and multipart PUT requests. Bucket CORS is stored
+with the configured allowed origins, and authenticated GET/PUT responses reflect an allowed origin
+but omit CORS permission for an unlisted origin. Garage's unauthenticated `OPTIONS` handler cannot
+resolve S3-created key-local bucket aliases, so it deliberately returns wildcard origins, methods,
+and headers for preflight in that case. This means a browser may send an unlisted-origin request,
+but the actual signed response is not readable there; the signed URL remains a bearer capability
+and must be protected. This local Garage behavior is not an authorization boundary.
 
 When Bun runs on the host for local development, those internal names are not available. The `.env`
 file should use host-reachable addresses instead:
@@ -896,7 +924,7 @@ instead of proxying bytes. Master and rendition playlists are `no-cache`; segmen
 `no-store` because their signed destination is short-lived even though generation object keys are
 immutable.
 
-Segment bytes come from the MinIO/S3 origin after the redirect, so the bucket itself must allow
+Segment bytes come from the S3 origin after the redirect, so the bucket itself must allow
 cross-origin browser reads from every deployed player origin. Configure bucket CORS with `GET` and
 `HEAD`, allow the `Range` request header (or the provider's equivalent wildcard), and expose at
 least `Accept-Ranges`, `Content-Length`, `Content-Range`, and `ETag`. Keep the bucket private:

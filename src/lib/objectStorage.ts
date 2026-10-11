@@ -1,13 +1,23 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { createWriteStream } from 'node:fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import {
-  Agent as HttpAgent,
-  request as httpRequest,
-  type IncomingMessage,
-  type RequestOptions,
-} from 'node:http';
-import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
-import type { Readable } from 'node:stream';
-import { Client } from 'minio';
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
+  CreateBucketCommand,
+  CreateMultipartUploadCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  HeadObjectCommand,
+  ListMultipartUploadsCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+  UploadPartCommand,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { ObjectStorageConfig } from '../config/env.schema.js';
 import {
   observeOperation,
@@ -17,23 +27,6 @@ import {
 
 const requestAbortContext = new AsyncLocalStorage<AbortSignal>();
 
-type RequestTransport = { request: typeof httpRequest };
-type RequestFunction = (
-  options: RequestOptions,
-  callback: (response: IncomingMessage) => void,
-) => ReturnType<typeof httpRequest>;
-
-const createRequestScopedTransport = (request: RequestFunction): RequestTransport => ({
-  request: ((options: RequestOptions, callback: (response: IncomingMessage) => void) =>
-    request(
-      {
-        ...options,
-        signal: requestAbortContext.getStore(),
-      },
-      callback,
-    )) as typeof httpRequest,
-});
-
 type ObjectStorageClient = {
   abortMultipartUpload?(bucketName: string, objectName: string, uploadId: string): Promise<void>;
   bucketExists(bucketName: string): Promise<boolean>;
@@ -41,18 +34,18 @@ type ObjectStorageClient = {
     bucketName: string,
     objectName: string,
     uploadId: string,
-    parts: { part: number; etag?: string }[],
+    parts: { part: number; etag: string }[],
   ): Promise<unknown>;
-  initiateNewMultipartUpload?(
+  initiateMultipartUpload?(
     bucketName: string,
     objectName: string,
     headers: Record<string, string>,
   ): Promise<string>;
-  fGetObject?(bucketName: string, objectName: string, destinationPath: string): Promise<void>;
+  downloadObject?(bucketName: string, objectName: string, destinationPath: string): Promise<void>;
   getObject?(bucketName: string, objectName: string): Promise<Readable>;
-  listIncompleteUploads?(bucketName: string, prefix: string, recursive: boolean): Readable;
-  listObjectsV2?(bucketName: string, prefix: string, recursive: boolean): Readable;
-  makeBucket(bucketName: string, region?: string): Promise<void>;
+  listMultipartUploads?(bucketName: string, prefix: string): Readable;
+  listObjects?(bucketName: string, prefix: string): Readable;
+  createBucket(bucketName: string): Promise<void>;
   putObject(
     bucketName: string,
     objectName: string,
@@ -60,19 +53,38 @@ type ObjectStorageClient = {
     size?: number,
     metaData?: Record<string, string>,
   ): Promise<unknown>;
-  removeObject(bucketName: string, objectName: string): Promise<void>;
-  statObject(bucketName: string, objectName: string): Promise<unknown>;
-  presignedGetObject(bucketName: string, objectName: string, expires?: number): Promise<string>;
-  presignedUrl?(
-    method: string,
+  deleteObject(bucketName: string, objectName: string): Promise<void>;
+  headObject(bucketName: string, objectName: string): Promise<unknown>;
+  signGetObjectUrl?(bucketName: string, objectName: string, expires: number): Promise<string>;
+  signMultipartUploadPartUrl?(
     bucketName: string,
     objectName: string,
-    expires?: number,
-    reqParams?: Record<string, string>,
+    uploadId: string,
+    partNumber: number,
+    expires: number,
   ): Promise<string>;
+  destroy?(): void;
 };
 
-type ObjectStorageSigningClient = Pick<ObjectStorageClient, 'presignedGetObject' | 'presignedUrl'>;
+type ObjectStorageSigningClient = Pick<
+  ObjectStorageClient,
+  'signGetObjectUrl' | 'signMultipartUploadPartUrl' | 'destroy'
+>;
+
+type ManagedObjectStorageClient = ObjectStorageClient & {
+  destroy(): void;
+};
+
+type ObjectStorageSigningClientFactory = {
+  signGetObjectUrl: NonNullable<ObjectStorageClient['signGetObjectUrl']>;
+  signMultipartUploadPartUrl: NonNullable<ObjectStorageClient['signMultipartUploadPartUrl']>;
+  destroy(): void;
+};
+
+type S3SigningClientAdapter = Pick<
+  ObjectStorageSigningClientFactory,
+  'signGetObjectUrl' | 'signMultipartUploadPartUrl'
+>;
 
 export type ObjectStorage = {
   bucket: string;
@@ -259,11 +271,18 @@ const isNotFoundStorageError = (err: unknown): boolean => {
     return false;
   }
 
-  const error = err as Error & {
-    code?: unknown;
-  };
+  const code = isRecord(err) ? err.code : undefined;
 
-  return error.code === 'NoSuchKey' || error.code === 'NoSuchUpload' || error.code === 'NotFound';
+  return (
+    code === 'NoSuchBucket' ||
+    code === 'NoSuchKey' ||
+    code === 'NoSuchUpload' ||
+    code === 'NotFound' ||
+    err.name === 'NoSuchBucket' ||
+    err.name === 'NoSuchKey' ||
+    err.name === 'NoSuchUpload' ||
+    err.name === 'NotFound'
+  );
 };
 
 const createUnsupportedMultipartError = (): ObjectStorageUnavailableError =>
@@ -276,6 +295,23 @@ const createUnsupportedObjectStorageOperationError = (
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
+
+const isAsyncByteStream = (value: unknown): value is AsyncIterable<Uint8Array> =>
+  isRecord(value) &&
+  Symbol.asyncIterator in value &&
+  typeof value[Symbol.asyncIterator] === 'function';
+
+const toNodeReadable = (value: unknown): Readable => {
+  if (value instanceof Readable) {
+    return value;
+  }
+
+  if (isAsyncByteStream(value)) {
+    return Readable.from(value);
+  }
+
+  throw new Error('Object storage returned a body that is not a readable byte stream');
+};
 
 const readNonNegativeSafeInteger = (value: unknown): number | null =>
   Number.isSafeInteger(value) && typeof value === 'number' && value >= 0 ? value : null;
@@ -408,34 +444,275 @@ const assertReadLimit = (maxBytes: number): void => {
   }
 };
 
-const createMinioClientForEndpoint = (config: ObjectStorageConfig, endpointUrl: string): Client => {
-  const endpoint = new URL(endpointUrl);
-  const useSsl = endpoint.protocol === 'https:';
-  const transportAgent = useSsl
-    ? new HttpsAgent({ timeout: config.operationTimeoutMs })
-    : new HttpAgent({ timeout: config.operationTimeoutMs });
-  const transport = createRequestScopedTransport(useSsl ? httpsRequest : httpRequest);
-
-  const client = new Client({
-    endPoint: endpoint.hostname,
-    port: endpoint.port ? Number(endpoint.port) : endpoint.protocol === 'https:' ? 443 : 80,
-    useSSL: endpoint.protocol === 'https:',
-    pathStyle: true,
-    region: config.region,
-    accessKey: config.accessKey,
-    secretKey: config.secretKey,
-    transport,
-    transportAgent,
-  });
-
-  return client;
+const requestOptions = (): { abortSignal?: AbortSignal } => {
+  const abortSignal = requestAbortContext.getStore();
+  return abortSignal ? { abortSignal } : {};
 };
 
-export const createMinioClient = (config: ObjectStorageConfig): Client =>
-  createMinioClientForEndpoint(config, config.endpoint);
+export const createS3Client = (config: ObjectStorageConfig, endpoint = config.endpoint): S3Client =>
+  new S3Client({
+    endpoint,
+    region: config.region,
+    forcePathStyle: true,
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    credentials: {
+      accessKeyId: config.accessKey,
+      secretAccessKey: config.secretKey,
+    },
+  });
 
-export const createMinioSigningClient = (config: ObjectStorageConfig): Client =>
-  createMinioClientForEndpoint(config, config.publicUrl);
+const createObjectStorageClientAdapter = (sdkClient: S3Client): ObjectStorageClient => ({
+  async abortMultipartUpload(bucketName, objectName, uploadId) {
+    await sdkClient.send(
+      new AbortMultipartUploadCommand({
+        Bucket: bucketName,
+        Key: objectName,
+        UploadId: uploadId,
+      }),
+      requestOptions(),
+    );
+  },
+  async bucketExists(bucketName) {
+    try {
+      await sdkClient.send(new HeadBucketCommand({ Bucket: bucketName }), requestOptions());
+      return true;
+    } catch (err) {
+      if (isNotFoundStorageError(err)) {
+        return false;
+      }
+
+      throw err;
+    }
+  },
+  async completeMultipartUpload(bucketName, objectName, uploadId, parts) {
+    await sdkClient.send(
+      new CompleteMultipartUploadCommand({
+        Bucket: bucketName,
+        Key: objectName,
+        UploadId: uploadId,
+        MultipartUpload: {
+          Parts: parts.map(({ etag, part }) => ({ ETag: etag, PartNumber: part })),
+        },
+      }),
+      requestOptions(),
+    );
+  },
+  async createBucket(bucketName) {
+    await sdkClient.send(new CreateBucketCommand({ Bucket: bucketName }), requestOptions());
+  },
+  async downloadObject(bucketName, objectName, destinationPath) {
+    const result = await sdkClient.send(
+      new GetObjectCommand({ Bucket: bucketName, Key: objectName }),
+      requestOptions(),
+    );
+
+    if (!result.Body) {
+      throw new Error('Object storage returned an empty object body');
+    }
+
+    await pipeline(toNodeReadable(result.Body), createWriteStream(destinationPath));
+  },
+  async getObject(bucketName, objectName) {
+    const result = await sdkClient.send(
+      new GetObjectCommand({ Bucket: bucketName, Key: objectName }),
+      requestOptions(),
+    );
+
+    if (!result.Body) {
+      throw new Error('Object storage returned an empty object body');
+    }
+
+    return toNodeReadable(result.Body);
+  },
+  listMultipartUploads(bucketName, prefix) {
+    const abortSignal = requestAbortContext.getStore();
+
+    return Readable.from(
+      (async function* () {
+        let keyMarker: string | undefined;
+        let uploadIdMarker: string | undefined;
+        const visitedMarkers = new Set<string>();
+
+        while (true) {
+          const page = await sdkClient.send(
+            new ListMultipartUploadsCommand({
+              Bucket: bucketName,
+              Prefix: prefix,
+              MaxUploads: 1_000,
+              ...(keyMarker !== undefined ? { KeyMarker: keyMarker } : {}),
+              ...(uploadIdMarker !== undefined ? { UploadIdMarker: uploadIdMarker } : {}),
+            }),
+            abortSignal ? { abortSignal } : {},
+          );
+
+          for (const upload of page.Uploads ?? []) {
+            if (upload.Key && upload.UploadId) {
+              yield { key: upload.Key, uploadId: upload.UploadId };
+            }
+          }
+
+          if (!page.IsTruncated) {
+            return;
+          }
+
+          const nextKeyMarker = page.NextKeyMarker;
+          const nextUploadIdMarker = page.NextUploadIdMarker;
+
+          if (!nextKeyMarker) {
+            throw new Error(
+              'Object storage returned a truncated multipart page without a key marker',
+            );
+          }
+
+          if (!nextUploadIdMarker) {
+            throw new Error(
+              'Object storage returned a truncated multipart page without an upload ID marker',
+            );
+          }
+
+          const marker = JSON.stringify([nextKeyMarker, nextUploadIdMarker]);
+
+          if (
+            visitedMarkers.has(marker) ||
+            (nextKeyMarker === keyMarker && nextUploadIdMarker === uploadIdMarker)
+          ) {
+            throw new Error('Object storage repeated a multipart pagination marker');
+          }
+
+          visitedMarkers.add(marker);
+          keyMarker = nextKeyMarker;
+          uploadIdMarker = nextUploadIdMarker;
+        }
+      })(),
+    );
+  },
+  listObjects(bucketName, prefix) {
+    const abortSignal = requestAbortContext.getStore();
+
+    return Readable.from(
+      (async function* () {
+        let continuationToken: string | undefined;
+        const visitedTokens = new Set<string>();
+
+        while (true) {
+          const page = await sdkClient.send(
+            new ListObjectsV2Command({
+              Bucket: bucketName,
+              Prefix: prefix,
+              MaxKeys: 1_000,
+              ...(continuationToken !== undefined ? { ContinuationToken: continuationToken } : {}),
+            }),
+            abortSignal ? { abortSignal } : {},
+          );
+
+          for (const object of page.Contents ?? []) {
+            if (object.Key && object.Size !== undefined) {
+              yield { name: object.Key, size: object.Size };
+            }
+          }
+
+          if (!page.IsTruncated) {
+            return;
+          }
+
+          const nextToken = page.NextContinuationToken;
+
+          if (!nextToken || visitedTokens.has(nextToken) || nextToken === continuationToken) {
+            throw new Error(
+              'Object storage returned a repeated or missing object pagination token',
+            );
+          }
+
+          visitedTokens.add(nextToken);
+          continuationToken = nextToken;
+        }
+      })(),
+    );
+  },
+  async initiateMultipartUpload(bucketName, objectName, headers) {
+    const result = await sdkClient.send(
+      new CreateMultipartUploadCommand({
+        Bucket: bucketName,
+        Key: objectName,
+        ContentType: headers['Content-Type'],
+      }),
+      requestOptions(),
+    );
+
+    if (!result.UploadId) {
+      throw new Error('Object storage did not return a multipart upload ID');
+    }
+
+    return result.UploadId;
+  },
+  async putObject(bucketName, objectName, body, _size, metadata) {
+    await sdkClient.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: objectName,
+        Body: body,
+        ContentLength: body.length,
+        ContentType: metadata?.['Content-Type'],
+        CacheControl: metadata?.['Cache-Control'],
+      }),
+      requestOptions(),
+    );
+  },
+  async deleteObject(bucketName, objectName) {
+    await sdkClient.send(
+      new DeleteObjectCommand({ Bucket: bucketName, Key: objectName }),
+      requestOptions(),
+    );
+  },
+  async headObject(bucketName, objectName) {
+    const result = await sdkClient.send(
+      new HeadObjectCommand({ Bucket: bucketName, Key: objectName }),
+      requestOptions(),
+    );
+
+    return { size: result.ContentLength };
+  },
+});
+
+const createSigningClientAdapter = (sdkClient: S3Client): S3SigningClientAdapter => ({
+  signGetObjectUrl: (bucketName, objectName, expires) =>
+    getSignedUrl(sdkClient, new GetObjectCommand({ Bucket: bucketName, Key: objectName }), {
+      expiresIn: expires,
+    }),
+  signMultipartUploadPartUrl: (bucketName, objectName, uploadId, partNumber, expires) =>
+    getSignedUrl(
+      sdkClient,
+      new UploadPartCommand({
+        Bucket: bucketName,
+        Key: objectName,
+        UploadId: uploadId,
+        PartNumber: partNumber,
+      }),
+      { expiresIn: expires },
+    ),
+});
+
+export const createS3ObjectStorageClient = (
+  config: ObjectStorageConfig,
+): ManagedObjectStorageClient => {
+  const sdkClient = createS3Client(config);
+
+  return {
+    ...createObjectStorageClientAdapter(sdkClient),
+    destroy: () => sdkClient.destroy(),
+  };
+};
+
+export const createS3SigningClient = (
+  config: ObjectStorageConfig,
+): ObjectStorageSigningClientFactory => {
+  const sdkClient = createS3Client(config, config.publicUrl);
+
+  return {
+    ...createSigningClientAdapter(sdkClient),
+    destroy: () => sdkClient.destroy(),
+  };
+};
 
 export const createObjectStorage = (
   config: ObjectStorageConfig,
@@ -458,7 +735,7 @@ export const createObjectStorage = (
           const exists = await client.bucketExists(bucket);
 
           if (!exists) {
-            await client.makeBucket(bucket, config.region);
+            await client.createBucket(bucket);
           }
         },
       }).catch((err: unknown) => {
@@ -481,7 +758,7 @@ export const createObjectStorage = (
       data: { bucket, objectKey },
       run: async () => {
         try {
-          await client.removeObject(bucket, objectKey);
+          await client.deleteObject(bucket, objectKey);
         } catch (err) {
           if (isNotFoundStorageError(err)) {
             return;
@@ -553,11 +830,11 @@ export const createObjectStorage = (
         operation: 'objectStorage.downloadObject',
         data: { bucket, objectKey },
         run: () => {
-          if (!client.fGetObject) {
+          if (!client.downloadObject) {
             throw createUnsupportedObjectStorageOperationError('object downloads');
           }
 
-          return client.fGetObject(bucket, objectKey, destinationPath);
+          return client.downloadObject(bucket, objectKey, destinationPath);
         },
       });
     },
@@ -603,11 +880,11 @@ export const createObjectStorage = (
         operation: 'objectStorage.initiateMultipartUpload',
         data: { bucket, contentType, objectKey },
         run: () => {
-          if (!client.initiateNewMultipartUpload) {
+          if (!client.initiateMultipartUpload) {
             throw createUnsupportedMultipartError();
           }
 
-          return client.initiateNewMultipartUpload(bucket, objectKey, {
+          return client.initiateMultipartUpload(bucket, objectKey, {
             'Content-Type': contentType,
           });
         },
@@ -654,7 +931,13 @@ export const createObjectStorage = (
         logger,
         operation: 'objectStorage.getSignedUrl',
         data: { bucket, objectKey, signedUrlTtlSeconds: config.signedUrlTtlSeconds },
-        run: () => signingClient.presignedGetObject(bucket, objectKey, config.signedUrlTtlSeconds),
+        run: () => {
+          if (!signingClient.signGetObjectUrl) {
+            throw createUnsupportedObjectStorageOperationError('signed GET URLs');
+          }
+
+          return signingClient.signGetObjectUrl(bucket, objectKey, config.signedUrlTtlSeconds);
+        },
       });
 
       return signedUrl;
@@ -670,7 +953,7 @@ export const createObjectStorage = (
         data: { bucket, objectKey },
         run: async () => {
           try {
-            const result = await client.statObject(bucket, objectKey);
+            const result = await client.headObject(bucket, objectKey);
 
             if (!isRecord(result)) {
               throw new Error('Object storage returned invalid object metadata');
@@ -704,12 +987,12 @@ export const createObjectStorage = (
         operation: 'objectStorage.listMultipartUploads',
         data: { bucket, limit, prefix },
         run: async () => {
-          if (!client.listIncompleteUploads) {
+          if (!client.listMultipartUploads) {
             throw createUnsupportedObjectStorageOperationError('multipart upload listing');
           }
 
           const result = await collectStreamItems(
-            client.listIncompleteUploads(bucket, prefix, true),
+            client.listMultipartUploads(bucket, prefix),
             limit,
             toMultipartUpload,
           );
@@ -732,12 +1015,12 @@ export const createObjectStorage = (
         operation: 'objectStorage.listObjects',
         data: { bucket, limit, prefix },
         run: async () => {
-          if (!client.listObjectsV2) {
+          if (!client.listObjects) {
             throw createUnsupportedObjectStorageOperationError('object listing');
           }
 
           const result = await collectStreamItems(
-            client.listObjectsV2(bucket, prefix, true),
+            client.listObjects(bucket, prefix),
             limit,
             toListedObject,
           );
@@ -758,14 +1041,17 @@ export const createObjectStorage = (
         operation: 'objectStorage.signMultipartUploadPart',
         data: { bucket, objectKey, partNumber },
         run: () => {
-          if (!signingClient.presignedUrl) {
+          if (!signingClient.signMultipartUploadPartUrl) {
             throw createUnsupportedMultipartError();
           }
 
-          return signingClient.presignedUrl('PUT', bucket, objectKey, config.signedUrlTtlSeconds, {
-            partNumber: String(partNumber),
+          return signingClient.signMultipartUploadPartUrl(
+            bucket,
+            objectKey,
             uploadId,
-          });
+            partNumber,
+            config.signedUrlTtlSeconds,
+          );
         },
       });
 
@@ -780,7 +1066,7 @@ export const createObjectStorage = (
         operation: 'objectStorage.checkReady',
         data: { bucket },
         run: async () => {
-          await client.statObject(bucket, '.readiness').catch((err: unknown) => {
+          await client.headObject(bucket, '.readiness').catch((err: unknown) => {
             if (!isNotFoundStorageError(err)) {
               throw err;
             }

@@ -19,7 +19,7 @@ This repository contains the FairPlay backend API built with:
 - Express.js
 - PostgreSQL
 - Prisma
-- S3-compatible object storage, with MinIO as the local default
+- S3-compatible object storage, with Garage as the local Compose implementation
 - FFmpeg and ffprobe in the isolated video-transcoder image
 - Bun
 - Pino
@@ -35,7 +35,7 @@ This repository contains the FairPlay backend API built with:
 
 There are two common ways to run the backend locally:
 
-- run Bun on the host while PostgreSQL, Redis, and MinIO run in Docker, which is the recommended
+- run Bun on the host while PostgreSQL, Redis, and Garage run in Docker, which is the recommended
   development flow
 - run the whole local stack with Docker Compose
 
@@ -44,15 +44,15 @@ There are two common ways to run the backend locally:
 ```bash
 bun install
 cp .env.example .env
-docker compose up -d postgres redis minio
+docker compose up -d postgres redis object-storage
 bunx prisma migrate dev
 bun run dev
 ```
 
 The API runs on http://localhost:3000 and logs are pretty-printed by the development entrypoint.
-MinIO runs locally on http://localhost:9000 for object storage and http://localhost:9001 for its
-console. Host-based development also requires `ffmpeg` and `ffprobe` on `PATH`; the local Compose
-combined image and production transcoder image install both tools.
+Garage exposes its S3 endpoint locally at http://localhost:9000. Host-based development also
+requires `ffmpeg` and `ffprobe` on `PATH`; the local Compose combined image and production transcoder
+image install both tools.
 
 ### Docker Compose stack
 
@@ -60,9 +60,9 @@ combined image and production transcoder image install both tools.
 docker compose up --build
 ```
 
-The Compose stack builds the local combined image, starts local PostgreSQL, Redis, and MinIO services on
-the same Docker network, runs the Prisma migrations once through the `migrate` service, then starts
-the API on http://localhost:3000.
+The Compose stack builds the local combined image, starts local PostgreSQL, Redis, and Garage
+services on the same Docker network, runs the Prisma migrations once through the `migrate` service,
+then starts the API on http://localhost:3000.
 
 Make sure to read [CONTRIBUTING.md](CONTRIBUTING.md) for more complete setup instructions.
 
@@ -111,27 +111,12 @@ These overrides should be reviewed periodically and removed once the parent depe
 
 Current overrides:
 
-- `decode-uri-component@0.5.0`, pulled in by MinIO through `query-string`
 - `deepmerge-ts@8.0.2`, pulled in by Prisma through `@prisma/config`
 - `mysql2@3.24.5`, pulled in directly by the Prisma CLI
 
 Other patched transitive dependencies, including `@grpc/grpc-js`, `brace-expansion`, `fast-uri`,
 `fast-copy`, `ip-address`, `nanoid`, `proxy-addr`, `qs`, `source-map-js`, and `undici`, resolve
 through their parent package's declared semver range and therefore do not require an override.
-
-`bun audit` reports three moderate advisories for `minio > stream-json@1.9.1`
-(`GHSA-hqr4-qq8f-hg3x`, `GHSA-mjw6-4jj6-33hc`, and `GHSA-528h-pc64-c93x`). The `check:security`
-gate narrowly ignores only these three advisories. MinIO declares `stream-json@^1.8.0`; forcing the
-patched 3.x major through an override is not compatible with MinIO's `jsonl/Parser.js` and `.make()`
-usage and could break the storage client.
-
-This exception is based on the current application paths: the `minio` npm package is used as an S3
-client, but the MinIO server is not used in production, and the application does not call MinIO's
-`listenBucketNotification` API or `stream-json`'s JSONC, filter, or streaming-assembler APIs implicated
-by these advisories. This is a scoped risk acceptance, not a claim that the dependency is patched.
-Keep the exception only while those conditions hold; re-evaluate it when updating the storage client,
-adding notification parsing, or changing the object-storage implementation. All other audit findings
-remain blocking.
 
 See https://bun.sh/docs/pm/overrides for more details about overrides.
 
@@ -332,11 +317,11 @@ and returns a temporary signed redirect to the active generation poster. Thumbna
 redirect responses use `Cache-Control: no-store` because the embedded signature expires.
 
 Because the browser follows that redirect and sends multipart parts to a different origin,
-configure CORS on the video bucket in MinIO/S3 as well as on the API. Allow each frontend origin to
+configure CORS on the video bucket in Garage/S3 as well as on the API. Allow each frontend origin to
 issue `GET`, `HEAD`, and `PUT`; allow `Range` and `Content-Type` (or all request headers if required
 by the provider); and expose `Accept-Ranges`, `Content-Length`, `Content-Range`, and `ETag`. The
 bucket remains private and the signed URL supplies authorization. `CORS_ORIGINS` configures Express
-only; it does not cover redirected reads or presigned multipart uploads to MinIO/S3.
+only; it does not cover redirected reads or presigned multipart uploads to Garage/S3.
 
 ## Maintenance and runtime lifecycle
 
@@ -377,7 +362,7 @@ disconnects Prisma and Redis. Each shutdown step is attempted even if an earlier
 ### Integration tests
 
 Integration tests run with Vitest and Testcontainers. They start real PostgreSQL and Redis
-containers plus MinIO, apply Prisma migrations, then exercise the runtime services and HTTP API
+containers plus Garage, apply Prisma migrations, then exercise the runtime services and HTTP API
 against those real dependencies.
 
 Docker must be running locally before launching them:

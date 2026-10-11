@@ -1,29 +1,30 @@
 import config from './config/env.js';
 import {
-  createMinioClient,
-  createMinioSigningClient,
+  createS3ObjectStorageClient,
+  createS3SigningClient,
   createObjectStorage,
   type ObjectStorage,
 } from './lib/objectStorage.js';
 import { logger } from './lib/logger.js';
 
-const createConfiguredObjectStorage = (
-  storageConfig: NonNullable<typeof config.objectStorage>,
-): ObjectStorage =>
-  createObjectStorage(
-    storageConfig,
-    createMinioClient(storageConfig),
-    logger,
-    createMinioSigningClient(storageConfig),
-  );
+const storageConfig = config.objectStorage;
+const storageClient = storageConfig ? createS3ObjectStorageClient(storageConfig) : null;
+const signingClient = storageConfig ? createS3SigningClient(storageConfig) : null;
 
-export const objectStorage: ObjectStorage | null = config.objectStorage
-  ? createConfiguredObjectStorage(config.objectStorage)
-  : null;
+export const objectStorage: ObjectStorage | null =
+  storageConfig && storageClient && signingClient
+    ? createObjectStorage(storageConfig, storageClient, logger, signingClient)
+    : null;
 
-export const videoObjectStorage: ObjectStorage | null = config.objectStorage
-  ? createConfiguredObjectStorage({
-      ...config.objectStorage,
-      bucket: config.videoUpload.objectStorageBucket,
-    })
-  : null;
+export const videoObjectStorage: ObjectStorage | null =
+  storageConfig && storageClient && signingClient
+    ? createObjectStorage(
+        {
+          ...storageConfig,
+          bucket: config.videoUpload.objectStorageBucket,
+        },
+        storageClient,
+        logger,
+        signingClient,
+      )
+    : null;
