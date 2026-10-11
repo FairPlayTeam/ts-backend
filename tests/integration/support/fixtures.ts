@@ -8,7 +8,7 @@ import { expect } from 'vitest';
 
 import sharp from '../../../src/lib/sharp.js';
 import type { ObjectStorage } from '../../../src/lib/objectStorage.js';
-import type { VideosPorts } from '../../../src/services/videos.types.js';
+import type { VideoUploadsPort } from '../../../src/modules/videoUploads/index.js';
 import type { TestRuntime } from './runtime.js';
 
 const execFileAsync = promisify(execFile);
@@ -300,7 +300,7 @@ export const createVerifiedSession = async (
 };
 
 export const uploadVideoSource = async (
-  service: VideosPorts,
+  service: VideoUploadsPort,
   {
     body,
     userId,

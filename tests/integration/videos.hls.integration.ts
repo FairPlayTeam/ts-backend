@@ -12,6 +12,7 @@ import {
   publishVideoArtifactGeneration,
   type ClaimedVideoTranscodeJob,
 } from '../../src/services/videos/videoTranscodeRunner.js';
+import { createVideoArtifactReconciliationHandlers } from '../../src/services/videos/videoTranscodeRunner.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
 import { HOUR_MS } from '../../src/config/constants.js';
 import { createVerifiedSession, uploadVideoSource } from './support/fixtures.js';
@@ -23,7 +24,7 @@ import {
 import { VIDEO_OBJECT_STORAGE_BUCKET } from './support/infrastructure.js';
 import {
   createIntegrationApp,
-  createIntegrationVideosService,
+  reconcileVideoExternalResources,
   resetState,
   startRuntime,
   stopRuntime,
@@ -180,7 +181,7 @@ describe('videos HLS integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const firstSource = await uploadVideoSource(runtime.videosService, {
+    const firstSource = await uploadVideoSource(runtime.videoUploadsService, {
       body: Buffer.from('first HLS source'),
       userId: owner.userId,
       videoId: firstVideo.video.id,
@@ -243,7 +244,7 @@ describe('videos HLS integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const secondSource = await uploadVideoSource(runtime.videosService, {
+    const secondSource = await uploadVideoSource(runtime.videoUploadsService, {
       body: Buffer.from('second HLS source'),
       userId: owner.userId,
       videoId: secondVideo.video.id,
@@ -437,7 +438,7 @@ describe('videos HLS integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const source = await uploadVideoSource(runtime.videosService, {
+    const source = await uploadVideoSource(runtime.videoUploadsService, {
       body: Buffer.from('source for controlled HLS retirement'),
       userId: owner.userId,
       videoId: created.video.id,
@@ -556,14 +557,15 @@ describe('videos HLS integration', () => {
       clock: { now: () => controlledNow },
       logger: testLogger,
     });
-    const controlledVideosService = createIntegrationVideosService(
-      runtime.prisma,
-      runtime.videoObjectStorage,
-      controlledExternalResources,
-      { now: () => controlledNow },
-    );
+    const controlledTranscodingHandlers = createVideoArtifactReconciliationHandlers({
+      now: () => controlledNow,
+    });
     await expect(
-      controlledVideosService.reconcilePendingExternalResources(),
+      reconcileVideoExternalResources(
+        controlledExternalResources,
+        runtime.videoUploadsReconciliationHandlers,
+        controlledTranscodingHandlers,
+      ),
     ).resolves.toMatchObject({
       confirmed: 2,
       failed: 0,
@@ -616,7 +618,7 @@ describe('videos HLS integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const sourceA = await uploadVideoSource(runtime.videosService, {
+    const sourceA = await uploadVideoSource(runtime.videoUploadsService, {
       body: Buffer.from('first source for HLS replacement'),
       userId: owner.userId,
       videoId: created.video.id,
@@ -677,7 +679,7 @@ describe('videos HLS integration', () => {
     await request(app).get(oldRenditionPath).expect(200);
     await request(app).get(oldSegmentPath).redirects(0).expect(307);
 
-    const sourceB = await uploadVideoSource(runtime.videosService, {
+    const sourceB = await uploadVideoSource(runtime.videoUploadsService, {
       body: Buffer.from('replacement source with different bytes'),
       userId: owner.userId,
       videoId: created.video.id,

@@ -818,6 +818,15 @@ export const createVideoArtifactReconciliationHandler = (clock: {
   },
 });
 
+export const createVideoArtifactReconciliationHandlers = (clock: { now(): Date }) => {
+  const artifactHandler = createVideoArtifactReconciliationHandler(clock);
+
+  return {
+    hls_artifacts: artifactHandler,
+    thumbnail_prefix: artifactHandler,
+  };
+};
+
 const uploadAndVerifyArtifacts = async (
   deps: Pick<VideoTranscodeRunnerDependencies, 'objectStorage'>,
   {

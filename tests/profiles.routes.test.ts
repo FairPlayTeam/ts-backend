@@ -21,6 +21,7 @@ import {
   EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
 } from './support/profiles.js';
 import { createStubVideosService } from './support/videos.js';
+import { createStubVideoUploadsService } from './support/videos.js';
 import { createStubCommentsService } from './support/comments.js';
 
 let server: Server;
@@ -124,6 +125,7 @@ describe('profiles routes', () => {
             return videosService.listPublicProfileVideos(input);
           },
         },
+        videoUploadsService: createStubVideoUploadsService(),
       },
     );
 

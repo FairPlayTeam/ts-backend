@@ -1,22 +1,17 @@
-import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import type { Request, RequestHandler } from 'express';
 import { allowPublicCrossOriginMedia, sendNoStoreJson, setNoStore } from '../http.responses.js';
 import { toVideosHttpError } from '../videos.errors.js';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import type { OptionallyAuthenticatedRequest } from '../../middleware/auth.js';
 import type {
-  CompleteVideoMultipartUploadBody,
   CreateVideoBody,
-  InitVideoMultipartUploadBody,
   ListMyVideosQuery,
   ListPublicVideosQuery,
   PublicVideoIdParams,
   RateVideoBody,
   SearchPublicVideosQuery,
-  SignVideoMultipartUploadPartsBody,
   VideoHlsRenditionParams,
   VideoHlsSegmentParams,
-  VideoMultipartUploadSessionParams,
-  VideoParams,
   VideoRatingParams,
   VideoThumbnailParams,
 } from '../videos.schemas.js';
@@ -27,9 +22,6 @@ import {
   toPublicVideoDetailResponse,
   toPublicVideoSearchResponse,
   toPublicVideosResponse,
-  toSignedVideoUploadPartsResponse,
-  toUploadVideoSourceThumbnailResponse,
-  toVideoUploadSessionResponse,
 } from './videos.responses.js';
 import {
   VIDEO_HLS_CONTENT_TYPE,
@@ -39,18 +31,6 @@ import {
   VIDEO_THUMBNAIL_REDIRECT_CACHE_CONTROL,
 } from '../../services/videos/videoHls.js';
 
-type InitUploadRequest = Request<VideoParams, unknown, InitVideoMultipartUploadBody>;
-type VideoUploadSessionRequest = Request<VideoMultipartUploadSessionParams>;
-type SignPartsRequest = Request<
-  VideoMultipartUploadSessionParams,
-  unknown,
-  SignVideoMultipartUploadPartsBody
->;
-type CompleteRequest = Request<
-  VideoMultipartUploadSessionParams,
-  unknown,
-  CompleteVideoMultipartUploadBody
->;
 type CreateVideoRequest = Request<unknown, unknown, CreateVideoBody>;
 type ListMyVideosRequest = Request<unknown, unknown, unknown, ListMyVideosQuery>;
 type ListPublicVideosRequest = Request<unknown, unknown, unknown, ListPublicVideosQuery>;
@@ -228,117 +208,6 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     }
   };
 
-  const initMultipartUpload: RequestHandler = async (req, res, next) => {
-    try {
-      const authenticatedReq = req as AuthenticatedRequest;
-      const videoReq = req as InitUploadRequest;
-      const result = await videosService.initMultipartUpload({
-        userId: authenticatedReq.user.id,
-        videoId: videoReq.params.videoId,
-        sizeBytes: videoReq.body.sizeBytes,
-      });
-
-      return sendNoStoreJson(res, 201, toVideoUploadSessionResponse(result));
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
-  const signMultipartUploadParts: RequestHandler = async (req, res, next) => {
-    try {
-      const authenticatedReq = req as AuthenticatedRequest;
-      const signReq = req as SignPartsRequest;
-      const result = await videosService.signMultipartUploadParts({
-        userId: authenticatedReq.user.id,
-        videoId: signReq.params.videoId,
-        uploadSessionId: signReq.params.uploadSessionId,
-        partNumbers: signReq.body.partNumbers,
-      });
-
-      return sendNoStoreJson(res, 200, toSignedVideoUploadPartsResponse(result));
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
-  const uploadSourceThumbnail: RequestHandler = async (req, res, next) => {
-    try {
-      const authenticatedReq = req as AuthenticatedRequest;
-      const thumbnailReq = req as VideoUploadSessionRequest;
-      const result = await videosService.uploadSourceThumbnail({
-        userId: authenticatedReq.user.id,
-        videoId: thumbnailReq.params.videoId,
-        uploadSessionId: thumbnailReq.params.uploadSessionId,
-        file: req.file
-          ? {
-              buffer: req.file.buffer,
-              size: req.file.size,
-            }
-          : {
-              buffer: Buffer.alloc(0),
-              size: 0,
-            },
-      });
-
-      return sendNoStoreJson(res, 200, toUploadVideoSourceThumbnailResponse(result));
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
-  const completeMultipartUpload: RequestHandler = async (req, res, next) => {
-    try {
-      const authenticatedReq = req as AuthenticatedRequest;
-      const completeReq = req as CompleteRequest;
-      const result = await videosService.completeMultipartUpload({
-        userId: authenticatedReq.user.id,
-        videoId: completeReq.params.videoId,
-        uploadSessionId: completeReq.params.uploadSessionId,
-        parts: completeReq.body.parts,
-      });
-
-      return sendNoStoreJson(res, 200, toVideoUploadSessionResponse(result));
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
-  const abortMultipartUpload: RequestHandler = async (req, res, next) => {
-    try {
-      const authenticatedReq = req as AuthenticatedRequest;
-      const sessionReq = req as VideoUploadSessionRequest;
-      const result = await videosService.abortMultipartUpload({
-        userId: authenticatedReq.user.id,
-        videoId: sessionReq.params.videoId,
-        uploadSessionId: sessionReq.params.uploadSessionId,
-      });
-
-      return sendNoStoreJson(res, 200, toVideoUploadSessionResponse(result));
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
-  const getMultipartUploadSession: RequestHandler = async (
-    req,
-    res: Response,
-    next: NextFunction,
-  ) => {
-    try {
-      const authenticatedReq = req as AuthenticatedRequest;
-      const sessionReq = req as VideoUploadSessionRequest;
-      const result = await videosService.getMultipartUploadSession({
-        userId: authenticatedReq.user.id,
-        videoId: sessionReq.params.videoId,
-        uploadSessionId: sessionReq.params.uploadSessionId,
-      });
-
-      return sendNoStoreJson(res, 200, toVideoUploadSessionResponse(result));
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
   const getHlsMaster: RequestHandler = async (req, res, next) => {
     try {
       const hlsReq = req as HlsMasterRequest;
@@ -409,24 +278,18 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
   };
 
   return {
-    abortMultipartUpload,
-    completeMultipartUpload,
     createVideo,
     deleteVideo,
     getHlsMaster,
     getHlsRendition,
     getHlsSegment,
-    getMultipartUploadSession,
     getPublicVideoDetail,
     getMyVideoRating,
     getThumbnail,
     getVideoRating,
-    initMultipartUpload,
     listPublicVideos,
     listMyVideos,
     rateVideo,
     searchPublicVideos,
-    signMultipartUploadParts,
-    uploadSourceThumbnail,
   };
 };

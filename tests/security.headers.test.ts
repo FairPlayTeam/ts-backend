@@ -7,7 +7,7 @@ import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
 import { createStubCommentsService } from './support/comments.js';
-import { createStubVideosService } from './support/videos.js';
+import { createStubVideoUploadsService, createStubVideosService } from './support/videos.js';
 
 let server: Server;
 let baseUrl: string;
@@ -30,6 +30,7 @@ describe('security headers', () => {
         commentsService: createStubCommentsService(),
         profilesService: createStubProfilesService(),
         videosService: createStubVideosService(),
+        videoUploadsService: createStubVideoUploadsService(),
       },
     );
 
@@ -83,6 +84,7 @@ describe('security headers', () => {
         commentsService: createStubCommentsService(),
         profilesService: createStubProfilesService(),
         videosService: createStubVideosService(),
+        videoUploadsService: createStubVideoUploadsService(),
       },
     );
 

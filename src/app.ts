@@ -20,6 +20,7 @@ import type { AuthRoutePort } from './services/auth.types.js';
 import type { ProfilesPort } from './modules/profiles/index.js';
 import type { CommentsPort } from './modules/comments/index.js';
 import type { VideosRoutePort } from './services/videos.types.js';
+import type { VideoUploadsPort } from './modules/videoUploads/index.js';
 import helmet from 'helmet';
 import {
   PASSWORD_RESET_EMAIL_COOLDOWN_MS,
@@ -48,6 +49,7 @@ type CreateAppDependencies = {
   profilesService: ProfilesPort;
   commentsService: CommentsPort;
   videosService: VideosRoutePort;
+  videoUploadsService: VideoUploadsPort;
   redisClient?: RedisClient | null;
   readinessChecks?: ReadinessChecks | null;
 };
@@ -219,6 +221,7 @@ export function createApp(config: CreateAppConfig, deps: CreateAppDependencies) 
     profilesService: deps.profilesService,
     commentsService: deps.commentsService,
     videosService: deps.videosService,
+    videoUploadsService: deps.videoUploadsService,
     videoCommentMutationLimiter,
     profileMediaMaxUploadBytes: config.profileMediaMaxUploadBytes,
     authLimiter,

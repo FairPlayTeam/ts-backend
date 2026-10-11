@@ -7,6 +7,14 @@ import { authService } from './auth.instance.js';
 import { profilesService } from './profiles.instance.js';
 import { commentsService } from './comments.instance.js';
 import { videosService } from './videos.instance.js';
+import {
+  videoUploadsService,
+  videoUploadsReconciliationHandlers,
+} from './videoUploads.instance.js';
+import {
+  videoTranscodingMaintenance,
+  videoTranscodingReconciliationHandlers,
+} from './videoTranscoding.instance.js';
 import { objectStorage, videoObjectStorage } from './objectStorage.instance.js';
 import { logger } from './lib/logger.js';
 import type { ObjectStorage } from './lib/objectStorage.js';
@@ -18,6 +26,7 @@ import {
 } from './maintenance/cleanup.js';
 import { MAINTENANCE_CLEANUP_LOCK_TTL_MS } from './config/constants.js';
 import { createVideoTranscodeRunner } from './services/videos/videoTranscodeRunner.js';
+import { videoExternalResourceReconciler } from './externalResources.instance.js';
 import { runRuntimeShutdownSteps } from './runtimeShutdown.js';
 
 const SHUTDOWN_TIMEOUT_MS = 30_000;
@@ -73,13 +82,19 @@ const app =
         profilesService,
         commentsService,
         videosService,
+        videoUploadsService,
         redisClient,
         readinessChecks,
       });
 const maintenanceCleanupJob = app
   ? createMaintenanceCleanupJob({
       authService,
-      videosService,
+      videoUploadsMaintenance: videoUploadsService,
+      videoTranscodingMaintenance,
+      videoLifecycleMaintenance: videosService,
+      externalResources: videoExternalResourceReconciler,
+      videoUploadsReconciliationHandlers,
+      videoTranscodingReconciliationHandlers,
       clock: {
         now: () => new Date(),
       },

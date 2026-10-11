@@ -4,11 +4,14 @@ import type {
   ListMyVideosResult,
   ListPublicVideosResult,
   SearchPublicVideosResult,
+  VideosRoutePort,
+} from '../../src/services/videos.types.js';
+import type {
   SignVideoMultipartUploadPartsResult,
   UploadVideoSourceThumbnailResult,
   VideoUploadSessionResult,
-  VideosPorts,
-} from '../../src/services/videos.types.js';
+  VideoUploadsPort,
+} from '../../src/modules/videoUploads/index.js';
 
 const fixedNow = new Date('2026-01-01T00:00:00.000Z');
 const fixedExpiresAt = new Date('2026-01-02T00:00:00.000Z');
@@ -151,7 +154,7 @@ const getPublicVideoDetailResult = (): GetPublicVideoDetailResult => ({
   },
 });
 
-export const createStubVideosService = (): VideosPorts => ({
+export const createStubVideosService = (): VideosRoutePort => ({
   deleteVideo: async () => undefined,
   createVideo: async (input) =>
     createVideoResult({
@@ -193,10 +196,12 @@ export const createStubVideosService = (): VideosPorts => ({
   getHlsSegment: async () => ({
     url: 'http://localhost:9000/videos/segment-00000.ts?signature=test',
   }),
+});
+
+export const createStubVideoUploadsService = (): VideoUploadsPort => ({
   initMultipartUpload: async () => createUploadSessionResult(),
   uploadSourceThumbnail: async (input): Promise<UploadVideoSourceThumbnailResult> => ({
     thumbnail: {
-      id: '44444444-4444-4444-8444-444444444444',
       uploadSessionId: input.uploadSessionId,
       mimeType: 'image/webp',
       sizeBytes: input.file.size,

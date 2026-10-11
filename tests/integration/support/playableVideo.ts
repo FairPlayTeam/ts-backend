@@ -34,7 +34,7 @@ export const createPlayableVideo = async (
     license: 'cc_by',
     allowComments: true,
   });
-  const source = await uploadVideoSource(runtime.videosService, {
+  const source = await uploadVideoSource(runtime.videoUploadsService, {
     body: Buffer.from(`source for ${title}`),
     userId: ownerId,
     videoId: created.video.id,

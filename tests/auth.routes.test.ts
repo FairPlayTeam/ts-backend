@@ -45,6 +45,7 @@ import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
 import { createStubCommentsService } from './support/comments.js';
 import { createStubVideosService } from './support/videos.js';
+import { createStubVideoUploadsService } from './support/videos.js';
 
 let server: Server;
 let baseUrl: string;
@@ -83,6 +84,7 @@ describe('auth routes', () => {
         commentsService: createStubCommentsService(),
         profilesService: createStubProfilesService(),
         videosService: createStubVideosService(),
+        videoUploadsService: createStubVideoUploadsService(),
         authService: {
           ...authService,
           validateSession: async (sessionKey) => {

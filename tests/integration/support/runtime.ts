@@ -31,6 +31,7 @@ import { createAuthService } from '../../../src/services/auth.service.js';
 import {
   createExternalResourceReconciler,
   type ExternalResourceReconciler,
+  type ExternalResourceReconciliationHandlers,
   USER_MEDIA_EXTERNAL_RESOURCE_ROLES,
   VIDEO_EXTERNAL_RESOURCE_ROLES,
 } from '../../../src/services/externalResources.js';
@@ -43,9 +44,21 @@ import { createCommentsService, type CommentsPort } from '../../../src/modules/c
 import { createUserMediaProcessor } from '../../../src/services/userMedia/userMedia.processor.js';
 import { createVideosService } from '../../../src/services/videos.service.js';
 import { createVideoPublicId } from '../../../src/services/videos/videoPublicId.js';
+import {
+  createVideoArtifactReconciliationHandlers,
+  scheduleAbandonedVideoArtifactGenerations,
+} from '../../../src/services/videos/videoTranscodeRunner.js';
+import {
+  createVideoUploadsReconciliationHandlers,
+  createVideoUploadsService,
+  type VideoUploadsDependencies,
+  type VideoUploadsMaintenancePort,
+  type VideoUploadsPort,
+} from '../../../src/modules/videoUploads/index.js';
 import type { AdminPorts } from '../../../src/services/admin.types.js';
 import type { AuthPorts } from '../../../src/services/auth.types.js';
 import type { VideosService } from '../../../src/services/videos.types.js';
+import type { VideoTranscodingMaintenancePort } from '../../../src/services/videos/types/ports.types.js';
 import type { ObjectStorageConfig } from '../../../src/config/env.schema.js';
 import type { VideoTranscodeLimits } from '../../../src/services/videos/videoTranscode.js';
 import type { Redis } from 'ioredis';
@@ -113,6 +126,20 @@ export type TestRuntime = {
   profilesService: ProfilesPort;
   commentsService: CommentsPort;
   videosService: VideosService;
+  videoUploadsService: VideoUploadsPort & VideoUploadsMaintenancePort;
+  videoTranscodingMaintenance: VideoTranscodingMaintenancePort;
+  videoUploadsReconciliationHandlers: Required<
+    Pick<ExternalResourceReconciliationHandlers, 'source' | 'source_thumbnail'>
+  >;
+  videoTranscodingReconciliationHandlers: Required<
+    Pick<ExternalResourceReconciliationHandlers, 'hls_artifacts' | 'thumbnail_prefix'>
+  >;
+  reconcileVideoExternalResources(input?: { limit?: number }): Promise<{
+    claimed: number;
+    confirmed: number;
+    redirectedAbsent: number;
+    failed: number;
+  }>;
   delivered: {
     verification: DeliveredEmail[];
     passwordReset: DeliveredEmail[];
@@ -257,23 +284,14 @@ export const createIntegrationProfilesService = (
 export const createIntegrationVideosService = (
   prisma: PrismaClient,
   objectStorage: ObjectStorage,
-  externalResources: ExternalResourceReconciler,
   config: {
-    maxUploadBytes?: number;
-    maxTranscodeOutstandingJobs?: number;
-    maxTranscodeOutstandingJobsPerUser?: number;
     now?: () => Date;
     publicIds?: string[];
-    userStorageQuotaBytes?: number;
   } = {},
 ): VideosService =>
   createVideosService({
     prisma,
     objectStorage,
-    externalResources,
-    imageProcessor: createUserMediaProcessor({
-      profileMediaMaxUploadBytes: PROFILE_MEDIA_MAX_UPLOAD_BYTES,
-    }),
     clock: {
       now: config.now ?? (() => new Date()),
     },
@@ -281,17 +299,69 @@ export const createIntegrationVideosService = (
       generate: () => config.publicIds?.shift() ?? createVideoPublicId(),
     },
     logger: testLogger,
-    config: {
-      maxPartCount: 10_000,
-      maxUploadBytes: config.maxUploadBytes ?? 3 * 1024 * 1024 * 1024,
-      maxTranscodeOutstandingJobs:
-        config.maxTranscodeOutstandingJobs ?? DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS,
-      maxTranscodeOutstandingJobsPerUser:
-        config.maxTranscodeOutstandingJobsPerUser ??
-        DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER,
-      partSizeBytes: 67_108_864,
-      sessionTtlSeconds: 86_400,
-      userStorageQuotaBytes: config.userStorageQuotaBytes ?? 100 * 1024 * 1024 * 1024,
+  });
+
+export const createIntegrationVideoUploadsDependencies = (
+  prisma: PrismaClient,
+  objectStorage: ObjectStorage,
+  externalResources: ExternalResourceReconciler,
+  config: {
+    maxUploadBytes?: number;
+    maxTranscodeOutstandingJobs?: number;
+    maxTranscodeOutstandingJobsPerUser?: number;
+    now?: () => Date;
+    userStorageQuotaBytes?: number;
+  } = {},
+): VideoUploadsDependencies => ({
+  prisma,
+  objectStorage,
+  externalResources,
+  imageProcessor: createUserMediaProcessor({
+    profileMediaMaxUploadBytes: PROFILE_MEDIA_MAX_UPLOAD_BYTES,
+  }),
+  clock: {
+    now: config.now ?? (() => new Date()),
+  },
+  logger: testLogger,
+  config: {
+    maxUploadBytes: config.maxUploadBytes ?? 3 * 1024 * 1024 * 1024,
+    maxTranscodeOutstandingJobs:
+      config.maxTranscodeOutstandingJobs ?? DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS,
+    maxTranscodeOutstandingJobsPerUser:
+      config.maxTranscodeOutstandingJobsPerUser ??
+      DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER,
+    partSizeBytes: 67_108_864,
+    sessionTtlSeconds: 86_400,
+    userStorageQuotaBytes: config.userStorageQuotaBytes ?? 100 * 1024 * 1024 * 1024,
+  },
+});
+
+export const createIntegrationVideoUploadsService = (
+  prisma: PrismaClient,
+  objectStorage: ObjectStorage,
+  externalResources: ExternalResourceReconciler,
+  config: Parameters<typeof createIntegrationVideoUploadsDependencies>[3] = {},
+): VideoUploadsPort & VideoUploadsMaintenancePort =>
+  createVideoUploadsService(
+    createIntegrationVideoUploadsDependencies(prisma, objectStorage, externalResources, config),
+  );
+
+export const reconcileVideoExternalResources = (
+  externalResources: Pick<ExternalResourceReconciler, 'reconcileDue'>,
+  videoUploadsReconciliationHandlers: Required<
+    Pick<ExternalResourceReconciliationHandlers, 'source' | 'source_thumbnail'>
+  >,
+  videoTranscodingReconciliationHandlers: Required<
+    Pick<ExternalResourceReconciliationHandlers, 'hls_artifacts' | 'thumbnail_prefix'>
+  >,
+  input: { limit?: number } = {},
+) =>
+  externalResources.reconcileDue({
+    roles: VIDEO_EXTERNAL_RESOURCE_ROLES,
+    ...input,
+    handlers: {
+      ...videoUploadsReconciliationHandlers,
+      ...videoTranscodingReconciliationHandlers,
     },
   });
 
@@ -361,12 +431,16 @@ export const createVideoReadBarrierService = (
     },
   });
 
-  return createIntegrationVideosService(
-    barrierPrisma,
-    runtime.videoObjectStorage,
-    runtime.videoExternalResources,
-  );
+  return createIntegrationVideosService(barrierPrisma, runtime.videoObjectStorage);
 };
+
+export const createIntegrationVideoTranscodingMaintenance = (
+  prisma: PrismaClient,
+  now: () => Date = () => new Date(),
+): VideoTranscodingMaintenancePort => ({
+  scheduleAbandonedArtifactGenerations: ({ observedAt }) =>
+    scheduleAbandonedVideoArtifactGenerations({ prisma, clock: { now } }, { observedAt }),
+});
 
 export const createIntegrationApp = async (
   runtime: TestRuntime,
@@ -374,6 +448,7 @@ export const createIntegrationApp = async (
     authService?: AuthPorts;
     commentsService?: CommentsPort;
     videosService?: VideosService;
+    videoUploadsService?: VideoUploadsPort;
   } = {},
 ) =>
   createApp(
@@ -392,6 +467,7 @@ export const createIntegrationApp = async (
       profilesService: runtime.profilesService,
       commentsService: overrides.commentsService ?? runtime.commentsService,
       videosService: overrides.videosService ?? runtime.videosService,
+      videoUploadsService: overrides.videoUploadsService ?? runtime.videoUploadsService,
       redisClient: runtime.redisClient,
       readinessChecks: {
         database: async () => {
@@ -465,6 +541,17 @@ export const startRuntime = async (): Promise<TestRuntime> => {
     logger: testLogger,
     allowedRoles: VIDEO_EXTERNAL_RESOURCE_ROLES,
   });
+  const videoUploadsDependencies = createIntegrationVideoUploadsDependencies(
+    prisma,
+    videoObjectStorage,
+    videoExternalResources,
+  );
+  const videoUploadsService = createVideoUploadsService(videoUploadsDependencies);
+  const videoUploadsReconciliationHandlers =
+    createVideoUploadsReconciliationHandlers(videoUploadsDependencies);
+  const videoTranscodingReconciliationHandlers = createVideoArtifactReconciliationHandlers({
+    now: () => new Date(),
+  });
   await connectRedisClient(redisClient);
 
   const delivered = {
@@ -501,11 +588,18 @@ export const startRuntime = async (): Promise<TestRuntime> => {
     ),
     profilesService: createIntegrationProfilesService(prisma, objectStorage),
     commentsService: createIntegrationCommentsService(prisma),
-    videosService: createIntegrationVideosService(
-      prisma,
-      videoObjectStorage,
-      videoExternalResources,
-    ),
+    videosService: createIntegrationVideosService(prisma, videoObjectStorage),
+    videoUploadsService,
+    videoTranscodingMaintenance: createIntegrationVideoTranscodingMaintenance(prisma),
+    videoUploadsReconciliationHandlers,
+    videoTranscodingReconciliationHandlers,
+    reconcileVideoExternalResources: (input = {}) =>
+      reconcileVideoExternalResources(
+        videoExternalResources,
+        videoUploadsReconciliationHandlers,
+        videoTranscodingReconciliationHandlers,
+        input,
+      ),
     delivered,
   };
 };

@@ -1257,7 +1257,6 @@ describe('video comments integration', () => {
         },
       }),
       runtime.videoObjectStorage,
-      runtime.videoExternalResources,
       { now: () => observedAt },
     );
     const staleCandidatePurgePromise = staleCandidatePurgeService.deleteExpiredVideosPendingPurge({
@@ -1340,7 +1339,6 @@ describe('video comments integration', () => {
         },
       }),
       runtime.videoObjectStorage,
-      runtime.videoExternalResources,
       { now: () => observedAt },
     );
     const purgeFirstApp = await createIntegrationApp(runtime);

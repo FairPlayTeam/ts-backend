@@ -69,14 +69,9 @@ describe('videos search integration', () => {
       email: 'video-metadata@example.com',
       username: 'video_metadata',
     });
-    const service = createIntegrationVideosService(
-      runtime.prisma,
-      runtime.videoObjectStorage,
-      runtime.videoExternalResources,
-      {
-        publicIds: ['FixedId01_', 'FixedId01_', 'FixedId02_'],
-      },
-    );
+    const service = createIntegrationVideosService(runtime.prisma, runtime.videoObjectStorage, {
+      publicIds: ['FixedId01_', 'FixedId01_', 'FixedId02_'],
+    });
     const createInput = {
       userId: owner.userId,
       description: null,

@@ -200,13 +200,13 @@ describe('video deletion integration', () => {
 
     // This replacement source is intentionally not completed and therefore is not attached as
     // Video.sourceUploadSession. It is the pre-existing purge gap covered by the common helper.
-    const replacement = await runtime.videosService.initMultipartUpload({
+    const replacement = await runtime.videoUploadsService.initMultipartUpload({
       userId: owner.userId,
       videoId: video.id,
       sizeBytes: 1_024,
     });
     const replacementThumbnail = await createPng(640, 360);
-    await runtime.videosService.uploadSourceThumbnail({
+    await runtime.videoUploadsService.uploadSourceThumbnail({
       userId: owner.userId,
       videoId: video.id,
       uploadSessionId: replacement.uploadSession.id,
@@ -575,7 +575,7 @@ describe('video deletion integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const upload = await runtime.videosService.initMultipartUpload({
+    const upload = await runtime.videoUploadsService.initMultipartUpload({
       userId: owner.userId,
       videoId: video.video.id,
       sizeBytes: 1_024,
@@ -642,7 +642,7 @@ describe('video deletion integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const pendingUpload = await runtime.videosService.initMultipartUpload({
+    const pendingUpload = await runtime.videoUploadsService.initMultipartUpload({
       userId: owner.userId,
       videoId: pending.video.id,
       sizeBytes: 1_024,
@@ -655,7 +655,7 @@ describe('video deletion integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const rejectedUpload = await runtime.videosService.initMultipartUpload({
+    const rejectedUpload = await runtime.videoUploadsService.initMultipartUpload({
       userId: owner.userId,
       videoId: rejected.video.id,
       sizeBytes: 1_024,
@@ -918,7 +918,7 @@ describe('video deletion integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const upload = await runtime.videosService.initMultipartUpload({
+    const upload = await runtime.videoUploadsService.initMultipartUpload({
       userId: owner.userId,
       videoId: created.video.id,
       sizeBytes: 1_024,

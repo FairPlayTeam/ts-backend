@@ -657,7 +657,7 @@ describe('public video detail integration', () => {
 
       expect(created.allowComments).toBe(testCase.expected);
 
-      const source = await uploadVideoSource(runtime.videosService, {
+      const source = await uploadVideoSource(runtime.videoUploadsService, {
         body: Buffer.from(`source for ${testCase.title}`),
         userId: owner.userId,
         videoId: created.id,

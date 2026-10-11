@@ -39,11 +39,7 @@ const createCatalogReadBarrierService = (
       }, options),
   } as unknown as PrismaClient;
 
-  return createIntegrationVideosService(
-    barrierPrisma,
-    runtime.videoObjectStorage,
-    runtime.videoExternalResources,
-  );
+  return createIntegrationVideosService(barrierPrisma, runtime.videoObjectStorage);
 };
 
 describe('public video feed integration', () => {

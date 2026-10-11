@@ -3,6 +3,8 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { createAdminService } from '../../src/services/admin.service.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
+import { createVideoArtifactReconciliationHandlers } from '../../src/services/videos/videoTranscodeRunner.js';
+import { createVideoUploadsReconciliationHandlers } from '../../src/modules/videoUploads/index.js';
 import { MailerDeliveryError } from '../../src/services/mailer/mailer.errors.js';
 import { createMaintenanceCleanupJob } from '../../src/maintenance/cleanup.js';
 import { HOUR_MS } from '../../src/config/constants.js';
@@ -11,6 +13,8 @@ import { reserveHlsArtifactTargets, seedHlsGeneration } from './support/videoArt
 import {
   createIntegrationAdminService,
   createIntegrationApp,
+  createIntegrationVideoUploadsDependencies,
+  createIntegrationVideoUploadsService,
   createIntegrationVideosService,
   createPostgresApplicationName,
   createPrismaClient,
@@ -520,7 +524,6 @@ describe('videos moderation integration', () => {
     const controlledVideosService = createIntegrationVideosService(
       runtime.prisma,
       runtime.videoObjectStorage,
-      runtime.videoExternalResources,
       { now: () => observedAt },
     );
 
@@ -933,16 +936,9 @@ describe('videos moderation integration', () => {
       const maintenancePrisma = createPrismaClient(activeRuntime.databaseUrl, {
         applicationName: maintenanceApplicationName,
       });
-      const maintenanceExternalResources = createExternalResourceReconciler({
-        prisma: maintenancePrisma,
-        objectStorage: activeRuntime.videoObjectStorage,
-        clock: { now: () => cleanupNow },
-        logger: testLogger,
-      });
       const maintenanceVideosService = createIntegrationVideosService(
         maintenancePrisma,
         activeRuntime.videoObjectStorage,
-        maintenanceExternalResources,
         { now: () => cleanupNow },
       );
       const gatePrisma = createPrismaClient(activeRuntime.databaseUrl);
@@ -1104,7 +1100,7 @@ describe('videos moderation integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const source = await uploadVideoSource(runtime.videosService, {
+    const source = await uploadVideoSource(runtime.videoUploadsService, {
       body: Buffer.from('rejected source bytes'),
       userId: owner.userId,
       videoId: purged.video.id,
@@ -1173,16 +1169,34 @@ describe('videos moderation integration', () => {
       clock: { now: () => cleanupNow },
       logger: testLogger,
     });
-    const controlledVideosService = createIntegrationVideosService(
+    const cleanupClock = { now: () => cleanupNow };
+    const uploadDependencies = createIntegrationVideoUploadsDependencies(
       runtime.prisma,
       runtime.videoObjectStorage,
       controlledExternalResources,
-      { now: () => cleanupNow },
+      { now: cleanupClock.now },
+    );
+    const videoUploadsMaintenance = createIntegrationVideoUploadsService(
+      runtime.prisma,
+      runtime.videoObjectStorage,
+      controlledExternalResources,
+      { now: cleanupClock.now },
     );
     const cleanup = createMaintenanceCleanupJob({
       authService: runtime.authService,
-      videosService: controlledVideosService,
-      clock: { now: () => cleanupNow },
+      videoUploadsMaintenance,
+      videoTranscodingMaintenance: runtime.videoTranscodingMaintenance,
+      videoLifecycleMaintenance: createIntegrationVideosService(
+        runtime.prisma,
+        runtime.videoObjectStorage,
+        { now: cleanupClock.now },
+      ),
+      externalResources: controlledExternalResources,
+      videoUploadsReconciliationHandlers:
+        createVideoUploadsReconciliationHandlers(uploadDependencies),
+      videoTranscodingReconciliationHandlers:
+        createVideoArtifactReconciliationHandlers(cleanupClock),
+      clock: cleanupClock,
       config: {
         intervalMs: 60_000,
         inactiveRetentionMs: 30 * 24 * HOUR_MS,

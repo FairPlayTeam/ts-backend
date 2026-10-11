@@ -76,12 +76,9 @@ const createViewWriterHarness = async (
       return typeof value === 'function' ? value.bind(target) : value;
     },
   }) as PrismaClient;
-  const videosService = createIntegrationVideosService(
-    prisma,
-    runtime.videoObjectStorage,
-    runtime.videoExternalResources,
-    { now: () => now },
-  );
+  const videosService = createIntegrationVideosService(prisma, runtime.videoObjectStorage, {
+    now: () => now,
+  });
 
   return {
     app: await createIntegrationApp(runtime, { videosService }),

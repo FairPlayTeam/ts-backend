@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import config from './config/env.js';
-import { isPrismaUniqueError, prisma } from './lib/prisma.js';
+import { isPrismaUniqueError } from './lib/prismaErrors.js';
+import { prisma } from './lib/prisma.js';
 import { generateSixDigitCode, generateToken, hashAuthCode, hashToken } from './lib/crypto.js';
 import {
   EMAIL_VERIFICATION_TOKEN_TTL_MS,

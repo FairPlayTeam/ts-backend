@@ -468,7 +468,7 @@ describe('videos transcoding integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const source = await uploadVideoSource(runtime.videosService, {
+    const source = await uploadVideoSource(runtime.videoUploadsService, {
       body: await createTranscodeTestVideo({
         width: 498,
         height: 280,
@@ -640,7 +640,7 @@ describe('videos transcoding integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const source = await uploadVideoSource(runtime.videosService, {
+    const source = await uploadVideoSource(runtime.videoUploadsService, {
       body: await createTranscodeTestVideo({ width: 426, height: 238 }),
       userId: owner.userId,
       videoId: created.video.id,
@@ -728,7 +728,7 @@ describe('videos transcoding integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const source = await uploadVideoSource(runtime.videosService, {
+    const source = await uploadVideoSource(runtime.videoUploadsService, {
       body: await createTranscodeTestVideo(),
       userId: owner.userId,
       videoId: created.video.id,
@@ -794,7 +794,7 @@ describe('videos transcoding integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const source = await uploadVideoSource(runtime.videosService, {
+    const source = await uploadVideoSource(runtime.videoUploadsService, {
       body: await createTranscodeTestVideo(),
       userId: owner.userId,
       videoId: created.video.id,
@@ -860,7 +860,7 @@ describe('videos transcoding integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const source = await uploadVideoSource(runtime.videosService, {
+    const source = await uploadVideoSource(runtime.videoUploadsService, {
       body: await createTranscodeTestVideo(),
       userId: owner.userId,
       videoId: created.video.id,
@@ -1290,7 +1290,7 @@ describe('videos transcoding integration', () => {
         nextAttemptAt: cleanupDueAt,
       },
     });
-    await expect(runtime.videosService.reconcilePendingExternalResources()).resolves.toMatchObject({
+    await expect(runtime.reconcileVideoExternalResources()).resolves.toMatchObject({
       confirmed: 2,
       failed: 0,
     });
@@ -1325,7 +1325,7 @@ describe('videos transcoding integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const source = await uploadVideoSource(runtime.videosService, {
+    const source = await uploadVideoSource(runtime.videoUploadsService, {
       body: Buffer.from('source used only for the publication fence'),
       userId: owner.userId,
       videoId: created.video.id,
@@ -1501,7 +1501,7 @@ describe('videos transcoding integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const source = await uploadVideoSource(runtime.videosService, {
+    const source = await uploadVideoSource(runtime.videoUploadsService, {
       body: Buffer.from('shutdown source'),
       userId: owner.userId,
       videoId: created.video.id,

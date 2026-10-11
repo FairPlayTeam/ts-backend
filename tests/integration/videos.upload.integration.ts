@@ -10,7 +10,7 @@ import {
   VideoStorageQuotaExceededError,
   VideoTranscodeAdmissionFullError,
   VideoUploadSizeMismatchError,
-} from '../../src/services/videos.errors.js';
+} from '../../src/modules/videoUploads/errors.js';
 import { createVerifiedSession, uploadVideoSource } from './support/fixtures.js';
 import {
   coordinateLockInterleavingSettled,
@@ -19,7 +19,7 @@ import {
 import { VIDEO_OBJECT_STORAGE_BUCKET } from './support/infrastructure.js';
 import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
 import {
-  createIntegrationVideosService,
+  createIntegrationVideoUploadsService,
   createPostgresApplicationName,
   createPrismaClient,
   resetState,
@@ -133,7 +133,7 @@ describe('videos upload integration', () => {
       allowComments: true,
     });
     const firstBody = Buffer.from('first immutable source');
-    const first = await uploadVideoSource(runtime.videosService, {
+    const first = await uploadVideoSource(runtime.videoUploadsService, {
       body: firstBody,
       userId: owner.userId,
       videoId: created.video.id,
@@ -171,7 +171,7 @@ describe('videos upload integration', () => {
       orderBy: { partNumber: 'asc' },
     });
     await expect(
-      runtime.videosService.completeMultipartUpload({
+      runtime.videoUploadsService.completeMultipartUpload({
         userId: owner.userId,
         videoId: created.video.id,
         uploadSessionId: first.uploadSession.id,
@@ -194,7 +194,7 @@ describe('videos upload integration', () => {
 
     const secondBody = Buffer.from('second immutable source is different');
     const replacementRequestedAt = Date.now();
-    const second = await uploadVideoSource(runtime.videosService, {
+    const second = await uploadVideoSource(runtime.videoUploadsService, {
       body: secondBody,
       userId: owner.userId,
       videoId: created.video.id,
@@ -240,7 +240,7 @@ describe('videos upload integration', () => {
     );
     expect(reserved._sum.expectedSizeBytes).toBe(BigInt(firstBody.length + secondBody.length));
 
-    const quotaBoundService = createIntegrationVideosService(
+    const quotaBoundService = createIntegrationVideoUploadsService(
       runtime.prisma,
       runtime.videoObjectStorage,
       runtime.videoExternalResources,
@@ -269,7 +269,7 @@ describe('videos upload integration', () => {
       },
     });
 
-    await expect(runtime.videosService.reconcilePendingExternalResources()).resolves.toMatchObject({
+    await expect(runtime.reconcileVideoExternalResources()).resolves.toMatchObject({
       confirmed: 1,
       failed: 0,
     });
@@ -326,7 +326,7 @@ describe('videos upload integration', () => {
       }),
     ]);
 
-    await uploadVideoSource(activeRuntime.videosService, {
+    await uploadVideoSource(activeRuntime.videoUploadsService, {
       body: Buffer.from('queued source'),
       userId: owner.userId,
       videoId: firstVideo.video.id,
@@ -340,7 +340,7 @@ describe('videos upload integration', () => {
         return activeRuntime.videoObjectStorage.initiateMultipartUpload(input);
       },
     };
-    const service = createIntegrationVideosService(
+    const service = createIntegrationVideoUploadsService(
       activeRuntime.prisma,
       observedStorage,
       activeRuntime.videoExternalResources,
@@ -435,7 +435,7 @@ describe('videos upload integration', () => {
       },
     };
     const makeService = (prisma: PrismaClient) =>
-      createIntegrationVideosService(
+      createIntegrationVideoUploadsService(
         prisma,
         observedStorage,
         createExternalResourceReconciler({
@@ -520,7 +520,7 @@ describe('videos upload integration', () => {
         throw new Error('simulated ambiguous S3 initialization failure');
       },
     };
-    const service = createIntegrationVideosService(
+    const service = createIntegrationVideoUploadsService(
       runtime.prisma,
       failingStorage,
       runtime.videoExternalResources,
@@ -606,12 +606,12 @@ describe('videos upload integration', () => {
       clock: { now: () => new Date() },
       logger: testLogger,
     });
-    const firstService = createIntegrationVideosService(
+    const firstService = createIntegrationVideoUploadsService(
       firstObservedPrisma,
       observedStorage,
       firstExternalResources,
     );
-    const secondService = createIntegrationVideosService(
+    const secondService = createIntegrationVideoUploadsService(
       secondPrisma,
       observedStorage,
       secondExternalResources,
@@ -695,7 +695,7 @@ describe('videos upload integration', () => {
       }),
     ).toBe(1);
 
-    const abortedReservation = await runtime.videosService.abortMultipartUpload({
+    const abortedReservation = await runtime.videoUploadsService.abortMultipartUpload({
       userId: owner.userId,
       videoId: firstVideo.video.id,
       uploadSessionId: acceptedReservation.value.uploadSession.id,
@@ -740,7 +740,7 @@ describe('videos upload integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const initialized = await runtime.videosService.initMultipartUpload({
+    const initialized = await runtime.videoUploadsService.initMultipartUpload({
       userId: owner.userId,
       videoId: video.video.id,
       sizeBytes: 32,
@@ -754,7 +754,7 @@ describe('videos upload integration', () => {
         return activeRuntime.videoObjectStorage.completeMultipartUpload(input);
       },
     };
-    const service = createIntegrationVideosService(
+    const service = createIntegrationVideoUploadsService(
       runtime.prisma,
       observedStorage,
       runtime.videoExternalResources,
@@ -774,7 +774,7 @@ describe('videos upload integration', () => {
     expect(multipartCompletions).toBe(0);
 
     await expect(
-      runtime.videosService.abortMultipartUpload({
+      runtime.videoUploadsService.abortMultipartUpload({
         userId: owner.userId,
         videoId: video.video.id,
         uploadSessionId: initialized.uploadSession.id,
@@ -802,12 +802,12 @@ describe('videos upload integration', () => {
       allowComments: true,
     });
     const body = Buffer.from('shorter than declared');
-    const initialized = await runtime.videosService.initMultipartUpload({
+    const initialized = await runtime.videoUploadsService.initMultipartUpload({
       userId: owner.userId,
       videoId: video.video.id,
       sizeBytes: body.length + 1,
     });
-    const signed = await runtime.videosService.signMultipartUploadParts({
+    const signed = await runtime.videoUploadsService.signMultipartUploadParts({
       userId: owner.userId,
       videoId: video.video.id,
       uploadSessionId: initialized.uploadSession.id,
@@ -829,7 +829,7 @@ describe('videos upload integration', () => {
     expect(etag).not.toBeNull();
 
     await expect(
-      runtime.videosService.completeMultipartUpload({
+      runtime.videoUploadsService.completeMultipartUpload({
         userId: owner.userId,
         videoId: video.video.id,
         uploadSessionId: initialized.uploadSession.id,
@@ -890,12 +890,12 @@ describe('videos upload integration', () => {
     });
     const body = Buffer.from('actual source is larger than its declared reservation');
     const declaredSizeBytes = body.length - 1;
-    const initialized = await runtime.videosService.initMultipartUpload({
+    const initialized = await runtime.videoUploadsService.initMultipartUpload({
       userId: owner.userId,
       videoId: created.video.id,
       sizeBytes: declaredSizeBytes,
     });
-    const signed = await runtime.videosService.signMultipartUploadParts({
+    const signed = await runtime.videoUploadsService.signMultipartUploadParts({
       userId: owner.userId,
       videoId: created.video.id,
       uploadSessionId: initialized.uploadSession.id,
@@ -935,9 +935,7 @@ describe('videos upload integration', () => {
       }),
     ]);
 
-    await expect(
-      runtime.videosService.reconcilePendingExternalResources({ limit: 1 }),
-    ).resolves.toMatchObject({
+    await expect(runtime.reconcileVideoExternalResources({ limit: 1 })).resolves.toMatchObject({
       claimed: 1,
       confirmed: 0,
       redirectedAbsent: 0,
@@ -976,9 +974,7 @@ describe('videos upload integration', () => {
         nextAttemptAt: dueAt,
       },
     });
-    await expect(
-      runtime.videosService.reconcilePendingExternalResources({ limit: 1 }),
-    ).resolves.toMatchObject({
+    await expect(runtime.reconcileVideoExternalResources({ limit: 1 })).resolves.toMatchObject({
       claimed: 1,
       confirmed: 1,
       failed: 0,
@@ -1071,9 +1067,7 @@ describe('videos upload integration', () => {
       return reservedTarget;
     });
 
-    await expect(
-      runtime.videosService.reconcilePendingExternalResources({ limit: 1 }),
-    ).resolves.toMatchObject({
+    await expect(runtime.reconcileVideoExternalResources({ limit: 1 })).resolves.toMatchObject({
       claimed: 1,
       confirmed: 0,
       redirectedAbsent: 1,
@@ -1110,9 +1104,7 @@ describe('videos upload integration', () => {
         nextAttemptAt: dueAt,
       },
     });
-    await expect(
-      runtime.videosService.reconcilePendingExternalResources({ limit: 1 }),
-    ).resolves.toMatchObject({
+    await expect(runtime.reconcileVideoExternalResources({ limit: 1 })).resolves.toMatchObject({
       claimed: 1,
       confirmed: 1,
       failed: 0,

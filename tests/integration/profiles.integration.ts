@@ -186,11 +186,7 @@ const createCatalogTransactionBarrierService = (
     },
   } as unknown as PrismaClient;
 
-  return createIntegrationVideosService(
-    barrierPrisma,
-    runtime.videoObjectStorage,
-    runtime.videoExternalResources,
-  );
+  return createIntegrationVideosService(barrierPrisma, runtime.videoObjectStorage);
 };
 
 describe('profiles integration', () => {
@@ -973,7 +969,7 @@ describe('profiles integration', () => {
         nextAttemptAt: dueAt,
       },
     });
-    await expect(runtime.videosService.reconcilePendingExternalResources()).resolves.toMatchObject({
+    await expect(runtime.reconcileVideoExternalResources()).resolves.toMatchObject({
       claimed: 0,
       confirmed: 0,
     });

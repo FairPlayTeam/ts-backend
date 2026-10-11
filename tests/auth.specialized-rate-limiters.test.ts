@@ -15,7 +15,7 @@ import type { AuthPorts } from '../src/services/auth.types.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
-import { createStubVideosService } from './support/videos.js';
+import { createStubVideoUploadsService, createStubVideosService } from './support/videos.js';
 import { createStubCommentsService } from './support/comments.js';
 import type { CommentsPort } from '../src/modules/comments/index.js';
 
@@ -81,6 +81,7 @@ const startAuthApp = async (
       profilesService: createStubProfilesService(),
       commentsService,
       videosService,
+      videoUploadsService: createStubVideoUploadsService(),
     },
   );
   const server = app.listen(0);

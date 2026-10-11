@@ -30,9 +30,12 @@ controller --> authService
 app --> middleware["Middleware<br/>CORS, Helmet, Logger, Rate Limit"]
 middleware --> redis["Redis optional, required in production"]
 cleanup --> redisLock["Redis distributed lock<br/>when Redis is configured"]
-index --> videoService["Video upload service"]
-videoService --> videoStorage["Video object storage bucket"]
-videoService --> externalTargets["Durable external resource targets"]
+index --> videoUploads["Video Uploads module"]
+index --> videoTranscoding["Video Transcoding maintenance"]
+videoUploads --> videoStorage["Video object storage bucket"]
+videoUploads --> externalTargets["Durable external resource targets"]
+videoTranscoding --> externalTargets
+cleanup --> externalTargets
 ```
 
 ## Runtime modes
@@ -335,6 +338,11 @@ sessions, abandoned artifact generations, video targets, and videos whose delaye
 has elapsed. A failed step is reported in the aggregate summary without preventing later steps from
 running.
 
+The maintenance job receives separate Uploads, Transcoding, and Video Lifecycle ports. Its one
+`ExternalResourceReconciler` call composes the Uploads `source`/`source_thumbnail` handlers with the
+Transcoding `hls_artifacts`/`thumbnail_prefix` handlers. Uploads also uses that same reconciler for
+immediate source and thumbnail finalization; there is no Uploads-owned reconciliation engine.
+
 When Redis is configured, a token-valued lock excludes other instances. The owner renews the TTL
 with a compare-and-expire script, releases it with compare-and-delete, and stops before the next
 step if ownership is lost. Without Redis, local overlap is still prevented but cross-process
@@ -388,6 +396,16 @@ thumbnail failure cannot block the video: the session changes to `completing`, t
 reconciliation redirects that target to `absent`, and transcoding uses the FFmpeg fallback.
 Uploads attempted after the session closes return a conflict and cannot create an untracked
 object.
+
+The `src/modules/videoUploads` module owns the six multipart HTTP operations, their schemas,
+responses, OpenAPI definitions, upload errors, service, source reconciliation handlers, and
+expiration maintenance port. It remains mounted at `/videos` to preserve the existing paths and
+middleware order. The Video module retains metadata, catalog, playback, rating, and lifecycle
+operations; Transcoding retains artifact generation and abandoned-generation scheduling. Session
+responses use an explicit field whitelist and omit the storage bucket, object key, and multipart
+upload handle. Part-signing responses still return short-lived S3 signed URLs because direct-to-S3
+multipart upload requires them; those URLs are bearer capabilities and contain the signed request
+parameters until they expire.
 
 ## External resource reconciliation
 

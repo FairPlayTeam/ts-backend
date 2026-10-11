@@ -14,6 +14,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
+import { createIntegrationVideoUploadsService } from './support/runtime.js';
 import {
   createS3Client,
   createS3ObjectStorageClient,
@@ -29,7 +30,6 @@ import {
 } from './support/infrastructure.js';
 import {
   createIntegrationApp,
-  createIntegrationVideosService,
   createPrismaClient,
   expectIntegrationReadinessOk,
   resetState,
@@ -198,7 +198,7 @@ describe('infrastructure integration', () => {
         },
         logger: testLogger,
       });
-      const migrationVideosService = createIntegrationVideosService(
+      const migrationVideoUploadsService = createIntegrationVideoUploadsService(
         migrationPrisma,
         runtime.videoObjectStorage,
         migrationExternalResources,
@@ -218,7 +218,7 @@ describe('infrastructure integration', () => {
         sourceThumbnail: null,
       });
       await expect(
-        migrationVideosService.getMultipartUploadSession({
+        migrationVideoUploadsService.getMultipartUploadSession({
           userId,
           videoId,
           uploadSessionId,
@@ -232,7 +232,7 @@ describe('infrastructure integration', () => {
 
       const thumbnail = await createPng(1600, 900);
       await expect(
-        migrationVideosService.uploadSourceThumbnail({
+        migrationVideoUploadsService.uploadSourceThumbnail({
           userId,
           videoId,
           uploadSessionId,

@@ -4,7 +4,16 @@ import {
   type RedisLease as MaintenanceCleanupLock,
 } from '../lib/redisLease.js';
 import type { AuthMaintenancePort } from '../services/auth.types.js';
-import type { VideoMaintenancePort } from '../services/videos.types.js';
+import type {
+  VideoLifecycleMaintenancePort,
+  VideoTranscodingMaintenancePort,
+} from '../services/videos.types.js';
+import type { VideoUploadsMaintenancePort } from '../modules/videoUploads/index.js';
+import {
+  VIDEO_EXTERNAL_RESOURCE_ROLES,
+  type ExternalResourceReconciler,
+  type ExternalResourceReconciliationHandlers,
+} from '../services/externalResources.js';
 import { VIDEO_PENDING_PURGE_RETENTION_MS } from '../config/constants.js';
 
 const MAINTENANCE_CLEANUP_LOCK_KEY = 'maintenance:cleanup:lock';
@@ -14,7 +23,16 @@ type MaintenanceCleanupLockManager = {
 
 type MaintenanceCleanupJobDependencies = {
   authService: AuthMaintenancePort;
-  videosService: VideoMaintenancePort;
+  videoUploadsMaintenance: VideoUploadsMaintenancePort;
+  videoTranscodingMaintenance: VideoTranscodingMaintenancePort;
+  videoLifecycleMaintenance: VideoLifecycleMaintenancePort;
+  externalResources: Pick<ExternalResourceReconciler, 'reconcileDue'>;
+  videoUploadsReconciliationHandlers: Required<
+    Pick<ExternalResourceReconciliationHandlers, 'source' | 'source_thumbnail'>
+  >;
+  videoTranscodingReconciliationHandlers: Required<
+    Pick<ExternalResourceReconciliationHandlers, 'hls_artifacts' | 'thumbnail_prefix'>
+  >;
   clock: {
     now(): Date;
   };
@@ -87,7 +105,12 @@ export const createRedisMaintenanceCleanupLock = ({
 
 export const createMaintenanceCleanupJob = ({
   authService,
-  videosService,
+  videoUploadsMaintenance,
+  videoTranscodingMaintenance,
+  videoLifecycleMaintenance,
+  externalResources,
+  videoUploadsReconciliationHandlers,
+  videoTranscodingReconciliationHandlers,
   clock,
   config,
   lock,
@@ -217,21 +240,27 @@ export const createMaintenanceCleanupJob = ({
           {
             name: 'multipartSessions',
             run: () =>
-              videosService.expireMultipartUploadSessions({
+              videoUploadsMaintenance.expireMultipartUploadSessions({
                 expiredBefore: now,
               }),
           },
           {
             name: 'abandonedArtifactGenerations',
             run: () =>
-              videosService.scheduleAbandonedArtifactGenerations({
+              videoTranscodingMaintenance.scheduleAbandonedArtifactGenerations({
                 observedAt: now,
               }),
           },
           {
             name: 'videoTargets',
             run: async () => {
-              const result = await videosService.reconcilePendingExternalResources();
+              const result = await externalResources.reconcileDue({
+                roles: VIDEO_EXTERNAL_RESOURCE_ROLES,
+                handlers: {
+                  ...videoUploadsReconciliationHandlers,
+                  ...videoTranscodingReconciliationHandlers,
+                },
+              });
 
               return {
                 videoTargetsClaimed: result.claimed,
@@ -244,7 +273,7 @@ export const createMaintenanceCleanupJob = ({
           {
             name: 'videosPendingPurge',
             run: () =>
-              videosService.deleteExpiredVideosPendingPurge({
+              videoLifecycleMaintenance.deleteExpiredVideosPendingPurge({
                 observedAt: now,
                 purgeBefore,
               }),

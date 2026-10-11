@@ -10,7 +10,7 @@ import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
 import { createStubCommentsService } from './support/comments.js';
-import { createStubVideosService } from './support/videos.js';
+import { createStubVideoUploadsService, createStubVideosService } from './support/videos.js';
 import { createTestDeps, fixedNow, type AuthDeps } from './support/authService.js';
 
 const activeServers = new Set<Server>();
@@ -37,6 +37,7 @@ const startAccountOperationApp = async (
       commentsService: createStubCommentsService(),
       profilesService: createStubProfilesService(),
       videosService: createStubVideosService(),
+      videoUploadsService: createStubVideoUploadsService(),
     },
   );
   const server = app.listen(0);

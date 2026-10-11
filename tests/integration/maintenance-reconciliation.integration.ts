@@ -5,6 +5,8 @@ import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjec
 import { createVideoHlsGenerationToken } from '../../src/services/videos/videoHls.js';
 import { createObjectStorage, ObjectStorageUnavailableError } from '../../src/lib/objectStorage.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
+import { createVideoArtifactReconciliationHandlers } from '../../src/services/videos/videoTranscodeRunner.js';
+import { createVideoUploadsReconciliationHandlers } from '../../src/modules/videoUploads/index.js';
 import {
   createMaintenanceCleanupJob,
   createRedisMaintenanceCleanupLock,
@@ -24,6 +26,7 @@ import {
 import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
 import {
   createIntegrationAuthService,
+  createIntegrationVideoUploadsDependencies,
   createIntegrationVideosService,
   createPrismaClient,
   resetState,
@@ -405,24 +408,19 @@ describe('maintenance and reconciliation integration', () => {
           };
         },
       },
-      videosService: {
+      videoUploadsMaintenance: {
         expireMultipartUploadSessions: async () => {
           calls.push('multipartSessions');
           return { uploadSessionsExpired: 0 };
         },
+      },
+      videoTranscodingMaintenance: {
         scheduleAbandonedArtifactGenerations: async () => {
           calls.push('abandonedArtifactGenerations');
           return { artifactGenerationsScheduled: 0 };
         },
-        reconcilePendingExternalResources: async () => {
-          calls.push('videoTargets');
-          return {
-            claimed: 0,
-            confirmed: 0,
-            redirectedAbsent: 0,
-            failed: 0,
-          };
-        },
+      },
+      videoLifecycleMaintenance: {
         deleteExpiredVideosPendingPurge: async () => {
           calls.push('videosPendingPurge');
           return {
@@ -431,6 +429,19 @@ describe('maintenance and reconciliation integration', () => {
           };
         },
       },
+      externalResources: {
+        reconcileDue: async () => {
+          calls.push('videoTargets');
+          return {
+            claimed: 0,
+            confirmed: 0,
+            redirectedAbsent: 0,
+            failed: 0,
+          };
+        },
+      },
+      videoUploadsReconciliationHandlers: { source: {}, source_thumbnail: {} },
+      videoTranscodingReconciliationHandlers: { hls_artifacts: {}, thumbnail_prefix: {} },
     });
     const lockTtlMs = 3_000;
     const callRedis = runtime.redisClient.call.bind(runtime.redisClient);
@@ -603,7 +614,7 @@ describe('maintenance and reconciliation integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const expiringUpload = await runtime.videosService.initMultipartUpload({
+    const expiringUpload = await runtime.videoUploadsService.initMultipartUpload({
       userId: owner.userId,
       videoId: expiringVideo.video.id,
       sizeBytes: 128,
@@ -627,7 +638,7 @@ describe('maintenance and reconciliation integration', () => {
         throw new Error('Integration runtime disappeared');
       }
 
-      const source = await uploadVideoSource(runtime.videosService, {
+      const source = await uploadVideoSource(runtime.videoUploadsService, {
         body: Buffer.from(`${title} source`),
         userId: owner.userId,
         videoId: created.video.id,
@@ -722,14 +733,27 @@ describe('maintenance and reconciliation integration', () => {
       clock: { now: () => observedAt },
       logger: testLogger,
     });
+    const cleanupClock = { now: () => observedAt };
+    const uploadDependencies = createIntegrationVideoUploadsDependencies(
+      runtime.prisma,
+      runtime.videoObjectStorage,
+      maintenanceExternalResources,
+      { now: cleanupClock.now },
+    );
     const cleanup = createMaintenanceCleanupJob({
       authService: runtime.authService,
-      videosService: createIntegrationVideosService(
+      videoUploadsMaintenance: runtime.videoUploadsService,
+      videoTranscodingMaintenance: runtime.videoTranscodingMaintenance,
+      videoLifecycleMaintenance: createIntegrationVideosService(
         runtime.prisma,
         runtime.videoObjectStorage,
-        maintenanceExternalResources,
       ),
-      clock: { now: () => observedAt },
+      externalResources: maintenanceExternalResources,
+      videoUploadsReconciliationHandlers:
+        createVideoUploadsReconciliationHandlers(uploadDependencies),
+      videoTranscodingReconciliationHandlers:
+        createVideoArtifactReconciliationHandlers(cleanupClock),
+      clock: cleanupClock,
       config: {
         intervalMs: 60_000,
         inactiveRetentionMs: 30 * 24 * 60 * 60 * 1000,
@@ -913,7 +937,7 @@ describe('maintenance and reconciliation integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const source = await uploadVideoSource(runtime.videosService, {
+    const source = await uploadVideoSource(runtime.videoUploadsService, {
       body: Buffer.from('account cleanup source'),
       userId: owner.userId,
       videoId: created.video.id,

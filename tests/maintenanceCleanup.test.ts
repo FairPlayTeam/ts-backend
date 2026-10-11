@@ -4,7 +4,15 @@ import {
   createRedisMaintenanceCleanupLock,
 } from '../src/maintenance/cleanup.js';
 import type { AuthMaintenancePort } from '../src/services/auth.types.js';
-import type { VideoMaintenancePort } from '../src/services/videos.types.js';
+import type {
+  VideoLifecycleMaintenancePort,
+  VideoTranscodingMaintenancePort,
+} from '../src/services/videos.types.js';
+import type { VideoUploadsMaintenancePort } from '../src/modules/videoUploads/index.js';
+import type {
+  ExternalResourceReconciler,
+  ExternalResourceReconciliationHandlers,
+} from '../src/services/externalResources.js';
 
 const createLogger = () => {
   const logs: unknown[] = [];
@@ -23,14 +31,27 @@ const createMaintenanceServices = (
   calls: unknown[] = [],
   {
     auth = {},
-    videos = {},
+    uploads = {},
+    transcoding = {},
+    lifecycle = {},
   }: {
     auth?: Partial<AuthMaintenancePort>;
-    videos?: Partial<VideoMaintenancePort>;
+    uploads?: Partial<VideoUploadsMaintenancePort>;
+    transcoding?: Partial<VideoTranscodingMaintenancePort>;
+    lifecycle?: Partial<VideoLifecycleMaintenancePort>;
   } = {},
 ): {
   authService: AuthMaintenancePort;
-  videosService: VideoMaintenancePort;
+  videoUploadsMaintenance: VideoUploadsMaintenancePort;
+  videoTranscodingMaintenance: VideoTranscodingMaintenancePort;
+  videoLifecycleMaintenance: VideoLifecycleMaintenancePort;
+  externalResources: Pick<ExternalResourceReconciler, 'reconcileDue'>;
+  videoUploadsReconciliationHandlers: Required<
+    Pick<ExternalResourceReconciliationHandlers, 'source' | 'source_thumbnail'>
+  >;
+  videoTranscodingReconciliationHandlers: Required<
+    Pick<ExternalResourceReconciliationHandlers, 'hls_artifacts' | 'thumbnail_prefix'>
+  >;
 } => ({
   authService: {
     cleanupSessions: async (input) => {
@@ -58,24 +79,21 @@ const createMaintenanceServices = (
     },
     ...auth,
   },
-  videosService: {
+  videoUploadsMaintenance: {
     expireMultipartUploadSessions: async (input) => {
       calls.push(['multipartSessions', input]);
       return { uploadSessionsExpired: 6 };
     },
+    ...uploads,
+  },
+  videoTranscodingMaintenance: {
     scheduleAbandonedArtifactGenerations: async (input) => {
       calls.push(['abandonedArtifactGenerations', input]);
       return { artifactGenerationsScheduled: 7 };
     },
-    reconcilePendingExternalResources: async (input) => {
-      calls.push(['videoTargets', input]);
-      return {
-        claimed: 8,
-        confirmed: 9,
-        redirectedAbsent: 10,
-        failed: 11,
-      };
-    },
+    ...transcoding,
+  },
+  videoLifecycleMaintenance: {
     deleteExpiredVideosPendingPurge: async (input) => {
       calls.push(['videosPendingPurge', input]);
       return {
@@ -83,8 +101,27 @@ const createMaintenanceServices = (
         videoPendingPurgeTargetsScheduled: 13,
       };
     },
-    ...videos,
+    ...lifecycle,
   },
+  externalResources: {
+    reconcileDue: async (input) => {
+      calls.push([
+        'videoTargets',
+        {
+          roles: input.roles,
+          handlerRoles: Object.keys(input.handlers ?? {}).sort(),
+        },
+      ]);
+      return {
+        claimed: 8,
+        confirmed: 9,
+        redirectedAbsent: 10,
+        failed: 11,
+      };
+    },
+  },
+  videoUploadsReconciliationHandlers: { source: {}, source_thumbnail: {} },
+  videoTranscodingReconciliationHandlers: { hls_artifacts: {}, thumbnail_prefix: {} },
 });
 
 const cleanupConfig = {
@@ -135,7 +172,13 @@ describe('maintenance cleanup job', () => {
           observedAt: new Date('2026-01-31T00:00:00.000Z'),
         },
       ],
-      ['videoTargets', undefined],
+      [
+        'videoTargets',
+        {
+          roles: ['source', 'source_thumbnail', 'hls_artifacts', 'thumbnail_prefix'],
+          handlerRoles: ['hls_artifacts', 'source', 'source_thumbnail', 'thumbnail_prefix'],
+        },
+      ],
       [
         'videosPendingPurge',
         {
@@ -183,7 +226,7 @@ describe('maintenance cleanup job', () => {
           throw sessionError;
         },
       },
-      videos: {
+      transcoding: {
         scheduleAbandonedArtifactGenerations: async () => {
           calls.push(['abandonedArtifactGenerations']);
           throw generationError;
@@ -230,7 +273,7 @@ describe('maintenance cleanup job', () => {
     const calls: unknown[] = [];
     const purgeError = new Error('pending video purge unavailable');
     const services = createMaintenanceServices(calls, {
-      videos: {
+      lifecycle: {
         deleteExpiredVideosPendingPurge: async () => {
           calls.push(['videosPendingPurge']);
           throw purgeError;

@@ -63,7 +63,7 @@ export type ExternalResourceReconciliationHandler = {
   ): Promise<void>;
 };
 
-type ReconciliationHandlers = Partial<
+export type ExternalResourceReconciliationHandlers = Partial<
   Record<ExternalResourceRole, ExternalResourceReconciliationHandler>
 >;
 
@@ -218,13 +218,13 @@ type ExternalResourceStorageDependencies = {
 type ReconcileTargetInput = {
   targetId: string;
   roles: readonly ExternalResourceRole[];
-  handlers?: ReconciliationHandlers;
+  handlers?: ExternalResourceReconciliationHandlers;
 };
 
 type ReconcileDueTargetsInput = {
   roles: readonly ExternalResourceRole[];
   limit?: number;
-  handlers?: ReconciliationHandlers;
+  handlers?: ExternalResourceReconciliationHandlers;
 };
 
 export type ExternalResourceReconciler = {
@@ -678,7 +678,7 @@ export const createExternalResourceReconciler = (
 
   const executeClaim = async (
     target: ExternalResourceTargetRecord,
-    handlers: ReconciliationHandlers | undefined,
+    handlers: ExternalResourceReconciliationHandlers | undefined,
   ): Promise<'confirmed' | 'redirected_absent'> => {
     const handler = handlers?.[target.role];
 

@@ -5,14 +5,10 @@ import { createApp } from '../src/app.js';
 import { VIDEO_COMMENT_MAX_LENGTH } from '../src/config/constants.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
-import {
-  VideoNotFoundError,
-  VideoTranscodeAdmissionFullError,
-} from '../src/services/videos.errors.js';
+import { VideoNotFoundError } from '../src/services/videos.errors.js';
+import { VideoTranscodeAdmissionFullError } from '../src/modules/videoUploads/errors.js';
 import { VIDEO_LICENSES } from '../src/services/videos/videoLicenses.js';
 import type {
-  AbortVideoMultipartUploadInput,
-  CompleteVideoMultipartUploadInput,
   CreateVideoInput,
   DeleteVideoInput,
   GetMyVideoRatingInput,
@@ -21,17 +17,22 @@ import type {
   GetVideoHlsMasterInput,
   GetVideoHlsRenditionInput,
   GetVideoHlsSegmentInput,
-  GetVideoMultipartUploadSessionInput,
   GetVideoThumbnailInput,
-  InitVideoMultipartUploadInput,
   ListMyVideosInput,
   ListPublicVideosInput,
   RateVideoInput,
   SearchPublicVideosInput,
+  VideosRoutePort,
+} from '../src/services/videos.types.js';
+import type {
+  AbortVideoMultipartUploadInput,
+  CompleteVideoMultipartUploadInput,
+  GetVideoMultipartUploadSessionInput,
+  InitVideoMultipartUploadInput,
   SignVideoMultipartUploadPartsInput,
   UploadVideoSourceThumbnailInput,
-  VideosPorts,
-} from '../src/services/videos.types.js';
+  VideoUploadsPort,
+} from '../src/modules/videoUploads/index.js';
 import type {
   CommentsPort,
   CreateCommentInput,
@@ -44,7 +45,7 @@ import type {
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
-import { createStubVideosService } from './support/videos.js';
+import { createStubVideoUploadsService, createStubVideosService } from './support/videos.js';
 import { createStubCommentsService } from './support/comments.js';
 
 let server: Server;
@@ -88,6 +89,7 @@ describe('videos routes multipart uploads', () => {
   beforeAll(async () => {
     const authService = createStubAuthService();
     const videosService = createStubVideosService();
+    const uploadsService = createStubVideoUploadsService();
     const baseCommentsService = createStubCommentsService();
     const commentsService: CommentsPort = {
       ...baseCommentsService,
@@ -191,7 +193,7 @@ describe('videos routes multipart uploads', () => {
                 bucket: 'internal-bucket',
                 objectKey: 'internal-object-key',
               },
-            } as Awaited<ReturnType<VideosPorts['getPublicVideoDetail']>>;
+            } as Awaited<ReturnType<VideosRoutePort['getPublicVideoDetail']>>;
           },
           getVideoRating: async (input) => {
             receivedPublicRatingRequest = input;
@@ -230,6 +232,9 @@ describe('videos routes multipart uploads', () => {
 
             return videosService.getThumbnail(input);
           },
+        } satisfies VideosRoutePort,
+        videoUploadsService: {
+          ...uploadsService,
           initMultipartUpload: async (input) => {
             receivedInitRequest = input;
 
@@ -241,34 +246,40 @@ describe('videos routes multipart uploads', () => {
               throw new VideoNotFoundError();
             }
 
-            return videosService.initMultipartUpload(input);
+            return uploadsService.initMultipartUpload(input);
           },
           signMultipartUploadParts: async (input) => {
             receivedSignRequest = input;
-
-            return videosService.signMultipartUploadParts(input);
+            return uploadsService.signMultipartUploadParts(input);
           },
           uploadSourceThumbnail: async (input) => {
             receivedThumbnailRequest = input;
+            const result = await uploadsService.uploadSourceThumbnail(input);
 
-            return videosService.uploadSourceThumbnail(input);
+            return {
+              ...result,
+              thumbnail: {
+                ...result.thumbnail,
+                id: 'internal-thumbnail-uuid',
+                bucket: 'internal-video-bucket',
+                objectKey: 'internal/source-thumbnail.webp',
+                internalMarker: 'must-not-be-public',
+              },
+            };
           },
           completeMultipartUpload: async (input) => {
             receivedCompleteRequest = input;
-
-            return videosService.completeMultipartUpload(input);
+            return uploadsService.completeMultipartUpload(input);
           },
           abortMultipartUpload: async (input) => {
             receivedAbortRequest = input;
-
-            return videosService.abortMultipartUpload(input);
+            return uploadsService.abortMultipartUpload(input);
           },
           getMultipartUploadSession: async (input) => {
             receivedGetRequest = input;
-
-            return videosService.getMultipartUploadSession(input);
+            return uploadsService.getMultipartUploadSession(input);
           },
-        } satisfies VideosPorts,
+        } satisfies VideoUploadsPort,
       },
     );
 
@@ -1273,14 +1284,25 @@ describe('videos routes multipart uploads', () => {
       videoId,
       sizeBytes: 67_108_864,
     });
-    expect(await response.json()).toMatchObject({
+    const body: unknown = await response.json();
+    expect(body).toMatchObject({
       uploadSession: {
         status: 'initiated',
-        bucket: 'videos',
-        uploadId: 'test-upload-id',
         partSizeBytes: 67_108_864,
       },
     });
+    if (
+      typeof body !== 'object' ||
+      body === null ||
+      !('uploadSession' in body) ||
+      typeof body.uploadSession !== 'object' ||
+      body.uploadSession === null
+    ) {
+      throw new Error('Upload session response did not contain an uploadSession object');
+    }
+    expect(body.uploadSession).not.toHaveProperty('bucket');
+    expect(body.uploadSession).not.toHaveProperty('objectKey');
+    expect(body.uploadSession).not.toHaveProperty('uploadId');
   });
 
   test('requires authentication before initializing an upload', async () => {
@@ -1413,7 +1435,8 @@ describe('videos routes multipart uploads', () => {
       },
     });
     expect(observedThumbnailRequest?.file.buffer).toEqual(Buffer.from(thumbnailBytes));
-    expect(await response.json()).toMatchObject({
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toMatchObject({
       thumbnail: {
         uploadSessionId,
         mimeType: 'image/webp',
@@ -1422,6 +1445,18 @@ describe('videos routes multipart uploads', () => {
         height: 720,
       },
     });
+    if (
+      typeof responseBody !== 'object' ||
+      responseBody === null ||
+      !('thumbnail' in responseBody) ||
+      typeof responseBody.thumbnail !== 'object' ||
+      responseBody.thumbnail === null
+    ) {
+      throw new Error('Expected thumbnail response object');
+    }
+    for (const forbidden of ['id', 'bucket', 'objectKey', 'internalMarker']) {
+      expect(responseBody.thumbnail).not.toHaveProperty(forbidden);
+    }
   });
 
   test('rejects duplicate part numbers before calling the service', async () => {
