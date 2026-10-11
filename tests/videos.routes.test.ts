@@ -13,11 +13,8 @@ import { VIDEO_LICENSES } from '../src/services/videos/videoLicenses.js';
 import type {
   AbortVideoMultipartUploadInput,
   CompleteVideoMultipartUploadInput,
-  CreateVideoCommentInput,
-  CreateVideoCommentReplyInput,
   CreateVideoInput,
   DeleteVideoInput,
-  DeleteVideoCommentInput,
   GetMyVideoRatingInput,
   GetPublicVideoDetailInput,
   GetVideoRatingInput,
@@ -29,19 +26,26 @@ import type {
   InitVideoMultipartUploadInput,
   ListMyVideosInput,
   ListPublicVideosInput,
-  ListVideoCommentRepliesInput,
-  ListVideoCommentsInput,
-  MutateVideoCommentLikeInput,
   RateVideoInput,
   SearchPublicVideosInput,
   SignVideoMultipartUploadPartsInput,
   UploadVideoSourceThumbnailInput,
   VideosPorts,
 } from '../src/services/videos.types.js';
+import type {
+  CommentsPort,
+  CreateCommentInput,
+  CreateReplyInput,
+  DeleteCommentInput,
+  ListRepliesInput,
+  ListCommentsInput,
+  MutateCommentLikeInput,
+} from '../src/modules/comments/index.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
 import { createStubVideosService } from './support/videos.js';
+import { createStubCommentsService } from './support/comments.js';
 
 let server: Server;
 let baseUrl: string;
@@ -60,13 +64,13 @@ let receivedPublicVideoDetailRequest: GetPublicVideoDetailInput | undefined;
 let receivedPublicRatingRequest: GetVideoRatingInput | undefined;
 let receivedMyRatingRequest: GetMyVideoRatingInput | undefined;
 let receivedRateVideoRequest: RateVideoInput | undefined;
-let receivedCreateCommentRequest: CreateVideoCommentInput | undefined;
-let receivedCreateCommentReplyRequest: CreateVideoCommentReplyInput | undefined;
-let receivedListCommentsRequest: ListVideoCommentsInput | undefined;
-let receivedListCommentRepliesRequest: ListVideoCommentRepliesInput | undefined;
-let receivedDeleteCommentRequest: DeleteVideoCommentInput | undefined;
-let receivedLikeCommentRequest: MutateVideoCommentLikeInput | undefined;
-let receivedUnlikeCommentRequest: MutateVideoCommentLikeInput | undefined;
+let receivedCreateCommentRequest: CreateCommentInput | undefined;
+let receivedCreateCommentReplyRequest: CreateReplyInput | undefined;
+let receivedListCommentsRequest: ListCommentsInput | undefined;
+let receivedListCommentRepliesRequest: ListRepliesInput | undefined;
+let receivedDeleteCommentRequest: DeleteCommentInput | undefined;
+let receivedLikeCommentRequest: MutateCommentLikeInput | undefined;
+let receivedUnlikeCommentRequest: MutateCommentLikeInput | undefined;
 let receivedHlsMasterRequest: GetVideoHlsMasterInput | undefined;
 let receivedHlsRenditionRequest: GetVideoHlsRenditionInput | undefined;
 let receivedHlsSegmentRequest: GetVideoHlsSegmentInput | undefined;
@@ -84,6 +88,38 @@ describe('videos routes multipart uploads', () => {
   beforeAll(async () => {
     const authService = createStubAuthService();
     const videosService = createStubVideosService();
+    const baseCommentsService = createStubCommentsService();
+    const commentsService: CommentsPort = {
+      ...baseCommentsService,
+      createComment: async (input) => {
+        receivedCreateCommentRequest = input;
+        return baseCommentsService.createComment(input);
+      },
+      createReply: async (input) => {
+        receivedCreateCommentReplyRequest = input;
+        return baseCommentsService.createReply(input);
+      },
+      listComments: async (input) => {
+        receivedListCommentsRequest = input;
+        return baseCommentsService.listComments(input);
+      },
+      listReplies: async (input) => {
+        receivedListCommentRepliesRequest = input;
+        return baseCommentsService.listReplies(input);
+      },
+      deleteComment: async (input) => {
+        receivedDeleteCommentRequest = input;
+        return baseCommentsService.deleteComment(input);
+      },
+      likeComment: async (input) => {
+        receivedLikeCommentRequest = input;
+        return baseCommentsService.likeComment(input);
+      },
+      unlikeComment: async (input) => {
+        receivedUnlikeCommentRequest = input;
+        return baseCommentsService.unlikeComment(input);
+      },
+    };
     const app = await createApp(
       {
         allowedOrigins: [],
@@ -109,6 +145,7 @@ describe('videos routes multipart uploads', () => {
           },
         },
         profilesService: createStubProfilesService(),
+        commentsService,
         videosService: {
           ...videosService,
           createVideo: async (input) => {
@@ -170,41 +207,6 @@ describe('videos routes multipart uploads', () => {
             receivedRateVideoRequest = input;
 
             return videosService.rateVideo(input);
-          },
-          createVideoComment: async (input) => {
-            receivedCreateCommentRequest = input;
-
-            return videosService.createVideoComment(input);
-          },
-          createVideoCommentReply: async (input) => {
-            receivedCreateCommentReplyRequest = input;
-
-            return videosService.createVideoCommentReply(input);
-          },
-          listVideoComments: async (input) => {
-            receivedListCommentsRequest = input;
-
-            return videosService.listVideoComments(input);
-          },
-          listVideoCommentReplies: async (input) => {
-            receivedListCommentRepliesRequest = input;
-
-            return videosService.listVideoCommentReplies(input);
-          },
-          deleteVideoComment: async (input) => {
-            receivedDeleteCommentRequest = input;
-
-            return videosService.deleteVideoComment(input);
-          },
-          likeVideoComment: async (input) => {
-            receivedLikeCommentRequest = input;
-
-            return videosService.likeVideoComment(input);
-          },
-          unlikeVideoComment: async (input) => {
-            receivedUnlikeCommentRequest = input;
-
-            return videosService.unlikeVideoComment(input);
           },
           getHlsMaster: async (input) => {
             receivedHlsMasterRequest = input;
@@ -877,7 +879,7 @@ describe('videos routes multipart uploads', () => {
 
     expect(rootResponse.status).toBe(201);
     expect(rootResponse.headers.get('cache-control')).toBe('no-store');
-    expect(receivedCreateCommentRequest as CreateVideoCommentInput | undefined).toEqual({
+    expect(receivedCreateCommentRequest as CreateCommentInput | undefined).toEqual({
       publicId,
       userId: authenticatedUserId,
       content: 'A root comment.',
@@ -916,7 +918,7 @@ describe('videos routes multipart uploads', () => {
     );
 
     expect(replyResponse.status).toBe(201);
-    expect(receivedCreateCommentReplyRequest as CreateVideoCommentReplyInput | undefined).toEqual({
+    expect(receivedCreateCommentReplyRequest as CreateReplyInput | undefined).toEqual({
       publicId,
       userId: authenticatedUserId,
       rootCommentId,
@@ -946,7 +948,7 @@ describe('videos routes multipart uploads', () => {
     });
 
     expect(maximumLengthResponse.status).toBe(201);
-    expect(receivedCreateCommentRequest as CreateVideoCommentInput | undefined).toEqual({
+    expect(receivedCreateCommentRequest as CreateCommentInput | undefined).toEqual({
       publicId,
       userId: authenticatedUserId,
       content: maximumLengthContent,
@@ -963,7 +965,7 @@ describe('videos routes multipart uploads', () => {
     });
 
     expect(emojiResponse.status).toBe(201);
-    expect(receivedCreateCommentRequest as CreateVideoCommentInput | undefined).toEqual({
+    expect(receivedCreateCommentRequest as CreateCommentInput | undefined).toEqual({
       publicId,
       userId: authenticatedUserId,
       content: familyEmoji,
@@ -983,7 +985,7 @@ describe('videos routes multipart uploads', () => {
     );
 
     expect(visibleContentWithControlsResponse.status).toBe(201);
-    expect(receivedCreateCommentRequest as CreateVideoCommentInput | undefined).toEqual({
+    expect(receivedCreateCommentRequest as CreateCommentInput | undefined).toEqual({
       publicId,
       userId: authenticatedUserId,
       content: visibleContentWithControls,
@@ -1062,7 +1064,7 @@ describe('videos routes multipart uploads', () => {
 
     expect(rootsResponse.status).toBe(200);
     expect(rootsResponse.headers.get('cache-control')).toBe('no-store');
-    expect(receivedListCommentsRequest as ListVideoCommentsInput | undefined).toEqual({
+    expect(receivedListCommentsRequest as ListCommentsInput | undefined).toEqual({
       publicId,
       limit: 2,
       cursor: {
@@ -1096,7 +1098,7 @@ describe('videos routes multipart uploads', () => {
     await fetch(`${baseUrl}/videos/${publicId}/comments`, {
       headers: { Authorization: 'Bearer route-session-key' },
     }).then((response) => expect(response.status).toBe(200));
-    expect(receivedListCommentsRequest as ListVideoCommentsInput | undefined).toEqual({
+    expect(receivedListCommentsRequest as ListCommentsInput | undefined).toEqual({
       publicId,
       viewerUserId: authenticatedUserId,
     });
@@ -1108,7 +1110,7 @@ describe('videos routes multipart uploads', () => {
     );
 
     expect(repliesResponse.status).toBe(200);
-    expect(receivedListCommentRepliesRequest as ListVideoCommentRepliesInput | undefined).toEqual({
+    expect(receivedListCommentRepliesRequest as ListRepliesInput | undefined).toEqual({
       publicId,
       rootCommentId,
       limit: 5,
@@ -1126,7 +1128,7 @@ describe('videos routes multipart uploads', () => {
 
     expect(deleteResponse.status).toBe(204);
     expect(deleteResponse.headers.get('cache-control')).toBe('no-store');
-    expect(receivedDeleteCommentRequest as DeleteVideoCommentInput | undefined).toEqual({
+    expect(receivedDeleteCommentRequest as DeleteCommentInput | undefined).toEqual({
       publicId,
       commentId: rootCommentId,
       userId: authenticatedUserId,
@@ -1143,7 +1145,7 @@ describe('videos routes multipart uploads', () => {
     );
     expect(likeResponse.status).toBe(204);
     expect(likeResponse.headers.get('cache-control')).toBe('no-store');
-    expect(receivedLikeCommentRequest as MutateVideoCommentLikeInput | undefined).toEqual({
+    expect(receivedLikeCommentRequest as MutateCommentLikeInput | undefined).toEqual({
       publicId,
       commentId: rootCommentId,
       userId: authenticatedUserId,
@@ -1154,7 +1156,7 @@ describe('videos routes multipart uploads', () => {
       method: 'DELETE',
       headers: { Authorization: 'Bearer route-session-key' },
     }).then((response) => expect(response.status).toBe(204));
-    expect(receivedUnlikeCommentRequest as MutateVideoCommentLikeInput | undefined).toEqual({
+    expect(receivedUnlikeCommentRequest as MutateCommentLikeInput | undefined).toEqual({
       publicId,
       commentId: rootCommentId,
       userId: authenticatedUserId,

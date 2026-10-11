@@ -3,8 +3,6 @@ import type {
   GetPublicVideoDetailResult,
   ListMyVideosResult,
   ListPublicVideosResult,
-  ListVideoCommentRepliesResult,
-  ListVideoCommentsResult,
   SearchPublicVideosResult,
   SignVideoMultipartUploadPartsResult,
   UploadVideoSourceThumbnailResult,
@@ -153,97 +151,7 @@ const getPublicVideoDetailResult = (): GetPublicVideoDetailResult => ({
   },
 });
 
-const listVideoCommentsResult = (): ListVideoCommentsResult => ({
-  comments: [
-    {
-      id: '11111111-1111-4111-8111-111111111111',
-      content: 'This is the first FairPlay video.',
-      isDeleted: false,
-      createdAt: fixedNow,
-      rootCommentId: null,
-      likeCount: 0,
-      viewerHasLiked: false,
-      replyingTo: null,
-      author: {
-        username: 'fairplay_user',
-        displayName: 'FairPlay User',
-        avatarUrl: null,
-      },
-      replyCount: 1,
-    },
-  ],
-  total: 1,
-  nextCursor: null,
-});
-
-const listVideoCommentRepliesResult = (): ListVideoCommentRepliesResult => ({
-  replies: [
-    {
-      id: '22222222-2222-4222-8222-222222222222',
-      content: 'A reply.',
-      isDeleted: false,
-      createdAt: fixedNow,
-      rootCommentId: '11111111-1111-4111-8111-111111111111',
-      likeCount: 0,
-      viewerHasLiked: false,
-      replyingTo: {
-        commentId: '11111111-1111-4111-8111-111111111111',
-        username: 'fairplay_user',
-      },
-      author: {
-        username: 'jawed',
-        displayName: 'Jawed Karim',
-        avatarUrl: null,
-      },
-    },
-  ],
-  total: 1,
-  nextCursor: null,
-});
-
 export const createStubVideosService = (): VideosPorts => ({
-  createVideoComment: async (input) => ({
-    comment: {
-      id: '11111111-1111-4111-8111-111111111111',
-      content: input.content,
-      isDeleted: false,
-      createdAt: fixedNow,
-      rootCommentId: null,
-      likeCount: 0,
-      viewerHasLiked: false,
-      replyingTo: null,
-      author: {
-        username: 'fairplay_user',
-        displayName: 'FairPlay User',
-        avatarUrl: null,
-      },
-    },
-  }),
-  createVideoCommentReply: async (input) => ({
-    comment: {
-      id: '22222222-2222-4222-8222-222222222222',
-      content: input.content,
-      isDeleted: false,
-      createdAt: fixedNow,
-      rootCommentId: input.rootCommentId,
-      likeCount: 0,
-      viewerHasLiked: false,
-      replyingTo: {
-        commentId: input.replyingToCommentId ?? input.rootCommentId,
-        username: 'jawed',
-      },
-      author: {
-        username: 'fairplay_user',
-        displayName: 'FairPlay User',
-        avatarUrl: null,
-      },
-    },
-  }),
-  listVideoComments: async () => listVideoCommentsResult(),
-  listVideoCommentReplies: async () => listVideoCommentRepliesResult(),
-  deleteVideoComment: async () => undefined,
-  likeVideoComment: async () => undefined,
-  unlikeVideoComment: async () => undefined,
   deleteVideo: async () => undefined,
   createVideo: async (input) =>
     createVideoResult({

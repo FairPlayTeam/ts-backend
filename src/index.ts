@@ -5,6 +5,7 @@ import { createApp } from './app.js';
 import { adminService } from './admin.instance.js';
 import { authService } from './auth.instance.js';
 import { profilesService } from './profiles.instance.js';
+import { commentsService } from './comments.instance.js';
 import { videosService } from './videos.instance.js';
 import { objectStorage, videoObjectStorage } from './objectStorage.instance.js';
 import { logger } from './lib/logger.js';
@@ -70,6 +71,7 @@ const app =
         adminService,
         authService,
         profilesService,
+        commentsService,
         videosService,
         redisClient,
         readinessChecks,

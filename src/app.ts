@@ -18,6 +18,7 @@ import type { RedisClient } from './lib/redis.js';
 import type { AdminRoutePort } from './services/admin.types.js';
 import type { AuthRoutePort } from './services/auth.types.js';
 import type { ProfilesPort } from './modules/profiles/index.js';
+import type { CommentsPort } from './modules/comments/index.js';
 import type { VideosRoutePort } from './services/videos.types.js';
 import helmet from 'helmet';
 import {
@@ -45,6 +46,7 @@ type CreateAppDependencies = {
   adminService: AdminRoutePort;
   authService: AuthRoutePort;
   profilesService: ProfilesPort;
+  commentsService: CommentsPort;
   videosService: VideosRoutePort;
   redisClient?: RedisClient | null;
   readinessChecks?: ReadinessChecks | null;
@@ -215,6 +217,7 @@ export function createApp(config: CreateAppConfig, deps: CreateAppDependencies) 
     adminService: deps.adminService,
     authService: deps.authService,
     profilesService: deps.profilesService,
+    commentsService: deps.commentsService,
     videosService: deps.videosService,
     videoCommentMutationLimiter,
     profileMediaMaxUploadBytes: config.profileMediaMaxUploadBytes,

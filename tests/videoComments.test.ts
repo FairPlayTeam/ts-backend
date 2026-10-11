@@ -1,33 +1,33 @@
 import { expect, test } from 'bun:test';
 import {
-  createVideoCommentBodySchema,
-  createVideoCommentReplyBodySchema,
-  videoCommentsQuerySchema,
-} from '../src/controllers/videos.schemas.js';
+  createCommentBodySchema,
+  createReplyBodySchema,
+  commentsQuerySchema,
+} from '../src/modules/comments/http/schemas.js';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { VIDEO_COMMENT_MAX_LENGTH } from '../src/config/constants.js';
 import {
-  createVideoCommentReply,
-  deleteVideoComment,
-  listVideoCommentReplies,
-  listVideoComments,
-  resolveVideoCommentDeletionOrigin,
-  resolveVideoCommentLikeMutation,
-} from '../src/services/videos/videoComments.js';
-import { toVideoCommentsResponse } from '../src/controllers/videos/videos.responses.js';
-import { VideoCommentNotFoundError } from '../src/services/videos.errors.js';
+  createReply,
+  deleteComment,
+  listReplies,
+  listComments,
+  resolveCommentDeletionOrigin,
+  resolveCommentLikeMutation,
+} from '../src/modules/comments/service.js';
+import { toCommentsResponse } from '../src/modules/comments/http/responses.js';
+import { CommentNotFoundError } from '../src/modules/comments/errors.js';
 import {
   readableVideoWhere,
   writableVideoEngagementWhere,
 } from '../src/services/videos/videoReadability.js';
 
 test('video comment schemas normalize bounded plain text and validate reply targets', () => {
-  expect(createVideoCommentBodySchema.parse({ content: '  hello  ' })).toEqual({
+  expect(createCommentBodySchema.parse({ content: '  hello  ' })).toEqual({
     content: 'hello',
   });
   expect(
-    createVideoCommentReplyBodySchema.safeParse({
+    createReplyBodySchema.safeParse({
       content: 'reply',
       replyingToCommentId: '11111111-1111-4111-8111-111111111111',
     }).success,
@@ -45,19 +45,19 @@ test('video comment schemas normalize bounded plain text and validate reply targ
     'contains\u0000nul',
     'x'.repeat(VIDEO_COMMENT_MAX_LENGTH + 1),
   ]) {
-    expect(createVideoCommentBodySchema.safeParse({ content }).success).toBe(false);
+    expect(createCommentBodySchema.safeParse({ content }).success).toBe(false);
   }
-  expect(createVideoCommentBodySchema.parse({ content: '👨‍👩‍👧‍👦' })).toEqual({
+  expect(createCommentBodySchema.parse({ content: '👨‍👩‍👧‍👦' })).toEqual({
     content: '👨‍👩‍👧‍👦',
   });
-  expect(createVideoCommentBodySchema.parse({ content: 'visible\ufe0f\u034f' })).toEqual({
+  expect(createCommentBodySchema.parse({ content: 'visible\ufe0f\u034f' })).toEqual({
     content: 'visible\ufe0f\u034f',
   });
-  expect(createVideoCommentBodySchema.parse({ content: 'visible\u0007\u001f\u007f' })).toEqual({
+  expect(createCommentBodySchema.parse({ content: 'visible\u0007\u001f\u007f' })).toEqual({
     content: 'visible\u0007\u001f\u007f',
   });
   expect(
-    createVideoCommentReplyBodySchema.safeParse({
+    createReplyBodySchema.safeParse({
       content: 'reply',
       replyingToCommentId: 'not-a-uuid',
     }).success,
@@ -76,7 +76,7 @@ test('video engagement writes exclude rejected and administratively pending-dele
 
 test('video comment pagination requires a complete stable cursor', () => {
   expect(
-    videoCommentsQuerySchema.parse({
+    commentsQuerySchema.parse({
       limit: '20',
       cursorCreatedAt: '2026-01-01T00:00:00.000Z',
       cursorId: '11111111-1111-4111-8111-111111111111',
@@ -87,7 +87,7 @@ test('video comment pagination requires a complete stable cursor', () => {
     cursorId: '11111111-1111-4111-8111-111111111111',
   });
   expect(
-    videoCommentsQuerySchema.safeParse({
+    commentsQuerySchema.safeParse({
       cursorCreatedAt: '2026-01-01T00:00:00.000Z',
     }).success,
   ).toBe(false);
@@ -99,7 +99,7 @@ test('resolves comment deletion permission in author, owner, then moderation ord
   const thirdPartyId = '33333333-3333-4333-8333-333333333333';
 
   expect(
-    resolveVideoCommentDeletionOrigin({
+    resolveCommentDeletionOrigin({
       actorRole: 'admin',
       authorId,
       ownerId: authorId,
@@ -107,7 +107,7 @@ test('resolves comment deletion permission in author, owner, then moderation ord
     }),
   ).toBe('author');
   expect(
-    resolveVideoCommentDeletionOrigin({
+    resolveCommentDeletionOrigin({
       actorRole: 'moderator',
       authorId,
       ownerId,
@@ -115,7 +115,7 @@ test('resolves comment deletion permission in author, owner, then moderation ord
     }),
   ).toBe('video_owner');
   expect(
-    resolveVideoCommentDeletionOrigin({
+    resolveCommentDeletionOrigin({
       actorRole: 'moderator',
       authorId,
       ownerId,
@@ -123,7 +123,7 @@ test('resolves comment deletion permission in author, owner, then moderation ord
     }),
   ).toBe('moderator');
   expect(
-    resolveVideoCommentDeletionOrigin({
+    resolveCommentDeletionOrigin({
       actorRole: 'admin',
       authorId,
       ownerId,
@@ -131,7 +131,7 @@ test('resolves comment deletion permission in author, owner, then moderation ord
     }),
   ).toBe('admin');
   expect(
-    resolveVideoCommentDeletionOrigin({
+    resolveCommentDeletionOrigin({
       actorRole: 'user',
       authorId,
       ownerId,
@@ -164,9 +164,7 @@ test('public comment DTOs whitelist fields independently of internal deletion me
     },
   };
 
-  expect(
-    toVideoCommentsResponse({ comments: [internalComment], total: 1, nextCursor: null }),
-  ).toEqual({
+  expect(toCommentsResponse({ comments: [internalComment], total: 1, nextCursor: null })).toEqual({
     comments: [
       {
         id: internalComment.id,
@@ -191,19 +189,19 @@ test('public comment DTOs whitelist fields independently of internal deletion me
 });
 
 test('comment like mutations are idempotent in both directions', () => {
-  expect(resolveVideoCommentLikeMutation('like', false)).toEqual({
+  expect(resolveCommentLikeMutation('like', false)).toEqual({
     changeFact: true,
     likeCountDelta: 1,
   });
-  expect(resolveVideoCommentLikeMutation('like', true)).toEqual({
+  expect(resolveCommentLikeMutation('like', true)).toEqual({
     changeFact: false,
     likeCountDelta: 0,
   });
-  expect(resolveVideoCommentLikeMutation('unlike', true)).toEqual({
+  expect(resolveCommentLikeMutation('unlike', true)).toEqual({
     changeFact: true,
     likeCountDelta: -1,
   });
-  expect(resolveVideoCommentLikeMutation('unlike', false)).toEqual({
+  expect(resolveCommentLikeMutation('unlike', false)).toEqual({
     changeFact: false,
     likeCountDelta: 0,
   });
@@ -254,7 +252,7 @@ test.each([
   };
 
   await expect(
-    deleteVideoComment(
+    deleteComment(
       {
         clock: { now: () => new Date('2026-01-01T00:00:00.000Z') },
         prisma: prisma as never,
@@ -266,7 +264,7 @@ test.each([
         actorRole: testCase.actorRole,
       },
     ),
-  ).rejects.toBeInstanceOf(VideoCommentNotFoundError);
+  ).rejects.toBeInstanceOf(CommentNotFoundError);
   expect(findFirstArgs).toEqual({
     where: {
       id: '11111111-1111-4111-8111-111111111111',
@@ -304,7 +302,7 @@ test('missing reply roots are rejected by indexed preflight without opening vide
   const rootCommentIds = Array.from({ length: 20 }, () => randomUUID());
   const results = await Promise.allSettled(
     rootCommentIds.map((rootCommentId) =>
-      createVideoCommentReply(
+      createReply(
         { prisma: prisma as never },
         {
           publicId: 'AbCdEf123_',
@@ -319,7 +317,7 @@ test('missing reply roots are rejected by indexed preflight without opening vide
   expect(results).toHaveLength(rootCommentIds.length);
   for (const result of results) {
     expect(result.status).toBe('rejected');
-    expect((result as PromiseRejectedResult).reason).toBeInstanceOf(VideoCommentNotFoundError);
+    expect((result as PromiseRejectedResult).reason).toBeInstanceOf(CommentNotFoundError);
   }
   expect(findManyArgs).toEqual(
     rootCommentIds.map((rootCommentId) => ({
@@ -367,7 +365,7 @@ test('invalid or foreign reply targets are rejected before opening video transac
 
   for (const replyingToCommentId of [missingTargetId, foreignTargetId]) {
     await expect(
-      createVideoCommentReply(
+      createReply(
         { prisma: prisma as never },
         {
           publicId: 'AbCdEf123_',
@@ -377,7 +375,7 @@ test('invalid or foreign reply targets are rejected before opening video transac
           content: 'This target must fail during preflight.',
         },
       ),
-    ).rejects.toBeInstanceOf(VideoCommentNotFoundError);
+    ).rejects.toBeInstanceOf(CommentNotFoundError);
   }
 
   expect(transactionCalls).toBe(0);
@@ -442,7 +440,7 @@ test('root pages use the descending cursor bound and calculate reply counts with
     },
   };
 
-  const result = await listVideoComments(
+  const result = await listComments(
     { prisma: prisma as never },
     {
       publicId: 'AbCdEf123_',
@@ -520,10 +518,7 @@ test('reply pages add an ascending temporal index bound around the cursor tie-br
     $transaction: async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
   };
 
-  await listVideoCommentReplies(
-    { prisma: prisma as never },
-    { publicId: 'AbCdEf123_', rootCommentId, cursor },
-  );
+  await listReplies({ prisma: prisma as never }, { publicId: 'AbCdEf123_', rootCommentId, cursor });
 
   expect(findManyArgs).toMatchObject({
     where: {

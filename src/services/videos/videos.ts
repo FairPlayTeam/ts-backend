@@ -64,12 +64,9 @@ import {
 import type {
   AbortVideoMultipartUploadInput,
   CompleteVideoMultipartUploadInput,
-  CreateVideoCommentInput,
-  CreateVideoCommentReplyInput,
   CreateVideoInput,
   CreateVideoResult,
   DeleteVideoInput,
-  DeleteVideoCommentInput,
   GetMyVideoRatingInput,
   GetPublicVideoDetailInput,
   GetPublicVideoDetailResult,
@@ -83,11 +80,6 @@ import type {
   ListPublicProfileVideosInput,
   ListPublicVideosInput,
   ListPublicVideosResult,
-  ListVideoCommentRepliesInput,
-  ListVideoCommentRepliesResult,
-  ListVideoCommentsInput,
-  ListVideoCommentsResult,
-  MutateVideoCommentLikeInput,
   ListMyVideosInput,
   ListMyVideosResult,
   PublicVideoCursor,
@@ -132,15 +124,6 @@ import {
   profileAvatarMediaAssetsSelection,
   toProfileMediaUrl,
 } from '../userMedia/userMedia.profileAssets.js';
-import {
-  createVideoComment,
-  createVideoCommentReply,
-  deleteVideoComment,
-  likeVideoComment,
-  listVideoCommentReplies,
-  listVideoComments,
-  unlikeVideoComment,
-} from './videoComments.js';
 import { hardDeleteVideo } from './videoDeletion.js';
 
 const ACTIVE_UPLOAD_SESSION_STATUSES: readonly VideoUploadSession['status'][] = [
@@ -1802,36 +1785,6 @@ const findPublicHlsRendition = async (
 };
 
 export const createVideosService = (deps: VideosDependencies): VideosService => ({
-  async createVideoComment(input: CreateVideoCommentInput) {
-    return createVideoComment(deps, input);
-  },
-
-  async createVideoCommentReply(input: CreateVideoCommentReplyInput) {
-    return createVideoCommentReply(deps, input);
-  },
-
-  async listVideoComments(input: ListVideoCommentsInput): Promise<ListVideoCommentsResult> {
-    return listVideoComments(deps, input);
-  },
-
-  async listVideoCommentReplies(
-    input: ListVideoCommentRepliesInput,
-  ): Promise<ListVideoCommentRepliesResult> {
-    return listVideoCommentReplies(deps, input);
-  },
-
-  async deleteVideoComment(input: DeleteVideoCommentInput): Promise<void> {
-    return deleteVideoComment(deps, input);
-  },
-
-  async likeVideoComment(input: MutateVideoCommentLikeInput): Promise<void> {
-    return likeVideoComment(deps, input);
-  },
-
-  async unlikeVideoComment(input: MutateVideoCommentLikeInput): Promise<void> {
-    return unlikeVideoComment(deps, input);
-  },
-
   async createVideo({
     allowComments,
     description,

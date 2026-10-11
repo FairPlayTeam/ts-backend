@@ -4,41 +4,42 @@ import {
   isSerializableTransactionConflictError,
   runSerializableTransaction,
 } from '../../lib/prismaTransactions.js';
-import { isPrismaForeignKeyConstraintError } from '../auth/auth.prismaErrors.js';
+import { isPrismaForeignKeyConstraintError } from '../../services/auth/auth.prismaErrors.js';
 import {
   profileAvatarMediaAssetsSelection,
   toProfileMediaUrl,
-} from '../userMedia/userMedia.profileAssets.js';
+} from '../../services/userMedia/userMedia.profileAssets.js';
 import {
-  VideoCommentNotFoundError,
-  VideoCommentsDisabledError,
-  VideoCommentTemporarilyUnavailableError,
-  VideoNotFoundError,
-} from '../videos.errors.js';
+  CommentNotFoundError,
+  CommentsDisabledError,
+  CommentsTemporarilyUnavailableError,
+} from './errors.js';
+import { VideoNotFoundError } from '../../services/videos.errors.js';
 import type {
-  ActiveVideoComment,
-  CreateVideoCommentInput,
-  CreateVideoCommentReplyInput,
-  CreateVideoCommentResult,
-  DeleteVideoCommentInput,
-  ListVideoCommentRepliesInput,
-  ListVideoCommentRepliesResult,
-  ListVideoCommentsInput,
-  ListVideoCommentsResult,
-  MutateVideoCommentLikeInput,
-  VideoCommentCursor,
-  VideoCommentReply,
-  VideoCommentRoot,
-} from './types/ports.types.js';
-import type { AuthRole } from '../auth.roles.js';
+  ActiveComment,
+  CreateCommentInput,
+  CreateReplyInput,
+  CreateCommentResult,
+  DeleteCommentInput,
+  ListRepliesInput,
+  ListRepliesResult,
+  ListCommentsInput,
+  ListCommentsResult,
+  MutateCommentLikeInput,
+  CommentCursor,
+  CommentReply,
+  CommentRoot,
+  CommentsPort,
+} from './types.js';
+import type { AuthRole } from '../../services/auth.roles.js';
 import {
   readableVideoWhere,
   writableVideoEngagementWhere,
   WRITABLE_VIDEO_ENGAGEMENT_SCOPE_SQL,
-} from './videoReadability.js';
-import type { VideosDependencies } from './videos.dependencies.js';
-import { softDeleteLockedVideoComments } from './videoCommentLifecycle.js';
-import { lockUserAuthorizationState } from '../auth/auth.userAuthorization.js';
+} from '../../services/videos/videoReadability.js';
+import type { CommentsDependencies } from './dependencies.js';
+import { softDeleteLockedVideoComments } from './lifecycle.js';
+import { lockUserAuthorizationState } from '../../services/auth/auth.userAuthorization.js';
 
 const VIDEO_COMMENT_TRANSACTION_MAX_ATTEMPTS = 10;
 const DEFAULT_VIDEO_COMMENTS_LIMIT = 20;
@@ -147,7 +148,7 @@ type LockedCommentLikeTarget = {
   id: string;
 };
 
-export const resolveVideoCommentLikeMutation = (
+export const resolveCommentLikeMutation = (
   operation: 'like' | 'unlike',
   factExists: boolean,
 ): { changeFact: boolean; likeCountDelta: -1 | 0 | 1 } => {
@@ -162,7 +163,7 @@ export const resolveVideoCommentLikeMutation = (
     : { changeFact: false, likeCountDelta: 0 };
 };
 
-export const resolveVideoCommentDeletionOrigin = ({
+export const resolveCommentDeletionOrigin = ({
   actorRole,
   authorId,
   ownerId,
@@ -192,7 +193,7 @@ export const resolveVideoCommentDeletionOrigin = ({
   return null;
 };
 
-const normalizeVideoCommentsLimit = (limit: number | undefined): number => {
+const normalizeCommentsLimit = (limit: number | undefined): number => {
   if (limit === undefined || !Number.isFinite(limit)) {
     return DEFAULT_VIDEO_COMMENTS_LIMIT;
   }
@@ -201,7 +202,7 @@ const normalizeVideoCommentsLimit = (limit: number | undefined): number => {
 };
 
 const commentCursorFilter = (
-  cursor: VideoCommentCursor | undefined,
+  cursor: CommentCursor | undefined,
   direction: 'asc' | 'desc',
 ): Prisma.CommentWhereInput => {
   if (!cursor) {
@@ -230,7 +231,7 @@ const commentCursorFilter = (
 const nextCommentCursor = (
   comments: readonly CommentListRecord[],
   hasNextPage: boolean,
-): VideoCommentCursor | null => {
+): CommentCursor | null => {
   const lastComment = comments.at(-1);
 
   return hasNextPage && lastComment
@@ -306,7 +307,7 @@ const lockCommentableVideo = async (
   }
 
   if (!video.allowComments) {
-    throw new VideoCommentsDisabledError();
+    throw new CommentsDisabledError();
   }
 
   return video;
@@ -316,7 +317,7 @@ const toReplyingTo = ({
   replyingToComment,
   rootId,
   videoId,
-}: ReplyingCommentRecord): ActiveVideoComment['replyingTo'] => {
+}: ReplyingCommentRecord): ActiveComment['replyingTo'] => {
   const targetAuthor = replyingToComment?.author;
   const belongsToThread =
     rootId !== null &&
@@ -333,7 +334,7 @@ const toReplyingTo = ({
   };
 };
 
-const toVideoCommentResult = (comment: CommentMutationRecord): CreateVideoCommentResult => {
+const toCommentResult = (comment: CommentMutationRecord): CreateCommentResult => {
   if (!comment.content || !comment.author) {
     throw new Error('New video comment violated its active-author invariant');
   }
@@ -361,7 +362,7 @@ const toVideoCommentResult = (comment: CommentMutationRecord): CreateVideoCommen
   };
 };
 
-const toActiveVideoComment = (comment: CommentListRecord, viewerHasLiked: boolean) => {
+const toActiveComment = (comment: CommentListRecord, viewerHasLiked: boolean) => {
   if (comment.deletedAt || !comment.content || !comment.author) {
     throw new Error('Active video comment violated its lifecycle invariant');
   }
@@ -387,11 +388,11 @@ const toActiveVideoComment = (comment: CommentListRecord, viewerHasLiked: boolea
   };
 };
 
-const toVideoCommentRoot = (
+const toCommentRoot = (
   comment: CommentListRecord,
   replyCount: number,
   viewerHasLiked: boolean,
-): VideoCommentRoot => {
+): CommentRoot => {
   if (comment.rootId !== null) {
     throw new Error('Root video comment unexpectedly references another root');
   }
@@ -416,22 +417,19 @@ const toVideoCommentRoot = (
   }
 
   return {
-    ...toActiveVideoComment(comment, viewerHasLiked),
+    ...toActiveComment(comment, viewerHasLiked),
     rootCommentId: null,
     replyCount,
   };
 };
 
-const toVideoCommentReply = (
-  comment: CommentListRecord,
-  viewerHasLiked: boolean,
-): VideoCommentReply => {
+const toCommentReply = (comment: CommentListRecord, viewerHasLiked: boolean): CommentReply => {
   if (comment.rootId === null) {
     throw new Error('Video comment reply is missing its root');
   }
 
   return {
-    ...toActiveVideoComment(comment, viewerHasLiked),
+    ...toActiveComment(comment, viewerHasLiked),
     rootCommentId: comment.rootId,
   };
 };
@@ -471,8 +469,8 @@ const createCommentRecord = async (
   return comment;
 };
 
-const runVideoCommentTransaction = async <T>(
-  deps: Pick<VideosDependencies, 'prisma'>,
+const runCommentTransaction = async <T>(
+  deps: Pick<CommentsDependencies, 'prisma'>,
   callback: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> => {
   try {
@@ -486,18 +484,18 @@ const runVideoCommentTransaction = async <T>(
     }
 
     if (isSerializableTransactionConflictError(err)) {
-      throw new VideoCommentTemporarilyUnavailableError({ cause: err });
+      throw new CommentsTemporarilyUnavailableError({ cause: err });
     }
 
     throw err;
   }
 };
 
-export const createVideoComment = (
-  deps: Pick<VideosDependencies, 'prisma'>,
-  { content, publicId, userId }: CreateVideoCommentInput,
-): Promise<CreateVideoCommentResult> =>
-  runVideoCommentTransaction(deps, async (tx) => {
+export const createComment = (
+  deps: Pick<CommentsDependencies, 'prisma'>,
+  { content, publicId, userId }: CreateCommentInput,
+): Promise<CreateCommentResult> =>
+  runCommentTransaction(deps, async (tx) => {
     const video = await lockCommentableVideo(tx, publicId);
     const comment = await createCommentRecord(tx, {
       authorId: userId,
@@ -505,13 +503,13 @@ export const createVideoComment = (
       videoId: video.id,
     });
 
-    return toVideoCommentResult(comment);
+    return toCommentResult(comment);
   });
 
-export const createVideoCommentReply = async (
-  deps: Pick<VideosDependencies, 'prisma'>,
-  { content, publicId, replyingToCommentId, rootCommentId, userId }: CreateVideoCommentReplyInput,
-): Promise<CreateVideoCommentResult> => {
+export const createReply = async (
+  deps: Pick<CommentsDependencies, 'prisma'>,
+  { content, publicId, replyingToCommentId, rootCommentId, userId }: CreateReplyInput,
+): Promise<CreateCommentResult> => {
   const targetId = replyingToCommentId ?? rootCommentId;
   const candidates = await deps.prisma.comment.findMany({
     where: {
@@ -538,11 +536,11 @@ export const createVideoCommentReply = async (
     !target ||
     (target.id !== root.id && target.rootId !== root.id)
   ) {
-    throw new VideoCommentNotFoundError();
+    throw new CommentNotFoundError();
   }
 
   try {
-    return await runVideoCommentTransaction(deps, async (tx) => {
+    return await runCommentTransaction(deps, async (tx) => {
       const video = await lockCommentableVideo(tx, publicId);
       // Keep the root and addressed target stable through insertion. Prisma Client cannot express
       // these ordered pessimistic row locks, which are the established final-validation boundary.
@@ -575,7 +573,7 @@ export const createVideoCommentReply = async (
         target.deletedAt !== null ||
         (target.id !== root.id && target.rootId !== root.id)
       ) {
-        throw new VideoCommentNotFoundError();
+        throw new CommentNotFoundError();
       }
 
       const comment = await createCommentRecord(tx, {
@@ -586,11 +584,11 @@ export const createVideoCommentReply = async (
         videoId: video.id,
       });
 
-      return toVideoCommentResult(comment);
+      return toCommentResult(comment);
     });
   } catch (err) {
     if (err instanceof VideoNotFoundError) {
-      throw new VideoCommentNotFoundError();
+      throw new CommentNotFoundError();
     }
 
     throw err;
@@ -617,11 +615,11 @@ const visibleRootWhere = (videoId: string): Prisma.CommentWhereInput => ({
   ],
 });
 
-export const listVideoComments = async (
-  deps: Pick<VideosDependencies, 'prisma'>,
-  { cursor, limit, publicId, viewerUserId }: ListVideoCommentsInput,
-): Promise<ListVideoCommentsResult> => {
-  const pageSize = normalizeVideoCommentsLimit(limit);
+export const listComments = async (
+  deps: Pick<CommentsDependencies, 'prisma'>,
+  { cursor, limit, publicId, viewerUserId }: ListCommentsInput,
+): Promise<ListCommentsResult> => {
+  const pageSize = normalizeCommentsLimit(limit);
 
   return deps.prisma.$transaction(
     async (tx) => {
@@ -664,7 +662,7 @@ export const listVideoComments = async (
 
       return {
         comments: roots.map((root) =>
-          toVideoCommentRoot(root, replyCounts.get(root.id) ?? 0, likedCommentIds.has(root.id)),
+          toCommentRoot(root, replyCounts.get(root.id) ?? 0, likedCommentIds.has(root.id)),
         ),
         total,
         nextCursor: nextCommentCursor(roots, queriedRoots.length > pageSize),
@@ -676,11 +674,11 @@ export const listVideoComments = async (
   );
 };
 
-export const listVideoCommentReplies = async (
-  deps: Pick<VideosDependencies, 'prisma'>,
-  { cursor, limit, publicId, rootCommentId, viewerUserId }: ListVideoCommentRepliesInput,
-): Promise<ListVideoCommentRepliesResult> => {
-  const pageSize = normalizeVideoCommentsLimit(limit);
+export const listReplies = async (
+  deps: Pick<CommentsDependencies, 'prisma'>,
+  { cursor, limit, publicId, rootCommentId, viewerUserId }: ListRepliesInput,
+): Promise<ListRepliesResult> => {
+  const pageSize = normalizeCommentsLimit(limit);
 
   try {
     return await deps.prisma.$transaction(
@@ -697,7 +695,7 @@ export const listVideoCommentReplies = async (
         });
 
         if (!root) {
-          throw new VideoCommentNotFoundError();
+          throw new CommentNotFoundError();
         }
 
         const repliesWhere = {
@@ -725,9 +723,7 @@ export const listVideoCommentReplies = async (
         );
 
         return {
-          replies: replies.map((reply) =>
-            toVideoCommentReply(reply, likedCommentIds.has(reply.id)),
-          ),
+          replies: replies.map((reply) => toCommentReply(reply, likedCommentIds.has(reply.id))),
           total,
           nextCursor: nextCommentCursor(replies, queriedReplies.length > pageSize),
         };
@@ -738,7 +734,7 @@ export const listVideoCommentReplies = async (
     );
   } catch (err) {
     if (err instanceof VideoNotFoundError) {
-      throw new VideoCommentNotFoundError();
+      throw new CommentNotFoundError();
     }
 
     throw err;
@@ -750,9 +746,9 @@ export const listVideoCommentReplies = async (
  * A direct Prisma `comment.delete()` can cascade an entire reply subtree without applying the
  * matching transactional `Video.commentCount` decrement, leaving the aggregate corrupted.
  */
-export const deleteVideoComment = async (
-  deps: Pick<VideosDependencies, 'clock' | 'prisma'>,
-  { actorRole, commentId, publicId, userId }: DeleteVideoCommentInput,
+export const deleteComment = async (
+  deps: Pick<CommentsDependencies, 'clock' | 'prisma'>,
+  { actorRole, commentId, publicId, userId }: DeleteCommentInput,
 ): Promise<void> => {
   const candidate = await deps.prisma.comment.findFirst({
     where: {
@@ -773,17 +769,17 @@ export const deleteVideoComment = async (
 
   if (
     !candidate ||
-    resolveVideoCommentDeletionOrigin({
+    resolveCommentDeletionOrigin({
       actorRole,
       authorId: candidate.authorId,
       ownerId: candidate.video.ownerId,
       userId,
     }) === null
   ) {
-    throw new VideoCommentNotFoundError();
+    throw new CommentNotFoundError();
   }
 
-  await runVideoCommentTransaction(deps, async (tx) => {
+  await runCommentTransaction(deps, async (tx) => {
     // Every deletion permission follows the same video-first pessimistic lock protocol as every
     // mutation of commentCount. Prisma Client has no standard row-locking operation for this read.
     const [video] = await tx.$queryRaw<LockedDeletionVideo[]>(
@@ -798,7 +794,7 @@ export const deleteVideoComment = async (
     );
 
     if (!video) {
-      throw new VideoCommentNotFoundError();
+      throw new CommentNotFoundError();
     }
 
     // Revalidate video membership, every permission, and lifecycle on locked rows. This explicit
@@ -818,7 +814,7 @@ export const deleteVideoComment = async (
     );
 
     let deletionOrigin = comment
-      ? resolveVideoCommentDeletionOrigin({
+      ? resolveCommentDeletionOrigin({
           actorRole,
           authorId: comment.authorId,
           ownerId: video.ownerId,
@@ -828,7 +824,7 @@ export const deleteVideoComment = async (
 
     if (deletionOrigin === 'moderator' || deletionOrigin === 'admin') {
       const actor = await lockUserAuthorizationState(tx, userId);
-      deletionOrigin = resolveVideoCommentDeletionOrigin({
+      deletionOrigin = resolveCommentDeletionOrigin({
         actorRole: !actor || actor.isBanned ? 'user' : actor.role,
         authorId: comment?.authorId ?? null,
         ownerId: video.ownerId,
@@ -837,7 +833,7 @@ export const deleteVideoComment = async (
     }
 
     if (!comment || deletionOrigin === null) {
-      throw new VideoCommentNotFoundError();
+      throw new CommentNotFoundError();
     }
 
     if (comment.deletedAt) {
@@ -875,8 +871,8 @@ export const deleteVideoComment = async (
 };
 
 const findLikeableCommentCandidate = async (
-  deps: Pick<VideosDependencies, 'prisma'>,
-  { commentId, publicId }: Pick<MutateVideoCommentLikeInput, 'commentId' | 'publicId'>,
+  deps: Pick<CommentsDependencies, 'prisma'>,
+  { commentId, publicId }: Pick<MutateCommentLikeInput, 'commentId' | 'publicId'>,
 ): Promise<{ allowComments: boolean }> => {
   const candidate = await deps.prisma.comment.findFirst({
     where: {
@@ -897,7 +893,7 @@ const findLikeableCommentCandidate = async (
   });
 
   if (!candidate) {
-    throw new VideoCommentNotFoundError();
+    throw new CommentNotFoundError();
   }
 
   return candidate.video;
@@ -926,28 +922,28 @@ const lockLikeableComment = async (
   );
 
   if (!comment) {
-    throw new VideoCommentNotFoundError();
+    throw new CommentNotFoundError();
   }
 
   if (!comment.allowComments) {
-    throw new VideoCommentsDisabledError();
+    throw new CommentsDisabledError();
   }
 
   return comment;
 };
 
-export const likeVideoComment = async (
-  deps: Pick<VideosDependencies, 'prisma'>,
-  { commentId, publicId, userId }: MutateVideoCommentLikeInput,
+export const likeComment = async (
+  deps: Pick<CommentsDependencies, 'prisma'>,
+  { commentId, publicId, userId }: MutateCommentLikeInput,
 ): Promise<void> => {
   const candidate = await findLikeableCommentCandidate(deps, { commentId, publicId });
 
   if (!candidate.allowComments) {
-    throw new VideoCommentsDisabledError();
+    throw new CommentsDisabledError();
   }
 
   try {
-    await runVideoCommentTransaction(deps, async (tx) => {
+    await runCommentTransaction(deps, async (tx) => {
       const comment = await lockLikeableComment(tx, publicId, commentId);
       const currentLike = await tx.commentLike.findUnique({
         where: {
@@ -960,7 +956,7 @@ export const likeVideoComment = async (
           commentId: true,
         },
       });
-      const mutation = resolveVideoCommentLikeMutation('like', currentLike !== null);
+      const mutation = resolveCommentLikeMutation('like', currentLike !== null);
 
       if (!mutation.changeFact) {
         return;
@@ -990,16 +986,16 @@ export const likeVideoComment = async (
     });
   } catch (err) {
     if (err instanceof VideoNotFoundError) {
-      throw new VideoCommentNotFoundError();
+      throw new CommentNotFoundError();
     }
 
     throw err;
   }
 };
 
-export const unlikeVideoComment = async (
-  deps: Pick<VideosDependencies, 'prisma'>,
-  { commentId, publicId, userId }: MutateVideoCommentLikeInput,
+export const unlikeComment = async (
+  deps: Pick<CommentsDependencies, 'prisma'>,
+  { commentId, publicId, userId }: MutateCommentLikeInput,
 ): Promise<void> => {
   const candidate = await deps.prisma.comment.findFirst({
     where: {
@@ -1018,7 +1014,7 @@ export const unlikeVideoComment = async (
   }
 
   try {
-    await runVideoCommentTransaction(deps, async (tx) => {
+    await runCommentTransaction(deps, async (tx) => {
       const [comment] = await tx.$queryRaw<LockedCommentLikeTarget[]>(
         Prisma.sql`
           SELECT c."id"::text AS "id"
@@ -1045,7 +1041,7 @@ export const unlikeVideoComment = async (
           commentId: true,
         },
       });
-      const mutation = resolveVideoCommentLikeMutation('unlike', currentLike !== null);
+      const mutation = resolveCommentLikeMutation('unlike', currentLike !== null);
 
       if (!mutation.changeFact) {
         return;
@@ -1085,3 +1081,13 @@ export const unlikeVideoComment = async (
     throw err;
   }
 };
+
+export const createCommentsService = (deps: CommentsDependencies): CommentsPort => ({
+  createComment: (input) => createComment(deps, input),
+  createReply: (input) => createReply(deps, input),
+  listComments: (input) => listComments(deps, input),
+  listReplies: (input) => listReplies(deps, input),
+  deleteComment: (input) => deleteComment(deps, input),
+  likeComment: (input) => likeComment(deps, input),
+  unlikeComment: (input) => unlikeComment(deps, input),
+});

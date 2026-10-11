@@ -23,7 +23,7 @@ authService --> objectStorage["Object storage"]
 authService --> crypto["Token / Hash"]
 authService --> clock["clock"]
 
-app --> routes["Auto-loaded routes"]
+app --> routes["Explicit route registry<br/>src/routes/registry.ts"]
 routes --> controller["AuthController"]
 controller --> authService
 
@@ -753,6 +753,12 @@ scope as playback, so existing aggregates and the current user's previous rating
 `rejected` videos. Rating writes retain the stricter scope and reject new or updated votes once a
 video is `rejected`.
 
+Comments are implemented as a domain module in `src/modules/comments/`. Its `CommentsPort` owns the
+seven comment operations, and its HTTP router is mounted at `/videos`, preserving the existing
+`/videos/:publicId/comments...` URLs and OpenAPI contract. The video service port contains no comment
+methods. The account-deletion path imports the same comment lifecycle helper so anonymization and
+soft deletion continue to use one protocol.
+
 Video comments follow the same read/write distinction. Both public list routes use the centralized
 readability scope, so existing threads remain readable for a `ready` public or unlisted video even
 after rejection or after comments are disabled. Creating a root or reply uses the stricter shared
@@ -804,11 +810,10 @@ storage or security invariant. Presence validation ignores Unicode whitespace an
 `Default_Ignorable_Code_Point` and `Control` characters, including zero-width joiners, variation
 selectors, combining grapheme joiners, and C0/C1 controls, only while deciding whether some visible
 content exists. It does not strip those characters from otherwise valid stored text, so legitimate
-joined emoji sequences and mixed visible/control content remain intact. The video-comment service
-port also assumes
-its UUIDs and normalized content have already crossed the HTTP validation boundary. A future job or administration script
-calling that port directly must reuse the same validation rules rather than treating the service as
-a runtime parser for arbitrary input.
+joined emoji sequences and mixed visible/control content remain intact. The `CommentsPort` assumes
+its UUIDs and normalized content have already crossed the HTTP validation boundary. A future job or
+administration script calling that port directly must reuse the same validation rules rather than
+treating the service as a runtime parser for arbitrary input.
 
 Root creation, replies, deletion, and both idempotent comment-like mutations share one authenticated
 per-user mutation rate limit of 30 actions per ten minutes. Their deliberately different
@@ -1026,9 +1031,15 @@ Controller -->> Client: JSON response
 
 ## Feature Structure
 
-New features should follow this structure:
+New domains are grouped vertically under `src/modules/<domain>/`. Each module owns its domain
+types and service, along with its HTTP layer under `http/` (handlers, schemas, responses, routes,
+and OpenAPI definitions as applicable). The module boundary exposes what the rest of the
+application needs through its entry point.
 
-- validation goes into Zod schemas
-- HTTP goes into the controller
-- the business into the service
-- external dependencies are injected
+Components that are genuinely shared across domains remain in cross-cutting areas such as `lib`,
+`middleware`, and `shared`.
+
+The existing `auth`, `admin`, and `videos` domains still use the earlier organization across
+controllers, services, and route files. They remain there until a concrete need justifies migrating
+them. Routes are assembled explicitly in `src/routes/registry.ts`; adding a domain module does not
+require automatic route discovery.

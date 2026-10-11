@@ -1,29 +1,15 @@
 import { toIsoString, toNullableIsoString } from '../http.responses.js';
+import { toPublicProfileIdentityResponse } from '../shared/profile.responses.js';
 import type {
   CreateVideoResult,
-  CreateVideoCommentResult,
   GetPublicVideoDetailResult,
-  ListVideoCommentRepliesResult,
-  ListVideoCommentsResult,
   ListPublicVideosResult,
   ListMyVideosResult,
   SearchPublicVideosResult,
   SignVideoMultipartUploadPartsResult,
   UploadVideoSourceThumbnailResult,
   VideoUploadSessionResult,
-  VideoComment,
-  PublicProfileIdentity,
 } from '../../services/videos.types.js';
-
-const toPublicProfileIdentityResponse = ({
-  avatarUrl,
-  displayName,
-  username,
-}: PublicProfileIdentity) => ({
-  username,
-  displayName,
-  avatarUrl,
-});
 
 const toVideoResponse = (video: CreateVideoResult['video']) => ({
   ...video,
@@ -33,71 +19,6 @@ const toVideoResponse = (video: CreateVideoResult['video']) => ({
 
 export const toCreateVideoResponse = ({ video }: CreateVideoResult) => ({
   video: toVideoResponse(video),
-});
-
-const toVideoCommentResponseBody = (comment: VideoComment) =>
-  comment.isDeleted
-    ? {
-        id: comment.id,
-        content: null,
-        isDeleted: true as const,
-        createdAt: toIsoString(comment.createdAt),
-        rootCommentId: null,
-        likeCount: comment.likeCount,
-        viewerHasLiked: comment.viewerHasLiked,
-        replyingTo: null,
-        author: null,
-      }
-    : {
-        id: comment.id,
-        content: comment.content,
-        isDeleted: comment.isDeleted,
-        createdAt: toIsoString(comment.createdAt),
-        rootCommentId: comment.rootCommentId,
-        likeCount: comment.likeCount,
-        viewerHasLiked: comment.viewerHasLiked,
-        replyingTo: comment.replyingTo
-          ? {
-              commentId: comment.replyingTo.commentId,
-              username: comment.replyingTo.username,
-            }
-          : null,
-        author: toPublicProfileIdentityResponse(comment.author),
-      };
-
-export const toVideoCommentResponse = ({ comment }: CreateVideoCommentResult) => ({
-  comment: toVideoCommentResponseBody(comment),
-});
-
-const toVideoCommentCursorResponse = (cursor: ListVideoCommentsResult['nextCursor']) =>
-  cursor
-    ? {
-        id: cursor.id,
-        createdAt: toIsoString(cursor.createdAt),
-      }
-    : null;
-
-export const toVideoCommentsResponse = ({
-  comments,
-  nextCursor,
-  total,
-}: ListVideoCommentsResult) => ({
-  comments: comments.map((comment) => ({
-    ...toVideoCommentResponseBody(comment),
-    replyCount: comment.replyCount,
-  })),
-  total,
-  nextCursor: toVideoCommentCursorResponse(nextCursor),
-});
-
-export const toVideoCommentRepliesResponse = ({
-  nextCursor,
-  replies,
-  total,
-}: ListVideoCommentRepliesResult) => ({
-  replies: replies.map(toVideoCommentResponseBody),
-  total,
-  nextCursor: toVideoCommentCursorResponse(nextCursor),
 });
 
 export const toMyVideosResponse = ({ nextCursor, total, videos }: ListMyVideosResult) => ({

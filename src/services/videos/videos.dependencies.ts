@@ -10,8 +10,6 @@ type Prisma = Pick<
   | '$executeRaw'
   | '$queryRaw'
   | '$transaction'
-  | 'comment'
-  | 'commentLike'
   | 'externalResourceTarget'
   | 'video'
   | 'videoArtifactGeneration'

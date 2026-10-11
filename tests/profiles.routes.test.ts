@@ -21,6 +21,7 @@ import {
   EXPECTED_UNFOLLOW_PROFILE_SUCCESS_MESSAGE,
 } from './support/profiles.js';
 import { createStubVideosService } from './support/videos.js';
+import { createStubCommentsService } from './support/comments.js';
 
 let server: Server;
 let baseUrl: string;
@@ -62,6 +63,7 @@ describe('profiles routes', () => {
             return authService.validateSession(sessionKey);
           },
         },
+        commentsService: createStubCommentsService(),
         profilesService: {
           ...profilesService,
           getProfileMedia: async (input) => {

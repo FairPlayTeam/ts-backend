@@ -1,5 +1,4 @@
 import type { VideoLicense } from '../videoLicenses.js';
-import type { AuthRole } from '../../auth.roles.js';
 import type { ProfilesPort } from '../../../modules/profiles/index.js';
 
 export type VideoUploadSessionStatus =
@@ -326,101 +325,6 @@ export type VideoRatingResult = VideoRatingAggregateResult & {
   userRating: number | null;
 };
 
-export type VideoCommentAuthor = PublicProfileIdentity;
-
-type VideoCommentBase = {
-  id: string;
-  createdAt: Date;
-  rootCommentId: string | null;
-  likeCount: number;
-  viewerHasLiked: boolean;
-};
-
-export type ActiveVideoComment = VideoCommentBase & {
-  content: string;
-  isDeleted: false;
-  replyingTo: {
-    commentId: string;
-    username: string;
-  } | null;
-  author: VideoCommentAuthor;
-};
-
-export type DeletedVideoCommentPlaceholder = VideoCommentBase & {
-  content: null;
-  isDeleted: true;
-  rootCommentId: null;
-  replyingTo: null;
-  author: null;
-};
-
-export type VideoComment = ActiveVideoComment | DeletedVideoCommentPlaceholder;
-
-export type VideoCommentRoot = VideoComment & {
-  rootCommentId: null;
-  replyCount: number;
-};
-
-export type VideoCommentReply = ActiveVideoComment & {
-  rootCommentId: string;
-};
-
-export type VideoCommentCursor = {
-  createdAt: Date;
-  id: string;
-};
-
-export type CreateVideoCommentInput = {
-  publicId: string;
-  userId: string;
-  content: string;
-};
-
-export type CreateVideoCommentReplyInput = CreateVideoCommentInput & {
-  rootCommentId: string;
-  replyingToCommentId?: string;
-};
-
-export type CreateVideoCommentResult = {
-  comment: ActiveVideoComment;
-};
-
-export type ListVideoCommentsInput = {
-  publicId: string;
-  viewerUserId?: string;
-  cursor?: VideoCommentCursor;
-  limit?: number;
-};
-
-export type ListVideoCommentRepliesInput = ListVideoCommentsInput & {
-  rootCommentId: string;
-};
-
-export type ListVideoCommentsResult = {
-  comments: VideoCommentRoot[];
-  total: number;
-  nextCursor: VideoCommentCursor | null;
-};
-
-export type ListVideoCommentRepliesResult = {
-  replies: VideoCommentReply[];
-  total: number;
-  nextCursor: VideoCommentCursor | null;
-};
-
-export type DeleteVideoCommentInput = {
-  publicId: string;
-  commentId: string;
-  userId: string;
-  actorRole: AuthRole;
-};
-
-export type MutateVideoCommentLikeInput = {
-  publicId: string;
-  commentId: string;
-  userId: string;
-};
-
 export type VideosRoutePort = {
   createVideo(input: CreateVideoInput): Promise<CreateVideoResult>;
   deleteVideo(input: DeleteVideoInput): Promise<void>;
@@ -432,15 +336,6 @@ export type VideosRoutePort = {
   getVideoRating(input: GetVideoRatingInput): Promise<VideoRatingAggregateResult>;
   getMyVideoRating(input: GetMyVideoRatingInput): Promise<VideoRatingResult>;
   rateVideo(input: RateVideoInput): Promise<VideoRatingResult>;
-  createVideoComment(input: CreateVideoCommentInput): Promise<CreateVideoCommentResult>;
-  createVideoCommentReply(input: CreateVideoCommentReplyInput): Promise<CreateVideoCommentResult>;
-  listVideoComments(input: ListVideoCommentsInput): Promise<ListVideoCommentsResult>;
-  listVideoCommentReplies(
-    input: ListVideoCommentRepliesInput,
-  ): Promise<ListVideoCommentRepliesResult>;
-  deleteVideoComment(input: DeleteVideoCommentInput): Promise<void>;
-  likeVideoComment(input: MutateVideoCommentLikeInput): Promise<void>;
-  unlikeVideoComment(input: MutateVideoCommentLikeInput): Promise<void>;
   getThumbnail(input: GetVideoThumbnailInput): Promise<VideoThumbnailResult>;
   getHlsMaster(input: GetVideoHlsMasterInput): Promise<VideoHlsPlaylistResult>;
   getHlsRendition(input: GetVideoHlsRenditionInput): Promise<VideoHlsPlaylistResult>;

@@ -16,6 +16,8 @@ import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
 import { createStubVideosService } from './support/videos.js';
+import { createStubCommentsService } from './support/comments.js';
+import type { CommentsPort } from '../src/modules/comments/index.js';
 
 type TestServer = {
   baseUrl: string;
@@ -61,6 +63,7 @@ const withTokenScopedUsers = (authService: AuthPorts): AuthPorts => ({
 const startAuthApp = async (
   authService: AuthPorts,
   videosService = createStubVideosService(),
+  commentsService: CommentsPort = createStubCommentsService(),
 ): Promise<TestServer> => {
   const app = await createApp(
     {
@@ -76,6 +79,7 @@ const startAuthApp = async (
       adminService: createStubAdminService(),
       authService,
       profilesService: createStubProfilesService(),
+      commentsService,
       videosService,
     },
   );
@@ -280,11 +284,11 @@ describe('specialized auth rate limiters', () => {
   });
 
   test('rate limits a burst of random comment deletions before calling the video service', async () => {
-    const baseVideosService = createStubVideosService();
+    const baseCommentsService = createStubCommentsService();
     let deleteCommentCalls = 0;
-    const server = await startAuthApp(withTokenScopedUsers(createStubAuthService()), {
-      ...baseVideosService,
-      deleteVideoComment: async () => {
+    const server = await startAuthApp(withTokenScopedUsers(createStubAuthService()), undefined, {
+      ...baseCommentsService,
+      deleteComment: async () => {
         deleteCommentCalls += 1;
       },
     });

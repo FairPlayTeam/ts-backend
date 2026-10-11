@@ -32,8 +32,6 @@ describe('owned video deletion authorization', () => {
       $executeRaw: prisma.$executeRaw,
       $queryRaw: prisma.$queryRaw,
       $transaction: prisma.$transaction,
-      comment: prisma.comment,
-      commentLike: prisma.commentLike,
       externalResourceTarget: prisma.externalResourceTarget,
       video: { ...prisma.video },
       videoArtifactGeneration: prisma.videoArtifactGeneration,

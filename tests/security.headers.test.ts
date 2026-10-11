@@ -6,6 +6,7 @@ import { ALL_CORS_ORIGINS } from '../src/config/env.schema.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
+import { createStubCommentsService } from './support/comments.js';
 import { createStubVideosService } from './support/videos.js';
 
 let server: Server;
@@ -26,6 +27,7 @@ describe('security headers', () => {
       {
         adminService: createStubAdminService(),
         authService: createStubAuthService(),
+        commentsService: createStubCommentsService(),
         profilesService: createStubProfilesService(),
         videosService: createStubVideosService(),
       },
@@ -78,6 +80,7 @@ describe('security headers', () => {
       {
         adminService: createStubAdminService(),
         authService: createStubAuthService(),
+        commentsService: createStubCommentsService(),
         profilesService: createStubProfilesService(),
         videosService: createStubVideosService(),
       },

@@ -5,13 +5,10 @@ import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import type { OptionallyAuthenticatedRequest } from '../../middleware/auth.js';
 import type {
   CompleteVideoMultipartUploadBody,
-  CreateVideoCommentBody,
-  CreateVideoCommentReplyBody,
   CreateVideoBody,
   InitVideoMultipartUploadBody,
   ListMyVideosQuery,
   ListPublicVideosQuery,
-  ListVideoCommentsQuery,
   PublicVideoIdParams,
   RateVideoBody,
   SearchPublicVideosQuery,
@@ -21,8 +18,6 @@ import type {
   VideoMultipartUploadSessionParams,
   VideoParams,
   VideoRatingParams,
-  VideoCommentReplyParams,
-  VideoCommentParams,
   VideoThumbnailParams,
 } from '../videos.schemas.js';
 import type { VideosControllerDependencies } from './videos.controller.types.js';
@@ -35,9 +30,6 @@ import {
   toSignedVideoUploadPartsResponse,
   toUploadVideoSourceThumbnailResponse,
   toVideoUploadSessionResponse,
-  toVideoCommentResponse,
-  toVideoCommentRepliesResponse,
-  toVideoCommentsResponse,
 } from './videos.responses.js';
 import {
   VIDEO_HLS_CONTENT_TYPE,
@@ -66,26 +58,6 @@ type SearchPublicVideosRequest = Request<unknown, unknown, unknown, SearchPublic
 type PublicVideoDetailRequest = Request<PublicVideoIdParams>;
 type DeleteVideoRequest = Request<PublicVideoIdParams>;
 type RateVideoRequest = Request<VideoRatingParams, unknown, RateVideoBody>;
-type CreateVideoCommentRequest = Request<PublicVideoIdParams, unknown, CreateVideoCommentBody>;
-type CreateVideoCommentReplyRequest = Request<
-  VideoCommentReplyParams,
-  unknown,
-  CreateVideoCommentReplyBody
->;
-type ListVideoCommentsRequest = Request<
-  PublicVideoIdParams,
-  unknown,
-  unknown,
-  ListVideoCommentsQuery
->;
-type ListVideoCommentRepliesRequest = Request<
-  VideoCommentReplyParams,
-  unknown,
-  unknown,
-  ListVideoCommentsQuery
->;
-type DeleteVideoCommentRequest = Request<VideoCommentParams>;
-type MutateVideoCommentLikeRequest = Request<VideoCommentParams>;
 type HlsMasterRequest = Request<PublicVideoIdParams>;
 type HlsRenditionRequest = Request<VideoHlsRenditionParams>;
 type HlsSegmentRequest = Request<VideoHlsSegmentParams>;
@@ -117,146 +89,6 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
       const deleteReq = req as DeleteVideoRequest;
       await videosService.deleteVideo({
         publicId: deleteReq.params.publicId,
-        userId: authenticatedReq.user.id,
-      });
-
-      return setNoStore(res).status(204).send();
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
-  const createVideoComment: RequestHandler = async (req, res, next) => {
-    try {
-      const authenticatedReq = req as AuthenticatedRequest;
-      const commentReq = req as CreateVideoCommentRequest;
-      const result = await videosService.createVideoComment({
-        publicId: commentReq.params.publicId,
-        userId: authenticatedReq.user.id,
-        content: commentReq.body.content,
-      });
-
-      return sendNoStoreJson(res, 201, toVideoCommentResponse(result));
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
-  const createVideoCommentReply: RequestHandler = async (req, res, next) => {
-    try {
-      const authenticatedReq = req as AuthenticatedRequest;
-      const commentReq = req as CreateVideoCommentReplyRequest;
-      const result = await videosService.createVideoCommentReply({
-        publicId: commentReq.params.publicId,
-        userId: authenticatedReq.user.id,
-        rootCommentId: commentReq.params.rootCommentId,
-        content: commentReq.body.content,
-        ...(commentReq.body.replyingToCommentId === undefined
-          ? {}
-          : { replyingToCommentId: commentReq.body.replyingToCommentId }),
-      });
-
-      return sendNoStoreJson(res, 201, toVideoCommentResponse(result));
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
-  const listVideoComments: RequestHandler = async (req, res, next) => {
-    try {
-      const optionallyAuthenticatedReq = req as OptionallyAuthenticatedRequest;
-      const commentReq = req as ListVideoCommentsRequest;
-      const { cursorCreatedAt, cursorId, limit } = commentReq.query;
-      const result = await videosService.listVideoComments({
-        publicId: commentReq.params.publicId,
-        ...(optionallyAuthenticatedReq.user
-          ? { viewerUserId: optionallyAuthenticatedReq.user.id }
-          : {}),
-        ...(limit === undefined ? {} : { limit }),
-        ...(cursorCreatedAt !== undefined && cursorId !== undefined
-          ? {
-              cursor: {
-                createdAt: new Date(cursorCreatedAt),
-                id: cursorId,
-              },
-            }
-          : {}),
-      });
-
-      return sendNoStoreJson(res, 200, toVideoCommentsResponse(result));
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
-  const listVideoCommentReplies: RequestHandler = async (req, res, next) => {
-    try {
-      const optionallyAuthenticatedReq = req as OptionallyAuthenticatedRequest;
-      const commentReq = req as ListVideoCommentRepliesRequest;
-      const { cursorCreatedAt, cursorId, limit } = commentReq.query;
-      const result = await videosService.listVideoCommentReplies({
-        publicId: commentReq.params.publicId,
-        rootCommentId: commentReq.params.rootCommentId,
-        ...(optionallyAuthenticatedReq.user
-          ? { viewerUserId: optionallyAuthenticatedReq.user.id }
-          : {}),
-        ...(limit === undefined ? {} : { limit }),
-        ...(cursorCreatedAt !== undefined && cursorId !== undefined
-          ? {
-              cursor: {
-                createdAt: new Date(cursorCreatedAt),
-                id: cursorId,
-              },
-            }
-          : {}),
-      });
-
-      return sendNoStoreJson(res, 200, toVideoCommentRepliesResponse(result));
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
-  const deleteVideoComment: RequestHandler = async (req, res, next) => {
-    try {
-      const authenticatedReq = req as AuthenticatedRequest;
-      const commentReq = req as DeleteVideoCommentRequest;
-      await videosService.deleteVideoComment({
-        publicId: commentReq.params.publicId,
-        commentId: commentReq.params.commentId,
-        userId: authenticatedReq.user.id,
-        actorRole: authenticatedReq.user.role,
-      });
-
-      return setNoStore(res).status(204).send();
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
-  const likeVideoComment: RequestHandler = async (req, res, next) => {
-    try {
-      const authenticatedReq = req as AuthenticatedRequest;
-      const commentReq = req as MutateVideoCommentLikeRequest;
-      await videosService.likeVideoComment({
-        publicId: commentReq.params.publicId,
-        commentId: commentReq.params.commentId,
-        userId: authenticatedReq.user.id,
-      });
-
-      return setNoStore(res).status(204).send();
-    } catch (err) {
-      next(toVideosHttpError(err));
-    }
-  };
-
-  const unlikeVideoComment: RequestHandler = async (req, res, next) => {
-    try {
-      const authenticatedReq = req as AuthenticatedRequest;
-      const commentReq = req as MutateVideoCommentLikeRequest;
-      await videosService.unlikeVideoComment({
-        publicId: commentReq.params.publicId,
-        commentId: commentReq.params.commentId,
         userId: authenticatedReq.user.id,
       });
 
@@ -580,11 +412,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     abortMultipartUpload,
     completeMultipartUpload,
     createVideo,
-    createVideoComment,
-    createVideoCommentReply,
     deleteVideo,
-    deleteVideoComment,
-    likeVideoComment,
     getHlsMaster,
     getHlsRendition,
     getHlsSegment,
@@ -596,12 +424,9 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     initMultipartUpload,
     listPublicVideos,
     listMyVideos,
-    listVideoCommentReplies,
-    listVideoComments,
     rateVideo,
     searchPublicVideos,
     signMultipartUploadParts,
     uploadSourceThumbnail,
-    unlikeVideoComment,
   };
 };

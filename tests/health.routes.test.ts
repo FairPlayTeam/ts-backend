@@ -6,6 +6,7 @@ import { API_RATE_LIMIT_MAX } from '../src/config/constants.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
+import { createStubCommentsService } from './support/comments.js';
 import { createStubVideosService } from './support/videos.js';
 
 type TestServer = {
@@ -33,6 +34,7 @@ const createTestServer = async (
     {
       adminService: createStubAdminService(),
       authService: createStubAuthService(),
+      commentsService: createStubCommentsService(),
       profilesService: createStubProfilesService(),
       videosService: createStubVideosService(),
       ...(readinessChecks !== undefined ? { readinessChecks } : {}),

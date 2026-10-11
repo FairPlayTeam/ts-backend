@@ -9,6 +9,7 @@ import type { AuthRoutePort } from '../src/services/auth.types.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
+import { createStubCommentsService } from './support/comments.js';
 import { createStubVideosService } from './support/videos.js';
 import { createTestDeps, fixedNow, type AuthDeps } from './support/authService.js';
 
@@ -33,6 +34,7 @@ const startAccountOperationApp = async (
     {
       adminService: createStubAdminService(),
       authService: { ...authService, ...overrides },
+      commentsService: createStubCommentsService(),
       profilesService: createStubProfilesService(),
       videosService: createStubVideosService(),
     },

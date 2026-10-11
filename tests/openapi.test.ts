@@ -11,6 +11,7 @@ import { VIDEO_LICENSES } from '../src/services/videos/videoLicenses.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
+import { createStubCommentsService } from './support/comments.js';
 import { createStubVideosService } from './support/videos.js';
 
 const documentedHttpMethods = new Set(['delete', 'get', 'patch', 'post', 'put']);
@@ -20,6 +21,7 @@ const expectedMountPaths = [
   '/health',
   '/moderation',
   '/profiles',
+  '/videos',
   '/videos',
   '/',
 ] satisfies Array<(typeof httpRouteModules)[number]['mountPath']>;
@@ -57,6 +59,7 @@ const createOpenApiTestApp = () =>
     {
       adminService: createStubAdminService(),
       authService: createStubAuthService(),
+      commentsService: createStubCommentsService(),
       profilesService: createStubProfilesService(),
       videosService: createStubVideosService(),
     },
@@ -147,11 +150,12 @@ const getOpenApiOperationIds = (document: OpenApiDocument): unknown[] =>
   );
 
 describe('OpenAPI generation', () => {
-  test('declares unique mount paths in the significant runtime order', () => {
+  test('declares mount paths in runtime order with comments co-mounted under videos', () => {
     const mountPaths = httpRouteModules.map(({ mountPath }) => mountPath);
 
     expect(mountPaths).toEqual(expectedMountPaths);
-    expect(new Set(mountPaths).size).toBe(mountPaths.length);
+    expect(mountPaths.filter((mountPath) => mountPath === '/videos')).toHaveLength(2);
+    expect(new Set(mountPaths).size).toBe(mountPaths.length - 1);
   });
 
   test('includes every registered route module and its Zod request schemas', async () => {

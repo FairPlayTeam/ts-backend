@@ -2,16 +2,14 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import {
-  listVideoCommentReplies,
-  listVideoComments,
-} from '../../src/services/videos/videoComments.js';
+import { listReplies, listComments } from '../../src/modules/comments/service.js';
 import { createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import { createPlayableVideo } from './support/playableVideo.js';
 import {
   createIntegrationApp,
   createIntegrationAdminService,
   createIntegrationAuthService,
+  createIntegrationCommentsService,
   createIntegrationVideosService,
   createQueryObservedPrismaClient,
   resetState,
@@ -369,7 +367,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const root = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: author.userId,
         content: 'A valid root for the invalid reply reference.',
@@ -551,7 +549,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const otherVideoRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: otherVideo.publicId,
         userId: secondAuthor.userId,
         content: 'A root on another video.',
@@ -600,14 +598,14 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const activeRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: firstVideo.publicId,
         userId: author.userId,
         content: 'Active root must report no corrupt replies.',
       })
     ).comment;
     const deletedRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: firstVideo.publicId,
         userId: author.userId,
         content: 'Deleted root must not become a corrupt placeholder.',
@@ -641,7 +639,7 @@ describe('video comments integration', () => {
           'Corrupt cross-video reply beneath the deleted root.'
         )
     `;
-    await runtime.videosService.deleteVideoComment({
+    await runtime.commentsService.deleteComment({
       publicId: firstVideo.publicId,
       commentId: deletedRoot.id,
       userId: author.userId,
@@ -716,21 +714,21 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const root = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: rootAuthor.userId,
         content: 'The legitimate root.',
       })
     ).comment;
     const otherThreadRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: otherThreadAuthor.userId,
         content: 'Foreign thread target content.',
       })
     ).comment;
     const otherVideoRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: otherVideo.publicId,
         userId: otherVideoAuthor.userId,
         content: 'Foreign video target content.',
@@ -805,14 +803,14 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const root = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: author.userId,
         content: 'Root included in my personal export.',
       })
     ).comment;
     const reply = (
-      await runtime.videosService.createVideoCommentReply({
+      await runtime.commentsService.createReply({
         publicId: video.publicId,
         rootCommentId: root.id,
         replyingToCommentId: root.id,
@@ -933,13 +931,9 @@ describe('video comments integration', () => {
         transactionCalls += 1;
       },
     });
-    const observedService = createIntegrationVideosService(
-      observedPrisma,
-      runtime.videoObjectStorage,
-      runtime.videoExternalResources,
-    );
+    const observedService = createIntegrationCommentsService(observedPrisma);
     const app = await createIntegrationApp(runtime, {
-      videosService: observedService,
+      commentsService: observedService,
     });
     const responses = await Promise.all(
       Array.from({ length: 20 }, () =>
@@ -979,7 +973,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const root = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: replier.userId,
         content: 'A valid root must not make invalid targets expensive.',
@@ -991,7 +985,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const foreignRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: otherVideo.publicId,
         userId: replier.userId,
         content: 'This root belongs to another video.',
@@ -1003,13 +997,9 @@ describe('video comments integration', () => {
         transactionCalls += 1;
       },
     });
-    const observedService = createIntegrationVideosService(
-      observedPrisma,
-      runtime.videoObjectStorage,
-      runtime.videoExternalResources,
-    );
+    const observedService = createIntegrationCommentsService(observedPrisma);
     const app = await createIntegrationApp(runtime, {
-      videosService: observedService,
+      commentsService: observedService,
     });
     const invalidTargetIds = [...Array.from({ length: 20 }, () => randomUUID()), foreignRoot.id];
     const responses = await Promise.all(
@@ -1111,7 +1101,7 @@ describe('video comments integration', () => {
     });
     const creationLocked = Promise.withResolvers<void>();
     const releaseCreation = Promise.withResolvers<void>();
-    const creationFirstService = createIntegrationVideosService(
+    const creationFirstService = createIntegrationCommentsService(
       createBarrierPrisma(runtime.prisma, {
         transactionRawBarrier: {
           call: 1,
@@ -1121,11 +1111,9 @@ describe('video comments integration', () => {
           },
         },
       }),
-      runtime.videoObjectStorage,
-      runtime.videoExternalResources,
     );
     const creationFirstApp = await createIntegrationApp(runtime, {
-      videosService: creationFirstService,
+      commentsService: creationFirstService,
     });
     const creationResponsePromise = request(creationFirstApp)
       .post(`/videos/${creationFirstVideo.publicId}/comments`)
@@ -1245,7 +1233,7 @@ describe('video comments integration', () => {
     });
     const creationLocked = Promise.withResolvers<void>();
     const releaseCreation = Promise.withResolvers<void>();
-    const creationFirstService = createIntegrationVideosService(
+    const creationFirstService = createIntegrationCommentsService(
       createBarrierPrisma(runtime.prisma, {
         transactionRawBarrier: {
           call: 1,
@@ -1255,11 +1243,9 @@ describe('video comments integration', () => {
           },
         },
       }),
-      runtime.videoObjectStorage,
-      runtime.videoExternalResources,
     );
     const creationFirstApp = await createIntegrationApp(runtime, {
-      videosService: creationFirstService,
+      commentsService: creationFirstService,
     });
     const candidatesRead = Promise.withResolvers<void>();
     const releaseCandidates = Promise.withResolvers<void>();
@@ -1412,7 +1398,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const root = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: author.userId,
         content: 'Remembered while the video was readable.',
@@ -1447,17 +1433,15 @@ describe('video comments integration', () => {
     });
     const candidatesRead = Promise.withResolvers<void>();
     const releaseCandidates = Promise.withResolvers<void>();
-    const raceService = createIntegrationVideosService(
+    const raceService = createIntegrationCommentsService(
       createBarrierPrisma(runtime.prisma, {
         afterCommentCandidates: async () => {
           candidatesRead.resolve();
           await releaseCandidates.promise;
         },
       }),
-      runtime.videoObjectStorage,
-      runtime.videoExternalResources,
     );
-    const raceApp = await createIntegrationApp(runtime, { videosService: raceService });
+    const raceApp = await createIntegrationApp(runtime, { commentsService: raceService });
     const raceResponsePromise = request(raceApp)
       .post(`/videos/${video.publicId}/comments/${root.id}/replies`)
       .set('Authorization', `Bearer ${author.sessionKey}`)
@@ -1505,7 +1489,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const root = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: author.userId,
         content: 'Root that belongs only to the first video.',
@@ -1569,7 +1553,7 @@ describe('video comments integration', () => {
       [secondAuthor.userId, 'Second root'],
       [firstAuthor.userId, 'Third root'],
     ] as const) {
-      const result = await runtime.videosService.createVideoComment({
+      const result = await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId,
         content,
@@ -1590,7 +1574,7 @@ describe('video comments integration', () => {
       [firstAuthor.userId, 'Second chronological reply'],
       [secondAuthor.userId, 'Third chronological reply'],
     ] as const) {
-      const result = await runtime.videosService.createVideoCommentReply({
+      const result = await runtime.commentsService.createReply({
         publicId: video.publicId,
         userId,
         rootCommentId: rootWithReplies.id,
@@ -1706,7 +1690,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const root = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: author.userId,
         content: 'Root for the cursor plan replies.',
@@ -1788,7 +1772,7 @@ describe('video comments integration', () => {
     let replyQuery: ObservedQuery;
 
     try {
-      await listVideoComments(
+      await listComments(
         { prisma: observedPrisma },
         {
           cursor: rootCursor,
@@ -1799,7 +1783,7 @@ describe('video comments integration', () => {
       rootQuery = findEmittedCommentPageQuery(emittedQueries);
 
       emittedQueries.length = 0;
-      await listVideoCommentReplies(
+      await listReplies(
         { prisma: observedPrisma },
         {
           cursor: replyCursor,
@@ -1846,14 +1830,14 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const root = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: author.userId,
         content: 'Root that becomes a placeholder',
       })
     ).comment;
     const survivingReply = (
-      await runtime.videosService.createVideoCommentReply({
+      await runtime.commentsService.createReply({
         publicId: video.publicId,
         userId: survivor.userId,
         rootCommentId: root.id,
@@ -1861,7 +1845,7 @@ describe('video comments integration', () => {
       })
     ).comment;
     const deletedReply = (
-      await runtime.videosService.createVideoCommentReply({
+      await runtime.commentsService.createReply({
         publicId: video.publicId,
         userId: author.userId,
         rootCommentId: root.id,
@@ -1869,14 +1853,14 @@ describe('video comments integration', () => {
       })
     ).comment;
     const standaloneRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: author.userId,
         content: 'This root must disappear',
       })
     ).comment;
     const otherRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: survivor.userId,
         content: 'An active root',
@@ -2023,7 +2007,7 @@ describe('video comments integration', () => {
     });
     const comments = await Promise.all(
       Array.from({ length: 6 }, (_, index) =>
-        runtime?.videosService.createVideoComment({
+        runtime?.commentsService.createComment({
           publicId: video.publicId,
           userId: author.userId,
           content: `Permission matrix comment ${index}`,
@@ -2116,7 +2100,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const comment = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: author.userId,
         content: 'This comment must survive the actor downgrade race.',
@@ -2216,14 +2200,14 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const rejectedComment = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: rejectedVideo.publicId,
         userId: author.userId,
         content: 'Delete after rejection.',
       })
     ).comment;
     const nonReadyComment = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: nonReadyVideo.publicId,
         userId: author.userId,
         content: 'Delete while processing.',
@@ -2301,7 +2285,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const comment = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: firstVideo.publicId,
         userId: author.userId,
         content: 'This existence must not leak.',
@@ -2366,7 +2350,7 @@ describe('video comments integration', () => {
     });
     const comments = await Promise.all(
       Array.from({ length: 3 }, (_, index) =>
-        runtime?.videosService.createVideoComment({
+        runtime?.commentsService.createComment({
           publicId: video.publicId,
           userId: author.userId,
           content: `Session role comment ${index}`,
@@ -2429,7 +2413,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const comment = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: author.userId,
         content: 'The current database role remains authoritative for this request.',
@@ -2522,7 +2506,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const comment = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: video.publicId,
         userId: author.userId,
         content: 'Only one authorized actor may win deletion.',
@@ -2530,7 +2514,7 @@ describe('video comments integration', () => {
     ).comment;
     const firstVideoLocked = Promise.withResolvers<void>();
     const releaseFirstDeletion = Promise.withResolvers<void>();
-    const firstService = createIntegrationVideosService(
+    const firstService = createIntegrationCommentsService(
       createBarrierPrisma(runtime.prisma, {
         transactionRawBarrier: {
           call: 1,
@@ -2540,10 +2524,8 @@ describe('video comments integration', () => {
           },
         },
       }),
-      runtime.videoObjectStorage,
-      runtime.videoExternalResources,
     );
-    const firstApp = await createIntegrationApp(runtime, { videosService: firstService });
+    const firstApp = await createIntegrationApp(runtime, { commentsService: firstService });
     const secondApp = await createIntegrationApp(runtime);
     const authorDeletion = request(firstApp)
       .delete(`/videos/${video.publicId}/comments/${comment.id}`)
@@ -2599,7 +2581,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const commentFirstRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: commentFirstVideo.publicId,
         userId: commentFirstAuthor.userId,
         content: 'Deleted first through the comment route.',
@@ -2607,7 +2589,7 @@ describe('video comments integration', () => {
     ).comment;
     const commentDeletionLocked = Promise.withResolvers<void>();
     const releaseCommentDeletion = Promise.withResolvers<void>();
-    const commentFirstService = createIntegrationVideosService(
+    const commentFirstService = createIntegrationCommentsService(
       createBarrierPrisma(runtime.prisma, {
         transactionRawBarrier: {
           call: 1,
@@ -2617,11 +2599,9 @@ describe('video comments integration', () => {
           },
         },
       }),
-      runtime.videoObjectStorage,
-      runtime.videoExternalResources,
     );
     const commentFirstApp = await createIntegrationApp(runtime, {
-      videosService: commentFirstService,
+      commentsService: commentFirstService,
     });
     const accountAfterCommentService = createIntegrationAuthService(
       runtime.prisma,
@@ -2676,7 +2656,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const accountFirstRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: accountFirstVideo.publicId,
         userId: accountFirstAuthor.userId,
         content: 'Anonymized first through account deletion.',
@@ -2766,7 +2746,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const ownerFirstComment = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: ownerFirstVideo.publicId,
         userId: ownerFirstAuthor.userId,
         content: 'The video owner deletes this before account anonymization.',
@@ -2774,7 +2754,7 @@ describe('video comments integration', () => {
     ).comment;
     const ownerVideoLocked = Promise.withResolvers<void>();
     const releaseOwnerDeletion = Promise.withResolvers<void>();
-    const ownerFirstVideosService = createIntegrationVideosService(
+    const ownerFirstVideosService = createIntegrationCommentsService(
       createBarrierPrisma(runtime.prisma, {
         transactionRawBarrier: {
           call: 1,
@@ -2784,11 +2764,9 @@ describe('video comments integration', () => {
           },
         },
       }),
-      runtime.videoObjectStorage,
-      runtime.videoExternalResources,
     );
     const ownerFirstApp = await createIntegrationApp(runtime, {
-      videosService: ownerFirstVideosService,
+      commentsService: ownerFirstVideosService,
     });
     const accountAfterOwnerService = createIntegrationAuthService(
       runtime.prisma,
@@ -2838,7 +2816,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const accountFirstComment = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: accountFirstVideo.publicId,
         userId: accountFirstAuthor.userId,
         content: 'Account anonymization wins before moderator deletion.',
@@ -2930,7 +2908,7 @@ describe('video comments integration', () => {
     ]);
     const comments = await Promise.all(
       videos.map(({ publicId }, index) =>
-        runtime?.videosService.createVideoComment({
+        runtime?.commentsService.createComment({
           publicId,
           userId: author.userId,
           content: `Comment removed by the moderator before account deletion ${index}`,
@@ -3048,7 +3026,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const replyFirstRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: replyFirstVideo.publicId,
         userId: replyFirstAuthor.userId,
         content: 'Root targeted before its author is deleted.',
@@ -3056,7 +3034,7 @@ describe('video comments integration', () => {
     ).comment;
     const replyTransactionPausedAfterRowLocks = Promise.withResolvers<void>();
     const releaseReply = Promise.withResolvers<void>();
-    const replyFirstService = createIntegrationVideosService(
+    const replyFirstService = createIntegrationCommentsService(
       createBarrierPrisma(runtime.prisma, {
         transactionRawBarrier: {
           call: 2,
@@ -3066,11 +3044,9 @@ describe('video comments integration', () => {
           },
         },
       }),
-      runtime.videoObjectStorage,
-      runtime.videoExternalResources,
     );
     const replyFirstApp = await createIntegrationApp(runtime, {
-      videosService: replyFirstService,
+      commentsService: replyFirstService,
     });
     const accountAfterReplyService = createIntegrationAuthService(
       runtime.prisma,
@@ -3138,7 +3114,7 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const accountFirstRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: accountFirstVideo.publicId,
         userId: accountFirstAuthor.userId,
         content: 'Root anonymized before the reply can lock it.',
@@ -3283,7 +3259,7 @@ describe('video comments integration', () => {
     });
     const commentVideoLocked = Promise.withResolvers<void>();
     const releaseCommentTransaction = Promise.withResolvers<void>();
-    const commentLockFirstVideosService = createIntegrationVideosService(
+    const commentLockFirstVideosService = createIntegrationCommentsService(
       createBarrierPrisma(runtime.prisma, {
         transactionRawBarrier: {
           call: 1,
@@ -3293,11 +3269,9 @@ describe('video comments integration', () => {
           },
         },
       }),
-      runtime.videoObjectStorage,
-      runtime.videoExternalResources,
     );
     const commentLockFirstApp = await createIntegrationApp(runtime, {
-      videosService: commentLockFirstVideosService,
+      commentsService: commentLockFirstVideosService,
     });
     const accountAfterCommentLockService = createIntegrationAuthService(
       runtime.prisma,
@@ -3364,14 +3338,14 @@ describe('video comments integration', () => {
       visibility: 'public',
     });
     const deletedRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: firstVideo.publicId,
         userId: deletedAuthor.userId,
         content: 'Root authored by the deleted account',
       })
     ).comment;
     const survivingReply = (
-      await runtime.videosService.createVideoCommentReply({
+      await runtime.commentsService.createReply({
         publicId: firstVideo.publicId,
         userId: survivor.userId,
         rootCommentId: deletedRoot.id,
@@ -3379,14 +3353,14 @@ describe('video comments integration', () => {
       })
     ).comment;
     const hiddenDeletedRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: secondVideo.publicId,
         userId: deletedAuthor.userId,
         content: 'Root with no surviving replies',
       })
     ).comment;
     const survivingRoot = (
-      await runtime.videosService.createVideoComment({
+      await runtime.commentsService.createComment({
         publicId: secondVideo.publicId,
         userId: survivor.userId,
         content: 'Root preserved on the second video',

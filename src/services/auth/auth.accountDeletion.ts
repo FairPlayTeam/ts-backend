@@ -6,7 +6,7 @@ import {
 } from '../../lib/prismaTransactions.js';
 import { AccountDeletionTemporarilyUnavailableError } from '../auth.errors.js';
 import { requestExternalResourceAbsence } from '../externalResources.js';
-import { softDeleteLockedVideoComments } from '../videos/videoCommentLifecycle.js';
+import { softDeleteLockedVideoComments } from '../../modules/comments/lifecycle.js';
 import type { AuthDependencies } from './auth.dependencies.js';
 import {
   DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,

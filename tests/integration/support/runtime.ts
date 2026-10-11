@@ -39,6 +39,7 @@ import {
   createProfilesService,
   type ProfilesPort,
 } from '../../../src/modules/profiles/index.js';
+import { createCommentsService, type CommentsPort } from '../../../src/modules/comments/index.js';
 import { createUserMediaProcessor } from '../../../src/services/userMedia/userMedia.processor.js';
 import { createVideosService } from '../../../src/services/videos.service.js';
 import { createVideoPublicId } from '../../../src/services/videos/videoPublicId.js';
@@ -110,6 +111,7 @@ export type TestRuntime = {
   adminService: AdminPorts;
   authService: AuthPorts;
   profilesService: ProfilesPort;
+  commentsService: CommentsPort;
   videosService: VideosService;
   delivered: {
     verification: DeliveredEmail[];
@@ -293,6 +295,19 @@ export const createIntegrationVideosService = (
     },
   });
 
+export const createIntegrationCommentsService = (
+  prisma: PrismaClient,
+  config: {
+    now?: () => Date;
+  } = {},
+): CommentsPort =>
+  createCommentsService({
+    prisma,
+    clock: {
+      now: config.now ?? (() => new Date()),
+    },
+  });
+
 export const createVideoReadBarrierService = (
   runtime: TestRuntime,
   afterVideoRead: () => Promise<void>,
@@ -357,6 +372,7 @@ export const createIntegrationApp = async (
   runtime: TestRuntime,
   overrides: {
     authService?: AuthPorts;
+    commentsService?: CommentsPort;
     videosService?: VideosService;
   } = {},
 ) =>
@@ -374,6 +390,7 @@ export const createIntegrationApp = async (
       adminService: runtime.adminService,
       authService: overrides.authService ?? runtime.authService,
       profilesService: runtime.profilesService,
+      commentsService: overrides.commentsService ?? runtime.commentsService,
       videosService: overrides.videosService ?? runtime.videosService,
       redisClient: runtime.redisClient,
       readinessChecks: {
@@ -483,6 +500,7 @@ export const startRuntime = async (): Promise<TestRuntime> => {
       userMediaExternalResources,
     ),
     profilesService: createIntegrationProfilesService(prisma, objectStorage),
+    commentsService: createIntegrationCommentsService(prisma),
     videosService: createIntegrationVideosService(
       prisma,
       videoObjectStorage,

@@ -7,6 +7,7 @@ import {
   routeDocs as moderationRouteDocs,
 } from './moderation.js';
 import { profilesHttpModule } from '../modules/profiles/index.js';
+import { commentsHttpModule } from '../modules/comments/index.js';
 import { createRouter as createVideosRouter, routeDocs as videosRouteDocs } from './videos.js';
 import type { RouteDoc } from '../docs/registry.js';
 
@@ -36,6 +37,7 @@ export const httpRouteModules = [
     routeDocs: moderationRouteDocs,
   },
   profilesHttpModule,
+  commentsHttpModule,
   {
     name: 'videos',
     mountPath: '/videos',
