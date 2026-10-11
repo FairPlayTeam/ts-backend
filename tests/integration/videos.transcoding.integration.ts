@@ -7,18 +7,15 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjectKeys.js';
 import { createVideoHlsGenerationToken } from '../../src/services/videos/videoHls.js';
+import { probeVideo, transcodeVideoArtifacts } from '../../src/modules/videoTranscoding/media.js';
+import { claimNextVideoTranscodeJob } from '../../src/modules/videoTranscoding/jobs.js';
+import { publishVideoArtifactGeneration } from '../../src/modules/videoTranscoding/artifacts.js';
+import { createVideoTranscodeRunner } from '../../src/modules/videoTranscoding/index.js';
 import {
-  probeVideo,
-  transcodeVideoArtifacts,
-  type VideoTranscodeLimits,
-} from '../../src/services/videos/videoTranscode.js';
-import {
-  claimNextVideoTranscodeJob,
-  createVideoTranscodeRunner,
-  publishVideoArtifactGeneration,
   VideoTranscodeOwnershipLostError,
   type ClaimedVideoTranscodeJob,
-} from '../../src/services/videos/videoTranscodeRunner.js';
+  type VideoTranscodeLimits,
+} from '../../src/modules/videoTranscoding/types.js';
 import {
   createTranscodeTestVideo,
   createVerifiedSession,

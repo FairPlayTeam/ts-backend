@@ -1,9 +1,9 @@
 import { prisma } from './lib/prisma.js';
-import type { VideoTranscodingMaintenancePort } from './services/videos.types.js';
+import type { VideoTranscodingMaintenancePort } from './modules/videoTranscoding/index.js';
 import {
   createVideoArtifactReconciliationHandlers,
   scheduleAbandonedVideoArtifactGenerations,
-} from './services/videos/videoTranscodeRunner.js';
+} from './modules/videoTranscoding/index.js';
 
 const clock = {
   now: () => new Date(),

@@ -14,11 +14,11 @@ import {
   VideoSourceLimitExceededError,
   VideoSourceResolutionTooLowError,
   type VideoTranscodeLimits,
-} from '../src/services/videos/videoTranscode.js';
+} from '../src/modules/videoTranscoding/media.js';
 import {
   getAvailableVideoTranscodeSlots,
   getVideoTranscodeRetryDelayMs,
-} from '../src/services/videos/videoTranscodeRunner.js';
+} from '../src/modules/videoTranscoding/jobs.js';
 import { buildVideoArtifactManifest } from '../src/services/videos/videoObjectKeys.js';
 
 const posixTest = process.platform === 'win32' ? test.skip : test;

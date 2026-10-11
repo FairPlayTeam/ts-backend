@@ -531,6 +531,15 @@ Empty, malformed, altered, obsolete, and raw-UUID cursor inputs all converge on 
 
 ## Video transcoding and admission
 
+The worker implementation lives in `src/modules/videoTranscoding/`. `runner.ts` owns polling,
+slots, job execution, and graceful shutdown; `jobs.ts` owns claiming, heartbeats, ownership checks,
+retries, and shutdown requeueing; `artifacts.ts` owns generation reservation/publication and durable
+artifact reconciliation; and `media.ts` owns ffprobe validation and FFmpeg output. The injected
+Prisma, object-storage, clock, configuration, binary, and logger surface is defined in
+`dependencies.ts`. The module barrel exports only the worker factory and maintenance entry points.
+Shared `videoObjectKeys.ts` and `videoHls.ts` helpers remain in `services/videos` because upload,
+transcoding, and playback all use them.
+
 Production separates the HTTP API from the transcode runner with `RUNTIME_ROLE=api` and
 `RUNTIME_ROLE=transcoder`. The API must use `VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=0`; the initial
 DL360 worker uses exactly one slot. A slot is held for the entire source download, probe, FFmpeg

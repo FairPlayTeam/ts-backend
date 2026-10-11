@@ -5,8 +5,10 @@ import sharp from '../../src/lib/sharp.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { createUserMediaProcessor } from '../../src/services/userMedia/userMedia.processor.js';
 import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjectKeys.js';
-import { createVideoTranscodeRunner } from '../../src/services/videos/videoTranscodeRunner.js';
-import { createVideoArtifactReconciliationHandlers } from '../../src/services/videos/videoTranscodeRunner.js';
+import {
+  createVideoArtifactReconciliationHandlers,
+  createVideoTranscodeRunner,
+} from '../../src/modules/videoTranscoding/index.js';
 import { createVideoUploadsReconciliationHandlers } from '../../src/modules/videoUploads/index.js';
 import type { ObjectStorage } from '../../src/lib/objectStorage.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';

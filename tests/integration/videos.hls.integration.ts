@@ -7,12 +7,10 @@ import {
   type VideoObjectKeyQuality,
 } from '../../src/services/videos/videoObjectKeys.js';
 import { createVideoHlsGenerationToken } from '../../src/services/videos/videoHls.js';
-import {
-  claimNextVideoTranscodeJob,
-  publishVideoArtifactGeneration,
-  type ClaimedVideoTranscodeJob,
-} from '../../src/services/videos/videoTranscodeRunner.js';
-import { createVideoArtifactReconciliationHandlers } from '../../src/services/videos/videoTranscodeRunner.js';
+import { claimNextVideoTranscodeJob } from '../../src/modules/videoTranscoding/jobs.js';
+import type { ClaimedVideoTranscodeJob } from '../../src/modules/videoTranscoding/types.js';
+import { publishVideoArtifactGeneration } from '../../src/modules/videoTranscoding/artifacts.js';
+import { createVideoArtifactReconciliationHandlers } from '../../src/modules/videoTranscoding/index.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
 import { HOUR_MS } from '../../src/config/constants.js';
 import { createVerifiedSession, uploadVideoSource } from './support/fixtures.js';

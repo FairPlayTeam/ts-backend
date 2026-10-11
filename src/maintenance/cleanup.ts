@@ -4,10 +4,8 @@ import {
   type RedisLease as MaintenanceCleanupLock,
 } from '../lib/redisLease.js';
 import type { AuthMaintenancePort } from '../services/auth.types.js';
-import type {
-  VideoLifecycleMaintenancePort,
-  VideoTranscodingMaintenancePort,
-} from '../services/videos.types.js';
+import type { VideoLifecycleMaintenancePort } from '../services/videos.types.js';
+import type { VideoTranscodingMaintenancePort } from '../modules/videoTranscoding/index.js';
 import type { VideoUploadsMaintenancePort } from '../modules/videoUploads/index.js';
 import {
   VIDEO_EXTERNAL_RESOURCE_ROLES,

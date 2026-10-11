@@ -5,7 +5,7 @@ import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjec
 import { createVideoHlsGenerationToken } from '../../src/services/videos/videoHls.js';
 import { createObjectStorage, ObjectStorageUnavailableError } from '../../src/lib/objectStorage.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
-import { createVideoArtifactReconciliationHandlers } from '../../src/services/videos/videoTranscodeRunner.js';
+import { createVideoArtifactReconciliationHandlers } from '../../src/modules/videoTranscoding/index.js';
 import { createVideoUploadsReconciliationHandlers } from '../../src/modules/videoUploads/index.js';
 import {
   createMaintenanceCleanupJob,

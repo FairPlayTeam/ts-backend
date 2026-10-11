@@ -25,7 +25,7 @@ import {
   createRedisMaintenanceCleanupLock,
 } from './maintenance/cleanup.js';
 import { MAINTENANCE_CLEANUP_LOCK_TTL_MS } from './config/constants.js';
-import { createVideoTranscodeRunner } from './services/videos/videoTranscodeRunner.js';
+import { createVideoTranscodeRunner } from './modules/videoTranscoding/index.js';
 import { videoExternalResourceReconciler } from './externalResources.instance.js';
 import { runRuntimeShutdownSteps } from './runtimeShutdown.js';
 

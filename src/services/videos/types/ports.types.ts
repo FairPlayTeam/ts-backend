@@ -242,10 +242,4 @@ export type VideoLifecycleMaintenancePort = {
   }>;
 };
 
-export type VideoTranscodingMaintenancePort = {
-  scheduleAbandonedArtifactGenerations(input: { observedAt: Date }): Promise<{
-    artifactGenerationsScheduled: number;
-  }>;
-};
-
 export type VideosService = VideosRoutePort & VideoLifecycleMaintenancePort;

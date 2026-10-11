@@ -47,7 +47,7 @@ import { createVideoPublicId } from '../../../src/services/videos/videoPublicId.
 import {
   createVideoArtifactReconciliationHandlers,
   scheduleAbandonedVideoArtifactGenerations,
-} from '../../../src/services/videos/videoTranscodeRunner.js';
+} from '../../../src/modules/videoTranscoding/index.js';
 import {
   createVideoUploadsReconciliationHandlers,
   createVideoUploadsService,
@@ -58,9 +58,9 @@ import {
 import type { AdminPorts } from '../../../src/services/admin.types.js';
 import type { AuthPorts } from '../../../src/services/auth.types.js';
 import type { VideosService } from '../../../src/services/videos.types.js';
-import type { VideoTranscodingMaintenancePort } from '../../../src/services/videos/types/ports.types.js';
+import type { VideoTranscodingMaintenancePort } from '../../../src/modules/videoTranscoding/index.js';
 import type { ObjectStorageConfig } from '../../../src/config/env.schema.js';
-import type { VideoTranscodeLimits } from '../../../src/services/videos/videoTranscode.js';
+import type { VideoTranscodeLimits } from '../../../src/modules/videoTranscoding/types.js';
 import type { Redis } from 'ioredis';
 import { testLogger } from './logger.js';
 

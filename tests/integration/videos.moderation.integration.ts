@@ -3,7 +3,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { createAdminService } from '../../src/services/admin.service.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
-import { createVideoArtifactReconciliationHandlers } from '../../src/services/videos/videoTranscodeRunner.js';
+import { createVideoArtifactReconciliationHandlers } from '../../src/modules/videoTranscoding/index.js';
 import { createVideoUploadsReconciliationHandlers } from '../../src/modules/videoUploads/index.js';
 import { MailerDeliveryError } from '../../src/services/mailer/mailer.errors.js';
 import { createMaintenanceCleanupJob } from '../../src/maintenance/cleanup.js';

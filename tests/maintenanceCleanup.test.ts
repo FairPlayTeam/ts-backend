@@ -4,10 +4,8 @@ import {
   createRedisMaintenanceCleanupLock,
 } from '../src/maintenance/cleanup.js';
 import type { AuthMaintenancePort } from '../src/services/auth.types.js';
-import type {
-  VideoLifecycleMaintenancePort,
-  VideoTranscodingMaintenancePort,
-} from '../src/services/videos.types.js';
+import type { VideoLifecycleMaintenancePort } from '../src/services/videos.types.js';
+import type { VideoTranscodingMaintenancePort } from '../src/modules/videoTranscoding/index.js';
 import type { VideoUploadsMaintenancePort } from '../src/modules/videoUploads/index.js';
 import type {
   ExternalResourceReconciler,
