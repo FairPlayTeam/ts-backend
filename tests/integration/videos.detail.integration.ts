@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import type { AuthPorts } from '../../src/services/auth.types.js';
+import type { AuthService } from '../../src/modules/auth/index.js';
 import { createPng, createVerifiedSession, uploadVideoSource } from './support/fixtures.js';
 import { createPlayableVideo, type PlayableVideo } from './support/playableVideo.js';
 import { seedHlsGeneration } from './support/videoArtifacts.js';
@@ -414,7 +414,7 @@ describe('public video detail integration', () => {
     const sessionValidated = Promise.withResolvers<void>();
     const releaseValidation = Promise.withResolvers<void>();
     const authService = runtime.authService;
-    const barrierAuthService: AuthPorts = {
+    const barrierAuthService: AuthService = {
       ...authService,
       validateSession: async (sessionKey) => {
         const result = await authService.validateSession(sessionKey);

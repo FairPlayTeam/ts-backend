@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { createAuthService } from '../src/services/auth.service.js';
+import { createAuthService } from '../src/modules/auth/index.js';
 import {
   DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
-} from '../src/services/auth/auth.messages.js';
+} from '../src/modules/auth/messages.js';
 import {
   AccountDeletionTemporarilyUnavailableError,
   AuthenticatedUserNotFoundError,
-} from '../src/services/auth.errors.js';
+} from '../src/modules/auth/errors.js';
 import { createTestDeps, fixedNow } from './support/authService.js';
 import type { AuthDeps } from './support/authService.js';
 

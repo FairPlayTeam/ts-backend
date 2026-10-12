@@ -11,7 +11,7 @@ import {
 import { createRouteProtector } from '../../../middleware/routeProtection.js';
 import { createOptionalAuthenticateSession } from '../../../middleware/auth.js';
 import { validate } from '../../../middleware/validation.js';
-import type { AuthSessionValidationPort } from '../../../services/auth.types.js';
+import type { AuthSessionValidationPort } from '../../auth/index.js';
 import type { PublicProfileVideosPort } from '../../videos/index.js';
 import type { ProfilesPort } from '../types.js';
 

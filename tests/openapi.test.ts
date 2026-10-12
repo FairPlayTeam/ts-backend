@@ -6,7 +6,7 @@ import { generateOpenApi } from '../src/docs/openapi.js';
 import type { RouteDoc } from '../src/docs/registry.js';
 import { z } from '../src/docs/zod.js';
 import { httpRouteModules } from '../src/routes/registry.js';
-import { AUTH_ROLES } from '../src/services/auth.roles.js';
+import { AUTH_ROLES } from '../src/modules/auth/index.js';
 import { VIDEO_LICENSES } from '../src/modules/videos/shared/licenses.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';

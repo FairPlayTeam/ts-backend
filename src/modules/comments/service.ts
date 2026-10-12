@@ -4,7 +4,7 @@ import {
   isSerializableTransactionConflictError,
   runSerializableTransaction,
 } from '../../lib/prismaTransactions.js';
-import { isPrismaForeignKeyConstraintError } from '../../services/auth/auth.prismaErrors.js';
+import { isPrismaForeignKeyConstraintError } from '../../lib/prismaErrors.js';
 import {
   profileAvatarMediaAssetsSelection,
   toProfileMediaUrl,
@@ -31,7 +31,7 @@ import type {
   CommentRoot,
   CommentsPort,
 } from './types.js';
-import type { AuthRole } from '../../services/auth.roles.js';
+import type { AuthRole } from '../auth/index.js';
 import {
   readableVideoWhere,
   writableVideoEngagementWhere,
@@ -39,7 +39,7 @@ import {
 } from '../videos/shared/readability.js';
 import type { CommentsDependencies } from './dependencies.js';
 import { softDeleteLockedVideoComments } from './lifecycle.js';
-import { lockUserAuthorizationState } from '../../services/auth/auth.userAuthorization.js';
+import { lockUserAuthorizationState } from '../auth/authorization.js';
 
 const VIDEO_COMMENT_TRANSACTION_MAX_ATTEMPTS = 10;
 const DEFAULT_VIDEO_COMMENTS_LIMIT = 20;

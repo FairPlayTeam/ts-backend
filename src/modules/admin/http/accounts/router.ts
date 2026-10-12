@@ -1,5 +1,5 @@
 import { Router, type RequestHandler } from 'express';
-import type { AuthSessionValidationPort } from '../../../../services/auth.types.js';
+import type { AuthSessionValidationPort } from '../../../auth/index.js';
 import { createRouteProtector } from '../../../../middleware/routeProtection.js';
 import { validate } from '../../../../middleware/validation.js';
 import { ADMIN_ONLY_ROLES } from '../../authorization.js';

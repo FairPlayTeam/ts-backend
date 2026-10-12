@@ -3,7 +3,7 @@ import {
   createMaintenanceCleanupJob,
   createRedisMaintenanceCleanupLock,
 } from '../src/maintenance/cleanup.js';
-import type { AuthMaintenancePort } from '../src/services/auth.types.js';
+import type { AuthMaintenancePort } from '../src/modules/auth/index.js';
 import type { VideoLifecycleMaintenancePort } from '../src/modules/videos/index.js';
 import type { VideoTranscodingMaintenancePort } from '../src/modules/videoTranscoding/index.js';
 import type { VideoUploadsMaintenancePort } from '../src/modules/videoUploads/index.js';

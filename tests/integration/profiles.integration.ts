@@ -12,7 +12,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import { ObjectStorageUnavailableError } from '../../src/lib/objectStorage.js';
 import { OperationTimeoutError } from '../../src/lib/operationMetrics.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
-import { UPLOAD_AVATAR_SUCCESS_MESSAGE } from '../../src/services/auth/auth.messages.js';
+import { UPLOAD_AVATAR_SUCCESS_MESSAGE } from '../../src/modules/auth/messages.js';
 import type { VideosService } from '../../src/modules/videos/index.js';
 import {
   EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE,

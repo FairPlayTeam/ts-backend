@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { createAuthService } from '../src/services/auth.service.js';
+import { createAuthService } from '../src/modules/auth/index.js';
 import {
   AccountBannedError,
   InvalidPasswordResetTokenError,
   PasswordResetPasswordReuseError,
   PasswordResetStateChangedError,
-} from '../src/services/auth.errors.js';
+} from '../src/modules/auth/errors.js';
 import {
   RESET_PASSWORD_EMAIL_MESSAGE,
   RESET_PASSWORD_SUCCESS_MESSAGE,
-} from '../src/services/auth/auth.messages.js';
+} from '../src/modules/auth/messages.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
 import {
   createPasswordResetConfirmationTestDeps,

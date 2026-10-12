@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { toAuthHttpError } from '../src/controllers/auth.errors.js';
+import { toAuthHttpError } from '../src/modules/auth/http/errorMapper.js';
 import { HttpError } from '../src/errors/http.js';
 import { ObjectStorageUnavailableError } from '../src/lib/objectStorage.js';
 import {
@@ -13,7 +13,7 @@ import {
   PasswordResetStateChangedError,
   ProfileUpdateEmptyError,
   UserAlreadyExistsError,
-} from '../src/services/auth.errors.js';
+} from '../src/modules/auth/errors.js';
 import {
   UserMediaFileTooLargeError,
   UserMediaUnsupportedTypeError,

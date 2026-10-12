@@ -1,6 +1,6 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { HttpError } from '../errors/http.js';
-import type { AuthSessionValidationPort, ValidatedAuthSession } from '../services/auth.types.js';
+import type { AuthSessionValidationPort, ValidatedAuthSession } from '../modules/auth/index.js';
 
 export const AUTH_SESSION_REQUIRED_MESSAGE = 'Bearer session token is required';
 export const INVALID_AUTH_SESSION_MESSAGE = 'Invalid or expired session';

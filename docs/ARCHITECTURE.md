@@ -982,7 +982,7 @@ createAuthService({
 });
 ```
 
-The [createAuthService()](src/services/auth.service.ts) factory enables testing without a real database, SMTP server, or runtime dependencies.
+The [createAuthService()](../src/modules/auth/index.ts) factory enables testing without a real database, SMTP server, or runtime dependencies.
 
 ## Dependency injection
 
@@ -1077,9 +1077,47 @@ types, shared transactional authorization, role hierarchy, errors, and two HTTP 
 wiring. Admin response serializers build every public field explicitly, matching their response
 schemas even if a service result contains additional runtime properties.
 
-The `auth` domain still uses the earlier organization across controllers, services, and route files.
-Routes are assembled explicitly in `src/routes/registry.ts`; adding a domain module does not require
-automatic route discovery.
+## Auth domain
+
+Auth is the last application domain extracted under `src/modules`. Its public entry point,
+`src/modules/auth/index.ts`, composes the existing credential, session, account, media, and
+maintenance capabilities through `createAuthService`. It exports the complete `AuthService`, the
+HTTP-facing `AuthHttpPort`, and the narrower `AuthSessionValidationPort` and `AuthMaintenancePort`
+contracts. The runtime composition root remains `src/auth.instance.ts`; shared middleware receives
+the session-validation contract, the `/auth` HTTP module receives the HTTP contract, and the
+maintenance job receives only the maintenance contract.
+
+Business code is grouped under `credentials/`, `sessions/`, `account/`, `media/`, and
+`maintenance/`. Auth handlers, schemas, OpenAPI descriptions, response serializers, error mapping,
+and its router live under `http/`. `authHttpModule` is mounted directly at `/auth` by
+`src/routes/registry.ts`. The existing route and middleware order is part of the HTTP contract:
+session authentication runs before multipart parsing, and the account-operation guard encloses the
+entire streamed export response.
+
+Shared authentication middleware stays in `src/middleware/`. Other domains import the public Auth
+authorization primitives from their owning leaf modules: `roles.ts`, `errors.ts`, and
+`authorization.ts`. This keeps their runtime imports independent of Auth's HTTP composition.
+Generic Prisma error predicates live in `src/lib/prismaErrors.ts` and are shared by Auth, Comments,
+and Videos. Shared media processing, object storage, and external-resource reconciliation remain
+outside Auth; Auth media services adapt to those engines.
+
+Auth HTTP responses and streamed data exports use explicit field projections in
+`src/modules/auth/http/responses.ts`. A service result cannot add fields to the public DTO without
+an intentional serializer change. The generated `openapi.json` remains the snapshot of registered
+route descriptions; changes to paths, operation IDs, schemas, or documented statuses are API
+changes.
+
+Profile media upload processes the file, reserves an external-resource target, stores the object,
+then confirms the target and updates the user media record in a serializable transaction. Failed
+object writes and user-deletion races schedule the reserved target for absence and attempt immediate
+reconciliation; cleanup failures are logged while the primary operation error is preserved. The
+maintenance job retries due targets through the shared reconciliation engine.
+
+`userAccountOperationGuard` coordinates export and deletion per user until the response finishes
+or closes, including while an export stream is back-pressured. It uses an in-process guard and, when
+configured, a renewable Redis lease. If Redis is unavailable outside production, the in-process
+guard coordinates only this application process; cross-process exclusion is not provided in that
+fallback mode.
 
 ## Videos domain
 

@@ -11,7 +11,7 @@ import {
   PROFILE_MEDIA_UPLOAD_RATE_LIMIT_MESSAGE,
   VIDEO_COMMENT_MUTATION_RATE_LIMIT_MESSAGE,
 } from '../src/middleware/limiters.js';
-import type { AuthPorts } from '../src/services/auth.types.js';
+import type { AuthService } from '../src/modules/auth/index.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
@@ -41,7 +41,7 @@ const userIdForSessionKey = (sessionKey: string): string =>
     ? '22222222-2222-4222-8222-222222222222'
     : '11111111-1111-4111-8111-111111111111';
 
-const withTokenScopedUsers = (authService: AuthPorts): AuthPorts => ({
+const withTokenScopedUsers = (authService: AuthService): AuthService => ({
   ...authService,
   validateSession: async (sessionKey) => {
     const result = await authService.validateSession(sessionKey);
@@ -61,7 +61,7 @@ const withTokenScopedUsers = (authService: AuthPorts): AuthPorts => ({
 });
 
 const startAuthApp = async (
-  authService: AuthPorts,
+  authService: AuthService,
   videosService = createStubVideosService(),
   commentsService: CommentsPort = createStubCommentsService(),
 ): Promise<TestServer> => {

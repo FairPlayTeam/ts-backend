@@ -1,16 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
-import { createAuthService } from '../src/services/auth.service.js';
+import { createAuthService } from '../src/modules/auth/index.js';
 import {
   AccountBannedError,
   EmailNotVerifiedError,
   InvalidCredentialsError,
   UserAlreadyExistsError,
-} from '../src/services/auth.errors.js';
-import {
-  LOGIN_SUCCESS_MESSAGE,
-  REGISTER_SUCCESS_MESSAGE,
-} from '../src/services/auth/auth.messages.js';
+} from '../src/modules/auth/errors.js';
+import { LOGIN_SUCCESS_MESSAGE, REGISTER_SUCCESS_MESSAGE } from '../src/modules/auth/messages.js';
 import {
   SESSION_DEVICE_INFO_MAX_LENGTH,
   SESSION_IP_ADDRESS_MAX_LENGTH,

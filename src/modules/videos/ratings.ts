@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { isPrismaForeignKeyConstraintError } from '../../services/auth/auth.prismaErrors.js';
+import { isPrismaForeignKeyConstraintError } from '../../lib/prismaErrors.js';
 import {
   getSerializableTransactionRetryDelayMs,
   isSerializableTransactionConflictError,

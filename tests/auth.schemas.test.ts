@@ -12,7 +12,7 @@ import {
   userSessionsSchema,
   userSessionsResponseSchema,
   verifyEmailSchema,
-} from '../src/controllers/auth.schemas.js';
+} from '../src/modules/auth/http/schemas/index.js';
 import {
   SESSION_DEVICE_INFO_MAX_LENGTH,
   SESSION_IP_ADDRESS_MAX_LENGTH,
@@ -21,7 +21,7 @@ import {
 import {
   DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
-} from '../src/services/auth/auth.messages.js';
+} from '../src/modules/auth/messages.js';
 
 const validRegisterBody = {
   email: 'user@example.com',

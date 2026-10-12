@@ -14,7 +14,7 @@ import {
   createRouteProtector,
 } from '../src/middleware/routeProtection.js';
 import { HttpError } from '../src/errors/http.js';
-import { ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE } from '../src/services/auth/auth.messages.js';
+import { ALREADY_AUTHENTICATED_PASSWORD_RESET_MESSAGE } from '../src/modules/auth/messages.js';
 
 const sessionResult = {
   user: {

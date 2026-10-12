@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { createAuthService } from '../src/services/auth.service.js';
-import { InvalidCredentialsError } from '../src/services/auth.errors.js';
+import { createAuthService } from '../src/modules/auth/index.js';
+import { InvalidCredentialsError } from '../src/modules/auth/errors.js';
 import {
   LOGOUT_ALL_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_SESSION_SUCCESS_MESSAGE,
-} from '../src/services/auth/auth.messages.js';
+} from '../src/modules/auth/messages.js';
 import { createDefaultAuthPrisma, createTestDeps, fixedNow } from './support/authService.js';
 import type { AuthDeps } from './support/authService.js';
 

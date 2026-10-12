@@ -1,4 +1,4 @@
-import type { AuthRole } from '../../../services/auth.roles.js';
+import type { AuthRole } from '../../auth/index.js';
 import type { AdminAccountBanStatus } from './filters.js';
 
 export type ListAdminAccountsInput = {

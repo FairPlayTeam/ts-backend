@@ -1,4 +1,4 @@
-import type { AuthRole } from '../../services/auth.roles.js';
+import type { AuthRole } from '../auth/roles.js';
 import type { PublicProfileIdentity } from '../profiles/types.js';
 
 export type CommentAuthor = PublicProfileIdentity;

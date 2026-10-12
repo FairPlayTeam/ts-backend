@@ -16,11 +16,11 @@ import {
   RESET_PASSWORD_EMAIL_MESSAGE,
   RESET_PASSWORD_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
-} from '../../src/services/auth/auth.messages.js';
+} from '../../src/modules/auth/messages.js';
 import {
   EMAIL_NOT_VERIFIED_MESSAGE,
   INVALID_CREDENTIALS_MESSAGE,
-} from '../../src/services/auth.errors.js';
+} from '../../src/modules/auth/errors.js';
 import { REGISTRATION_IDENTIFIER_RATE_LIMIT_MAX } from '../../src/config/constants.js';
 import { createVideoPublicId } from '../../src/modules/videos/shared/publicId.js';
 import { createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
@@ -389,6 +389,51 @@ describe('auth integration', () => {
     } finally {
       await observedPrisma.$disconnect();
     }
+  });
+
+  test('cannot list or revoke a session owned by another user', async () => {
+    if (!runtime) {
+      throw new Error('Integration runtime was not started');
+    }
+
+    const owner = await createVerifiedSession(runtime, {
+      email: 'session-owner@example.com',
+      username: 'session_owner',
+    });
+    const otherUser = await createVerifiedSession(runtime, {
+      email: 'session-other@example.com',
+      username: 'session_other',
+    });
+    const otherSession = await runtime.prisma.session.findFirstOrThrow({
+      where: { userId: otherUser.userId },
+      select: { id: true, isActive: true },
+    });
+    const app = await createIntegrationApp(runtime);
+
+    await request(app)
+      .get('/auth/sessions')
+      .set('Authorization', `Bearer ${owner.sessionKey}`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.sessions).toHaveLength(1);
+        expect(response.body.sessions[0].id).not.toBe(otherSession.id);
+      });
+
+    await request(app)
+      .delete(`/auth/sessions/${otherSession.id}`)
+      .set('Authorization', `Bearer ${owner.sessionKey}`)
+      .expect(200)
+      .expect({
+        message: 'Session logged out successfully',
+        sessionsLoggedOut: 0,
+      });
+
+    await expect(
+      runtime.prisma.session.findUniqueOrThrow({
+        where: { id: otherSession.id },
+        select: { isActive: true },
+      }),
+    ).resolves.toEqual({ isActive: true });
   });
 
   test('shares auth rate limits across two app instances through Redis', async () => {

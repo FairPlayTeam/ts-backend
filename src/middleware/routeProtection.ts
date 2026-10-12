@@ -5,10 +5,11 @@ import {
   createRejectAuthenticatedSession,
   type AuthenticatedRequest,
 } from './auth.js';
-import type { AuthRole, AuthSessionValidationPort } from '../services/auth.types.js';
-import { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../services/auth.errors.js';
+import type { AuthSessionValidationPort } from '../modules/auth/index.js';
+import type { AuthRole } from '../modules/auth/roles.js';
+import { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../modules/auth/errors.js';
 
-export { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../services/auth.errors.js';
+export { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../modules/auth/errors.js';
 
 const ROUTE_PROTECTION_MISCONFIGURED_MESSAGE = 'Route protection misconfigured';
 

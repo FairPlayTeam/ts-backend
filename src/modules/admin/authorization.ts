@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
-import type { AuthRole } from '../../services/auth.roles.js';
+import type { AuthRole } from '../auth/roles.js';
 import { AdminActorForbiddenError } from './errors.js';
-import { lockUserAuthorizationState } from '../../services/auth/auth.userAuthorization.js';
+import { lockUserAuthorizationState } from '../auth/authorization.js';
 
 export const ADMIN_ONLY_ROLES = ['admin'] as const satisfies readonly AuthRole[];
 export const MODERATION_ROLES = ['moderator', 'admin'] as const satisfies readonly AuthRole[];

@@ -1,6 +1,6 @@
 import { z } from '../../../../docs/zod.js';
 import { BAN_REASON_MAX_LENGTH } from '../../../../config/constants.js';
-import { AUTH_ROLES } from '../../../../services/auth.roles.js';
+import { AUTH_ROLES } from '../../../auth/roles.js';
 import {
   BAN_ACCOUNT_SUCCESS_MESSAGE,
   UNBAN_ACCOUNT_SUCCESS_MESSAGE,

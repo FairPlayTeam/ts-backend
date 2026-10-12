@@ -2,7 +2,7 @@ import { Router, type RequestHandler } from 'express';
 import { createSingleFileUpload } from '../../../middleware/upload.js';
 import { createRouteProtector } from '../../../middleware/routeProtection.js';
 import { validate } from '../../../middleware/validation.js';
-import type { AuthSessionValidationPort } from '../../../services/auth.types.js';
+import type { AuthSessionValidationPort } from '../../auth/index.js';
 import type { VideoUploadsPort } from '../types.js';
 import { createVideoUploadsHandlers } from './handlers.js';
 import * as schemas from './schemas.js';

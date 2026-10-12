@@ -81,7 +81,7 @@ Run the migrator image once per release. Start the API with `RUNTIME_ROLE=api` a
 `RUNTIME_ROLE=transcoder` and one slot. The API image does not contain FFmpeg. The worker image has
 no Docker HTTP healthcheck and does not bind a port. The initial no-orchestrator DL360 deployment
 uses the example [systemd units](deploy/systemd); its resource budget and temporary-filesystem setup
-are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
+are documented in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 Production requires shared cloud PostgreSQL, Redis (API only), and S3-compatible object storage,
 SMTP configuration for the API, and a strong `RATE_LIMIT_KEY_SECRET`.
@@ -98,7 +98,7 @@ provider credentials in protected deployment environment files or secret manager
 Cloudflare Tunnel deployments should prefer `TRUST_PROXY=loopback` when `cloudflared` forwards to
 the backend over `127.0.0.1:3000`. Use `/health/ready` for origin health checks.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the deployment model and
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for the deployment model and
 [CONTRIBUTING.md](CONTRIBUTING.md) for the environment variables.
 
 ## Notes

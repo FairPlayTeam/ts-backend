@@ -27,7 +27,7 @@ import {
 } from '../../../src/lib/objectStorage.js';
 import { closeRedisClient, connectRedisClient, createRedisClient } from '../../../src/lib/redis.js';
 import { createAdminService } from '../../../src/modules/admin/index.js';
-import { createAuthService } from '../../../src/services/auth.service.js';
+import { createAuthService } from '../../../src/modules/auth/index.js';
 import {
   createExternalResourceReconciler,
   type ExternalResourceReconciler,
@@ -56,7 +56,7 @@ import {
   type VideoUploadsPort,
 } from '../../../src/modules/videoUploads/index.js';
 import type { AdminService } from '../../../src/modules/admin/index.js';
-import type { AuthPorts } from '../../../src/services/auth.types.js';
+import type { AuthService } from '../../../src/modules/auth/index.js';
 import type { VideosService } from '../../../src/modules/videos/index.js';
 import type { VideoTranscodingMaintenancePort } from '../../../src/modules/videoTranscoding/index.js';
 import type { ObjectStorageConfig } from '../../../src/config/env.schema.js';
@@ -122,7 +122,7 @@ export type TestRuntime = {
   userMediaExternalResources: ExternalResourceReconciler;
   videoExternalResources: ExternalResourceReconciler;
   adminService: AdminService;
-  authService: AuthPorts;
+  authService: AuthService;
   profilesService: ProfilesPort;
   commentsService: CommentsPort;
   videosService: VideosService;
@@ -196,7 +196,7 @@ export const createIntegrationAuthService = (
   }: {
     afterPasswordCompare?: () => Promise<void>;
   } = {},
-): AuthPorts =>
+): AuthService =>
   createAuthService({
     prisma,
     isUniqueError: (err): boolean =>
@@ -445,7 +445,7 @@ export const createIntegrationVideoTranscodingMaintenance = (
 export const createIntegrationApp = async (
   runtime: TestRuntime,
   overrides: {
-    authService?: AuthPorts;
+    authService?: AuthService;
     commentsService?: CommentsPort;
     videosService?: VideosService;
     videoUploadsService?: VideoUploadsPort;

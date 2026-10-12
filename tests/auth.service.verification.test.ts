@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { createAuthService } from '../src/services/auth.service.js';
+import { createAuthService } from '../src/modules/auth/index.js';
 import {
   AccountBannedError,
   InvalidEmailVerificationTokenError,
-} from '../src/services/auth.errors.js';
+} from '../src/modules/auth/errors.js';
 import {
   RESEND_VERIFICATION_EMAIL_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
-} from '../src/services/auth/auth.messages.js';
+} from '../src/modules/auth/messages.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
 import { createDefaultAuthPrisma, createTestDeps, fixedNow } from './support/authService.js';
 import type { AuthDeps } from './support/authService.js';

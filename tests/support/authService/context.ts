@@ -1,4 +1,4 @@
-import type { createAuthService } from '../../../src/services/auth.service.js';
+import type { createAuthService } from '../../../src/modules/auth/index.js';
 
 export type AuthDeps = Parameters<typeof createAuthService>[0];
 

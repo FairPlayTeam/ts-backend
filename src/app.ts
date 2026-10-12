@@ -16,7 +16,7 @@ import type { Config } from './config/env.js';
 import { ALL_CORS_ORIGINS } from './config/env.schema.js';
 import type { RedisClient } from './lib/redis.js';
 import type { AdminService } from './modules/admin/index.js';
-import type { AuthRoutePort } from './services/auth.types.js';
+import type { AuthHttpPort, AuthSessionValidationPort } from './modules/auth/index.js';
 import type { ProfilesPort } from './modules/profiles/index.js';
 import type { CommentsPort } from './modules/comments/index.js';
 import type { VideosRoutePort } from './modules/videos/index.js';
@@ -29,7 +29,7 @@ import {
 import {
   RESEND_VERIFICATION_EMAIL_MESSAGE,
   RESET_PASSWORD_EMAIL_MESSAGE,
-} from './services/auth/auth.messages.js';
+} from './modules/auth/index.js';
 import { httpRouteDocs, httpRouteModules } from './routes/registry.js';
 
 type CreateAppConfig = Pick<
@@ -45,7 +45,7 @@ type CreateAppConfig = Pick<
 
 type CreateAppDependencies = {
   adminService: AdminService;
-  authService: AuthRoutePort;
+  authService: AuthHttpPort & AuthSessionValidationPort;
   profilesService: ProfilesPort;
   commentsService: CommentsPort;
   videosService: VideosRoutePort;

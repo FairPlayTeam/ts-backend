@@ -9,10 +9,10 @@ import {
 import {
   LOGOUT_SESSION_ID_INVALID_MESSAGE,
   USER_SESSIONS_CURSOR_PAIR_MESSAGE,
-} from '../src/controllers/auth.schemas.js';
+} from '../src/modules/auth/http/schemas/index.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
-import { PROFILE_UPDATE_EMPTY_MESSAGE } from '../src/services/auth.errors.js';
+import { PROFILE_UPDATE_EMPTY_MESSAGE } from '../src/modules/auth/errors.js';
 import {
   RESET_PASSWORD_IDENTIFIER_RATE_LIMIT_MESSAGE,
   VERIFY_EMAIL_IDENTIFIER_RATE_LIMIT_MESSAGE,
@@ -34,7 +34,7 @@ import {
   UPLOAD_AVATAR_SUCCESS_MESSAGE,
   UPLOAD_BANNER_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
-} from '../src/services/auth/auth.messages.js';
+} from '../src/modules/auth/messages.js';
 import {
   UPLOAD_FILE_TOO_LARGE_MESSAGE,
   UPLOAD_INVALID_REQUEST_MESSAGE,

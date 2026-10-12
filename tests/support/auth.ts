@@ -1,4 +1,4 @@
-import type { AuthPorts } from '../../src/services/auth.types.js';
+import type { AuthService } from '../../src/modules/auth/index.js';
 import {
   CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
   RECONCILE_USER_MEDIA_TARGETS_SUCCESS_MESSAGE,
@@ -18,7 +18,7 @@ import {
   UPLOAD_BANNER_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
   DELETE_AVATAR_SUCCESS_MESSAGE,
-} from '../../src/services/auth/auth.messages.js';
+} from '../../src/modules/auth/messages.js';
 
 const sessionResult = {
   message: LOGIN_SUCCESS_MESSAGE,
@@ -167,7 +167,7 @@ const userDataExportResult = {
   passwordResetToken: null,
 };
 
-export const createStubAuthService = (): AuthPorts => ({
+export const createStubAuthService = (): AuthService => ({
   register: async () => ({
     message: REGISTER_SUCCESS_MESSAGE,
   }),

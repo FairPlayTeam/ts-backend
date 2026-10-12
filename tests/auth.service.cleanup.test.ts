@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { createAuthService } from '../src/services/auth.service.js';
+import { createAuthService } from '../src/modules/auth/index.js';
 import {
   CLEANUP_EXPIRED_AUTH_TOKENS_SUCCESS_MESSAGE,
   RECONCILE_USER_MEDIA_TARGETS_SUCCESS_MESSAGE,
   CLEANUP_SESSION_SUCCESS_MESSAGE,
-} from '../src/services/auth/auth.messages.js';
+} from '../src/modules/auth/messages.js';
 import { createTestDeps } from './support/authService.js';
 
 describe('auth service cleanup', () => {

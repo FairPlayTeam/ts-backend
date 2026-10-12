@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { NextFunction, Request, Response } from 'express';
-import { createAuthController } from '../src/controllers/auth.controller.js';
+import { createAuthController } from '../src/modules/auth/http/handlers/index.js';
 import type { AuthenticatedRequest } from '../src/middleware/auth.js';
 import type {
   LoginRequestBody,
@@ -11,9 +11,9 @@ import type {
   UpdateProfileRequestBody,
   UserSessionsQuery,
   VerifyEmailRequestBody,
-} from '../src/controllers/auth.schemas.js';
+} from '../src/modules/auth/http/schemas/index.js';
 import { HttpError } from '../src/errors/http.js';
-import { UserAlreadyExistsError } from '../src/services/auth.errors.js';
+import { UserAlreadyExistsError } from '../src/modules/auth/errors.js';
 import {
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
   DELETE_AVATAR_SUCCESS_MESSAGE,
@@ -30,8 +30,8 @@ import {
   UPLOAD_AVATAR_SUCCESS_MESSAGE,
   UPLOAD_BANNER_SUCCESS_MESSAGE,
   VERIFY_EMAIL_SUCCESS_MESSAGE,
-} from '../src/services/auth/auth.messages.js';
-import type { AuthControllerPort } from '../src/services/auth.types.js';
+} from '../src/modules/auth/messages.js';
+import type { AuthHttpPort } from '../src/modules/auth/index.js';
 
 const registerBody: RegisterRequestBody = {
   email: 'user@example.com',
@@ -224,7 +224,7 @@ const userDataExportResult = {
   passwordResetToken: null,
 };
 
-type ControllerAuthService = AuthControllerPort;
+type ControllerAuthService = AuthHttpPort;
 
 const createControllerAuthService = (
   overrides: Partial<ControllerAuthService> = {},

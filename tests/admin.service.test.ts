@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
 import type { AdminDependencies } from '../src/modules/admin/dependencies.js';
-import type { AuthRole } from '../src/services/auth.roles.js';
+import type { AuthRole } from '../src/modules/auth/index.js';
 import { createAdminService } from '../src/modules/admin/index.js';
 import {
   AdminAccountAlreadyBannedError,

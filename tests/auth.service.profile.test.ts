@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
-import { createAuthService } from '../src/services/auth.service.js';
+import { createAuthService } from '../src/modules/auth/index.js';
 import {
   AuthenticatedUserNotFoundError,
   ProfileUpdateEmptyError,
-} from '../src/services/auth.errors.js';
-import { UPDATE_PROFILE_SUCCESS_MESSAGE } from '../src/services/auth/auth.messages.js';
+} from '../src/modules/auth/errors.js';
+import { UPDATE_PROFILE_SUCCESS_MESSAGE } from '../src/modules/auth/messages.js';
 import { createTestDeps } from './support/authService.js';
 import type { AuthDeps } from './support/authService.js';
 

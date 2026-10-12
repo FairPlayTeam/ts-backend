@@ -1,4 +1,4 @@
-import type { AuthRole } from '../../../src/services/auth.roles.js';
+import type { AuthRole } from '../../../src/modules/auth/index.js';
 import { waitForPostgresLockWaiters } from './postgresLocks.js';
 import { createPrismaClient, type TestRuntime } from './runtime.js';
 

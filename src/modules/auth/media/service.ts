@@ -1,0 +1,93 @@
+import type {
+  AuthProfileMediaPort,
+  DeleteUserMediaInput,
+  UploadUserMediaInput,
+  UserMediaAssetResult,
+} from './types.js';
+import type { AuthDependencies } from '../dependencies.js';
+import {
+  DELETE_AVATAR_SUCCESS_MESSAGE,
+  DELETE_BANNER_SUCCESS_MESSAGE,
+  UPLOAD_AVATAR_SUCCESS_MESSAGE,
+  UPLOAD_BANNER_SUCCESS_MESSAGE,
+} from '../messages.js';
+import { deleteUserMediaAsset, toUserMediaAssetResult, uploadUserMediaAsset } from './storage.js';
+import type { UserMediaKind } from '../../../services/userMedia/userMedia.types.js';
+
+type ProfileMediaService = Pick<
+  AuthProfileMediaPort,
+  'uploadAvatar' | 'deleteAvatar' | 'uploadBanner' | 'deleteBanner'
+>;
+
+type UploadProfileMediaInput = {
+  userId: string;
+  kind: UserMediaKind;
+  file: UploadUserMediaInput['file'];
+};
+
+const uploadProfileMedia = async (
+  deps: AuthDependencies,
+  { userId, kind, file }: UploadProfileMediaInput,
+): Promise<UserMediaAssetResult> => {
+  const asset = await uploadUserMediaAsset(deps, {
+    userId,
+    kind,
+    file,
+  });
+
+  return toUserMediaAssetResult(asset, kind);
+};
+
+const deleteProfileMedia = async (
+  deps: AuthDependencies,
+  userId: string,
+  kind: UserMediaKind,
+): Promise<void> => {
+  await deleteUserMediaAsset(deps, userId, kind);
+};
+
+export const createProfileMediaService = (deps: AuthDependencies): ProfileMediaService => ({
+  async uploadAvatar({ userId, file }: UploadUserMediaInput) {
+    const avatar = await uploadProfileMedia(deps, {
+      userId,
+      kind: 'avatar',
+      file,
+    });
+
+    return {
+      message: UPLOAD_AVATAR_SUCCESS_MESSAGE,
+      avatar,
+    };
+  },
+
+  async deleteAvatar({ userId }: DeleteUserMediaInput) {
+    await deleteProfileMedia(deps, userId, 'avatar');
+
+    return {
+      message: DELETE_AVATAR_SUCCESS_MESSAGE,
+      avatar: null,
+    };
+  },
+
+  async uploadBanner({ userId, file }: UploadUserMediaInput) {
+    const banner = await uploadProfileMedia(deps, {
+      userId,
+      kind: 'banner',
+      file,
+    });
+
+    return {
+      message: UPLOAD_BANNER_SUCCESS_MESSAGE,
+      banner,
+    };
+  },
+
+  async deleteBanner({ userId }: DeleteUserMediaInput) {
+    await deleteProfileMedia(deps, userId, 'banner');
+
+    return {
+      message: DELETE_BANNER_SUCCESS_MESSAGE,
+      banner: null,
+    };
+  },
+});

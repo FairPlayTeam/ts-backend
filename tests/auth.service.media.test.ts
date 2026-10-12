@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
-import { createAuthService } from '../src/services/auth.service.js';
+import { createAuthService } from '../src/modules/auth/index.js';
 import {
   DELETE_AVATAR_SUCCESS_MESSAGE,
   DELETE_BANNER_SUCCESS_MESSAGE,
   UPLOAD_AVATAR_SUCCESS_MESSAGE,
   UPLOAD_BANNER_SUCCESS_MESSAGE,
-} from '../src/services/auth/auth.messages.js';
-import { AuthenticatedUserNotFoundError } from '../src/services/auth.errors.js';
+} from '../src/modules/auth/messages.js';
+import { AuthenticatedUserNotFoundError } from '../src/modules/auth/errors.js';
 import {
   avatarObjectKeyPattern,
   bannerObjectKeyPattern,

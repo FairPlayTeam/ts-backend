@@ -10,7 +10,7 @@ import {
 } from './config/constants.js';
 import { sendVerificationEmail, sendPasswordResetEmail } from './mailer.instance.js';
 import { logger } from './lib/logger.js';
-import { createAuthService } from './services/auth.service.js';
+import { createAuthService } from './modules/auth/index.js';
 import { objectStorage } from './objectStorage.instance.js';
 import { createUnavailableObjectStorage } from './lib/objectStorage.js';
 import { createUserMediaProcessor } from './services/userMedia/userMedia.processor.js';
