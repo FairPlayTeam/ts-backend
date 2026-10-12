@@ -1,6 +1,6 @@
 import { HttpError } from '../../../errors/http.js';
 import { ObjectStorageUnavailableError } from '../../../lib/objectStorage.js';
-import { VIDEO_NOT_FOUND_MESSAGE, VideoNotFoundError } from '../../../services/videos.errors.js';
+import { VIDEO_NOT_FOUND_MESSAGE, VideoNotFoundError } from '../../videos/shared/errors.js';
 import {
   ActiveVideoUploadSessionExistsError,
   InvalidVideoUploadSessionStateError,

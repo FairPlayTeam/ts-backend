@@ -22,7 +22,7 @@ import {
   INVALID_CREDENTIALS_MESSAGE,
 } from '../../src/services/auth.errors.js';
 import { REGISTRATION_IDENTIFIER_RATE_LIMIT_MAX } from '../../src/config/constants.js';
-import { createVideoPublicId } from '../../src/services/videos/videoPublicId.js';
+import { createVideoPublicId } from '../../src/modules/videos/shared/publicId.js';
 import { createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import {
   AUTH_CODE_PEPPER,

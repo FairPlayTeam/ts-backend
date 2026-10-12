@@ -1,11 +1,9 @@
-import type { VideoLicense } from '../videoLicenses.js';
-import type { ProfilesPort } from '../../../modules/profiles/index.js';
+import type { VideoLicense } from './shared/licenses.js';
+import type { PublicProfileIdentity as ProfilesPublicProfileIdentity } from '../profiles/types.js';
 
 export type VideoVisibility = 'public' | 'unlisted';
 
-type PublicProfile = Awaited<ReturnType<ProfilesPort['getPublicProfile']>>['profile'];
-
-export type PublicProfileIdentity = Pick<PublicProfile, 'avatarUrl' | 'displayName' | 'username'>;
+export type PublicProfileIdentity = ProfilesPublicProfileIdentity;
 
 export type VideoProcessingStatus =
   'draft' | 'uploading' | 'queued' | 'processing' | 'ready' | 'failed';
@@ -37,7 +35,7 @@ export type MyVideo = CreatedVideo & {
 
 export type VideoPaginationCursor = {
   createdAt: Date;
-  id: string;
+  publicId: string;
 };
 
 export type PublicVideoCursor = {
@@ -243,3 +241,5 @@ export type VideoLifecycleMaintenancePort = {
 };
 
 export type VideosService = VideosRoutePort & VideoLifecycleMaintenancePort;
+
+export type PublicProfileVideosPort = Pick<VideosRoutePort, 'listPublicProfileVideos'>;

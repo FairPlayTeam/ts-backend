@@ -13,7 +13,7 @@ import { ObjectStorageUnavailableError } from '../../src/lib/objectStorage.js';
 import { OperationTimeoutError } from '../../src/lib/operationMetrics.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
 import { UPLOAD_AVATAR_SUCCESS_MESSAGE } from '../../src/services/auth/auth.messages.js';
-import type { VideosService } from '../../src/services/videos.types.js';
+import type { VideosService } from '../../src/modules/videos/index.js';
 import {
   EXPECTED_FOLLOW_PROFILE_SUCCESS_MESSAGE,
   EXPECTED_INVALID_FOLLOWING_PROFILES_CURSOR_MESSAGE,

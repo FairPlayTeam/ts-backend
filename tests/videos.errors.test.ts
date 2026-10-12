@@ -5,7 +5,7 @@ import {
   VideoUploadSessionNotFoundError,
 } from '../src/modules/videoUploads/errors.js';
 import { toVideoUploadsHttpError } from '../src/modules/videoUploads/http/errorMapper.js';
-import { VideoNotFoundError } from '../src/services/videos.errors.js';
+import { VideoNotFoundError } from '../src/modules/videos/shared/errors.js';
 
 describe('video uploads error mapping', () => {
   test('maps transcode admission rejection to one generic retryable response', () => {

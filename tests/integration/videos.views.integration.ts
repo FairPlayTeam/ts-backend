@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { recordVideoView } from '../../src/services/videos/videoViews.js';
+import { recordVideoView } from '../../src/modules/videos/catalog.js';
 import { createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import {
   coordinateGatedOperations,

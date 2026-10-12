@@ -1,9 +1,5 @@
 import { Prisma } from '@prisma/client';
-import type {
-  VideoModerationStatus,
-  VideoProcessingStatus,
-  VideoVisibility,
-} from './types/ports.types.js';
+import type { VideoModerationStatus, VideoProcessingStatus, VideoVisibility } from '../types.js';
 
 type VideoEngagementState = {
   deletionRequestedAt: Date | null;

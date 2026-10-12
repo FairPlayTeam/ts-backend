@@ -20,7 +20,7 @@ import { CommentNotFoundError } from '../src/modules/comments/errors.js';
 import {
   readableVideoWhere,
   writableVideoEngagementWhere,
-} from '../src/services/videos/videoReadability.js';
+} from '../src/modules/videos/shared/readability.js';
 
 test('video comment schemas normalize bounded plain text and validate reply targets', () => {
   expect(createCommentBodySchema.parse({ content: '  hello  ' })).toEqual({

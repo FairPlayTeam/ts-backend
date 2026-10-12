@@ -3,7 +3,7 @@ import { usernameSchema } from '../../../controllers/shared/user.schemas.js';
 import { FOLLOW_PROFILE_SUCCESS_MESSAGE, UNFOLLOW_PROFILE_SUCCESS_MESSAGE } from '../constants.js';
 import { relativeAssetPathSchema } from '../../../controllers/shared/asset.schemas.js';
 import { publicProfileIdentityResponseSchema } from '../../../controllers/shared/profile.schemas.js';
-import { publicVideosQuerySchema } from '../../../controllers/videos/schemas/video.schemas.js';
+import { publicVideosQuerySchema } from '../../videos/index.js';
 import { FOLLOWING_PROFILES_CURSOR_MAX_LENGTH } from '../followingCursor.js';
 
 export const publicProfileParamsSchema = z

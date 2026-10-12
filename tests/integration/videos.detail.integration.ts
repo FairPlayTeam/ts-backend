@@ -651,20 +651,23 @@ describe('public video detail integration', () => {
         .expect(201);
       const created = createResponse.body.video as {
         allowComments: boolean;
-        id: string;
         publicId: string;
       };
 
       expect(created.allowComments).toBe(testCase.expected);
+      const storedVideo = await runtime.prisma.video.findUniqueOrThrow({
+        where: { publicId: created.publicId },
+        select: { id: true },
+      });
 
       const source = await uploadVideoSource(runtime.videoUploadsService, {
         body: Buffer.from(`source for ${testCase.title}`),
         userId: owner.userId,
-        videoId: created.id,
+        videoId: storedVideo.id,
       });
       const job = await runtime.prisma.videoTranscodeJob.findFirstOrThrow({
         where: {
-          videoId: created.id,
+          videoId: storedVideo.id,
           sourceObjectKey: source.uploadSession.objectKey,
         },
         select: { id: true },
@@ -675,10 +678,10 @@ describe('public video detail integration', () => {
         state: 'active',
         transcodeJobId: job.id,
         userId: owner.userId,
-        videoId: created.id,
+        videoId: storedVideo.id,
       });
       await runtime.prisma.video.update({
-        where: { id: created.id },
+        where: { id: storedVideo.id },
         data: {
           activeArtifactGenerationId: generation.generationId,
           hlsMasterObjectKey: generation.manifest.master.objectKey,
@@ -701,7 +704,7 @@ describe('public video detail integration', () => {
 
       const [persisted, detail] = await Promise.all([
         runtime.prisma.video.findUniqueOrThrow({
-          where: { id: created.id },
+          where: { id: storedVideo.id },
           select: { allowComments: true },
         }),
         request(app).get(`/videos/${created.publicId}`).expect(200),

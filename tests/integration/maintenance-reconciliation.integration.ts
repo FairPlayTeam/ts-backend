@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjectKeys.js';
-import { createVideoHlsGenerationToken } from '../../src/services/videos/videoHls.js';
+import { buildVideoArtifactManifest } from '../../src/modules/videos/shared/objectKeys.js';
+import { createVideoHlsGenerationToken } from '../../src/modules/videos/shared/hls.js';
 import { createObjectStorage, ObjectStorageUnavailableError } from '../../src/lib/objectStorage.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
 import { createVideoArtifactReconciliationHandlers } from '../../src/modules/videoTranscoding/index.js';

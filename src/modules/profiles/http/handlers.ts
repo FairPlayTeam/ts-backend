@@ -17,19 +17,19 @@ import type {
   AuthenticatedRequest,
   OptionallyAuthenticatedRequest,
 } from '../../../middleware/auth.js';
-import type { VideosRoutePort } from '../../../services/videos.types.js';
+import type { PublicProfileVideosPort } from '../../videos/index.js';
+import { toPublicVideosResponse } from '../../videos/index.js';
 import type { ProfilesPort } from '../types.js';
 import {
   toFollowingProfilesResponse,
   toFollowPublicProfileResponse,
   toPublicProfileResponse,
 } from './responses.js';
-import { toPublicVideosResponse } from '../../../controllers/videos/videos.responses.js';
 import { mapHandlerErrors } from '../../../shared/http/mapHandlerErrors.js';
 
 type ProfilesControllerDependencies = {
   profilesService: ProfilesPort;
-  videosService: Pick<VideosRoutePort, 'listPublicProfileVideos'>;
+  videosService: PublicProfileVideosPort;
 };
 
 type GetPublicProfileRequest = Request<GetPublicProfileParams>;

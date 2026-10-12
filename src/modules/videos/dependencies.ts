@@ -1,6 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import type { ObjectStorage } from '../../lib/objectStorage.js';
-import type { VideoPublicIdGenerator } from './videoPublicId.js';
+import type { VideoPublicIdGenerator } from './shared/publicId.js';
 
 type Prisma = Pick<
   PrismaClient,

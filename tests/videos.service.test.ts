@@ -3,13 +3,13 @@ import { prisma } from '../src/lib/prisma.js';
 import { logger } from '../src/lib/logger.js';
 import { createUnavailableObjectStorage } from '../src/lib/objectStorage.js';
 import { videoObjectStorage } from '../src/objectStorage.instance.js';
-import { createVideosService } from '../src/services/videos.service.js';
-import { VideoNotFoundError } from '../src/services/videos.errors.js';
+import { createVideosService } from '../src/modules/videos/index.js';
+import { VideoNotFoundError } from '../src/modules/videos/shared/errors.js';
 import {
   createVideoPublicId,
   VIDEO_PUBLIC_ID_PATTERN,
-} from '../src/services/videos/videoPublicId.js';
-import type { VideosDependencies } from '../src/services/videos/videos.dependencies.js';
+} from '../src/modules/videos/shared/publicId.js';
+import type { VideosDependencies } from '../src/modules/videos/dependencies.js';
 
 describe('video identifiers', () => {
   test('generates v1-compatible short public ids', () => {

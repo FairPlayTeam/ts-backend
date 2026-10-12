@@ -1,11 +1,13 @@
 import { z } from '../../../docs/zod.js';
+import { VIDEO_PUBLIC_ID_PATTERN } from '../../videos/shared/publicId.js';
 
 const partNumberSchema = z.number().int().min(1).max(10_000).openapi({ example: 1 });
 
 export const videoParamsSchema = z
   .object({
-    videoId: z.string().uuid('Video id must be a valid UUID').openapi({
-      example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
+    publicId: z.string().regex(VIDEO_PUBLIC_ID_PATTERN, 'Public video id must be valid').openapi({
+      description: 'Public video identifier; internal video UUIDs are not accepted.',
+      example: 'AbCdEf123_',
     }),
   })
   .strict()
@@ -107,7 +109,7 @@ const videoUploadPartResponseSchema = z.object({
 
 const videoUploadSessionResponseBodySchema = z.object({
   id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
-  videoId: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
+  publicId: z.string().regex(VIDEO_PUBLIC_ID_PATTERN).openapi({ example: 'AbCdEf123_' }),
   status: z
     .enum([
       'initializing',

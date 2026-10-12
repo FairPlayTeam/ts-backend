@@ -2,7 +2,7 @@ import type {
   VideoModerationStatus,
   VideoProcessingStatus,
   VideoVisibility,
-} from '../../videos.types.js';
+} from '../../../modules/videos/index.js';
 
 export type AdminVideoSort = 'newest' | 'oldest';
 export type VideoDeletionOrigin = 'moderator' | 'admin';

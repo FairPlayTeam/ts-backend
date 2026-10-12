@@ -181,7 +181,7 @@ to `true` and is fixed for that video at creation in this API version; there is 
 comment-settings route.
 
 Before completing a multipart source session, a client may upload or replace an optional thumbnail
-with `PUT /videos/:videoId/upload/multipart/:uploadSessionId/thumbnail` using the multipart field
+with `PUT /videos/:publicId/upload/multipart/:uploadSessionId/thumbnail` using the multipart field
 `thumbnail`. JPEG, PNG, and WebP inputs are signature-validated and normalized to a center-cropped
 1280x720 WebP. Only a thumbnail already confirmed when `complete` freezes the source is used; an
 in-flight thumbnail is discarded through reconciliation and transcoding falls back to the

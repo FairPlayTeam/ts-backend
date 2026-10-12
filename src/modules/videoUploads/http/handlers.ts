@@ -42,13 +42,21 @@ export const createVideoUploadsHandlers = ({
     async (req, res) => {
       const authenticatedReq = req as AuthenticatedRequest;
       const uploadReq = req as InitUploadRequest;
+      const videoId = await videoUploadsService.resolveOwnedVideoId({
+        userId: authenticatedReq.user.id,
+        publicId: uploadReq.params.publicId,
+      });
       const result = await videoUploadsService.initMultipartUpload({
         userId: authenticatedReq.user.id,
-        videoId: uploadReq.params.videoId,
+        videoId,
         sizeBytes: uploadReq.body.sizeBytes,
       });
 
-      return sendNoStoreJson(res, 201, toVideoUploadSessionResponse(result));
+      return sendNoStoreJson(
+        res,
+        201,
+        toVideoUploadSessionResponse(result, uploadReq.params.publicId),
+      );
     },
   );
 
@@ -57,9 +65,13 @@ export const createVideoUploadsHandlers = ({
     async (req, res) => {
       const authenticatedReq = req as AuthenticatedRequest;
       const signReq = req as SignPartsRequest;
+      const videoId = await videoUploadsService.resolveOwnedVideoId({
+        userId: authenticatedReq.user.id,
+        publicId: signReq.params.publicId,
+      });
       const result = await videoUploadsService.signMultipartUploadParts({
         userId: authenticatedReq.user.id,
-        videoId: signReq.params.videoId,
+        videoId,
         uploadSessionId: signReq.params.uploadSessionId,
         partNumbers: signReq.body.partNumbers,
       });
@@ -73,9 +85,13 @@ export const createVideoUploadsHandlers = ({
     async (req, res) => {
       const authenticatedReq = req as AuthenticatedRequest;
       const sessionReq = req as SessionRequest;
+      const videoId = await videoUploadsService.resolveOwnedVideoId({
+        userId: authenticatedReq.user.id,
+        publicId: sessionReq.params.publicId,
+      });
       const result = await videoUploadsService.uploadSourceThumbnail({
         userId: authenticatedReq.user.id,
-        videoId: sessionReq.params.videoId,
+        videoId,
         uploadSessionId: sessionReq.params.uploadSessionId,
         file: req.file
           ? {
@@ -97,14 +113,22 @@ export const createVideoUploadsHandlers = ({
     async (req, res) => {
       const authenticatedReq = req as AuthenticatedRequest;
       const completeReq = req as CompleteRequest;
+      const videoId = await videoUploadsService.resolveOwnedVideoId({
+        userId: authenticatedReq.user.id,
+        publicId: completeReq.params.publicId,
+      });
       const result = await videoUploadsService.completeMultipartUpload({
         userId: authenticatedReq.user.id,
-        videoId: completeReq.params.videoId,
+        videoId,
         uploadSessionId: completeReq.params.uploadSessionId,
         parts: completeReq.body.parts,
       });
 
-      return sendNoStoreJson(res, 200, toVideoUploadSessionResponse(result));
+      return sendNoStoreJson(
+        res,
+        200,
+        toVideoUploadSessionResponse(result, completeReq.params.publicId),
+      );
     },
   );
 
@@ -113,13 +137,21 @@ export const createVideoUploadsHandlers = ({
     async (req, res) => {
       const authenticatedReq = req as AuthenticatedRequest;
       const sessionReq = req as SessionRequest;
+      const videoId = await videoUploadsService.resolveOwnedVideoId({
+        userId: authenticatedReq.user.id,
+        publicId: sessionReq.params.publicId,
+      });
       const result = await videoUploadsService.abortMultipartUpload({
         userId: authenticatedReq.user.id,
-        videoId: sessionReq.params.videoId,
+        videoId,
         uploadSessionId: sessionReq.params.uploadSessionId,
       });
 
-      return sendNoStoreJson(res, 200, toVideoUploadSessionResponse(result));
+      return sendNoStoreJson(
+        res,
+        200,
+        toVideoUploadSessionResponse(result, sessionReq.params.publicId),
+      );
     },
   );
 
@@ -128,13 +160,21 @@ export const createVideoUploadsHandlers = ({
     async (req, res) => {
       const authenticatedReq = req as AuthenticatedRequest;
       const sessionReq = req as SessionRequest;
+      const videoId = await videoUploadsService.resolveOwnedVideoId({
+        userId: authenticatedReq.user.id,
+        publicId: sessionReq.params.publicId,
+      });
       const result = await videoUploadsService.getMultipartUploadSession({
         userId: authenticatedReq.user.id,
-        videoId: sessionReq.params.videoId,
+        videoId,
         uploadSessionId: sessionReq.params.uploadSessionId,
       });
 
-      return sendNoStoreJson(res, 200, toVideoUploadSessionResponse(result));
+      return sendNoStoreJson(
+        res,
+        200,
+        toVideoUploadSessionResponse(result, sessionReq.params.publicId),
+      );
     },
   );
 

@@ -6,7 +6,7 @@ import {
   type PublicCreatorSearchReader,
   type PublicCreatorSearchTransactionOptions,
   type PublicCreatorSearchTransactionRunner,
-} from '../../src/services/videos/publicCreatorSearch.js';
+} from '../../src/modules/videos/catalog.js';
 import { createVerifiedSession } from './support/fixtures.js';
 import {
   createIntegrationApp,
@@ -93,6 +93,12 @@ describe('videos search integration', () => {
     expect(first.video.visibility).toBe('unlisted');
     expect(second.video.publicId).toBe('FixedId02_');
 
+    const sameCreatedAt = new Date('2026-01-01T12:00:00.000Z');
+    await runtime.prisma.video.updateMany({
+      where: { id: { in: [first.video.id, second.video.id] } },
+      data: { createdAt: sameCreatedAt },
+    });
+
     const firstPage = await service.listMyVideos({
       userId: owner.userId,
       limit: 1,
@@ -100,7 +106,11 @@ describe('videos search integration', () => {
 
     expect(firstPage.videos).toHaveLength(1);
     expect(firstPage.total).toBe(2);
-    expect(firstPage.nextCursor).not.toBeNull();
+    expect(firstPage.videos[0]?.publicId).toBe(second.video.publicId);
+    expect(firstPage.nextCursor).toEqual({
+      createdAt: sameCreatedAt,
+      publicId: second.video.publicId,
+    });
 
     const secondPage = await service.listMyVideos({
       userId: owner.userId,
@@ -109,7 +119,10 @@ describe('videos search integration', () => {
     });
 
     expect(secondPage.videos).toHaveLength(1);
-    expect(secondPage.videos[0]?.id).not.toBe(firstPage.videos[0]?.id);
+    expect(secondPage.videos[0]?.publicId).toBe(first.video.publicId);
+    expect(
+      new Set([...firstPage.videos, ...secondPage.videos].map(({ publicId }) => publicId)),
+    ).toEqual(new Set([first.video.publicId, second.video.publicId]));
     expect(secondPage.total).toBe(2);
   });
 

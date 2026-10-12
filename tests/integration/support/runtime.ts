@@ -42,8 +42,8 @@ import {
 } from '../../../src/modules/profiles/index.js';
 import { createCommentsService, type CommentsPort } from '../../../src/modules/comments/index.js';
 import { createUserMediaProcessor } from '../../../src/services/userMedia/userMedia.processor.js';
-import { createVideosService } from '../../../src/services/videos.service.js';
-import { createVideoPublicId } from '../../../src/services/videos/videoPublicId.js';
+import { createVideosService } from '../../../src/modules/videos/index.js';
+import { createVideoPublicId } from '../../../src/modules/videos/shared/publicId.js';
 import {
   createVideoArtifactReconciliationHandlers,
   scheduleAbandonedVideoArtifactGenerations,
@@ -57,7 +57,7 @@ import {
 } from '../../../src/modules/videoUploads/index.js';
 import type { AdminPorts } from '../../../src/services/admin.types.js';
 import type { AuthPorts } from '../../../src/services/auth.types.js';
-import type { VideosService } from '../../../src/services/videos.types.js';
+import type { VideosService } from '../../../src/modules/videos/index.js';
 import type { VideoTranscodingMaintenancePort } from '../../../src/modules/videoTranscoding/index.js';
 import type { ObjectStorageConfig } from '../../../src/config/env.schema.js';
 import type { VideoTranscodeLimits } from '../../../src/modules/videoTranscoding/types.js';

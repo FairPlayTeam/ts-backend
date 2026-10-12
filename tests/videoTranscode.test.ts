@@ -19,7 +19,7 @@ import {
   getAvailableVideoTranscodeSlots,
   getVideoTranscodeRetryDelayMs,
 } from '../src/modules/videoTranscoding/jobs.js';
-import { buildVideoArtifactManifest } from '../src/services/videos/videoObjectKeys.js';
+import { buildVideoArtifactManifest } from '../src/modules/videos/shared/objectKeys.js';
 
 const posixTest = process.platform === 'win32' ? test.skip : test;
 

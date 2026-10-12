@@ -24,7 +24,7 @@ import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
 const waitForBlockedQueriesMatching = (
   runtime: TestRuntime,
   expectedCount: number,
-  queryFragment: string,
+  queryFragments: readonly [string, ...string[]],
   {
     countMode = 'exact',
     observerPrisma = runtime.prisma,
@@ -41,7 +41,7 @@ const waitForBlockedQueriesMatching = (
     applicationNames: [runtime.postgresApplicationName],
     countMode,
     expectedCount,
-    queryFragments: [queryFragment],
+    queryFragments,
     ...(signal === undefined ? {} : { signal }),
     timeoutMs,
   });
@@ -54,7 +54,8 @@ const waitForBlockedRatingQueries = (
     observerPrisma?: PrismaClient;
     signal?: AbortSignal;
   } = {},
-): Promise<void> => waitForBlockedQueriesMatching(runtime, expectedCount, '"rating_sum"', options);
+): Promise<void> =>
+  waitForBlockedQueriesMatching(runtime, expectedCount, ['"rating_sum"', 'FOR UPDATE'], options);
 
 const expectCheckConstraintViolation = async (
   operation: Promise<unknown>,

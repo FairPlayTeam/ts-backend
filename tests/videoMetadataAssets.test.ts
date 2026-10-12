@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createVideosService } from '../src/services/videos.service.js';
+import { createVideosService } from '../src/modules/videos/index.js';
 
 const createdAt = new Date('2026-01-01T00:00:00.000Z');
 const updatedAt = new Date('2026-01-02T00:00:00.000Z');

@@ -3,8 +3,8 @@ import {
   searchPublicVideoCatalog,
   type PublicVideoSearchDependencies,
   type PublicVideoSearchPageInput,
-} from '../src/services/videos/publicVideoSearch.js';
-import type { SearchPublicVideosInput } from '../src/services/videos.types.js';
+} from '../src/modules/videos/catalog.js';
+import type { SearchPublicVideosInput } from '../src/modules/videos/index.js';
 
 const createdAt = new Date('2026-01-03T00:00:00.000Z');
 

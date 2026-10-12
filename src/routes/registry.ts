@@ -9,7 +9,7 @@ import {
 import { profilesHttpModule } from '../modules/profiles/index.js';
 import { commentsHttpModule } from '../modules/comments/index.js';
 import { videoUploadsHttpModule } from '../modules/videoUploads/index.js';
-import { createRouter as createVideosRouter, routeDocs as videosRouteDocs } from './videos.js';
+import { videosHttpModule } from '../modules/videos/index.js';
 import type { RouteDoc } from '../docs/registry.js';
 
 export const httpRouteModules = [
@@ -40,12 +40,7 @@ export const httpRouteModules = [
   profilesHttpModule,
   commentsHttpModule,
   videoUploadsHttpModule,
-  {
-    name: 'videos',
-    mountPath: '/videos',
-    createRouter: createVideosRouter,
-    routeDocs: videosRouteDocs,
-  },
+  videosHttpModule,
   {
     name: 'root',
     mountPath: '/',

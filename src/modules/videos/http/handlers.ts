@@ -1,8 +1,14 @@
 import type { Request, RequestHandler } from 'express';
-import { allowPublicCrossOriginMedia, sendNoStoreJson, setNoStore } from '../http.responses.js';
-import { toVideosHttpError } from '../videos.errors.js';
-import type { AuthenticatedRequest } from '../../middleware/auth.js';
-import type { OptionallyAuthenticatedRequest } from '../../middleware/auth.js';
+import {
+  allowPublicCrossOriginMedia,
+  sendNoStoreJson,
+  setNoStore,
+} from '../../../controllers/http.responses.js';
+import { toVideosHttpError } from './errorMapper.js';
+import type {
+  AuthenticatedRequest,
+  OptionallyAuthenticatedRequest,
+} from '../../../middleware/auth.js';
 import type {
   CreateVideoBody,
   ListMyVideosQuery,
@@ -14,22 +20,24 @@ import type {
   VideoHlsSegmentParams,
   VideoRatingParams,
   VideoThumbnailParams,
-} from '../videos.schemas.js';
-import type { VideosControllerDependencies } from './videos.controller.types.js';
+} from './schemas.js';
+import type { VideosRoutePort } from '../types.js';
 import {
   toCreateVideoResponse,
   toMyVideosResponse,
   toPublicVideoDetailResponse,
   toPublicVideoSearchResponse,
   toPublicVideosResponse,
-} from './videos.responses.js';
+  toVideoRatingAggregateResponse,
+  toVideoRatingResponse,
+} from './responses.js';
 import {
   VIDEO_HLS_CONTENT_TYPE,
   VIDEO_HLS_MASTER_CACHE_CONTROL,
   VIDEO_HLS_RENDITION_CACHE_CONTROL,
   VIDEO_HLS_SEGMENT_REDIRECT_CACHE_CONTROL,
   VIDEO_THUMBNAIL_REDIRECT_CACHE_CONTROL,
-} from '../../services/videos/videoHls.js';
+} from '../shared/hls.js';
 
 type CreateVideoRequest = Request<unknown, unknown, CreateVideoBody>;
 type ListMyVideosRequest = Request<unknown, unknown, unknown, ListMyVideosQuery>;
@@ -42,6 +50,10 @@ type HlsMasterRequest = Request<PublicVideoIdParams>;
 type HlsRenditionRequest = Request<VideoHlsRenditionParams>;
 type HlsSegmentRequest = Request<VideoHlsSegmentParams>;
 type ThumbnailRequest = Request<VideoThumbnailParams>;
+
+type VideosControllerDependencies = {
+  videosService: VideosRoutePort;
+};
 
 export const createVideosController = ({ videosService }: VideosControllerDependencies) => {
   const createVideo: RequestHandler = async (req, res, next) => {
@@ -82,15 +94,15 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
     try {
       const authenticatedReq = req as AuthenticatedRequest;
       const listReq = req as ListMyVideosRequest;
-      const { cursorCreatedAt, cursorId, limit } = listReq.query;
+      const { cursorCreatedAt, cursorPublicId, limit } = listReq.query;
       const result = await videosService.listMyVideos({
         userId: authenticatedReq.user.id,
         ...(limit !== undefined ? { limit } : {}),
-        ...(cursorCreatedAt !== undefined && cursorId !== undefined
+        ...(cursorCreatedAt !== undefined && cursorPublicId !== undefined
           ? {
               cursor: {
                 createdAt: new Date(cursorCreatedAt),
-                id: cursorId,
+                publicId: cursorPublicId,
               },
             }
           : {}),
@@ -171,7 +183,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
         publicId: videoReq.params.publicId,
       });
 
-      return sendNoStoreJson(res, 200, result);
+      return sendNoStoreJson(res, 200, toVideoRatingAggregateResponse(result));
     } catch (err) {
       next(toVideosHttpError(err));
     }
@@ -186,7 +198,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
         publicId: videoReq.params.publicId,
       });
 
-      return sendNoStoreJson(res, 200, result);
+      return sendNoStoreJson(res, 200, toVideoRatingResponse(result));
     } catch (err) {
       next(toVideosHttpError(err));
     }
@@ -202,7 +214,7 @@ export const createVideosController = ({ videosService }: VideosControllerDepend
         value: videoReq.body.value,
       });
 
-      return sendNoStoreJson(res, 200, result);
+      return sendNoStoreJson(res, 200, toVideoRatingResponse(result));
     } catch (err) {
       next(toVideosHttpError(err));
     }

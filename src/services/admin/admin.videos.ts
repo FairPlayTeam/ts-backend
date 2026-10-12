@@ -14,8 +14,8 @@ import {
   ADMIN_VIDEO_REJECTION_REASON_TOO_LONG_MESSAGE,
 } from '../admin.errors.js';
 import { handleExpectedMailerError } from '../mailer/mailer.helpers.js';
-import { VideoNotFoundError } from '../videos.errors.js';
-import { buildVideoSearchFilter } from '../videos/videoSearch.js';
+import { VideoNotFoundError } from '../../modules/videos/shared/errors.js';
+import { buildVideoSearchFilter } from '../../modules/videos/shared/search.js';
 import { resolveBestEffortLink, videoThumbnailPath } from '../assets/assetLinks.js';
 import type { AdminDependencies } from './admin.dependencies.js';
 import { MODERATION_ROLES } from '../auth.roles.js';

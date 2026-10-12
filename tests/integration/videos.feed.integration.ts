@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import type { Prisma, PrismaClient } from '@prisma/client';
-import type { VideosService } from '../../src/services/videos.types.js';
+import type { VideosService } from '../../src/modules/videos/index.js';
 import { createVerifiedSession } from './support/fixtures.js';
 import { createPlayableVideo } from './support/playableVideo.js';
 import {

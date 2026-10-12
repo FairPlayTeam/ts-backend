@@ -5,9 +5,9 @@ import { createApp } from '../src/app.js';
 import { VIDEO_COMMENT_MAX_LENGTH } from '../src/config/constants.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
-import { VideoNotFoundError } from '../src/services/videos.errors.js';
+import { VideoNotFoundError } from '../src/modules/videos/shared/errors.js';
 import { VideoTranscodeAdmissionFullError } from '../src/modules/videoUploads/errors.js';
-import { VIDEO_LICENSES } from '../src/services/videos/videoLicenses.js';
+import { VIDEO_LICENSES } from '../src/modules/videos/shared/licenses.js';
 import type {
   CreateVideoInput,
   DeleteVideoInput,
@@ -23,7 +23,7 @@ import type {
   RateVideoInput,
   SearchPublicVideosInput,
   VideosRoutePort,
-} from '../src/services/videos.types.js';
+} from '../src/modules/videos/index.js';
 import type {
   AbortVideoMultipartUploadInput,
   CompleteVideoMultipartUploadInput,
@@ -59,6 +59,8 @@ let receivedCompleteRequest: CompleteVideoMultipartUploadInput | undefined;
 let receivedAbortRequest: AbortVideoMultipartUploadInput | undefined;
 let receivedGetRequest: GetVideoMultipartUploadSessionInput | undefined;
 let receivedListRequest: ListMyVideosInput | undefined;
+let listMyVideosNextCursorOverride: { createdAt: Date; publicId: string } | undefined;
+let receivedVideoIdResolutionRequest: { publicId: string; userId: string } | undefined;
 let receivedPublicListRequest: ListPublicVideosInput | undefined;
 let receivedPublicSearchRequest: SearchPublicVideosInput | undefined;
 let receivedPublicVideoDetailRequest: GetPublicVideoDetailInput | undefined;
@@ -84,6 +86,9 @@ const uploadSessionId = '22222222-2222-4222-8222-222222222222';
 const authenticatedUserId = '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f';
 const publicId = 'AbCdEf123_';
 const generationToken = 'ab'.repeat(32);
+
+const getReceivedVideoIdResolutionRequest = (): typeof receivedVideoIdResolutionRequest =>
+  receivedVideoIdResolutionRequest;
 
 describe('videos routes multipart uploads', () => {
   beforeAll(async () => {
@@ -162,8 +167,11 @@ describe('videos routes multipart uploads', () => {
           },
           listMyVideos: async (input) => {
             receivedListRequest = input;
+            const result = await videosService.listMyVideos(input);
 
-            return videosService.listMyVideos(input);
+            return listMyVideosNextCursorOverride === undefined
+              ? result
+              : { ...result, nextCursor: listMyVideosNextCursorOverride };
           },
           listPublicVideos: async (input) => {
             receivedPublicListRequest = input;
@@ -172,8 +180,16 @@ describe('videos routes multipart uploads', () => {
           },
           searchPublicVideos: async (input) => {
             receivedPublicSearchRequest = input;
+            const result = await videosService.searchPublicVideos(input);
 
-            return videosService.searchPublicVideos(input);
+            return {
+              ...result,
+              videos: result.videos.map((video) => ({
+                ...video,
+                ownerId: 'internal-owner-id',
+                objectKey: 'internal/video/object',
+              })),
+            };
           },
           getPublicVideoDetail: async (input) => {
             receivedPublicVideoDetailRequest = input;
@@ -197,18 +213,21 @@ describe('videos routes multipart uploads', () => {
           },
           getVideoRating: async (input) => {
             receivedPublicRatingRequest = input;
+            const result = await videosService.getVideoRating(input);
 
-            return videosService.getVideoRating(input);
+            return { ...result, internalMarker: 'must-not-be-public' };
           },
           getMyVideoRating: async (input) => {
             receivedMyRatingRequest = input;
+            const result = await videosService.getMyVideoRating(input);
 
-            return videosService.getMyVideoRating(input);
+            return { ...result, videoId: 'internal-video-id' };
           },
           rateVideo: async (input) => {
             receivedRateVideoRequest = input;
+            const result = await videosService.rateVideo(input);
 
-            return videosService.rateVideo(input);
+            return { ...result, ownerId: 'internal-owner-id' };
           },
           getHlsMaster: async (input) => {
             receivedHlsMasterRequest = input;
@@ -235,6 +254,15 @@ describe('videos routes multipart uploads', () => {
         } satisfies VideosRoutePort,
         videoUploadsService: {
           ...uploadsService,
+          resolveOwnedVideoId: async (input) => {
+            receivedVideoIdResolutionRequest = input;
+
+            if (input.publicId === 'MissingV01') {
+              throw new VideoNotFoundError();
+            }
+
+            return videoId;
+          },
           initMultipartUpload: async (input) => {
             receivedInitRequest = input;
 
@@ -242,15 +270,19 @@ describe('videos routes multipart uploads', () => {
               throw new VideoTranscodeAdmissionFullError();
             }
 
-            if (input.videoId === '11111111-1111-4111-8111-111111111111') {
-              throw new VideoNotFoundError();
-            }
-
             return uploadsService.initMultipartUpload(input);
           },
           signMultipartUploadParts: async (input) => {
             receivedSignRequest = input;
-            return uploadsService.signMultipartUploadParts(input);
+            const result = await uploadsService.signMultipartUploadParts(input);
+
+            return {
+              ...result,
+              parts: result.parts.map((part) => ({
+                ...part,
+                objectKey: 'internal/video/part',
+              })),
+            };
           },
           uploadSourceThumbnail: async (input) => {
             receivedThumbnailRequest = input;
@@ -338,9 +370,10 @@ describe('videos routes multipart uploads', () => {
       license: 'all_rights_reserved',
       allowComments: false,
     });
-    expect(await response.json()).toMatchObject({
+    const responseBody = await response.json();
+    expect(responseBody).toMatchObject({
       video: {
-        ownerId: authenticatedUserId,
+        publicId,
         title: 'Me at the zoo',
         description: '00:00 Intro 00:05 The cool thing 00:17 End.',
         tags: ['zoo', 'elephants'],
@@ -351,6 +384,8 @@ describe('videos routes multipart uploads', () => {
         moderationStatus: 'pending',
       },
     });
+    expect(responseBody).not.toHaveProperty('video.id');
+    expect(responseBody).not.toHaveProperty('video.ownerId');
   });
 
   test('accepts explicit true and defaults an omitted comment preference to true', async () => {
@@ -507,7 +542,7 @@ describe('videos routes multipart uploads', () => {
     const query = new URLSearchParams({
       limit: '10',
       cursorCreatedAt: '2026-01-01T00:00:00.000Z',
-      cursorId: videoId,
+      cursorPublicId: publicId,
     });
 
     const response = await fetch(`${baseUrl}/videos/me?${query.toString()}`, {
@@ -526,13 +561,13 @@ describe('videos routes multipart uploads', () => {
       limit: 10,
       cursor: {
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
-        id: videoId,
+        publicId,
       },
     });
-    expect(await response.json()).toMatchObject({
+    const responseBody = await response.json();
+    expect(responseBody).toMatchObject({
       videos: [
         {
-          ownerId: authenticatedUserId,
           visibility: 'unlisted',
           processingStatus: 'uploading',
           moderationStatus: 'pending',
@@ -542,6 +577,8 @@ describe('videos routes multipart uploads', () => {
       total: 1,
       nextCursor: null,
     });
+    expect(responseBody).not.toHaveProperty('videos.0.id');
+    expect(responseBody).not.toHaveProperty('videos.0.ownerId');
   });
 
   test('rejects malformed current user video pagination cursors', async () => {
@@ -562,6 +599,55 @@ describe('videos routes multipart uploads', () => {
       error: 'ValidationError',
       message: REQUEST_VALIDATION_FAILED_MESSAGE,
     });
+
+    const internalIdCursor = await fetch(
+      `${baseUrl}/videos/me?cursorCreatedAt=${encodeURIComponent('2026-01-01T00:00:00.000Z')}&cursorPublicId=${videoId}`,
+      {
+        headers: {
+          Authorization: 'Bearer route-session-key',
+        },
+      },
+    );
+
+    expect(internalIdCursor.status).toBe(400);
+    expect(receivedListRequest).toBeUndefined();
+
+    const legacyCursor = await fetch(`${baseUrl}/videos/me?cursorId=${videoId}`, {
+      headers: {
+        Authorization: 'Bearer route-session-key',
+      },
+    });
+
+    expect(legacyCursor.status).toBe(400);
+    expect(receivedListRequest).toBeUndefined();
+  });
+
+  test('serializes owner pagination with the public video id', async () => {
+    listMyVideosNextCursorOverride = {
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      publicId,
+    };
+
+    try {
+      const response = await fetch(`${baseUrl}/videos/me`, {
+        headers: {
+          Authorization: 'Bearer route-session-key',
+        },
+      });
+
+      expect(response.status).toBe(200);
+      const responseBody = await response.json();
+      expect(responseBody).toMatchObject({
+        nextCursor: {
+          publicId,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      });
+      expect(responseBody).not.toHaveProperty('nextCursor.id');
+      expect(JSON.stringify(responseBody)).not.toContain(videoId);
+    } finally {
+      listMyVideosNextCursorOverride = undefined;
+    }
   });
 
   test('searches public videos without authentication using stable pagination input', async () => {
@@ -591,7 +677,8 @@ describe('videos routes multipart uploads', () => {
         publicId,
       },
     });
-    expect(await response.json()).toEqual({
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toEqual({
       videos: [
         {
           publicId: 'AbCdEf123_',
@@ -619,6 +706,8 @@ describe('videos routes multipart uploads', () => {
       total: 1,
       nextCursor: null,
     });
+    expect(responseBody).not.toHaveProperty('videos.0.ownerId');
+    expect(responseBody).not.toHaveProperty('videos.0.objectKey');
   });
 
   test('lists the public feed without authentication using chronological pagination', async () => {
@@ -816,7 +905,9 @@ describe('videos routes multipart uploads', () => {
     expect(publicResponse.status).toBe(200);
     expect(receivedSessionKey).toBeUndefined();
     expect(receivedPublicRatingRequest as GetVideoRatingInput | undefined).toEqual({ publicId });
-    expect(await publicResponse.json()).toEqual({ ratingAverage: 4.5, ratingCount: 2 });
+    const publicResponseBody: unknown = await publicResponse.json();
+    expect(publicResponseBody).toEqual({ ratingAverage: 4.5, ratingCount: 2 });
+    expect(publicResponseBody).not.toHaveProperty('internalMarker');
 
     const myResponse = await fetch(`${baseUrl}/videos/${publicId}/rating/me`, {
       headers: { Authorization: 'Bearer route-session-key' },
@@ -827,11 +918,13 @@ describe('videos routes multipart uploads', () => {
       userId: authenticatedUserId,
       publicId,
     });
-    expect(await myResponse.json()).toEqual({
+    const myResponseBody: unknown = await myResponse.json();
+    expect(myResponseBody).toEqual({
       ratingAverage: 4.5,
       ratingCount: 2,
       userRating: 5,
     });
+    expect(myResponseBody).not.toHaveProperty('videoId');
 
     const putResponse = await fetch(`${baseUrl}/videos/${publicId}/rating`, {
       method: 'PUT',
@@ -848,6 +941,13 @@ describe('videos routes multipart uploads', () => {
       publicId,
       value: 4,
     });
+    const putResponseBody: unknown = await putResponse.json();
+    expect(putResponseBody).toEqual({
+      ratingAverage: 4,
+      ratingCount: 1,
+      userRating: 4,
+    });
+    expect(putResponseBody).not.toHaveProperty('ownerId');
   });
 
   test('rejects unknown video creation fields before calling the service', async () => {
@@ -1241,6 +1341,35 @@ describe('videos routes multipart uploads', () => {
     expect(receivedSessionKey).toBeUndefined();
   });
 
+  test('rejects malformed public media path parameters before calling Videos', async () => {
+    receivedHlsMasterRequest = undefined;
+    receivedHlsRenditionRequest = undefined;
+    receivedHlsSegmentRequest = undefined;
+    receivedThumbnailReadRequest = undefined;
+
+    const invalidPaths = [
+      '/videos/invalid/thumbnail',
+      '/videos/invalid/hls/master.m3u8',
+      `/videos/${publicId}/hls/not-a-generation/480p/index.m3u8`,
+      `/videos/${publicId}/hls/${generationToken}/480P/index.m3u8`,
+      `/videos/${publicId}/hls/${generationToken}/480p/segments/segment-0000.ts`,
+    ];
+
+    for (const path of invalidPaths) {
+      const response = await fetch(`${baseUrl}${path}`);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        error: 'ValidationError',
+        message: REQUEST_VALIDATION_FAILED_MESSAGE,
+      });
+    }
+
+    expect(receivedThumbnailReadRequest).toBeUndefined();
+    expect(receivedHlsMasterRequest).toBeUndefined();
+    expect(receivedHlsRenditionRequest).toBeUndefined();
+    expect(receivedHlsSegmentRequest).toBeUndefined();
+  });
+
   test('redirects public thumbnail reads without authentication or response caching', async () => {
     receivedThumbnailReadRequest = undefined;
     receivedSessionKey = undefined;
@@ -1263,9 +1392,10 @@ describe('videos routes multipart uploads', () => {
 
   test('initializes a multipart upload with an authenticated session', async () => {
     receivedInitRequest = undefined;
+    receivedVideoIdResolutionRequest = undefined;
     receivedSessionKey = undefined;
 
-    const response = await fetch(`${baseUrl}/videos/${videoId}/upload/multipart/init`, {
+    const response = await fetch(`${baseUrl}/videos/${publicId}/upload/multipart/init`, {
       method: 'POST',
       headers: {
         Authorization: 'Bearer route-session-key',
@@ -1284,9 +1414,14 @@ describe('videos routes multipart uploads', () => {
       videoId,
       sizeBytes: 67_108_864,
     });
+    expect(getReceivedVideoIdResolutionRequest()).toEqual({
+      userId: authenticatedUserId,
+      publicId,
+    });
     const body: unknown = await response.json();
     expect(body).toMatchObject({
       uploadSession: {
+        publicId,
         status: 'initiated',
         partSizeBytes: 67_108_864,
       },
@@ -1300,6 +1435,7 @@ describe('videos routes multipart uploads', () => {
     ) {
       throw new Error('Upload session response did not contain an uploadSession object');
     }
+    expect(body.uploadSession).not.toHaveProperty('videoId');
     expect(body.uploadSession).not.toHaveProperty('bucket');
     expect(body.uploadSession).not.toHaveProperty('objectKey');
     expect(body.uploadSession).not.toHaveProperty('uploadId');
@@ -1309,7 +1445,7 @@ describe('videos routes multipart uploads', () => {
     receivedInitRequest = undefined;
     receivedSessionKey = undefined;
 
-    const response = await fetch(`${baseUrl}/videos/${videoId}/upload/multipart/init`, {
+    const response = await fetch(`${baseUrl}/videos/${publicId}/upload/multipart/init`, {
       method: 'POST',
     });
 
@@ -1322,11 +1458,29 @@ describe('videos routes multipart uploads', () => {
     });
   });
 
+  test('rejects internal video UUIDs on upload routes before resolving the owner video', async () => {
+    receivedVideoIdResolutionRequest = undefined;
+    receivedInitRequest = undefined;
+
+    const response = await fetch(`${baseUrl}/videos/${videoId}/upload/multipart/init`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer route-session-key',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sizeBytes: 67_108_864 }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(receivedVideoIdResolutionRequest).toBeUndefined();
+    expect(receivedInitRequest).toBeUndefined();
+  });
+
   test('returns one generic retryable response when transcode admission is full', async () => {
     transcodeAdmissionFull = true;
 
     try {
-      const response = await fetch(`${baseUrl}/videos/${videoId}/upload/multipart/init`, {
+      const response = await fetch(`${baseUrl}/videos/${publicId}/upload/multipart/init`, {
         method: 'POST',
         headers: {
           Authorization: 'Bearer route-session-key',
@@ -1348,7 +1502,7 @@ describe('videos routes multipart uploads', () => {
   test('rejects invalid declared upload sizes before calling the service', async () => {
     receivedInitRequest = undefined;
 
-    const response = await fetch(`${baseUrl}/videos/${videoId}/upload/multipart/init`, {
+    const response = await fetch(`${baseUrl}/videos/${publicId}/upload/multipart/init`, {
       method: 'POST',
       headers: {
         Authorization: 'Bearer route-session-key',
@@ -1369,7 +1523,7 @@ describe('videos routes multipart uploads', () => {
     receivedSignRequest = undefined;
 
     const response = await fetch(
-      `${baseUrl}/videos/${videoId}/upload/multipart/${uploadSessionId}/parts/sign`,
+      `${baseUrl}/videos/${publicId}/upload/multipart/${uploadSessionId}/parts/sign`,
       {
         method: 'POST',
         headers: {
@@ -1391,7 +1545,8 @@ describe('videos routes multipart uploads', () => {
       uploadSessionId,
       partNumbers: [1],
     });
-    expect(await response.json()).toEqual({
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toEqual({
       uploadSessionId,
       parts: [
         {
@@ -1400,6 +1555,7 @@ describe('videos routes multipart uploads', () => {
         },
       ],
     });
+    expect(responseBody).not.toHaveProperty('parts.0.objectKey');
   });
 
   test('uploads a source thumbnail through the authenticated bounded multipart route', async () => {
@@ -1410,7 +1566,7 @@ describe('videos routes multipart uploads', () => {
     body.set('thumbnail', new Blob([thumbnailBytes], { type: 'image/png' }), 'thumbnail.png');
 
     const response = await fetch(
-      `${baseUrl}/videos/${videoId}/upload/multipart/${uploadSessionId}/thumbnail`,
+      `${baseUrl}/videos/${publicId}/upload/multipart/${uploadSessionId}/thumbnail`,
       {
         method: 'PUT',
         headers: {
@@ -1463,7 +1619,7 @@ describe('videos routes multipart uploads', () => {
     receivedSignRequest = undefined;
 
     const response = await fetch(
-      `${baseUrl}/videos/${videoId}/upload/multipart/${uploadSessionId}/parts/sign`,
+      `${baseUrl}/videos/${publicId}/upload/multipart/${uploadSessionId}/parts/sign`,
       {
         method: 'POST',
         headers: {
@@ -1488,7 +1644,7 @@ describe('videos routes multipart uploads', () => {
     receivedCompleteRequest = undefined;
 
     const response = await fetch(
-      `${baseUrl}/videos/${videoId}/upload/multipart/${uploadSessionId}/complete`,
+      `${baseUrl}/videos/${publicId}/upload/multipart/${uploadSessionId}/complete`,
       {
         method: 'POST',
         headers: {
@@ -1523,7 +1679,7 @@ describe('videos routes multipart uploads', () => {
     receivedGetRequest = undefined;
 
     const abortResponse = await fetch(
-      `${baseUrl}/videos/${videoId}/upload/multipart/${uploadSessionId}/abort`,
+      `${baseUrl}/videos/${publicId}/upload/multipart/${uploadSessionId}/abort`,
       {
         method: 'POST',
         headers: {
@@ -1534,7 +1690,7 @@ describe('videos routes multipart uploads', () => {
       },
     );
     const getResponse = await fetch(
-      `${baseUrl}/videos/${videoId}/upload/multipart/${uploadSessionId}`,
+      `${baseUrl}/videos/${publicId}/upload/multipart/${uploadSessionId}`,
       {
         headers: {
           Authorization: 'Bearer route-session-key',
@@ -1560,17 +1716,14 @@ describe('videos routes multipart uploads', () => {
   });
 
   test('maps missing videos to not found', async () => {
-    const response = await fetch(
-      `${baseUrl}/videos/11111111-1111-4111-8111-111111111111/upload/multipart/init`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer route-session-key',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ sizeBytes: 67_108_864 }),
+    const response = await fetch(`${baseUrl}/videos/MissingV01/upload/multipart/init`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer route-session-key',
+        'Content-Type': 'application/json',
       },
-    );
+      body: JSON.stringify({ sizeBytes: 67_108_864 }),
+    });
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({

@@ -4,7 +4,7 @@ import {
   ApiOrValidationErrorSchema,
   type RouteDoc,
 } from '../../../docs/registry.js';
-import { publicVideoIdParamsSchema } from '../../../controllers/videos/schemas/video.schemas.js';
+import { publicVideoIdParamsSchema } from '../../videos/index.js';
 import {
   commentParamsSchema,
   commentRepliesResponseSchema,

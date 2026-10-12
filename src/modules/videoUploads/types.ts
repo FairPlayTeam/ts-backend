@@ -74,6 +74,11 @@ export type InitVideoMultipartUploadInput = {
   sizeBytes: number;
 };
 
+export type ResolveOwnedVideoIdInput = {
+  publicId: string;
+  userId: string;
+};
+
 export type SignVideoMultipartUploadPartsInput = {
   videoId: string;
   userId: string;
@@ -137,6 +142,7 @@ export type SignVideoMultipartUploadPartsResult = {
 };
 
 export type VideoUploadsPort = {
+  resolveOwnedVideoId(input: ResolveOwnedVideoIdInput): Promise<string>;
   initMultipartUpload(input: InitVideoMultipartUploadInput): Promise<VideoUploadSessionResult>;
   signMultipartUploadParts(
     input: SignVideoMultipartUploadPartsInput,

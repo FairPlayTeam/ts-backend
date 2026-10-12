@@ -6,10 +6,7 @@ import {
   publicProfileResponseSchema,
   unfollowPublicProfileResponseSchema,
 } from './schemas.js';
-import {
-  publicVideosQuerySchema,
-  publicVideosResponseSchema,
-} from '../../../controllers/videos.schemas.js';
+import { publicVideosQuerySchema, publicVideosResponseSchema } from '../../videos/index.js';
 import { jsonResponse } from '../../../docs/openapi.helpers.js';
 import {
   ApiErrorSchema,

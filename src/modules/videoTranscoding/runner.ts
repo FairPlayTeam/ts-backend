@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { buildVideoArtifactManifest } from '../../services/videos/videoObjectKeys.js';
+import { buildVideoArtifactManifest } from '../videos/shared/objectKeys.js';
 import {
   isTerminalVideoTranscodeError,
   probeVideo,

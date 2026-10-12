@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { HOUR_MS } from '../../src/config/constants.js';
-import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjectKeys.js';
+import { buildVideoArtifactManifest } from '../../src/modules/videos/shared/objectKeys.js';
 import { createPng, createVerifiedSession } from './support/fixtures.js';
 import { createPlayableVideo } from './support/playableVideo.js';
 import {

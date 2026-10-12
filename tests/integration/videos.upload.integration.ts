@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { videoOriginalKey } from '../../src/services/videos/videoObjectKeys.js';
+import { videoOriginalKey } from '../../src/modules/videos/shared/objectKeys.js';
 import type { ObjectStorage } from '../../src/lib/objectStorage.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
 import {

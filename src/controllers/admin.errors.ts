@@ -13,7 +13,7 @@ import {
   AdminVideoRejectionReasonInvalidError,
   AdminVideoDeletionReasonInvalidError,
 } from '../services/admin.errors.js';
-import { VideoNotFoundError } from '../services/videos.errors.js';
+import { VideoNotFoundError } from '../modules/videos/shared/errors.js';
 
 export function toAdminHttpError(err: unknown): Error {
   if (

@@ -1,10 +1,10 @@
 import type { VideoRenditionQuality } from '@prisma/client';
-import { generateToken } from '../../lib/crypto.js';
+import { generateToken } from '../../../lib/crypto.js';
 import {
   VIDEO_ARTIFACT_TOKEN_PATTERN,
   VIDEO_HLS_SEGMENT_NAME_PATTERN,
   type VideoObjectKeyQuality,
-} from './videoObjectKeys.js';
+} from './objectKeys.js';
 
 export const VIDEO_HLS_PLAYLIST_MAX_BYTES = 512 * 1024;
 export const VIDEO_HLS_MASTER_CACHE_CONTROL = 'no-cache';

@@ -6,7 +6,7 @@ import {
   videoHlsSegmentObjectKey,
   type VideoArtifactManifest,
   type VideoArtifactProfile,
-} from '../../services/videos/videoObjectKeys.js';
+} from '../videos/shared/objectKeys.js';
 import {
   VideoArtifactSizeExceededError,
   InvalidVideoSourceError,

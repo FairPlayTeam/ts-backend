@@ -5,8 +5,8 @@ import {
   buildVideoArtifactManifest,
   videoHlsSegmentObjectKey,
   type VideoObjectKeyQuality,
-} from '../../src/services/videos/videoObjectKeys.js';
-import { createVideoHlsGenerationToken } from '../../src/services/videos/videoHls.js';
+} from '../../src/modules/videos/shared/objectKeys.js';
+import { createVideoHlsGenerationToken } from '../../src/modules/videos/shared/hls.js';
 import { claimNextVideoTranscodeJob } from '../../src/modules/videoTranscoding/jobs.js';
 import type { ClaimedVideoTranscodeJob } from '../../src/modules/videoTranscoding/types.js';
 import { publishVideoArtifactGeneration } from '../../src/modules/videoTranscoding/artifacts.js';
@@ -348,16 +348,22 @@ describe('videos HLS integration', () => {
       request(app).get(
         `/videos/${firstVideo.video.publicId}/hls/${active.generationToken}/480p/segments/segment-99999.ts`,
       ),
-      // The internal generation PK must no longer be accepted as a public playback token.
-      request(app).get(
-        `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480p/index.m3u8`,
-      ),
     ]);
 
     for (const response of unavailableResponses) {
       expect(response.status).toBe(404);
       expect(response.body).toEqual(notFoundBody);
     }
+
+    // The internal generation PK is malformed as a public token and is rejected at validation.
+    const internalGenerationIdResponse = await request(app).get(
+      `/videos/${firstVideo.video.publicId}/hls/${active.generationId}/480p/index.m3u8`,
+    );
+    expect(internalGenerationIdResponse.status).toBe(400);
+    expect(internalGenerationIdResponse.body).toMatchObject({
+      error: 'ValidationError',
+      message: 'Request validation failed',
+    });
 
     const retiringRenditionPath = `/videos/${firstVideo.video.publicId}/hls/${retiring.generationToken}/480p/index.m3u8`;
     await request(app).get(retiringRenditionPath).expect(200).expect('Cache-Control', 'no-cache');
@@ -407,8 +413,11 @@ describe('videos HLS integration', () => {
 
     for (const path of invalidPaths) {
       const response = await request(app).get(path);
-      expect(response.status).toBe(404);
-      expect(response.body).toEqual(notFoundBody);
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        error: 'ValidationError',
+        message: 'Request validation failed',
+      });
     }
 
     await runtime.prisma.video.update({

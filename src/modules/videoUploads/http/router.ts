@@ -35,21 +35,21 @@ export const createRouter = ({
   ) => [...protect(), validate(schema), ...routeHandlers];
 
   router.post(
-    '/:videoId/upload/multipart/init',
+    '/:publicId/upload/multipart/init',
     ...protectedValidatedRoute(
       schemas.initVideoMultipartUploadSchema,
       handlers.initMultipartUpload,
     ),
   );
   router.post(
-    '/:videoId/upload/multipart/:uploadSessionId/parts/sign',
+    '/:publicId/upload/multipart/:uploadSessionId/parts/sign',
     ...protectedValidatedRoute(
       schemas.signVideoMultipartUploadPartsSchema,
       handlers.signMultipartUploadParts,
     ),
   );
   router.put(
-    '/:videoId/upload/multipart/:uploadSessionId/thumbnail',
+    '/:publicId/upload/multipart/:uploadSessionId/thumbnail',
     ...protectedValidatedRoute(
       schemas.uploadVideoSourceThumbnailSchema,
       profileMediaUploadLimiter,
@@ -58,21 +58,21 @@ export const createRouter = ({
     ),
   );
   router.post(
-    '/:videoId/upload/multipart/:uploadSessionId/complete',
+    '/:publicId/upload/multipart/:uploadSessionId/complete',
     ...protectedValidatedRoute(
       schemas.completeVideoMultipartUploadSchema,
       handlers.completeMultipartUpload,
     ),
   );
   router.post(
-    '/:videoId/upload/multipart/:uploadSessionId/abort',
+    '/:publicId/upload/multipart/:uploadSessionId/abort',
     ...protectedValidatedRoute(
       schemas.abortVideoMultipartUploadSchema,
       handlers.abortMultipartUpload,
     ),
   );
   router.get(
-    '/:videoId/upload/multipart/:uploadSessionId',
+    '/:publicId/upload/multipart/:uploadSessionId',
     ...protectedValidatedRoute(
       schemas.getVideoMultipartUploadSessionSchema,
       handlers.getMultipartUploadSession,

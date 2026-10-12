@@ -14,7 +14,7 @@ import {
   CommentsDisabledError,
   CommentsTemporarilyUnavailableError,
 } from './errors.js';
-import { VideoNotFoundError } from '../../services/videos.errors.js';
+import { VideoNotFoundError } from '../videos/shared/errors.js';
 import type {
   ActiveComment,
   CreateCommentInput,
@@ -36,7 +36,7 @@ import {
   readableVideoWhere,
   writableVideoEngagementWhere,
   WRITABLE_VIDEO_ENGAGEMENT_SCOPE_SQL,
-} from '../../services/videos/videoReadability.js';
+} from '../videos/shared/readability.js';
 import type { CommentsDependencies } from './dependencies.js';
 import { softDeleteLockedVideoComments } from './lifecycle.js';
 import { lockUserAuthorizationState } from '../../services/auth/auth.userAuthorization.js';

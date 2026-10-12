@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
-import type { VideosDependencies } from '../src/services/videos/videos.dependencies.js';
-import { createVideosService } from '../src/services/videos.service.js';
+import type { VideosDependencies } from '../src/modules/videos/dependencies.js';
+import { createVideosService } from '../src/modules/videos/index.js';
 import { PublicProfileNotFoundError } from '../src/modules/profiles/index.js';
 
 const createdAt = [

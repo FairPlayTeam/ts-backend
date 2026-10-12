@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Prisma } from '@prisma/client';
-import { recordVideoView, toUtcVideoViewDay } from '../src/services/videos/videoViews.js';
+import { recordVideoView, toUtcVideoViewDay } from '../src/modules/videos/catalog.js';
 
 describe('video views', () => {
   test('uses a stable UTC calendar day across timezone offsets', () => {

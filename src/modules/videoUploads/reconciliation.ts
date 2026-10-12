@@ -10,7 +10,7 @@ import {
   type ExternalResourceReconciliationHandlers,
   type ExternalResourceReconciliationHandler,
 } from '../../services/externalResources.js';
-import { VideoNotFoundError } from '../../services/videos.errors.js';
+import { VideoNotFoundError } from '../videos/shared/errors.js';
 import { InvalidVideoUploadSessionStateError, VideoUploadSessionNotFoundError } from './errors.js';
 import {
   ACTIVE_UPLOAD_SESSION_STATUSES,

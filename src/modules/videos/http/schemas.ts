@@ -1,12 +1,12 @@
 import { z } from '../../../docs/zod.js';
-import { VIDEO_LICENSES } from '../../../services/videos/videoLicenses.js';
-import { VIDEO_HLS_SEGMENT_NAME_PATTERN } from '../../../services/videos/videoObjectKeys.js';
-import { VIDEO_PUBLIC_ID_PATTERN } from '../../../services/videos/videoPublicId.js';
-import { VIDEO_HLS_GENERATION_TOKEN_PATTERN } from '../../../services/videos/videoHls.js';
-import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
-import { publicProfileIdentityResponseSchema } from '../../shared/profile.schemas.js';
-import { publicVideoSearchTextSchema } from '../../shared/search.schemas.js';
-import { PUBLIC_CREATOR_SEARCH_LIMIT } from '../../../services/videos/videoSearch.js';
+import { VIDEO_LICENSES } from '../shared/licenses.js';
+import { VIDEO_HLS_SEGMENT_NAME_PATTERN } from '../shared/objectKeys.js';
+import { VIDEO_PUBLIC_ID_PATTERN } from '../shared/publicId.js';
+import { VIDEO_HLS_GENERATION_TOKEN_PATTERN } from '../shared/hls.js';
+import { relativeAssetPathSchema } from '../../../controllers/shared/asset.schemas.js';
+import { publicProfileIdentityResponseSchema } from '../../../controllers/shared/profile.schemas.js';
+import { publicVideoSearchTextSchema } from '../../../controllers/shared/search.schemas.js';
+import { PUBLIC_CREATOR_SEARCH_LIMIT } from '../shared/search.js';
 
 const VIDEO_TITLE_MAX_LENGTH = 120;
 const VIDEO_DESCRIPTION_MAX_LENGTH = 5_000;
@@ -14,7 +14,7 @@ const VIDEO_TAG_MAX_LENGTH = 40;
 const VIDEO_TAGS_MAX_COUNT = 20;
 
 export const MY_VIDEOS_CURSOR_PAIR_MESSAGE =
-  'cursorCreatedAt and cursorId must be provided together';
+  'cursorCreatedAt and cursorPublicId must be provided together';
 export const PUBLIC_VIDEO_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorPublicId must be provided together';
 
@@ -107,16 +107,19 @@ export const myVideosQuerySchema = z
     cursorCreatedAt: z.string().datetime().optional().openapi({
       example: '2026-01-01T00:00:00.000Z',
     }),
-    cursorId: z
+    cursorPublicId: z
       .string()
-      .uuid('Cursor video id must be a valid UUID')
+      .regex(VIDEO_PUBLIC_ID_PATTERN, 'Cursor video public id must be valid')
       .optional()
-      .openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+      .openapi({ example: 'AbCdEf123_' }),
   })
   .strict()
-  .refine((query) => (query.cursorCreatedAt === undefined) === (query.cursorId === undefined), {
-    message: MY_VIDEOS_CURSOR_PAIR_MESSAGE,
-  })
+  .refine(
+    (query) => (query.cursorCreatedAt === undefined) === (query.cursorPublicId === undefined),
+    {
+      message: MY_VIDEOS_CURSOR_PAIR_MESSAGE,
+    },
+  )
   .openapi('MyVideosQuery');
 
 const publicVideoPaginationQueryShape = {
@@ -172,9 +175,7 @@ const videoRatingAggregateResponseShape = {
 };
 
 const videoResponseBodySchema = z.object({
-  id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
-  publicId: z.string().openapi({ example: 'AbCdEf123_' }),
-  ownerId: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
+  publicId: z.string().regex(VIDEO_PUBLIC_ID_PATTERN).openapi({ example: 'AbCdEf123_' }),
   title: z.string().openapi({ example: 'Me at the zoo' }),
   description: z
     .string()
@@ -223,7 +224,7 @@ export const myVideosResponseSchema = z
     nextCursor: z
       .object({
         createdAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
-        id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+        publicId: z.string().regex(VIDEO_PUBLIC_ID_PATTERN).openapi({ example: 'AbCdEf123_' }),
       })
       .nullable(),
   })
@@ -368,6 +369,14 @@ export const searchPublicVideosSchema = z.object({
 
 export const getPublicVideoDetailSchema = z.object({
   params: publicVideoIdParamsSchema,
+});
+
+export const getVideoHlsRenditionSchema = z.object({
+  params: videoHlsRenditionParamsSchema,
+});
+
+export const getVideoHlsSegmentSchema = z.object({
+  params: videoHlsSegmentParamsSchema,
 });
 
 export const deleteVideoSchema = getPublicVideoDetailSchema;

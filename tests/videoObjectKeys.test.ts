@@ -5,7 +5,7 @@ import {
   videoOriginalKey,
   videoSourceThumbnailKey,
   type VideoArtifactProfile,
-} from '../src/services/videos/videoObjectKeys.js';
+} from '../src/modules/videos/shared/objectKeys.js';
 
 const userId = 'user-123';
 const videoId = 'video-456';

@@ -10,11 +10,8 @@ import {
 import {
   buildVideoArtifactManifest,
   type VideoArtifactManifest,
-} from '../../services/videos/videoObjectKeys.js';
-import {
-  createVideoHlsGenerationToken,
-  toVideoRenditionQuality,
-} from '../../services/videos/videoHls.js';
+} from '../videos/shared/objectKeys.js';
+import { createVideoHlsGenerationToken, toVideoRenditionQuality } from '../videos/shared/hls.js';
 import type { VideoTranscodingDependencies, VideoTranscodingPrisma } from './dependencies.js';
 import {
   VideoTranscodeOwnershipLostError,

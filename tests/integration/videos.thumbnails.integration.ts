@@ -4,7 +4,7 @@ import request from 'supertest';
 import sharp from '../../src/lib/sharp.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { createUserMediaProcessor } from '../../src/services/userMedia/userMedia.processor.js';
-import { buildVideoArtifactManifest } from '../../src/services/videos/videoObjectKeys.js';
+import { buildVideoArtifactManifest } from '../../src/modules/videos/shared/objectKeys.js';
 import {
   createVideoArtifactReconciliationHandlers,
   createVideoTranscodeRunner,
@@ -633,7 +633,7 @@ describe('videos thumbnails integration', () => {
       .expect((response) => {
         expect(response.body.videos).toContainEqual(
           expect.objectContaining({
-            id: created.video.id,
+            publicId: created.video.publicId,
             processingStatus: 'ready',
             thumbnailPath: `/videos/${created.video.publicId}/thumbnail`,
           }),
@@ -1409,7 +1409,9 @@ describe('videos thumbnails integration', () => {
     expect(racedThumbnail).toBeDefined();
     const app = await createIntegrationApp(runtime);
     await request(app)
-      .put(`/videos/${created.video.id}/upload/multipart/${initialized.uploadSession.id}/thumbnail`)
+      .put(
+        `/videos/${created.video.publicId}/upload/multipart/${initialized.uploadSession.id}/thumbnail`,
+      )
       .set('Authorization', `Bearer ${owner.sessionKey}`)
       .attach('thumbnail', thumbnail, {
         contentType: 'image/png',

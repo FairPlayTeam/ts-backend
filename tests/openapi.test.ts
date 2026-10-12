@@ -7,7 +7,7 @@ import type { RouteDoc } from '../src/docs/registry.js';
 import { z } from '../src/docs/zod.js';
 import { httpRouteModules } from '../src/routes/registry.js';
 import { AUTH_ROLES } from '../src/services/auth.roles.js';
-import { VIDEO_LICENSES } from '../src/services/videos/videoLicenses.js';
+import { VIDEO_LICENSES } from '../src/modules/videos/shared/licenses.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
@@ -225,12 +225,12 @@ describe('OpenAPI generation', () => {
       '/videos/{publicId}/rating',
       '/videos/{publicId}/rating/me',
       '/videos/{publicId}/thumbnail',
-      '/videos/{videoId}/upload/multipart/init',
-      '/videos/{videoId}/upload/multipart/{uploadSessionId}',
-      '/videos/{videoId}/upload/multipart/{uploadSessionId}/abort',
-      '/videos/{videoId}/upload/multipart/{uploadSessionId}/complete',
-      '/videos/{videoId}/upload/multipart/{uploadSessionId}/parts/sign',
-      '/videos/{videoId}/upload/multipart/{uploadSessionId}/thumbnail',
+      '/videos/{publicId}/upload/multipart/init',
+      '/videos/{publicId}/upload/multipart/{uploadSessionId}',
+      '/videos/{publicId}/upload/multipart/{uploadSessionId}/abort',
+      '/videos/{publicId}/upload/multipart/{uploadSessionId}/complete',
+      '/videos/{publicId}/upload/multipart/{uploadSessionId}/parts/sign',
+      '/videos/{publicId}/upload/multipart/{uploadSessionId}/thumbnail',
     ]);
     expect(document.paths['/moderation/videos']?.get?.tags).toEqual(['Moderation']);
     expect(document.paths['/moderation/videos/{videoId}/moderation']?.post?.tags).toEqual([
@@ -436,7 +436,7 @@ describe('OpenAPI generation', () => {
       ]),
     );
     expect(
-      document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}/thumbnail']?.put
+      document.paths['/videos/{publicId}/upload/multipart/{uploadSessionId}/thumbnail']?.put
         ?.requestBody?.content?.['multipart/form-data'],
     ).toBeDefined();
     expect(document.paths['/auth/login']?.post?.requestBody).toBeDefined();
@@ -464,6 +464,9 @@ describe('OpenAPI generation', () => {
           in: 'query',
         }),
       ]),
+    );
+    expect(document.paths['/videos/me']?.get?.parameters).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'cursorId', in: 'query' })]),
     );
     expect(
       document.paths['/admin/users']?.get?.parameters?.find(
@@ -764,7 +767,7 @@ describe('OpenAPI generation', () => {
           in: 'query',
         }),
         expect.objectContaining({
-          name: 'cursorId',
+          name: 'cursorPublicId',
           in: 'query',
         }),
       ]),
@@ -773,35 +776,35 @@ describe('OpenAPI generation', () => {
     expect(document.paths['/videos/me']?.get?.responses?.[400]).toBeDefined();
     expect(document.paths['/videos/me']?.get?.responses?.[401]).toBeDefined();
     expect(
-      document.paths['/videos/{videoId}/upload/multipart/init']?.post?.requestBody,
+      document.paths['/videos/{publicId}/upload/multipart/init']?.post?.requestBody,
     ).toBeDefined();
     expect(
-      document.paths['/videos/{videoId}/upload/multipart/init']?.post?.requestBody?.content,
+      document.paths['/videos/{publicId}/upload/multipart/init']?.post?.requestBody?.content,
     ).toHaveProperty('application/json');
-    expect(document.paths['/videos/{videoId}/upload/multipart/init']?.post?.security).toEqual([
+    expect(document.paths['/videos/{publicId}/upload/multipart/init']?.post?.security).toEqual([
       { bearerAuth: [] },
     ]);
     expect(
-      document.paths['/videos/{videoId}/upload/multipart/init']?.post?.responses?.[201],
+      document.paths['/videos/{publicId}/upload/multipart/init']?.post?.responses?.[201],
     ).toBeDefined();
     expect(
-      document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}/parts/sign']?.post
+      document.paths['/videos/{publicId}/upload/multipart/{uploadSessionId}/parts/sign']?.post
         ?.requestBody,
     ).toBeDefined();
     expect(
-      document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}/parts/sign']?.post
+      document.paths['/videos/{publicId}/upload/multipart/{uploadSessionId}/parts/sign']?.post
         ?.requestBody?.content,
     ).toHaveProperty('application/json');
     expect(
-      document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}/complete']?.post
+      document.paths['/videos/{publicId}/upload/multipart/{uploadSessionId}/complete']?.post
         ?.requestBody?.content,
     ).toHaveProperty('application/json');
     expect(
-      document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}/abort']?.post
+      document.paths['/videos/{publicId}/upload/multipart/{uploadSessionId}/abort']?.post
         ?.requestBody,
     ).toBeUndefined();
     expect(
-      document.paths['/videos/{videoId}/upload/multipart/{uploadSessionId}']?.get?.requestBody,
+      document.paths['/videos/{publicId}/upload/multipart/{uploadSessionId}']?.get?.requestBody,
     ).toBeUndefined();
     expect(document.components?.schemas?.LoginRequest).toBeDefined();
     expect(document.components?.schemas?.LoginResponse).toBeDefined();
@@ -846,6 +849,23 @@ describe('OpenAPI generation', () => {
     expect(document.components?.schemas?.CreateVideoResponse).toBeDefined();
     expect(document.components?.schemas?.MyVideosResponse).toBeDefined();
     expect(document.components?.schemas?.VideoUploadSessionResponse).toBeDefined();
+    const createdVideoProperties =
+      document.components?.schemas?.CreateVideoResponse?.properties?.video?.properties;
+    const myVideoProperties =
+      document.components?.schemas?.MyVideosResponse?.properties?.videos?.items?.properties;
+    const myVideoCursorProperties =
+      document.components?.schemas?.MyVideosResponse?.properties?.nextCursor?.properties;
+    const videoUploadSessionProperties =
+      document.components?.schemas?.VideoUploadSessionResponse?.properties?.uploadSession
+        ?.properties;
+    expect(createdVideoProperties).not.toHaveProperty('id');
+    expect(createdVideoProperties).not.toHaveProperty('ownerId');
+    expect(myVideoProperties).not.toHaveProperty('id');
+    expect(myVideoProperties).not.toHaveProperty('ownerId');
+    expect(myVideoCursorProperties).not.toHaveProperty('id');
+    expect(myVideoCursorProperties).toHaveProperty('publicId');
+    expect(videoUploadSessionProperties).not.toHaveProperty('videoId');
+    expect(videoUploadSessionProperties).toHaveProperty('publicId');
     expect(document.components?.schemas?.SignVideoMultipartUploadPartsRequest).toBeDefined();
     expect(document.components?.schemas?.SignedVideoUploadPartsResponse).toBeDefined();
     expect(document.components?.schemas?.CompleteVideoMultipartUploadRequest).toBeDefined();

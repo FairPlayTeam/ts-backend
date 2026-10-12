@@ -5,8 +5,8 @@ import {
   type PublicCreatorSearchReader,
   type PublicCreatorSearchRecord,
   type PublicCreatorSearchTransactionRunner,
-} from '../src/services/videos/publicCreatorSearch.js';
-import { PUBLIC_CREATOR_SEARCH_LIMIT } from '../src/services/videos/videoSearch.js';
+} from '../src/modules/videos/catalog.js';
+import { PUBLIC_CREATOR_SEARCH_LIMIT } from '../src/modules/videos/shared/search.js';
 
 describe('public creator search', () => {
   test('prioritizes the exact username and de-duplicates partial matches only by username', async () => {

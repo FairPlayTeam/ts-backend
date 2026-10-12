@@ -1,7 +1,7 @@
 import { VIDEO_COMMENT_MAX_LENGTH } from '../../../config/constants.js';
 import { z } from '../../../docs/zod.js';
 import { publicProfileIdentityResponseSchema } from '../../../controllers/shared/profile.schemas.js';
-import { publicVideoIdParamsSchema } from '../../../controllers/videos/schemas/video.schemas.js';
+import { publicVideoIdParamsSchema } from '../../videos/index.js';
 
 export const VIDEO_COMMENT_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorId must be provided together';

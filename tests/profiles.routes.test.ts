@@ -11,7 +11,7 @@ import {
   PublicProfileNotFoundError,
   type ProfilesPort,
 } from '../src/modules/profiles/index.js';
-import type { ListPublicProfileVideosInput } from '../src/services/videos.types.js';
+import type { ListPublicProfileVideosInput } from '../src/modules/videos/index.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import {

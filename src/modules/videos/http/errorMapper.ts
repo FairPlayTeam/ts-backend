@@ -1,11 +1,11 @@
-import { HttpError } from '../errors/http.js';
-import { ObjectStorageUnavailableError } from '../lib/objectStorage.js';
+import { HttpError } from '../../../errors/http.js';
+import { ObjectStorageUnavailableError } from '../../../lib/objectStorage.js';
 import {
   VideoDeletionTemporarilyUnavailableError,
-  VideoNotFoundError,
   VideoRatingTemporarilyUnavailableError,
   VideoSelfRatingForbiddenError,
-} from '../services/videos.errors.js';
+} from '../errors.js';
+import { VideoNotFoundError } from '../shared/errors.js';
 
 export function toVideosHttpError(err: unknown): Error {
   if (err instanceof VideoNotFoundError) {

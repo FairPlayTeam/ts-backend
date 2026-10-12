@@ -15,10 +15,14 @@ import {
   videoRatingAggregateResponseSchema,
   videoRatingParamsSchema,
   videoRatingResponseSchema,
-} from '../controllers/videos.schemas.js';
-import { jsonRequest, jsonResponse } from './openapi.helpers.js';
-import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from './registry.js';
-import { z } from './zod.js';
+} from './schemas.js';
+import { jsonRequest, jsonResponse } from '../../../docs/openapi.helpers.js';
+import {
+  ApiErrorSchema,
+  ApiOrValidationErrorSchema,
+  type RouteDoc,
+} from '../../../docs/registry.js';
+import { z } from '../../../docs/zod.js';
 
 const videoCreateResponses = {
   400: jsonResponse('Bad request', ApiOrValidationErrorSchema),
@@ -84,6 +88,7 @@ const hlsPlaylistResponse = (description: string) => ({
 });
 
 const videoHlsResponses = {
+  400: jsonResponse('Invalid public video or HLS path parameters', ApiOrValidationErrorSchema),
   404: jsonResponse('Public HLS resource not found', ApiErrorSchema),
   429: jsonResponse('Too many requests', ApiErrorSchema),
   500: jsonResponse('Internal server error', ApiErrorSchema),

@@ -1,15 +1,39 @@
-import { toIsoString, toNullableIsoString } from '../http.responses.js';
-import { toPublicProfileIdentityResponse } from '../shared/profile.responses.js';
+import { toIsoString, toNullableIsoString } from '../../../controllers/http.responses.js';
+import { toPublicProfileIdentityResponse } from '../../../controllers/shared/profile.responses.js';
 import type {
   CreateVideoResult,
   GetPublicVideoDetailResult,
   ListPublicVideosResult,
   ListMyVideosResult,
   SearchPublicVideosResult,
-} from '../../services/videos.types.js';
+  VideoRatingAggregateResult,
+  VideoRatingResult,
+} from '../types.js';
+
+export const toVideoRatingAggregateResponse = (result: VideoRatingAggregateResult) => ({
+  ratingAverage: result.ratingAverage,
+  ratingCount: result.ratingCount,
+});
+
+export const toVideoRatingResponse = (result: VideoRatingResult) => ({
+  ratingAverage: result.ratingAverage,
+  ratingCount: result.ratingCount,
+  userRating: result.userRating,
+});
 
 const toVideoResponse = (video: CreateVideoResult['video']) => ({
-  ...video,
+  publicId: video.publicId,
+  title: video.title,
+  description: video.description,
+  tags: video.tags,
+  license: video.license,
+  visibility: video.visibility,
+  allowComments: video.allowComments,
+  processingStatus: video.processingStatus,
+  moderationStatus: video.moderationStatus,
+  thumbnailPath: video.thumbnailPath,
+  ratingAverage: video.ratingAverage,
+  ratingCount: video.ratingCount,
   createdAt: toIsoString(video.createdAt),
   updatedAt: toIsoString(video.updatedAt),
 });
@@ -26,7 +50,7 @@ export const toMyVideosResponse = ({ nextCursor, total, videos }: ListMyVideosRe
   total,
   nextCursor: nextCursor
     ? {
-        id: nextCursor.id,
+        publicId: nextCursor.publicId,
         createdAt: toIsoString(nextCursor.createdAt),
       }
     : null,
@@ -39,7 +63,14 @@ export const toPublicVideoSearchResponse = ({
   videos,
 }: SearchPublicVideosResult) => ({
   videos: videos.map((video) => ({
-    ...video,
+    publicId: video.publicId,
+    title: video.title,
+    description: video.description,
+    tags: video.tags,
+    username: video.username,
+    thumbnailPath: video.thumbnailPath,
+    ratingAverage: video.ratingAverage,
+    ratingCount: video.ratingCount,
     publishedAt: toNullableIsoString(video.publishedAt),
     createdAt: toIsoString(video.createdAt),
   })),

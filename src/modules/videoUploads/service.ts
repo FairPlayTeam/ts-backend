@@ -9,11 +9,8 @@ import { HOUR_MS } from '../../config/constants.js';
 import { ObjectStorageUnavailableError } from '../../lib/objectStorage.js';
 import { constraintContains, isPrismaUniqueError } from '../../lib/prismaErrors.js';
 import { runSerializableTransaction } from '../../lib/prismaTransactions.js';
-import {
-  videoOriginalKey,
-  videoSourceThumbnailKey,
-} from '../../services/videos/videoObjectKeys.js';
-import { VideoNotFoundError } from '../../services/videos.errors.js';
+import { videoOriginalKey, videoSourceThumbnailKey } from '../videos/shared/objectKeys.js';
+import { VideoNotFoundError } from '../videos/shared/errors.js';
 import {
   EXTERNAL_RESOURCE_QUIESCENCE_MS,
   ExternalResourceSizeMismatchError,
@@ -547,6 +544,22 @@ const scheduleVideoSourceThumbnailAbsence = async (
 export const createVideoUploadsService = (
   deps: VideoUploadsDependencies,
 ): VideoUploadsPort & VideoUploadsMaintenancePort => ({
+  async resolveOwnedVideoId({ publicId, userId }) {
+    const video = await deps.prisma.video.findFirst({
+      where: {
+        publicId,
+        ownerId: userId,
+      },
+      select: { id: true },
+    });
+
+    if (!video) {
+      throw new VideoNotFoundError();
+    }
+
+    return video.id;
+  },
+
   async initMultipartUpload({
     sizeBytes,
     userId,

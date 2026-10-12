@@ -11,8 +11,9 @@ import type {
 type VideoUploadSessionResponse = {
   uploadSession: Pick<
     VideoUploadSession,
-    'id' | 'videoId' | 'status' | 'partSizeBytes' | 'expectedSizeBytes' | 'partCount'
+    'id' | 'status' | 'partSizeBytes' | 'expectedSizeBytes' | 'partCount'
   > & {
+    publicId: string;
     expiresAt: string;
     completedAt: string | null;
     abortedAt: string | null;
@@ -43,12 +44,13 @@ type UploadVideoSourceThumbnailResponse = {
   };
 };
 
-export const toVideoUploadSessionResponse = ({
-  uploadSession,
-}: VideoUploadSessionResult): VideoUploadSessionResponse => ({
+export const toVideoUploadSessionResponse = (
+  { uploadSession }: VideoUploadSessionResult,
+  publicId: string,
+): VideoUploadSessionResponse => ({
   uploadSession: {
     id: uploadSession.id,
-    videoId: uploadSession.videoId,
+    publicId,
     status: uploadSession.status,
     partSizeBytes: uploadSession.partSizeBytes,
     expectedSizeBytes: uploadSession.expectedSizeBytes,
@@ -72,7 +74,10 @@ export const toSignedVideoUploadPartsResponse = (
   result: SignVideoMultipartUploadPartsResult,
 ): SignedVideoUploadPartsResponse => ({
   uploadSessionId: result.uploadSessionId,
-  parts: result.parts,
+  parts: result.parts.map((part) => ({
+    partNumber: part.partNumber,
+    url: part.url,
+  })),
 });
 
 export const toUploadVideoSourceThumbnailResponse = ({

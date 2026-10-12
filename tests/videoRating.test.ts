@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { toVideosHttpError } from '../src/controllers/videos.errors.js';
-import { rateVideoBodySchema } from '../src/controllers/videos.schemas.js';
+import { toVideosHttpError } from '../src/modules/videos/http/errorMapper.js';
+import { rateVideoBodySchema } from '../src/modules/videos/http/schemas.js';
 import { HttpError } from '../src/errors/http.js';
-import { VideoRatingTemporarilyUnavailableError } from '../src/services/videos.errors.js';
-import { calculateVideoRatingAverage } from '../src/services/videos/videoRating.js';
+import { VideoRatingTemporarilyUnavailableError } from '../src/modules/videos/index.js';
+import { calculateVideoRatingAverage } from '../src/modules/videos/ratings.js';
 
 describe('video ratings', () => {
   test('accepts only integer star values from 1 through 5', () => {

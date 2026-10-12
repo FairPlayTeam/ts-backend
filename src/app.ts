@@ -19,7 +19,7 @@ import type { AdminRoutePort } from './services/admin.types.js';
 import type { AuthRoutePort } from './services/auth.types.js';
 import type { ProfilesPort } from './modules/profiles/index.js';
 import type { CommentsPort } from './modules/comments/index.js';
-import type { VideosRoutePort } from './services/videos.types.js';
+import type { VideosRoutePort } from './modules/videos/index.js';
 import type { VideoUploadsPort } from './modules/videoUploads/index.js';
 import helmet from 'helmet';
 import {

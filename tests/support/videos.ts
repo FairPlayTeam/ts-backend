@@ -5,7 +5,7 @@ import type {
   ListPublicVideosResult,
   SearchPublicVideosResult,
   VideosRoutePort,
-} from '../../src/services/videos.types.js';
+} from '../../src/modules/videos/index.js';
 import type {
   SignVideoMultipartUploadPartsResult,
   UploadVideoSourceThumbnailResult,
@@ -199,6 +199,7 @@ export const createStubVideosService = (): VideosRoutePort => ({
 });
 
 export const createStubVideoUploadsService = (): VideoUploadsPort => ({
+  resolveOwnedVideoId: async ({ publicId }) => publicId,
   initMultipartUpload: async () => createUploadSessionResult(),
   uploadSourceThumbnail: async (input): Promise<UploadVideoSourceThumbnailResult> => ({
     thumbnail: {

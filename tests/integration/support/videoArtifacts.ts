@@ -11,8 +11,8 @@ import {
   buildVideoArtifactManifest,
   videoHlsSegmentObjectKey,
   type VideoObjectKeyQuality,
-} from '../../../src/services/videos/videoObjectKeys.js';
-import { createVideoHlsGenerationToken } from '../../../src/services/videos/videoHls.js';
+} from '../../../src/modules/videos/shared/objectKeys.js';
+import { createVideoHlsGenerationToken } from '../../../src/modules/videos/shared/hls.js';
 import { VIDEO_OBJECT_STORAGE_BUCKET } from './infrastructure.js';
 import type { TestRuntime } from './runtime.js';
 

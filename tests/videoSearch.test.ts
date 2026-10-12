@@ -5,7 +5,7 @@ import {
   buildVideoSearchFilter,
   escapeSearchTermForIlike,
   normalizePublicSearchTerm,
-} from '../src/services/videos/videoSearch.js';
+} from '../src/modules/videos/shared/search.js';
 
 describe('video search filter', () => {
   test('escapes every ILIKE wildcard as literal text, including adversarial combinations', () => {

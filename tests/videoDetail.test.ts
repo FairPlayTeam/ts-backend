@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
-import type { VideosDependencies } from '../src/services/videos/videos.dependencies.js';
-import { createVideosService } from '../src/services/videos.service.js';
-import { VideoNotFoundError } from '../src/services/videos.errors.js';
-import { calculateVideoRatingAverage } from '../src/services/videos/videoRating.js';
+import type { VideosDependencies } from '../src/modules/videos/dependencies.js';
+import { createVideosService } from '../src/modules/videos/index.js';
+import { VideoNotFoundError } from '../src/modules/videos/shared/errors.js';
+import { calculateVideoRatingAverage } from '../src/modules/videos/ratings.js';
 
 const createdAt = new Date('2026-01-01T00:00:00.000Z');
 const publishedAt = new Date('2026-01-02T00:00:00.000Z');

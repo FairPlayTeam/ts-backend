@@ -1,20 +1,22 @@
 import { Router, type RequestHandler } from 'express';
-import { createVideosController } from '../controllers/videos.controller.js';
+import { createVideosController } from './handlers.js';
 import {
   createVideoSchema,
   deleteVideoSchema,
   getPublicVideoDetailSchema,
   getVideoRatingSchema,
+  getVideoHlsRenditionSchema,
+  getVideoHlsSegmentSchema,
   listMyVideosSchema,
   listPublicVideosSchema,
   rateVideoSchema,
   searchPublicVideosSchema,
-} from '../controllers/videos.schemas.js';
-import { createRouteProtector } from '../middleware/routeProtection.js';
-import { createOptionalAuthenticateSession } from '../middleware/auth.js';
-import { validate } from '../middleware/validation.js';
-import type { AuthSessionValidationPort } from '../services/auth.types.js';
-import type { VideosRoutePort } from '../services/videos.types.js';
+} from './schemas.js';
+import { createRouteProtector } from '../../../middleware/routeProtection.js';
+import { createOptionalAuthenticateSession } from '../../../middleware/auth.js';
+import { validate } from '../../../middleware/validation.js';
+import type { AuthSessionValidationPort } from '../../../services/auth.types.js';
+import type { VideosRoutePort } from '../types.js';
 
 type VideosRouterDependencies = {
   authService: AuthSessionValidationPort;
@@ -65,11 +67,19 @@ export const createRouter = ({ authService, videosService }: VideosRouterDepende
   );
   router.get('/:publicId/rating', validate(getVideoRatingSchema), getVideoRating);
   router.put('/:publicId/rating', ...protectedValidatedRoute(rateVideoSchema, rateVideo));
-  router.get('/:publicId/thumbnail', getThumbnail);
-  router.get('/:publicId/hls/master.m3u8', getHlsMaster);
-  router.get('/:publicId/hls/:generationToken/:quality/index.m3u8', getHlsRendition);
-  router.get('/:publicId/hls/:generationToken/:quality/segments/:segment', getHlsSegment);
+  router.get('/:publicId/thumbnail', validate(getPublicVideoDetailSchema), getThumbnail);
+  router.get('/:publicId/hls/master.m3u8', validate(getPublicVideoDetailSchema), getHlsMaster);
+  router.get(
+    '/:publicId/hls/:generationToken/:quality/index.m3u8',
+    validate(getVideoHlsRenditionSchema),
+    getHlsRendition,
+  );
+  router.get(
+    '/:publicId/hls/:generationToken/:quality/segments/:segment',
+    validate(getVideoHlsSegmentSchema),
+    getHlsSegment,
+  );
   return router;
 };
 
-export { routeDocs } from '../docs/videos.routes.js';
+export { routeDocs } from './openapi.js';

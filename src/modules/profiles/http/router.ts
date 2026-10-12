@@ -12,13 +12,13 @@ import { createRouteProtector } from '../../../middleware/routeProtection.js';
 import { createOptionalAuthenticateSession } from '../../../middleware/auth.js';
 import { validate } from '../../../middleware/validation.js';
 import type { AuthSessionValidationPort } from '../../../services/auth.types.js';
-import type { VideosRoutePort } from '../../../services/videos.types.js';
+import type { PublicProfileVideosPort } from '../../videos/index.js';
 import type { ProfilesPort } from '../types.js';
 
 type ProfilesRouterDependencies = {
   authService: AuthSessionValidationPort;
   profilesService: ProfilesPort;
-  videosService: Pick<VideosRoutePort, 'listPublicProfileVideos'>;
+  videosService: PublicProfileVideosPort;
 };
 
 type ValidationSchema = Parameters<typeof validate>[0];

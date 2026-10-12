@@ -1,5 +1,5 @@
 import { HttpError } from '../../../errors/http.js';
-import { VideoNotFoundError } from '../../../services/videos.errors.js';
+import { VideoNotFoundError } from '../../videos/shared/errors.js';
 import {
   CommentNotFoundError,
   CommentsDisabledError,

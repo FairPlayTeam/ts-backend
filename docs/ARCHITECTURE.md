@@ -31,6 +31,7 @@ app --> middleware["Middleware<br/>CORS, Helmet, Logger, Rate Limit"]
 middleware --> redis["Redis optional, required in production"]
 cleanup --> redisLock["Redis distributed lock<br/>when Redis is configured"]
 index --> videoUploads["Video Uploads module"]
+index --> videos["Videos module"]
 index --> videoTranscoding["Video Transcoding maintenance"]
 videoUploads --> videoStorage["Video object storage bucket"]
 videoUploads --> externalTargets["Durable external resource targets"]
@@ -537,8 +538,9 @@ retries, and shutdown requeueing; `artifacts.ts` owns generation reservation/pub
 artifact reconciliation; and `media.ts` owns ffprobe validation and FFmpeg output. The injected
 Prisma, object-storage, clock, configuration, binary, and logger surface is defined in
 `dependencies.ts`. The module barrel exports only the worker factory and maintenance entry points.
-Shared `videoObjectKeys.ts` and `videoHls.ts` helpers remain in `services/videos` because upload,
-transcoding, and playback all use them.
+Shared `objectKeys.ts` and `hls.ts` helpers live in `src/modules/videos/shared/` because uploads,
+transcoding, and playback use the same artifact rules. Readability scopes and the common not-found
+error also live there so Comments, Uploads, and Admin use the same definitions as Videos.
 
 Production separates the HTTP API from the transcode runner with `RUNTIME_ROLE=api` and
 `RUNTIME_ROLE=transcoder`. The API must use `VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS=0`; the initial
@@ -1066,7 +1068,30 @@ application needs through its entry point.
 Components that are genuinely shared across domains remain in cross-cutting areas such as `lib`,
 `middleware`, and `shared`.
 
-The existing `auth`, `admin`, and `videos` domains still use the earlier organization across
-controllers, services, and route files. They remain there until a concrete need justifies migrating
-them. Routes are assembled explicitly in `src/routes/registry.ts`; adding a domain module does not
-require automatic route discovery.
+The `auth` and `admin` domains still use the earlier organization across controllers, services, and
+route files. Routes are assembled explicitly in `src/routes/registry.ts`; adding a domain module
+does not require automatic route discovery.
+
+## Videos domain
+
+`src/modules/videos/` owns the 13 remaining video HTTP operations and the service capabilities for
+management, public catalog and search, ratings, playback, and deferred lifecycle cleanup. The
+module's HTTP router and OpenAPI definitions are registered through `videosHttpModule` in the
+explicit route registry. `createVideosService` composes the five capability factories directly.
+`index.ts` exposes the service contracts and the specific HTTP schemas and serializer shared with
+Comments and Profiles; storage, HLS, readability, license, public-ID, and search helpers stay under
+`shared/` and are imported from their owning files.
+
+Creation and owner-list responses are serialized by field whitelist and omit internal video and
+owner UUIDs. The owner-list cursor uses `(createdAt, publicId)`, matching public catalog pagination;
+its request parameter is `cursorPublicId`.
+VideoUploads keeps its module and route paths; the route's `videoId` segment accepts the public ID
+and is resolved to an owner-scoped database ID inside VideoUploads. Upload-session responses return
+the public ID and do not repeat the internal video UUID.
+
+Uploads, comments, and transcoding remain in their own modules. Shared video rules and helpers live
+once under `src/modules/videos/shared/`: object keys and artifact manifests, HLS parsing and
+playlist rewriting, readability scopes, licenses, public IDs, search normalization, and
+`VideoNotFoundError`. Uploads, transcoding, comments, and administration import those shared exports
+directly. Profiles receives only `PublicProfileVideosPort`, while maintenance receives only
+`VideoLifecycleMaintenancePort`.

@@ -6,9 +6,9 @@ import {
   parseVideoHlsSegmentName,
   rewriteVideoHlsMasterPlaylist,
   rewriteVideoHlsRenditionPlaylist,
-} from '../src/services/videos/videoHls.js';
-import { createVideosService } from '../src/services/videos.service.js';
-import { VideoNotFoundError } from '../src/services/videos.errors.js';
+} from '../src/modules/videos/shared/hls.js';
+import { createVideosService } from '../src/modules/videos/index.js';
+import { VideoNotFoundError } from '../src/modules/videos/shared/errors.js';
 
 const publicId = 'AbCdEf123_';
 const generationId = '11111111-1111-4111-8111-111111111111';

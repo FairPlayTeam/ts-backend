@@ -34,7 +34,7 @@ const videoUploadResponses = {
 export const routeDocs = [
   {
     method: 'post',
-    path: '/videos/{videoId}/upload/multipart/init',
+    path: '/videos/{publicId}/upload/multipart/init',
     operationId: 'initializeVideoMultipartUpload',
     summary: 'Initialize a multipart video upload',
     tags: ['Videos'],
@@ -50,7 +50,7 @@ export const routeDocs = [
   },
   {
     method: 'post',
-    path: '/videos/{videoId}/upload/multipart/{uploadSessionId}/parts/sign',
+    path: '/videos/{publicId}/upload/multipart/{uploadSessionId}/parts/sign',
     operationId: 'signVideoMultipartUploadParts',
     summary: 'Sign multipart video upload parts',
     tags: ['Videos'],
@@ -66,7 +66,7 @@ export const routeDocs = [
   },
   {
     method: 'put',
-    path: '/videos/{videoId}/upload/multipart/{uploadSessionId}/thumbnail',
+    path: '/videos/{publicId}/upload/multipart/{uploadSessionId}/thumbnail',
     operationId: 'uploadVideoSourceThumbnail',
     summary: 'Upload or replace a source-bound video thumbnail',
     tags: ['Videos'],
@@ -85,7 +85,7 @@ export const routeDocs = [
   },
   {
     method: 'post',
-    path: '/videos/{videoId}/upload/multipart/{uploadSessionId}/complete',
+    path: '/videos/{publicId}/upload/multipart/{uploadSessionId}/complete',
     operationId: 'completeVideoMultipartUpload',
     summary: 'Complete a multipart video upload',
     tags: ['Videos'],
@@ -101,7 +101,7 @@ export const routeDocs = [
   },
   {
     method: 'post',
-    path: '/videos/{videoId}/upload/multipart/{uploadSessionId}/abort',
+    path: '/videos/{publicId}/upload/multipart/{uploadSessionId}/abort',
     operationId: 'abortVideoMultipartUpload',
     summary: 'Schedule a multipart video upload for durable abort',
     tags: ['Videos'],
@@ -116,7 +116,7 @@ export const routeDocs = [
   },
   {
     method: 'get',
-    path: '/videos/{videoId}/upload/multipart/{uploadSessionId}',
+    path: '/videos/{publicId}/upload/multipart/{uploadSessionId}',
     operationId: 'getVideoMultipartUpload',
     summary: 'Get a multipart video upload session',
     tags: ['Videos'],

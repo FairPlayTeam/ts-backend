@@ -1,7 +1,14 @@
 import { randomBytes } from 'node:crypto';
+import { VideoNotFoundError } from './errors.js';
 
 export const VIDEO_PUBLIC_ID_LENGTH = 10;
 export const VIDEO_PUBLIC_ID_PATTERN = /^[A-Za-z0-9_]{10}$/;
+
+export const assertValidPublicVideoId = (publicId: string): void => {
+  if (!VIDEO_PUBLIC_ID_PATTERN.test(publicId)) {
+    throw new VideoNotFoundError();
+  }
+};
 
 const VIDEO_PUBLIC_ID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_';
 const MAX_UNBIASED_BYTE =

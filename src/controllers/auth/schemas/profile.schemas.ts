@@ -11,7 +11,7 @@ import {
 } from '../../../services/auth/auth.messages.js';
 import { PROFILE_UPDATE_EMPTY_MESSAGE } from '../../../services/auth.errors.js';
 import { AUTH_ROLES } from '../../../services/auth.roles.js';
-import { VIDEO_LICENSES } from '../../../services/videos/videoLicenses.js';
+import { VIDEO_LICENSES } from '../../../modules/videos/shared/licenses.js';
 import {
   authSessionResponseSchema,
   authUserProfileResponseSchema,
