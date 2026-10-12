@@ -7,12 +7,12 @@ import {
   type AdminAccountsQuery,
   type BanAdminAccountBody,
   type UpdateAdminAccountRoleBody,
-} from '../src/controllers/admin.schemas.js';
+} from '../src/modules/admin/http/accounts/schemas.js';
 import { REQUEST_VALIDATION_FAILED_MESSAGE } from '../src/errors/http.js';
 import { AUTH_SESSION_REQUIRED_MESSAGE } from '../src/middleware/auth.js';
 import { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../src/middleware/routeProtection.js';
 import type {
-  AdminPorts,
+  AdminService,
   BanAdminAccountInput,
   ListAdminAccountsInput,
   ListAdminVideosInput,
@@ -20,7 +20,7 @@ import type {
   RequestAdminVideoDeletionInput,
   UnbanAdminAccountInput,
   UpdateAdminAccountRoleInput,
-} from '../src/services/admin.types.js';
+} from '../src/modules/admin/index.js';
 import { createStubAdminService } from './support/admin.js';
 import { createStubAuthService } from './support/auth.js';
 import { createStubProfilesService } from './support/profiles.js';
@@ -96,7 +96,7 @@ describe('admin routes', () => {
 
             return adminService.updateAccountRole(input);
           },
-        } satisfies AdminPorts,
+        } satisfies AdminService,
         authService: {
           ...authService,
           validateSession: async (sessionKey) => {
@@ -151,7 +151,7 @@ describe('admin routes', () => {
     });
   });
 
-  test('lists accounts for an administrator session', async () => {
+  test('lists accounts for an administrator and whitelists unexpected service fields', async () => {
     receivedListAccountsRequest = undefined;
     receivedSessionKey = undefined;
     const query = new URLSearchParams({
@@ -184,7 +184,8 @@ describe('admin routes', () => {
       },
     });
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(await response.json()).toEqual({
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toEqual({
       accounts: [
         {
           id: '11111111-1111-4111-8111-111111111111',
@@ -206,7 +207,7 @@ describe('admin routes', () => {
     });
   });
 
-  test('lists moderation videos for a moderator with filters, sorting, and text search', async () => {
+  test('lists moderation videos and omits injected storage and owner fields', async () => {
     receivedListVideosRequest = undefined;
     const query = new URLSearchParams({
       moderationStatus: 'pending',
@@ -238,7 +239,8 @@ describe('admin routes', () => {
       },
     });
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(await response.json()).toEqual({
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toEqual({
       videos: [
         {
           id: '33333333-3333-4333-8333-333333333333',
@@ -264,7 +266,7 @@ describe('admin routes', () => {
     });
   });
 
-  test('applies a moderation decision for a moderator', async () => {
+  test('applies a moderation decision with a whitelisted service result', async () => {
     receivedModerateVideoRequest = undefined;
     const response = await fetch(`${baseUrl}/moderation/videos/${cursorId}/moderation`, {
       method: 'POST',
@@ -283,7 +285,8 @@ describe('admin routes', () => {
       videoId: cursorId,
       decision: 'approved',
     });
-    expect(await response.json()).toEqual({
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toEqual({
       video: {
         id: '33333333-3333-4333-8333-333333333333',
         publicId: 'AdminVid01_',
@@ -325,7 +328,8 @@ describe('admin routes', () => {
       videoId: cursorId,
     });
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(await response.json()).toEqual({
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toEqual({
       video: {
         id: '33333333-3333-4333-8333-333333333333',
         publicId: 'AdminVid01_',
@@ -425,7 +429,7 @@ describe('admin routes', () => {
     });
   });
 
-  test('bans an account for an administrator session', async () => {
+  test('bans an account and whitelists the returned account fields', async () => {
     receivedBanAccountRequest = undefined;
     receivedSessionKey = undefined;
 
@@ -451,7 +455,8 @@ describe('admin routes', () => {
       reason: 'Repeated abusive behavior.',
     });
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(await response.json()).toEqual({
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toEqual({
       message: 'Account banned successfully',
       account: {
         id: '22222222-2222-4222-8222-222222222222',
@@ -468,7 +473,7 @@ describe('admin routes', () => {
     });
   });
 
-  test('unbans an account for an administrator session', async () => {
+  test('unbans an account and whitelists the returned account fields', async () => {
     receivedSessionKey = undefined;
     receivedUnbanAccountRequest = undefined;
 
@@ -489,7 +494,8 @@ describe('admin routes', () => {
       targetUserId: cursorId,
     });
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(await response.json()).toEqual({
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toEqual({
       message: 'Account unbanned successfully',
       account: {
         id: '22222222-2222-4222-8222-222222222222',
@@ -504,7 +510,7 @@ describe('admin routes', () => {
     });
   });
 
-  test('updates an account role for an administrator session', async () => {
+  test('updates an account role and whitelists the returned account fields', async () => {
     receivedSessionKey = undefined;
     receivedUpdateAccountRoleRequest = undefined;
 
@@ -531,7 +537,8 @@ describe('admin routes', () => {
       role: 'moderator',
     });
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(await response.json()).toEqual({
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toEqual({
       message: 'Account role updated successfully',
       account: {
         id: '22222222-2222-4222-8222-222222222222',
@@ -561,7 +568,8 @@ describe('admin routes', () => {
     expect(receivedBanAccountRequest).toBeUndefined();
     expect(receivedUnbanAccountRequest).toBeUndefined();
     expect(receivedUpdateAccountRoleRequest).toBeUndefined();
-    expect(await response.json()).toEqual({
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toEqual({
       error: 'Forbidden',
       message: INSUFFICIENT_PERMISSIONS_MESSAGE,
     });

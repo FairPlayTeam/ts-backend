@@ -1,18 +1,14 @@
 import { Prisma } from '@prisma/client';
-import type { AdminDependencies } from './admin.dependencies.js';
+import type { AdminDependencies } from '../dependencies.js';
 import {
   profileAvatarMediaAssetsSelection,
   toProfileMediaUrl,
-} from '../userMedia/userMedia.profileAssets.js';
-import { banAdminAccount } from './admin.accountBan.js';
-import {
-  DEFAULT_ADMIN_ACCOUNT_BAN_STATUS,
-  type AdminAccountBanStatus,
-} from './admin.accountFilters.js';
-import { unbanAdminAccount } from './admin.accountUnban.js';
-import { updateAdminAccountRole } from './admin.accountRoles.js';
-import { ADMIN_ONLY_ROLES } from '../auth.roles.js';
-import { lockAuthorizedAdminActor } from './admin.actorAuthorization.js';
+} from '../../../services/userMedia/userMedia.profileAssets.js';
+import { banAdminAccount } from './ban.js';
+import { DEFAULT_ADMIN_ACCOUNT_BAN_STATUS, type AdminAccountBanStatus } from './filters.js';
+import { unbanAdminAccount } from './unban.js';
+import { updateAdminAccountRole } from './roles.js';
+import { ADMIN_ONLY_ROLES, lockAuthorizedAdminActor } from '../authorization.js';
 import type {
   BanAdminAccountInput,
   BanAdminAccountResult,
@@ -24,7 +20,7 @@ import type {
   UnbanAdminAccountResult,
   UpdateAdminAccountRoleInput,
   UpdateAdminAccountRoleResult,
-} from './types/accounts.types.js';
+} from './types.js';
 
 const DEFAULT_ADMIN_ACCOUNTS_LIMIT = 20;
 const MAX_ADMIN_ACCOUNTS_LIMIT = 100;

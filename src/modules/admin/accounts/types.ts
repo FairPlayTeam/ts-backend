@@ -1,5 +1,5 @@
-import type { AuthRole } from '../../auth.roles.js';
-import type { AdminAccountBanStatus } from '../admin.accountFilters.js';
+import type { AuthRole } from '../../../services/auth.roles.js';
+import type { AdminAccountBanStatus } from './filters.js';
 
 export type ListAdminAccountsInput = {
   actorUserId: string;

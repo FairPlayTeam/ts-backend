@@ -7,17 +7,21 @@ import {
   unbanAdminAccountResponseSchema,
   updateAdminAccountRoleRequestSchema,
   updateAdminAccountRoleResponseSchema,
-} from '../../controllers/admin.schemas.js';
-import { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../../middleware/routeProtection.js';
-import { jsonRequest, jsonResponse } from '../openapi.helpers.js';
-import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from '../registry.js';
+} from './schemas.js';
+import { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../../../../middleware/routeProtection.js';
+import { jsonRequest, jsonResponse } from '../../../../docs/openapi.helpers.js';
+import {
+  ApiErrorSchema,
+  ApiOrValidationErrorSchema,
+  type RouteDoc,
+} from '../../../../docs/registry.js';
 import {
   BAN_ACCOUNT_SUCCESS_MESSAGE,
   UNBAN_ACCOUNT_SUCCESS_MESSAGE,
   UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
-} from '../../services/admin/admin.messages.js';
+} from '../../accounts/messages.js';
 
-export const adminAccountRouteDocs = [
+export const routeDocs = [
   {
     method: 'get',
     path: '/admin/users',

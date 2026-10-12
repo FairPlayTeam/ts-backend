@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
-import type { AdminDependencies } from '../src/services/admin/admin.dependencies.js';
-import { createAdminService } from '../src/services/admin.service.js';
-import type { ListAdminVideosInput } from '../src/services/admin.types.js';
+import type { AdminDependencies } from '../src/modules/admin/dependencies.js';
+import { createAdminService } from '../src/modules/admin/index.js';
+import type { ListAdminVideosInput } from '../src/modules/admin/videoModeration/types.js';
 
 const createdAt = [
   new Date('2026-01-03T00:00:00.000Z'),

@@ -1,4 +1,4 @@
-import { AUTH_ROLES, type AuthRole } from '../auth.roles.js';
+import { AUTH_ROLES, type AuthRole } from '../../services/auth.roles.js';
 
 const ROLE_RANK = {
   user: 0,

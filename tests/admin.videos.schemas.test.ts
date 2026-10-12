@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { moderateAdminVideoRequestSchema } from '../src/controllers/admin/schemas/videos.schemas.js';
+import { moderateAdminVideoRequestSchema } from '../src/modules/admin/http/videoModeration/schemas.js';
 import { VIDEO_REJECTION_REASON_MAX_LENGTH } from '../src/config/constants.js';
 
 describe('admin video moderation schema', () => {

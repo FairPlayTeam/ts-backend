@@ -1,14 +1,14 @@
-import { z } from '../../../docs/zod.js';
-import { BAN_REASON_MAX_LENGTH } from '../../../config/constants.js';
-import { AUTH_ROLES } from '../../../services/auth.roles.js';
+import { z } from '../../../../docs/zod.js';
+import { BAN_REASON_MAX_LENGTH } from '../../../../config/constants.js';
+import { AUTH_ROLES } from '../../../../services/auth.roles.js';
 import {
   BAN_ACCOUNT_SUCCESS_MESSAGE,
   UNBAN_ACCOUNT_SUCCESS_MESSAGE,
   UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
-} from '../../../services/admin/admin.messages.js';
-import { ADMIN_ACCOUNT_BAN_STATUSES } from '../../../services/admin/admin.accountFilters.js';
-import { ADMIN_BAN_REASON_REQUIRED_MESSAGE } from '../../../services/admin.errors.js';
-import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
+} from '../../accounts/messages.js';
+import { ADMIN_ACCOUNT_BAN_STATUSES } from '../../accounts/filters.js';
+import { ADMIN_BAN_REASON_REQUIRED_MESSAGE } from '../../errors.js';
+import { relativeAssetPathSchema } from '../../../../controllers/shared/asset.schemas.js';
 
 export const ADMIN_ACCOUNTS_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorId must be provided together';

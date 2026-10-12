@@ -2,8 +2,8 @@ import {
   BAN_REASON_MAX_LENGTH,
   VIDEO_DELETION_REASON_MAX_LENGTH,
   VIDEO_REJECTION_REASON_MAX_LENGTH,
-} from '../config/constants.js';
-import { INSUFFICIENT_PERMISSIONS_MESSAGE } from './auth.errors.js';
+} from '../../config/constants.js';
+import { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../../services/auth.errors.js';
 
 export const ADMIN_ACCOUNT_NOT_FOUND_MESSAGE = 'Account not found';
 export const ADMIN_ACCOUNT_ALREADY_BANNED_MESSAGE = 'Account is already banned';

@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { BAN_REASON_MAX_LENGTH } from '../../config/constants.js';
+import { BAN_REASON_MAX_LENGTH } from '../../../config/constants.js';
 import {
   AdminAccountAlreadyBannedError,
   AdminAccountNotFoundError,
@@ -8,18 +8,13 @@ import {
   AdminSelfBanError,
   ADMIN_BAN_REASON_REQUIRED_MESSAGE,
   ADMIN_BAN_REASON_TOO_LONG_MESSAGE,
-} from '../admin.errors.js';
-import { handleExpectedMailerError } from '../mailer/mailer.helpers.js';
-import type { AdminDependencies } from './admin.dependencies.js';
-import { ADMIN_ONLY_ROLES } from '../auth.roles.js';
-import { lockAuthorizedAdminActor } from './admin.actorAuthorization.js';
-import { BAN_ACCOUNT_SUCCESS_MESSAGE } from './admin.messages.js';
-import { canManageRole, getManageableRoles } from './admin.roleHierarchy.js';
-import type {
-  BanAdminAccountInput,
-  BanAdminAccountResult,
-  BannedAdminAccount,
-} from './types/accounts.types.js';
+} from '../errors.js';
+import { handleExpectedMailerError } from '../../../services/mailer/mailer.helpers.js';
+import type { AdminDependencies } from '../dependencies.js';
+import { ADMIN_ONLY_ROLES, lockAuthorizedAdminActor } from '../authorization.js';
+import { BAN_ACCOUNT_SUCCESS_MESSAGE } from './messages.js';
+import { canManageRole, getManageableRoles } from '../roleHierarchy.js';
+import type { BanAdminAccountInput, BanAdminAccountResult, BannedAdminAccount } from './types.js';
 
 const bannedAccountSelect = {
   id: true,

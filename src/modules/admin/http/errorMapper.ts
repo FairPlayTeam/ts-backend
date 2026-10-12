@@ -1,5 +1,5 @@
-import { HttpError } from '../errors/http.js';
-import { ObjectStorageUnavailableError } from '../lib/objectStorage.js';
+import { HttpError } from '../../../errors/http.js';
+import { ObjectStorageUnavailableError } from '../../../lib/objectStorage.js';
 import {
   AdminAccountAlreadyBannedError,
   AdminAccountNotBannedError,
@@ -12,8 +12,8 @@ import {
   AdminSelfUnbanError,
   AdminVideoRejectionReasonInvalidError,
   AdminVideoDeletionReasonInvalidError,
-} from '../services/admin.errors.js';
-import { VideoNotFoundError } from '../modules/videos/shared/errors.js';
+} from '../errors.js';
+import { VideoNotFoundError } from '../../videos/shared/errors.js';
 
 export function toAdminHttpError(err: unknown): Error {
   if (

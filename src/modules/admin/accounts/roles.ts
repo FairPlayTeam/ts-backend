@@ -3,16 +3,12 @@ import {
   AdminAccountNotFoundError,
   AdminRoleAlreadyAssignedError,
   AdminRoleHierarchyError,
-} from '../admin.errors.js';
-import type { AdminDependencies } from './admin.dependencies.js';
-import { ADMIN_ONLY_ROLES } from '../auth.roles.js';
-import { lockAuthorizedAdminActor } from './admin.actorAuthorization.js';
-import { UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE } from './admin.messages.js';
-import { canManageRole, getManageableRoles } from './admin.roleHierarchy.js';
-import type {
-  UpdateAdminAccountRoleInput,
-  UpdateAdminAccountRoleResult,
-} from './types/accounts.types.js';
+} from '../errors.js';
+import type { AdminDependencies } from '../dependencies.js';
+import { ADMIN_ONLY_ROLES, lockAuthorizedAdminActor } from '../authorization.js';
+import { UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE } from './messages.js';
+import { canManageRole, getManageableRoles } from '../roleHierarchy.js';
+import type { UpdateAdminAccountRoleInput, UpdateAdminAccountRoleResult } from './types.js';
 
 const updatedAccountRoleSelect = {
   id: true,

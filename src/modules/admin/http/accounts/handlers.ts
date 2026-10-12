@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { toAdminHttpError } from '../admin.errors.js';
+import { toAdminHttpError } from '../errorMapper.js';
 import type {
   AdminAccountsQuery,
   BanAdminAccountBody,
@@ -7,16 +7,20 @@ import type {
   UnbanAdminAccountParams,
   UpdateAdminAccountRoleBody,
   UpdateAdminAccountRoleParams,
-} from '../admin.schemas.js';
-import { sendNoStoreJson } from '../http.responses.js';
-import type { AuthenticatedRequest } from '../../middleware/auth.js';
-import type { AdminControllerDependencies } from './admin.controller.types.js';
+} from './schemas.js';
+import { sendNoStoreJson } from '../../../../controllers/http.responses.js';
+import type { AuthenticatedRequest } from '../../../../middleware/auth.js';
+import type { AdminAccountsPort } from '../../accounts/types.js';
 import {
   toAdminAccountsResponse,
   toBanAdminAccountResponse,
   toUnbanAdminAccountResponse,
   toUpdateAdminAccountRoleResponse,
-} from './admin.responses.js';
+} from './responses.js';
+
+type AdminAccountsHandlerDependencies = {
+  adminAccountsService: AdminAccountsPort;
+};
 
 type ListAccountsRequest = Request<unknown, unknown, unknown, AdminAccountsQuery>;
 type BanAccountRequest = Request<BanAdminAccountParams, unknown, BanAdminAccountBody>;
@@ -27,7 +31,7 @@ type UpdateAccountRoleRequest = Request<
   UpdateAdminAccountRoleBody
 >;
 
-export const createAdminAccountsController = (deps: AdminControllerDependencies) => {
+export const createAdminAccountsHandlers = (deps: AdminAccountsHandlerDependencies) => {
   const listAccounts = async (req: ListAccountsRequest, res: Response, next: NextFunction) => {
     try {
       const authenticatedReq = req as AuthenticatedRequest;
@@ -39,7 +43,7 @@ export const createAdminAccountsController = (deps: AdminControllerDependencies)
               id: cursorId,
             }
           : undefined;
-      const result = await deps.adminService.listAccounts({
+      const result = await deps.adminAccountsService.listAccounts({
         actorUserId: authenticatedReq.user.id,
         ...(cursor ? { cursor } : {}),
         ...(limit !== undefined ? { limit } : {}),
@@ -57,7 +61,7 @@ export const createAdminAccountsController = (deps: AdminControllerDependencies)
     try {
       const authenticatedReq = req as AuthenticatedRequest;
       const banReq = req as BanAccountRequest;
-      const result = await deps.adminService.banAccount({
+      const result = await deps.adminAccountsService.banAccount({
         actorUserId: authenticatedReq.user.id,
         targetUserId: banReq.params.userId,
         reason: banReq.body.reason,
@@ -73,7 +77,7 @@ export const createAdminAccountsController = (deps: AdminControllerDependencies)
     try {
       const authenticatedReq = req as AuthenticatedRequest;
       const unbanReq = req as UnbanAccountRequest;
-      const result = await deps.adminService.unbanAccount({
+      const result = await deps.adminAccountsService.unbanAccount({
         actorUserId: authenticatedReq.user.id,
         targetUserId: unbanReq.params.userId,
       });
@@ -88,7 +92,7 @@ export const createAdminAccountsController = (deps: AdminControllerDependencies)
     try {
       const authenticatedReq = req as AuthenticatedRequest;
       const roleReq = req as UpdateAccountRoleRequest;
-      const result = await deps.adminService.updateAccountRole({
+      const result = await deps.adminAccountsService.updateAccountRole({
         actorUserId: authenticatedReq.user.id,
         targetUserId: roleReq.params.userId,
         role: roleReq.body.role,

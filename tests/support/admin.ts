@@ -1,14 +1,29 @@
-import type { AdminPorts } from '../../src/services/admin.types.js';
+import type { AdminService } from '../../src/modules/admin/index.js';
 import {
   BAN_ACCOUNT_SUCCESS_MESSAGE,
   UNBAN_ACCOUNT_SUCCESS_MESSAGE,
   UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
-} from '../../src/services/admin/admin.messages.js';
+} from '../../src/modules/admin/accounts/messages.js';
 
-export const createStubAdminService = (): AdminPorts => ({
+const addUnexpectedAccountFields = <Account extends object>(account: Account) => ({
+  ...account,
+  passwordHash: '$argon2id$private-password-hash',
+  sessionData: { sessionKey: 'private-session-key' },
+  internalMarker: 'account-internal-marker',
+});
+
+const addUnexpectedVideoFields = <Video extends object>(video: Video) => ({
+  ...video,
+  storageKey: 'private/video-storage-key',
+  thumbnailObjectKey: 'private/thumbnail-storage-key',
+  unexpectedOwnerField: 'owner-internal-field',
+  internalMarker: 'video-internal-marker',
+});
+
+export const createStubAdminService = (): AdminService => ({
   banAccount: async () => ({
     message: BAN_ACCOUNT_SUCCESS_MESSAGE,
-    account: {
+    account: addUnexpectedAccountFields({
       id: '22222222-2222-4222-8222-222222222222',
       email: 'banned@example.com',
       username: 'banned_user',
@@ -17,13 +32,13 @@ export const createStubAdminService = (): AdminPorts => ({
       isBanned: true,
       bannedAt: new Date('2026-01-04T00:00:00.000Z'),
       banReason: 'Repeated abusive behavior.',
-    },
+    }),
     sessionsRevoked: 2,
     notificationEmailSent: true,
   }),
   unbanAccount: async () => ({
     message: UNBAN_ACCOUNT_SUCCESS_MESSAGE,
-    account: {
+    account: addUnexpectedAccountFields({
       id: '22222222-2222-4222-8222-222222222222',
       email: 'unbanned@example.com',
       username: 'unbanned_user',
@@ -32,11 +47,11 @@ export const createStubAdminService = (): AdminPorts => ({
       isBanned: false,
       bannedAt: null,
       banReason: null,
-    },
+    }),
   }),
   listAccounts: async () => ({
     accounts: [
-      {
+      addUnexpectedAccountFields({
         id: '11111111-1111-4111-8111-111111111111',
         email: 'admin-listed@example.com',
         username: 'admin_listed',
@@ -49,14 +64,14 @@ export const createStubAdminService = (): AdminPorts => ({
         lastLogin: new Date('2026-01-02T00:00:00.000Z'),
         updatedAt: new Date('2026-01-03T00:00:00.000Z'),
         role: 'user',
-      },
+      }),
     ],
     total: 1,
     nextCursor: null,
   }),
   listVideos: async () => ({
     videos: [
-      {
+      addUnexpectedVideoFields({
         id: '33333333-3333-4333-8333-333333333333',
         publicId: 'AdminVid01_',
         ownerId: '11111111-1111-4111-8111-111111111111',
@@ -73,13 +88,13 @@ export const createStubAdminService = (): AdminPorts => ({
         deletionRequestedAt: null,
         deletionReason: null,
         deletionOrigin: null,
-      },
+      }),
     ],
     total: 1,
     nextCursor: null,
   }),
   moderateVideo: async ({ decision }) => ({
-    video: {
+    video: addUnexpectedVideoFields({
       id: '33333333-3333-4333-8333-333333333333',
       publicId: 'AdminVid01_',
       ownerId: '11111111-1111-4111-8111-111111111111',
@@ -96,10 +111,10 @@ export const createStubAdminService = (): AdminPorts => ({
       deletionRequestedAt: null,
       deletionReason: null,
       deletionOrigin: null,
-    },
+    }),
   }),
   requestVideoDeletion: async ({ reason }) => ({
-    video: {
+    video: addUnexpectedVideoFields({
       id: '33333333-3333-4333-8333-333333333333',
       publicId: 'AdminVid01_',
       ownerId: '11111111-1111-4111-8111-111111111111',
@@ -116,17 +131,17 @@ export const createStubAdminService = (): AdminPorts => ({
       deletionRequestedAt: new Date('2026-01-06T00:00:00.000Z'),
       deletionReason: reason,
       deletionOrigin: 'admin',
-    },
+    }),
   }),
   updateAccountRole: async () => ({
     message: UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
-    account: {
+    account: addUnexpectedAccountFields({
       id: '22222222-2222-4222-8222-222222222222',
       email: 'role-updated@example.com',
       username: 'role_updated',
       displayName: 'Role Updated',
       role: 'moderator',
       updatedAt: new Date('2026-01-05T00:00:00.000Z'),
-    },
+    }),
   }),
 });

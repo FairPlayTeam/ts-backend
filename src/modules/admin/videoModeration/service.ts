@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import {
   VIDEO_DELETION_REASON_MAX_LENGTH,
   VIDEO_REJECTION_REASON_MAX_LENGTH,
-} from '../../config/constants.js';
+} from '../../../config/constants.js';
 import {
   AdminVideoDeletionReasonInvalidError,
   AdminVideoRejectionReasonInvalidError,
@@ -12,24 +12,23 @@ import {
   ADMIN_VIDEO_REJECTION_REASON_NUL_MESSAGE,
   ADMIN_VIDEO_REJECTION_REASON_REQUIRED_MESSAGE,
   ADMIN_VIDEO_REJECTION_REASON_TOO_LONG_MESSAGE,
-} from '../admin.errors.js';
-import { handleExpectedMailerError } from '../mailer/mailer.helpers.js';
-import { VideoNotFoundError } from '../../modules/videos/shared/errors.js';
-import { buildVideoSearchFilter } from '../../modules/videos/shared/search.js';
-import { resolveBestEffortLink, videoThumbnailPath } from '../assets/assetLinks.js';
-import type { AdminDependencies } from './admin.dependencies.js';
-import { MODERATION_ROLES } from '../auth.roles.js';
-import { lockAuthorizedAdminActor } from './admin.actorAuthorization.js';
+} from '../errors.js';
+import { handleExpectedMailerError } from '../../../services/mailer/mailer.helpers.js';
+import { VideoNotFoundError } from '../../videos/shared/errors.js';
+import { buildVideoSearchFilter } from '../../videos/shared/search.js';
+import { resolveBestEffortLink, videoThumbnailPath } from '../../../services/assets/assetLinks.js';
+import type { AdminDependencies } from '../dependencies.js';
+import { MODERATION_ROLES, lockAuthorizedAdminActor } from '../authorization.js';
 import type {
   AdminVideoSummary,
-  AdminVideosPort,
+  VideoModerationPort,
   ListAdminVideosInput,
   ListAdminVideosResult,
   ModerateAdminVideoInput,
   ModerateAdminVideoResult,
   RequestAdminVideoDeletionInput,
   RequestAdminVideoDeletionResult,
-} from './types/videos.types.js';
+} from './types.js';
 
 const DEFAULT_ADMIN_VIDEOS_LIMIT = 20;
 const MAX_ADMIN_VIDEOS_LIMIT = 100;
@@ -354,7 +353,7 @@ const requestAdminVideoDeletion = async (
   };
 };
 
-export const createAdminVideosService = (deps: AdminDependencies): AdminVideosPort => ({
+export const createVideoModerationService = (deps: AdminDependencies): VideoModerationPort => ({
   listVideos: (input) => listAdminVideos(deps, input),
   moderateVideo: (input) => moderateAdminVideo(deps, input),
   requestVideoDeletion: (input) => requestAdminVideoDeletion(deps, input),

@@ -1,10 +1,10 @@
-import { z } from '../../../docs/zod.js';
+import { z } from '../../../../docs/zod.js';
 import {
   VIDEO_DELETION_REASON_MAX_LENGTH,
   VIDEO_REJECTION_REASON_MAX_LENGTH,
-} from '../../../config/constants.js';
-import { relativeAssetPathSchema } from '../../shared/asset.schemas.js';
-import { videoSearchTextSchema } from '../../shared/search.schemas.js';
+} from '../../../../config/constants.js';
+import { relativeAssetPathSchema } from '../../../../controllers/shared/asset.schemas.js';
+import { videoSearchTextSchema } from '../../../../controllers/shared/search.schemas.js';
 
 export const ADMIN_VIDEOS_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorId must be provided together';

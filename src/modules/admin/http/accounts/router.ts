@@ -1,29 +1,33 @@
 import { Router, type RequestHandler } from 'express';
-import { createAdminController } from '../controllers/admin.controller.js';
+import type { AuthSessionValidationPort } from '../../../../services/auth.types.js';
+import { createRouteProtector } from '../../../../middleware/routeProtection.js';
+import { validate } from '../../../../middleware/validation.js';
+import { ADMIN_ONLY_ROLES } from '../../authorization.js';
+import type { AdminAccountsPort } from '../../accounts/types.js';
+import { createAdminAccountsHandlers } from './handlers.js';
+import { routeDocs } from './openapi.js';
 import {
   adminAccountsSchema,
   banAdminAccountSchema,
   unbanAdminAccountSchema,
   updateAdminAccountRoleSchema,
-} from '../controllers/admin.schemas.js';
-import { createRouteProtector } from '../middleware/routeProtection.js';
-import { validate } from '../middleware/validation.js';
-import type { AdminRoutePort } from '../services/admin.types.js';
-import type { AuthSessionValidationPort } from '../services/auth.types.js';
-import { ADMIN_ONLY_ROLES } from '../services/auth.roles.js';
+} from './schemas.js';
 
-type AdminRouterDependencies = {
+type AdminAccountsRouterDependencies = {
   authService: AuthSessionValidationPort;
-  adminService: AdminRoutePort;
+  adminAccountsService: AdminAccountsPort;
 };
 
 type ValidationSchema = Parameters<typeof validate>[0];
 
-export const createRouter = ({ adminService, authService }: AdminRouterDependencies) => {
+export const createRouter = ({
+  adminAccountsService,
+  authService,
+}: AdminAccountsRouterDependencies) => {
   const router = Router();
-  const { banAccount, listAccounts, unbanAccount, updateAccountRole } = createAdminController({
-    adminService,
-  });
+  const { banAccount, listAccounts, unbanAccount, updateAccountRole } = createAdminAccountsHandlers(
+    { adminAccountsService },
+  );
   const protect = createRouteProtector({ authService });
   const adminRoute = (schema: ValidationSchema, ...handlers: RequestHandler[]) => [
     ...protect({ roles: ADMIN_ONLY_ROLES }),
@@ -42,4 +46,4 @@ export const createRouter = ({ adminService, authService }: AdminRouterDependenc
   return router;
 };
 
-export { routeDocs } from '../docs/admin.routes.js';
+export { routeDocs };

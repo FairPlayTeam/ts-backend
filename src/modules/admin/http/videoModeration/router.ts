@@ -1,27 +1,31 @@
 import { Router, type RequestHandler } from 'express';
-import { createAdminController } from '../controllers/admin.controller.js';
+import type { AuthSessionValidationPort } from '../../../../services/auth.types.js';
+import { createRouteProtector } from '../../../../middleware/routeProtection.js';
+import { validate } from '../../../../middleware/validation.js';
+import { MODERATION_ROLES } from '../../authorization.js';
+import type { VideoModerationPort } from '../../videoModeration/types.js';
+import { createVideoModerationHandlers } from './handlers.js';
+import { routeDocs } from './openapi.js';
 import {
   adminVideosSchema,
   moderateAdminVideoSchema,
   requestAdminVideoDeletionSchema,
-} from '../controllers/admin.schemas.js';
-import { createRouteProtector } from '../middleware/routeProtection.js';
-import { validate } from '../middleware/validation.js';
-import type { AdminRoutePort } from '../services/admin.types.js';
-import type { AuthSessionValidationPort } from '../services/auth.types.js';
-import { MODERATION_ROLES } from '../services/auth.roles.js';
+} from './schemas.js';
 
-type ModerationRouterDependencies = {
+type VideoModerationRouterDependencies = {
   authService: AuthSessionValidationPort;
-  adminService: AdminRoutePort;
+  videoModerationService: VideoModerationPort;
 };
 
 type ValidationSchema = Parameters<typeof validate>[0];
 
-export const createRouter = ({ adminService, authService }: ModerationRouterDependencies) => {
+export const createRouter = ({
+  videoModerationService,
+  authService,
+}: VideoModerationRouterDependencies) => {
   const router = Router();
-  const { listVideos, moderateVideo, requestVideoDeletion } = createAdminController({
-    adminService,
+  const { listVideos, moderateVideo, requestVideoDeletion } = createVideoModerationHandlers({
+    videoModerationService,
   });
   const protect = createRouteProtector({ authService });
   const moderationRoute = (schema: ValidationSchema, ...handlers: RequestHandler[]) => [
@@ -43,4 +47,4 @@ export const createRouter = ({ adminService, authService }: ModerationRouterDepe
   return router;
 };
 
-export { routeDocs } from '../docs/moderation.routes.js';
+export { routeDocs };

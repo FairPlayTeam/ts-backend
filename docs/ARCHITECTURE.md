@@ -474,8 +474,9 @@ video DTO. `deletionOrigin` is retained only while the video row awaits purge; i
 metadata for that retention window, not a permanent audit log. A later approval cannot restore
 public visibility while deletion is pending.
 
-Routes and services share the role allowlists declared in `auth.roles.ts`; they remain two distinct
-authorization checkpoints. Session validation supplies only a request-time role preflight. Every
+Routes and services use the role allowlists declared in `src/modules/admin/authorization.ts`; they
+remain two distinct authorization checkpoints. The role set and `AuthRole` type remain in
+`auth.roles.ts`. Session validation supplies only a request-time role preflight. Every
 account-administration and video-moderation service call receives the actor identifier and locks the
 corresponding `users` row before its authorization becomes final. Account administration locks the
 actor before inspecting or mutating its target. Video mutations preserve the established lifecycle
@@ -1068,9 +1069,17 @@ application needs through its entry point.
 Components that are genuinely shared across domains remain in cross-cutting areas such as `lib`,
 `middleware`, and `shared`.
 
-The `auth` and `admin` domains still use the earlier organization across controllers, services, and
-route files. Routes are assembled explicitly in `src/routes/registry.ts`; adding a domain module
-does not require automatic route discovery.
+`src/modules/admin/` owns account administration and video moderation, including their services,
+types, shared transactional authorization, role hierarchy, errors, and two HTTP modules. Its
+`index.ts` exposes `adminAccountsHttpModule` on `/admin` and `videoModerationHttpModule` on
+`/moderation`; the explicit registry lists both directly. Each router accepts only its own
+`AdminAccountsPort` or `VideoModerationPort`, while `createAdminService` composes both for runtime
+wiring. Admin response serializers build every public field explicitly, matching their response
+schemas even if a service result contains additional runtime properties.
+
+The `auth` domain still uses the earlier organization across controllers, services, and route files.
+Routes are assembled explicitly in `src/routes/registry.ts`; adding a domain module does not require
+automatic route discovery.
 
 ## Videos domain
 

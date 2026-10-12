@@ -4,16 +4,20 @@ import type {
   AdminVideosQuery,
   ModerateAdminVideoBody,
   RequestAdminVideoDeletionBody,
-} from '../admin.schemas.js';
-import { toAdminHttpError } from '../admin.errors.js';
-import { sendNoStoreJson } from '../http.responses.js';
-import type { AdminControllerDependencies } from './admin.controller.types.js';
-import type { AuthenticatedRequest } from '../../middleware/auth.js';
+} from './schemas.js';
+import { toAdminHttpError } from '../errorMapper.js';
+import { sendNoStoreJson } from '../../../../controllers/http.responses.js';
+import type { AuthenticatedRequest } from '../../../../middleware/auth.js';
+import type { VideoModerationPort } from '../../videoModeration/types.js';
 import {
   toAdminVideosResponse,
   toModerateAdminVideoResponse,
   toRequestAdminVideoDeletionResponse,
-} from './admin.responses.js';
+} from './responses.js';
+
+type VideoModerationHandlerDependencies = {
+  videoModerationService: VideoModerationPort;
+};
 
 type ListVideosRequest = Request<unknown, unknown, unknown, AdminVideosQuery>;
 type ModerateVideoRequest = Request<AdminVideoParams, unknown, ModerateAdminVideoBody>;
@@ -23,14 +27,14 @@ type RequestVideoDeletionRequest = Request<
   RequestAdminVideoDeletionBody
 >;
 
-export const createAdminVideosController = (deps: AdminControllerDependencies) => {
+export const createVideoModerationHandlers = (deps: VideoModerationHandlerDependencies) => {
   const listVideos: RequestHandler = async (req, res, next) => {
     try {
       const authenticatedReq = req as AuthenticatedRequest;
       const listReq = req as ListVideosRequest;
       const { cursorCreatedAt, cursorId, limit, moderationStatus, processingStatus, search, sort } =
         listReq.query;
-      const result = await deps.adminService.listVideos({
+      const result = await deps.videoModerationService.listVideos({
         actorUserId: authenticatedReq.user.id,
         ...(limit === undefined ? {} : { limit }),
         ...(moderationStatus === undefined ? {} : { moderationStatus }),
@@ -57,7 +61,7 @@ export const createAdminVideosController = (deps: AdminControllerDependencies) =
     try {
       const authenticatedReq = req as AuthenticatedRequest;
       const moderationReq = req as ModerateVideoRequest;
-      const result = await deps.adminService.moderateVideo(
+      const result = await deps.videoModerationService.moderateVideo(
         moderationReq.body.decision === 'rejected'
           ? {
               actorUserId: authenticatedReq.user.id,
@@ -83,7 +87,7 @@ export const createAdminVideosController = (deps: AdminControllerDependencies) =
       const authenticatedReq = req as AuthenticatedRequest;
       const deletionReq = req as RequestVideoDeletionRequest;
 
-      const result = await deps.adminService.requestVideoDeletion({
+      const result = await deps.videoModerationService.requestVideoDeletion({
         actorUserId: authenticatedReq.user.id,
         reason: deletionReq.body.reason,
         videoId: deletionReq.params.videoId,

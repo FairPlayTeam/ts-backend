@@ -26,7 +26,7 @@ import {
   type ObjectStorage,
 } from '../../../src/lib/objectStorage.js';
 import { closeRedisClient, connectRedisClient, createRedisClient } from '../../../src/lib/redis.js';
-import { createAdminService } from '../../../src/services/admin.service.js';
+import { createAdminService } from '../../../src/modules/admin/index.js';
 import { createAuthService } from '../../../src/services/auth.service.js';
 import {
   createExternalResourceReconciler,
@@ -55,7 +55,7 @@ import {
   type VideoUploadsMaintenancePort,
   type VideoUploadsPort,
 } from '../../../src/modules/videoUploads/index.js';
-import type { AdminPorts } from '../../../src/services/admin.types.js';
+import type { AdminService } from '../../../src/modules/admin/index.js';
 import type { AuthPorts } from '../../../src/services/auth.types.js';
 import type { VideosService } from '../../../src/modules/videos/index.js';
 import type { VideoTranscodingMaintenancePort } from '../../../src/modules/videoTranscoding/index.js';
@@ -121,7 +121,7 @@ export type TestRuntime = {
   closeObjectStorageClients(): void;
   userMediaExternalResources: ExternalResourceReconciler;
   videoExternalResources: ExternalResourceReconciler;
-  adminService: AdminPorts;
+  adminService: AdminService;
   authService: AuthPorts;
   profilesService: ProfilesPort;
   commentsService: CommentsPort;
@@ -245,7 +245,7 @@ export const createIntegrationAdminService = (
   prisma: PrismaClient,
   delivered: TestRuntime['delivered'],
   now: () => Date = () => new Date(),
-): AdminPorts =>
+): AdminService =>
   createAdminService({
     prisma,
     mailer: {

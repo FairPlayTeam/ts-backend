@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { Prisma } from '@prisma/client';
-import type { AdminDependencies } from '../src/services/admin/admin.dependencies.js';
+import type { AdminDependencies } from '../src/modules/admin/dependencies.js';
 import type { AuthRole } from '../src/services/auth.roles.js';
-import { createAdminService } from '../src/services/admin.service.js';
+import { createAdminService } from '../src/modules/admin/index.js';
 import {
   AdminAccountAlreadyBannedError,
   AdminAccountNotBannedError,
@@ -13,12 +13,12 @@ import {
   AdminRoleHierarchyError,
   AdminSelfBanError,
   AdminSelfUnbanError,
-} from '../src/services/admin.errors.js';
+} from '../src/modules/admin/errors.js';
 import {
   BAN_ACCOUNT_SUCCESS_MESSAGE,
   UNBAN_ACCOUNT_SUCCESS_MESSAGE,
   UPDATE_ACCOUNT_ROLE_SUCCESS_MESSAGE,
-} from '../src/services/admin/admin.messages.js';
+} from '../src/modules/admin/accounts/messages.js';
 import { MailerDeliveryError } from '../src/services/mailer/mailer.errors.js';
 
 const firstCreatedAt = new Date('2026-01-03T00:00:00.000Z');

@@ -6,10 +6,14 @@ import {
   moderateAdminVideoResponseSchema,
   requestAdminVideoDeletionRequestSchema,
   requestAdminVideoDeletionResponseSchema,
-} from '../controllers/admin.schemas.js';
-import { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../middleware/routeProtection.js';
-import { jsonRequest, jsonResponse } from './openapi.helpers.js';
-import { ApiErrorSchema, ApiOrValidationErrorSchema, type RouteDoc } from './registry.js';
+} from './schemas.js';
+import { INSUFFICIENT_PERMISSIONS_MESSAGE } from '../../../../middleware/routeProtection.js';
+import { jsonRequest, jsonResponse } from '../../../../docs/openapi.helpers.js';
+import {
+  ApiErrorSchema,
+  ApiOrValidationErrorSchema,
+  type RouteDoc,
+} from '../../../../docs/registry.js';
 
 const commonModerationVideoResponses = {
   400: jsonResponse('Bad request', ApiOrValidationErrorSchema),

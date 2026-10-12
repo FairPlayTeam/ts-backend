@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { createAdminService } from '../../src/services/admin.service.js';
+import { createAdminService } from '../../src/modules/admin/index.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
 import { createVideoArtifactReconciliationHandlers } from '../../src/modules/videoTranscoding/index.js';
 import { createVideoUploadsReconciliationHandlers } from '../../src/modules/videoUploads/index.js';

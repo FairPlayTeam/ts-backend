@@ -15,7 +15,7 @@ import { createUserAccountOperationGuard } from './middleware/userAccountOperati
 import type { Config } from './config/env.js';
 import { ALL_CORS_ORIGINS } from './config/env.schema.js';
 import type { RedisClient } from './lib/redis.js';
-import type { AdminRoutePort } from './services/admin.types.js';
+import type { AdminService } from './modules/admin/index.js';
 import type { AuthRoutePort } from './services/auth.types.js';
 import type { ProfilesPort } from './modules/profiles/index.js';
 import type { CommentsPort } from './modules/comments/index.js';
@@ -44,7 +44,7 @@ type CreateAppConfig = Pick<
 >;
 
 type CreateAppDependencies = {
-  adminService: AdminRoutePort;
+  adminService: AdminService;
   authService: AuthRoutePort;
   profilesService: ProfilesPort;
   commentsService: CommentsPort;
@@ -216,7 +216,8 @@ export function createApp(config: CreateAppConfig, deps: CreateAppDependencies) 
   app.use(express.json({ limit: config.jsonBodyLimitBytes }));
 
   const routeContext = {
-    adminService: deps.adminService,
+    adminAccountsService: deps.adminService,
+    videoModerationService: deps.adminService,
     authService: deps.authService,
     profilesService: deps.profilesService,
     commentsService: deps.commentsService,

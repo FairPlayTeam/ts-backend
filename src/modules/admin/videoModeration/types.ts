@@ -2,7 +2,7 @@ import type {
   VideoModerationStatus,
   VideoProcessingStatus,
   VideoVisibility,
-} from '../../../modules/videos/index.js';
+} from '../../videos/index.js';
 
 export type AdminVideoSort = 'newest' | 'oldest';
 export type VideoDeletionOrigin = 'moderator' | 'admin';
@@ -75,7 +75,7 @@ export type RequestAdminVideoDeletionResult = {
   video: AdminVideoSummary;
 };
 
-export type AdminVideosPort = {
+export type VideoModerationPort = {
   listVideos(input: ListAdminVideosInput): Promise<ListAdminVideosResult>;
   moderateVideo(input: ModerateAdminVideoInput): Promise<ModerateAdminVideoResult>;
   requestVideoDeletion(
