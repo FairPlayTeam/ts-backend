@@ -57,22 +57,20 @@ export const createLoginService = (
         throw new EmailNotVerifiedError();
       }
 
-      const { sessionKey, session } = await sessionService.createSession({
+      const {
+        sessionKey,
+        session,
+        user: currentUser,
+      } = await sessionService.createSession({
         userId: user.id,
+        authenticatedPasswordHash: user.passwordHash,
         ipAddress,
         userAgent,
       });
 
       return {
         message: LOGIN_SUCCESS_MESSAGE,
-        user: {
-          id: user.id,
-          email: user.email,
-          username: user.username,
-          displayName: user.displayName,
-          bio: user.bio,
-          role: user.role,
-        },
+        user: currentUser,
         sessionKey,
         session,
       };

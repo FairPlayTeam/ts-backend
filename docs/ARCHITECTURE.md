@@ -1046,6 +1046,43 @@ It does not depend on Express.
 
 ## Simplified auth flow
 
+### Login transaction invariants
+
+Password comparison (bcrypt, including the missing-user comparison) stays outside the transaction.
+Session creation receives the exact hash that was authenticated, acquires the shared user
+authorization row lock, and rereads the user before inserting a session or updating `lastLogin`.
+An absent user or changed hash produces the same invalid-credentials error as a wrong password.
+Current ban and email-verification state are checked again; the returned profile and role come from
+this locked reread. No password hash is included in the service result or HTTP DTO.
+
+| Invariant                                                    | Untrusted input / source of truth                         | Transformations                                               | Enforcement                                                                 | Counterexample                                             | Observable proof                                                                     |
+| ------------------------------------------------------------ | --------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Authenticated password is still current                      | Client password / current `users.password_hash`           | Pre-read, bcrypt, lock wait, transactional reread             | Hash equality before session insertion                                      | Reset commits during login                                 | Real PostgreSQL lock wait, then generic 401, unchanged session count and `lastLogin` |
+| Reset revokes a login that acquires the lock first           | Concurrent login/reset / committed session rows           | Login insert and commit, reset password update and revocation | User lock held through session creation and reset update through revocation | Reset runs before the login insertion commits              | Reset visibly waits on the user UPDATE; both sessions are subsequently inactive      |
+| Account remains eligible                                     | Pre-read account / locked current user                    | Ban, verification change, or account deletion before creation | Missing-user, ban and verification checks before writes                     | Valid bcrypt result with an account that changed meanwhile | HTTP errors and no inserted session after the concurrent change                      |
+| Public response uses current profile without internal fields | Pre-read profile / locked current user and HTTP whitelist | Transactional projection, HTTP serialization                  | Explicit user projection and `toAuthSessionResponse`                        | Role changes during bcrypt; hash accidentally returned     | Exact serialized HTTP body                                                           |
+
+Login takes only the user lock before touching sessions. Reset and administrative ban already
+update the user before revoking sessions, so they serialize on the same row. Account deletion
+locks its resource rows before deleting the user; login does not acquire those resource locks.
+If login wins, reset/ban can revoke its session after commit, and deletion can cascade it away.
+Consequently, a successful login response can contain a session already revoked by a concurrent
+operation; it never guarantees that the session remains usable after the transaction commits.
+
+This protocol protects login session issuance. Sensitive-action reauthentication in account
+export/deletion and bulk logout still performs a password preflight, without coupling that hash
+to a final transaction check. Those existing operations are not covered by the login guarantee;
+exports additionally stream several independent reads rather than a single locked snapshot.
+
+The login concurrency regressions live in
+`tests/integration/auth.login-concurrency.integration.ts`. On 2026-10-13 both transaction orders
+were observed through `pg_stat_activity.wait_event_type = 'Lock'`. Removing only hash equality
+made the reset-first test return HTTP 200 instead of 401. Removing `FOR UPDATE` made the
+login-first test fail because reset completed before the required lock wait. Both protections
+were restored after these mutation checks. The other cases exercise real administrative ban,
+account deletion, email-verification loss, and an exact HTTP profile/session projection after a
+role change during password comparison.
+
 ```mermaid
 sequenceDiagram
 participant Client
@@ -1061,7 +1098,7 @@ Validation ->> Controller: normalized body
 Controller ->> Service: login(emailOrUsername, password, ip, userAgent)
 Service ->> DB: search for the user
 Service ->> Service: verify the password, ban state, and email
-Service ->> DB: create hashed session and update lastLogin
+Service ->> DB: lock user, reread hash and eligibility, create hashed session and update lastLogin
 Service -->> Controller: user + sessionKey
 Controller -->> Client: JSON response
 ```

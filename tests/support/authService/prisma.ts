@@ -58,7 +58,9 @@ const createAuthTransaction = (calls: AuthServiceTestCalls) => ({
   $queryRaw: async (query: { strings?: readonly string[] }) =>
     query.strings?.join('').includes('FROM "comments" AS c')
       ? [{ id: '44444444-4444-4444-8444-444444444444', isAuthored: true }]
-      : [],
+      : query.strings?.join('').includes('FROM "users"')
+        ? [{ role: 'user', isBanned: false }]
+        : [],
   comment: {
     updateMany: async (args: unknown) => {
       calls.commentUpdateMany = args;
@@ -80,6 +82,13 @@ const createAuthTransaction = (calls: AuthServiceTestCalls) => ({
 
       if (select?.passwordHash) {
         return {
+          id: 'user-id',
+          email: 'user@example.com',
+          username: 'fairplay_user',
+          displayName: 'Fairplay User',
+          bio: null,
+          role: 'user',
+          isVerified: true,
           passwordHash: 'hashed-password',
           isBanned: false,
         };

@@ -9,6 +9,7 @@ import type { AuthMaintenancePort } from '../maintenance/types.js';
 import type {
   AuthSessionManagementPort,
   AuthSessionValidationPort,
+  AuthUser,
   CleanupSessionsInput,
   ListUserSessionsInput,
   ListUserSessionsResult,
@@ -24,6 +25,8 @@ import {
   CLEANUP_SESSION_SUCCESS_MESSAGE,
 } from '../messages.js';
 import { reauthenticateSensitiveAction } from '../credentials/reauthentication.js';
+import { lockUserAuthorizationState } from '../authorization.js';
+import { AccountBannedError, EmailNotVerifiedError, InvalidCredentialsError } from '../errors.js';
 
 type PrepareSessionInput = {
   ipAddress?: string | undefined;
@@ -45,11 +48,13 @@ type PrepareSessionResult = {
 
 type CreateSessionInput = {
   userId: string;
+  authenticatedPasswordHash: string;
   ipAddress?: string | undefined;
   userAgent?: string | undefined;
 };
 
 type CreateSessionResult = {
+  user: AuthUser;
   sessionKey: string;
   session: Session;
 };
@@ -123,12 +128,45 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
 
   const createSession = async ({
     userId,
+    authenticatedPasswordHash,
     ipAddress,
     userAgent,
   }: CreateSessionInput): Promise<CreateSessionResult> => {
     const { now, sessionKey, sessionData } = prepareSession({ ipAddress, userAgent });
 
-    const session = await deps.prisma.$transaction(async (tx) => {
+    const result = await deps.prisma.$transaction(async (tx) => {
+      // Serialize before inserting: reset/ban update this row before revoking sessions.
+      const lockedUser = await lockUserAuthorizationState(tx, userId);
+      if (!lockedUser) {
+        throw new InvalidCredentialsError();
+      }
+
+      const currentUser = await tx.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          displayName: true,
+          bio: true,
+          role: true,
+          passwordHash: true,
+          isVerified: true,
+          isBanned: true,
+        },
+      });
+
+      // Bcrypt has already authenticated this exact hash outside the row lock.
+      if (!currentUser || currentUser.passwordHash !== authenticatedPasswordHash) {
+        throw new InvalidCredentialsError();
+      }
+      if (currentUser.isBanned) {
+        throw new AccountBannedError();
+      }
+      if (!currentUser.isVerified) {
+        throw new EmailNotVerifiedError();
+      }
+
       const createdSession = await tx.session.create({
         data: {
           ...sessionData,
@@ -146,10 +184,20 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
         data: { lastLogin: now },
       });
 
-      return createdSession;
+      return {
+        session: createdSession,
+        user: {
+          id: currentUser.id,
+          email: currentUser.email,
+          username: currentUser.username,
+          displayName: currentUser.displayName,
+          bio: currentUser.bio,
+          role: currentUser.role,
+        },
+      };
     });
 
-    return { sessionKey, session };
+    return { sessionKey, ...result };
   };
 
   return {
