@@ -27,6 +27,7 @@ const sessionResult = {
   },
   session: {
     id: 'session-id',
+    publicId: 'session-public-id',
     expiresAt: new Date('2026-01-31T00:00:00.000Z'),
   },
 };

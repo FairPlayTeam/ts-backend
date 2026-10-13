@@ -580,17 +580,34 @@ describe('video views integration', () => {
       .set('Authorization', `Bearer ${deletedViewer.sessionKey}`)
       .send({ currentPassword: INITIAL_PASSWORD })
       .expect(200);
-    expect(dataExport.body.videoViews).toEqual(
-      [
-        { videoId: firstVideo.video.id, viewedOn: '2026-08-02' },
-        { videoId: firstVideo.video.id, viewedOn: '2026-08-03' },
-        { videoId: firstVideo.video.id, viewedOn: '2026-08-04' },
-        { videoId: secondVideo.video.id, viewedOn: '2026-08-04' },
-      ].sort(
+    const expectedViews = [
+      {
+        videoId: firstVideo.video.id,
+        videoPublicId: firstVideo.video.publicId,
+        viewedOn: '2026-08-02',
+      },
+      {
+        videoId: firstVideo.video.id,
+        videoPublicId: firstVideo.video.publicId,
+        viewedOn: '2026-08-03',
+      },
+      {
+        videoId: firstVideo.video.id,
+        videoPublicId: firstVideo.video.publicId,
+        viewedOn: '2026-08-04',
+      },
+      {
+        videoId: secondVideo.video.id,
+        videoPublicId: secondVideo.video.publicId,
+        viewedOn: '2026-08-04',
+      },
+    ]
+      .sort(
         (left, right) =>
           left.viewedOn.localeCompare(right.viewedOn) || left.videoId.localeCompare(right.videoId),
-      ),
-    );
+      )
+      .map(({ videoId: _videoId, ...view }) => view);
+    expect(dataExport.body.videoViews).toEqual(expectedViews);
 
     await runtime.authService.deleteAccount({
       userId: deletedViewer.userId,

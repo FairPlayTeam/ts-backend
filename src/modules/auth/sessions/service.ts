@@ -136,6 +136,7 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
         },
         select: {
           id: true,
+          publicId: true,
           expiresAt: true,
         },
       });
@@ -163,6 +164,7 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
         where: { sessionKey: sessionKeyHash },
         select: {
           id: true,
+          publicId: true,
           expiresAt: true,
           isActive: true,
           user: {
@@ -206,6 +208,7 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
         },
         session: {
           id: session.id,
+          publicId: session.publicId,
           expiresAt: session.expiresAt,
         },
       };
@@ -227,7 +230,7 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
         ...(cursor && {
           OR: [
             { lastUsedAt: { lt: cursor.lastUsedAt } },
-            { lastUsedAt: cursor.lastUsedAt, id: { lt: cursor.id } },
+            { lastUsedAt: cursor.lastUsedAt, publicId: { lt: cursor.id } },
           ],
         }),
       };
@@ -237,6 +240,7 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
           where,
           select: {
             id: true,
+            publicId: true,
             sessionKeySuffix: true,
             ipAddress: true,
             userAgent: true,
@@ -245,7 +249,7 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
             lastUsedAt: true,
             expiresAt: true,
           },
-          orderBy: [{ lastUsedAt: 'desc' }, { id: 'desc' }],
+          orderBy: [{ lastUsedAt: 'desc' }, { publicId: 'desc' }],
           take: pageSize + 1,
         }),
         deps.prisma.session.count({
@@ -257,14 +261,15 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
       const lastSession = sessions.at(-1);
       const nextCursor =
         queriedSessions.length > pageSize && lastSession
-          ? { lastUsedAt: lastSession.lastUsedAt, id: lastSession.id }
+          ? { lastUsedAt: lastSession.lastUsedAt, id: lastSession.publicId }
           : null;
 
       return {
-        sessions: sessions.map((session) => ({
-          ...session,
-          isCurrent: session.id === currentSessionId,
-        })),
+        sessions: sessions.map((session) => {
+          const { id: _internalId, publicId, ...publicSession } = session;
+
+          return { ...publicSession, id: publicId, isCurrent: session.id === currentSessionId };
+        }),
         total,
         nextCursor,
       };
@@ -324,7 +329,7 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
     }: LogoutSessionInput): Promise<{ message: string; sessionsLoggedOut: number }> {
       const result = await deps.prisma.session.updateMany({
         where: {
-          id: sessionId,
+          publicId: sessionId,
           userId,
           isActive: true,
         },

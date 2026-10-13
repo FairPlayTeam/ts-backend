@@ -197,7 +197,6 @@ describe('auth routes', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(await response.json()).toEqual({
       user: {
-        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
         email: 'user@example.com',
         username: 'fairplay_user',
         displayName: 'Fairplay User',
@@ -207,7 +206,7 @@ describe('auth routes', () => {
         bannerUrl: '/profiles/fairplay_user/banner',
       },
       session: {
-        id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+        id: 'cmbl7u2ag0000i6c2p5o9h9ta',
         expiresAt: '2026-01-31T00:00:00.000Z',
       },
     });
@@ -255,7 +254,6 @@ describe('auth routes', () => {
     expect(body).toEqual({
       exportedAt: '2026-01-01T00:00:00.000Z',
       user: {
-        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
         email: 'user@example.com',
         username: 'fairplay_user',
         displayName: 'Fairplay User',
@@ -312,7 +310,7 @@ describe('auth routes', () => {
       ],
       videoRatings: [
         {
-          videoId: '33333333-3333-4333-8333-333333333333',
+          videoPublicId: 'AbCdEf123_',
           value: 5,
           createdAt: '2026-01-01T00:00:00.000Z',
           updatedAt: '2026-01-01T00:00:00.000Z',
@@ -320,14 +318,14 @@ describe('auth routes', () => {
       ],
       videoViews: [
         {
-          videoId: '33333333-3333-4333-8333-333333333333',
+          videoPublicId: 'AbCdEf123_',
           viewedOn: '2026-01-01',
         },
       ],
       comments: [
         {
           id: '44444444-4444-4444-8444-444444444444',
-          videoId: '33333333-3333-4333-8333-333333333333',
+          videoPublicId: 'AbCdEf123_',
           content: 'An exported comment.',
           createdAt: '2026-01-01T00:00:00.000Z',
           deletedAt: null,
@@ -343,7 +341,7 @@ describe('auth routes', () => {
       ],
       sessions: [
         {
-          id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+          id: 'cmbl7u2ag0000i6c2p5o9h9ta',
           sessionKeySuffix: 'sion-key',
           ipAddress: '127.0.0.1',
           userAgent: 'bun-test',
@@ -437,7 +435,6 @@ describe('auth routes', () => {
     expect(await response.json()).toEqual({
       message: UPDATE_PROFILE_SUCCESS_MESSAGE,
       user: {
-        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
         email: 'user@example.com',
         username: 'fairplay_user',
         displayName: 'Updated Name',
@@ -981,7 +978,7 @@ describe('auth routes', () => {
     receivedGetSessionsRequest = undefined;
 
     const response = await fetch(
-      `${baseUrl}/auth/sessions?limit=10&cursorLastUsedAt=2026-01-01T00%3A00%3A00.000Z&cursorId=0d4e55cb-c278-4d74-a192-bf7c10888c7a`,
+      `${baseUrl}/auth/sessions?limit=10&cursorLastUsedAt=2026-01-01T00%3A00%3A00.000Z&cursorId=cmbl7u2ag0000i6c2p5o9h9ta`,
       {
         headers: {
           authorization: 'Bearer test-session-key',
@@ -995,7 +992,7 @@ describe('auth routes', () => {
       limit: 10,
       cursor: {
         lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
-        id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+        id: 'cmbl7u2ag0000i6c2p5o9h9ta',
       },
     });
 
@@ -1004,7 +1001,7 @@ describe('auth routes', () => {
     expect(await response.json()).toEqual({
       sessions: [
         {
-          id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+          id: 'cmbl7u2ag0000i6c2p5o9h9ta',
           sessionKeySuffix: 'sion-key',
           ipAddress: '127.0.0.1',
           userAgent: 'bun-test',
@@ -1017,7 +1014,7 @@ describe('auth routes', () => {
       ],
       nextCursor: {
         lastUsedAt: '2026-01-01T00:00:00.000Z',
-        id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+        id: 'cmbl7u2ag0000i6c2p5o9h9ta',
       },
       total: 1,
     });
@@ -1156,7 +1153,7 @@ describe('auth routes', () => {
   });
 
   test('logs out a specific session for a valid bearer session', async () => {
-    const response = await fetch(`${baseUrl}/auth/sessions/123e4567-e89b-12d3-a456-426614174000`, {
+    const response = await fetch(`${baseUrl}/auth/sessions/cmbl7u2ag0000i6c2p5o9h9ta`, {
       method: 'DELETE',
       headers: {
         authorization: 'Bearer test-session-key',
@@ -1171,7 +1168,7 @@ describe('auth routes', () => {
   });
 
   test('rejects malformed session ids when logging out a specific session', async () => {
-    const response = await fetch(`${baseUrl}/auth/sessions/not-a-session-id`, {
+    const response = await fetch(`${baseUrl}/auth/sessions/bad%20session%20id`, {
       method: 'DELETE',
       headers: {
         authorization: 'Bearer test-session-key',

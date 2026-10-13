@@ -65,6 +65,9 @@ describe('auth service account data', () => {
       bannedAt: null,
       banReason: null,
     });
+    expect(result.user).not.toHaveProperty('id');
+    expect(result.emailVerificationToken).not.toHaveProperty('id');
+    expect(result.passwordResetToken).not.toHaveProperty('id');
     expect(await collectAsync(result.following)).toEqual([
       { username: 'followed_user', displayName: 'Followed User', createdAt: fixedNow },
     ]);
@@ -84,7 +87,7 @@ describe('auth service account data', () => {
     expect(JSON.stringify(videos)).not.toContain('objectKey');
     expect(await collectAsync(result.videoRatings)).toEqual([
       {
-        videoId: '33333333-3333-4333-8333-333333333333',
+        videoPublicId: 'AbCdEf123_',
         value: 5,
         createdAt: fixedNow,
         updatedAt: fixedNow,
@@ -92,7 +95,7 @@ describe('auth service account data', () => {
     ]);
     expect(await collectAsync(result.videoViews)).toEqual([
       {
-        videoId: '33333333-3333-4333-8333-333333333333',
+        videoPublicId: 'AbCdEf123_',
         viewedOn: fixedNow,
       },
     ]);
@@ -107,7 +110,7 @@ describe('auth service account data', () => {
     expect(comments).toEqual([
       {
         id: '44444444-4444-4444-8444-444444444444',
-        videoId: '33333333-3333-4333-8333-333333333333',
+        videoPublicId: 'AbCdEf123_',
         content: 'An exported comment.',
         createdAt: fixedNow,
         deletedAt: null,
@@ -116,7 +119,7 @@ describe('auth service account data', () => {
       },
       {
         id: '55555555-5555-4555-8555-555555555555',
-        videoId: '33333333-3333-4333-8333-333333333333',
+        videoPublicId: 'AbCdEf123_',
         content: null,
         createdAt: fixedNow,
         deletedAt: new Date('2026-01-01T01:00:00.000Z'),
@@ -127,8 +130,8 @@ describe('auth service account data', () => {
     expect(
       (await collectAsync(result.sessions)).map(({ id, isCurrent }) => ({ id, isCurrent })),
     ).toEqual([
-      { id: 'session-id', isCurrent: true },
-      { id: 'other-session-id', isCurrent: false },
+      { id: 'session-public-id', isCurrent: true },
+      { id: 'other-session-public-id', isCurrent: false },
     ]);
 
     expect(calls.userFindUnique).toEqual({
@@ -174,7 +177,7 @@ describe('auth service account data', () => {
         where: { authorId: 'user-id' },
         select: {
           id: true,
-          videoId: true,
+          video: { select: { publicId: true } },
           content: true,
           createdAt: true,
           deletedAt: true,
@@ -204,6 +207,7 @@ describe('auth service account data', () => {
     const rows = Array.from({ length: 501 }, (_, index) => ({
       id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
       videoId: `10000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      video: { publicId: 'AbCdEf123_' },
       createdAt: fixedNow,
       updatedAt: fixedNow,
       viewedOn: fixedNow,
@@ -300,6 +304,7 @@ describe('auth service account data', () => {
     const exportedComments = Array.from({ length: 2_501 }, (_, index) => ({
       id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
       videoId: '33333333-3333-4333-8333-333333333333',
+      video: { publicId: 'AbCdEf123_' },
       content: `Exported comment ${index}`,
       createdAt: fixedNow,
       deletedAt: null,

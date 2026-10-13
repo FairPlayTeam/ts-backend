@@ -11,6 +11,7 @@ import {
 } from '../../messages.js';
 import { PROFILE_UPDATE_EMPTY_MESSAGE } from '../../errors.js';
 import { AUTH_ROLES } from '../../roles.js';
+import { SESSION_PUBLIC_ID_EXAMPLE, SESSION_PUBLIC_ID_PATTERN } from '../../sessions/types.js';
 import { VIDEO_LICENSES } from '../../../../modules/videos/shared/licenses.js';
 import {
   authSessionResponseSchema,
@@ -49,26 +50,29 @@ const userDataExportDateTimeSchema = z.string().datetime();
 const nullableUserDataExportDateTimeSchema = userDataExportDateTimeSchema.nullable();
 
 const userDataExportTokenSchema = z.object({
-  id: z.string().openapi({ example: 'cmbl7u2ag0000i6c2p5o9h9ta' }),
   createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
   expiresAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-08T00:00:00.000Z' }),
 });
+const userDataExportSessionIdSchema = z
+  .string()
+  .regex(SESSION_PUBLIC_ID_PATTERN)
+  .openapi({ example: SESSION_PUBLIC_ID_EXAMPLE });
 
 const userDataExportVideoRatingSchema = z.object({
-  videoId: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
+  videoPublicId: z.string().openapi({ example: 'AbCdEf123_' }),
   value: z.number().int().min(1).max(5).openapi({ example: 5 }),
   createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
   updatedAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
 
 const userDataExportVideoViewSchema = z.object({
-  videoId: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
+  videoPublicId: z.string().openapi({ example: 'AbCdEf123_' }),
   viewedOn: z.string().date().openapi({ example: '2026-01-01' }),
 });
 
 const userDataExportCommentSchema = z.object({
   id: z.string().uuid().openapi({ example: '6bdb6ab4-f598-4e1d-a399-0e9c84c96bd7' }),
-  videoId: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
+  videoPublicId: z.string().openapi({ example: 'AbCdEf123_' }),
   content: z
     .string()
     .min(1)
@@ -130,7 +134,6 @@ export const userDataExportResponseSchema = z
       example: '2026-01-01T00:00:00.000Z',
     }),
     user: z.object({
-      id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
       email: z.string().email().openapi({ example: 'creator@example.com' }),
       username: z.string().openapi({ example: 'fairplay_creator' }),
       displayName: z.string().nullable().openapi({ example: 'FairPlay Creator' }),
@@ -160,7 +163,7 @@ export const userDataExportResponseSchema = z
     commentLikes: z.array(userDataExportCommentLikeSchema),
     sessions: z.array(
       z.object({
-        id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+        id: userDataExportSessionIdSchema,
         sessionKeySuffix: z.string().nullable().openapi({ example: '9a8b7c6d' }),
         ipAddress: sessionIpAddressResponseSchema,
         userAgent: sessionUserAgentResponseSchema,

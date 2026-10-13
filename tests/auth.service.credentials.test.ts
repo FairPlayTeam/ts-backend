@@ -136,6 +136,7 @@ describe('auth service credentials', () => {
       sessionKey: 'plain-token',
       session: {
         id: 'session-id',
+        publicId: 'session-public-id',
         expiresAt: new Date('2026-01-31T00:00:00.000Z'),
       },
     });
@@ -174,6 +175,7 @@ describe('auth service credentials', () => {
       },
       select: {
         id: true,
+        publicId: true,
         expiresAt: true,
       },
     });

@@ -37,6 +37,7 @@ describe('auth service email verification', () => {
       sessionKey: 'plain-token',
       session: {
         id: 'session-id',
+        publicId: 'session-public-id',
         expiresAt: new Date('2026-01-31T00:00:00.000Z'),
       },
     });
@@ -90,6 +91,7 @@ describe('auth service email verification', () => {
       },
       select: {
         id: true,
+        publicId: true,
         expiresAt: true,
       },
     });

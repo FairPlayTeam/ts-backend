@@ -86,8 +86,17 @@ const loginResult = {
   sessionKey: 'plain-session-key',
   session: {
     id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+    publicId: 'cmbl7u2ag0000i6c2p5o9h9ta',
     expiresAt: new Date('2026-01-31T00:00:00.000Z'),
   },
+};
+
+const publicLoginUser = {
+  email: loginResult.user.email,
+  username: loginResult.user.username,
+  displayName: loginResult.user.displayName,
+  bio: loginResult.user.bio,
+  role: loginResult.user.role,
 };
 
 const verifyEmailResult = {
@@ -103,7 +112,7 @@ const validatedSession = {
 const userSessionsResult = {
   sessions: [
     {
-      id: loginResult.session.id,
+      id: loginResult.session.publicId,
       sessionKeySuffix: 'sion-key',
       ipAddress: '127.0.0.1',
       userAgent: 'bun-test',
@@ -116,7 +125,7 @@ const userSessionsResult = {
   ],
   nextCursor: {
     lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
-    id: loginResult.session.id,
+    id: loginResult.session.publicId,
   },
   total: 1,
 };
@@ -176,7 +185,7 @@ const userDataExportResult = {
   ]),
   videoRatings: toAsyncIterable([
     {
-      videoId: '33333333-3333-4333-8333-333333333333',
+      videoPublicId: 'AbCdEf123_',
       value: 5,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -184,14 +193,14 @@ const userDataExportResult = {
   ]),
   videoViews: toAsyncIterable([
     {
-      videoId: '33333333-3333-4333-8333-333333333333',
+      videoPublicId: 'AbCdEf123_',
       viewedOn: new Date('2026-01-01T00:00:00.000Z'),
     },
   ]),
   comments: toAsyncIterable([
     {
       id: '44444444-4444-4444-8444-444444444444',
-      videoId: '33333333-3333-4333-8333-333333333333',
+      videoPublicId: 'AbCdEf123_',
       content: 'An exported comment.',
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       deletedAt: null,
@@ -207,7 +216,7 @@ const userDataExportResult = {
   ]),
   sessions: toAsyncIterable([
     {
-      id: loginResult.session.id,
+      id: loginResult.session.publicId,
       sessionKeySuffix: 'sion-key',
       ipAddress: '127.0.0.1',
       userAgent: 'bun-test',
@@ -545,9 +554,11 @@ describe('auth controller', () => {
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
-      ...loginResult,
+      message: loginResult.message,
+      user: publicLoginUser,
+      sessionKey: loginResult.sessionKey,
       session: {
-        id: loginResult.session.id,
+        id: loginResult.session.publicId,
         expiresAt: '2026-01-31T00:00:00.000Z',
       },
     });
@@ -590,9 +601,11 @@ describe('auth controller', () => {
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
-      ...verifyEmailResult,
+      message: verifyEmailResult.message,
+      user: publicLoginUser,
+      sessionKey: verifyEmailResult.sessionKey,
       session: {
-        id: verifyEmailResult.session.id,
+        id: verifyEmailResult.session.publicId,
         expiresAt: '2026-01-31T00:00:00.000Z',
       },
     });
@@ -635,9 +648,13 @@ describe('auth controller', () => {
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
-      user: profileUser,
+      user: {
+        ...publicLoginUser,
+        avatarUrl: profileUser.avatarUrl,
+        bannerUrl: profileUser.bannerUrl,
+      },
       session: {
-        id: validatedSession.session.id,
+        id: validatedSession.session.publicId,
         expiresAt: '2026-01-31T00:00:00.000Z',
       },
     });
@@ -656,12 +673,10 @@ describe('auth controller', () => {
         return {
           ...userDataExportResult,
           emailVerificationToken: {
-            id: 'verification-token-id',
             createdAt: new Date('2026-01-01T00:00:00.000Z'),
             expiresAt: new Date('2026-01-08T00:00:00.000Z'),
           },
           passwordResetToken: {
-            id: 'password-reset-token-id',
             createdAt: new Date('2026-01-01T00:00:00.000Z'),
             expiresAt: new Date('2026-01-02T00:00:00.000Z'),
           },
@@ -700,7 +715,11 @@ describe('auth controller', () => {
     expect(JSON.parse(state.body as string)).toEqual({
       exportedAt: '2026-01-01T00:00:00.000Z',
       user: {
-        ...loginResult.user,
+        email: loginResult.user.email,
+        username: loginResult.user.username,
+        displayName: loginResult.user.displayName,
+        bio: loginResult.user.bio,
+        role: loginResult.user.role,
         isVerified: true,
         isBanned: false,
         bannedAt: null,
@@ -752,7 +771,7 @@ describe('auth controller', () => {
       ],
       videoRatings: [
         {
-          videoId: '33333333-3333-4333-8333-333333333333',
+          videoPublicId: 'AbCdEf123_',
           value: 5,
           createdAt: '2026-01-01T00:00:00.000Z',
           updatedAt: '2026-01-01T00:00:00.000Z',
@@ -760,14 +779,14 @@ describe('auth controller', () => {
       ],
       videoViews: [
         {
-          videoId: '33333333-3333-4333-8333-333333333333',
+          videoPublicId: 'AbCdEf123_',
           viewedOn: '2026-01-01',
         },
       ],
       comments: [
         {
           id: '44444444-4444-4444-8444-444444444444',
-          videoId: '33333333-3333-4333-8333-333333333333',
+          videoPublicId: 'AbCdEf123_',
           content: 'An exported comment.',
           createdAt: '2026-01-01T00:00:00.000Z',
           deletedAt: null,
@@ -783,7 +802,7 @@ describe('auth controller', () => {
       ],
       sessions: [
         {
-          id: loginResult.session.id,
+          id: loginResult.session.publicId,
           sessionKeySuffix: 'sion-key',
           ipAddress: '127.0.0.1',
           userAgent: 'bun-test',
@@ -797,12 +816,10 @@ describe('auth controller', () => {
         },
       ],
       emailVerificationToken: {
-        id: 'verification-token-id',
         createdAt: '2026-01-01T00:00:00.000Z',
         expiresAt: '2026-01-08T00:00:00.000Z',
       },
       passwordResetToken: {
-        id: 'password-reset-token-id',
         createdAt: '2026-01-01T00:00:00.000Z',
         expiresAt: '2026-01-02T00:00:00.000Z',
       },
@@ -898,7 +915,13 @@ describe('auth controller', () => {
     expect(state.statusCode).toBe(200);
     expect(state.body).toEqual({
       message: UPDATE_PROFILE_SUCCESS_MESSAGE,
-      user: updatedUser,
+      user: {
+        email: updatedUser.email,
+        username: updatedUser.username,
+        displayName: updatedUser.displayName,
+        bio: updatedUser.bio,
+        role: updatedUser.role,
+      },
     });
     expectNoStore(state);
   });
@@ -1142,7 +1165,7 @@ describe('auth controller', () => {
         query: {
           limit: 10,
           cursorLastUsedAt: '2026-01-01T00:00:00.000Z',
-          cursorId: loginResult.session.id,
+          cursorId: loginResult.session.publicId,
         },
       } as AuthenticatedRequest & Request<unknown, unknown, unknown, UserSessionsQuery>,
       response,
@@ -1157,7 +1180,7 @@ describe('auth controller', () => {
       limit: 10,
       cursor: {
         lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
-        id: loginResult.session.id,
+        id: loginResult.session.publicId,
       },
     });
     expect(receivedError).toBeUndefined();
@@ -1165,7 +1188,7 @@ describe('auth controller', () => {
     expect(state.body).toEqual({
       sessions: [
         {
-          id: loginResult.session.id,
+          id: loginResult.session.publicId,
           sessionKeySuffix: 'sion-key',
           ipAddress: '127.0.0.1',
           userAgent: 'bun-test',
@@ -1179,7 +1202,7 @@ describe('auth controller', () => {
       total: 1,
       nextCursor: {
         lastUsedAt: '2026-01-01T00:00:00.000Z',
-        id: loginResult.session.id,
+        id: loginResult.session.publicId,
       },
     });
     expectNoStore(state);
@@ -1282,7 +1305,7 @@ describe('auth controller', () => {
     await controller.logoutSession(
       {
         params: {
-          sessionId: '123e4567-e89b-12d3-a456-426614174000',
+          sessionId: 'cmbl7u2ag0000i6c2p5o9h9ta',
         },
         user: validatedSession.user,
         session: validatedSession.session,
@@ -1295,7 +1318,7 @@ describe('auth controller', () => {
 
     expect(receivedInput).toEqual({
       userId: validatedSession.user.id,
-      sessionId: '123e4567-e89b-12d3-a456-426614174000',
+      sessionId: 'cmbl7u2ag0000i6c2p5o9h9ta',
     });
     expect(receivedError).toBeUndefined();
     expect(state.statusCode).toBe(200);

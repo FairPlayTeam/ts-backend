@@ -268,7 +268,7 @@ describe('logoutSessionSchema', () => {
   test('accepts a valid session id param', () => {
     const result = logoutSessionSchema.safeParse({
       params: {
-        sessionId: '123e4567-e89b-12d3-a456-426614174000',
+        sessionId: 'cmbl7u2ag0000i6c2p5o9h9ta',
       },
     });
 
@@ -278,17 +278,33 @@ describe('logoutSessionSchema', () => {
   test('rejects malformed session id params', () => {
     const result = logoutSessionSchema.safeParse({
       params: {
-        sessionId: 'not-a-session-id',
+        sessionId: 'bad session id',
       },
     });
 
     expect(result.success).toBe(false);
+
+    const internalUuidResult = logoutSessionSchema.safeParse({
+      params: {
+        sessionId: '123e4567-e89b-12d3-a456-426614174000',
+      },
+    });
+
+    expect(internalUuidResult.success).toBe(false);
+
+    const uppercasePublicIdResult = logoutSessionSchema.safeParse({
+      params: {
+        sessionId: 'CMBL7U2AG0000I6C2P5O9H9TA',
+      },
+    });
+
+    expect(uppercasePublicIdResult.success).toBe(false);
   });
 
   test('rejects unexpected session params', () => {
     const result = logoutSessionSchema.safeParse({
       params: {
-        sessionId: '123e4567-e89b-12d3-a456-426614174000',
+        sessionId: 'cmbl7u2ag0000i6c2p5o9h9ta',
         userId: '123e4567-e89b-12d3-a456-426614174001',
       },
     });
@@ -303,7 +319,7 @@ describe('userSessionsSchema', () => {
       query: {
         limit: '25',
         cursorLastUsedAt: '2026-01-01T00:00:00.000Z',
-        cursorId: '123e4567-e89b-12d3-a456-426614174000',
+        cursorId: 'cmbl7u2ag0000i6c2p5o9h9ta',
       },
     });
 
@@ -312,7 +328,7 @@ describe('userSessionsSchema', () => {
       expect(result.data.query).toEqual({
         limit: 25,
         cursorLastUsedAt: '2026-01-01T00:00:00.000Z',
-        cursorId: '123e4567-e89b-12d3-a456-426614174000',
+        cursorId: 'cmbl7u2ag0000i6c2p5o9h9ta',
       });
     }
   });
@@ -321,6 +337,17 @@ describe('userSessionsSchema', () => {
     const result = userSessionsSchema.safeParse({
       query: {
         cursorLastUsedAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test('rejects non-canonical uppercase session cursor ids', () => {
+    const result = userSessionsSchema.safeParse({
+      query: {
+        cursorLastUsedAt: '2026-01-01T00:00:00.000Z',
+        cursorId: 'CMBL7U2AG0000I6C2P5O9H9TA',
       },
     });
 
@@ -340,7 +367,7 @@ describe('userSessionsSchema', () => {
 
 describe('userSessionsResponseSchema', () => {
   const validSession = {
-    id: '123e4567-e89b-42d3-a456-426614174000',
+    id: 'cmbl7u2ag0000i6c2p5o9h9ta',
     sessionKeySuffix: '9a8b7c6d',
     ipAddress: '127.0.0.1',
     userAgent: 'Mozilla/5.0',

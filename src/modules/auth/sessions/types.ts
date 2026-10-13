@@ -1,5 +1,8 @@
 import type { AuthRole } from '../roles.js';
 
+export const SESSION_PUBLIC_ID_PATTERN = /^(?:c[a-z0-9]{24}|s_[a-f0-9]{32})$/;
+export const SESSION_PUBLIC_ID_EXAMPLE = 'cmbl7u2ag0000i6c2p5o9h9ta';
+
 export type AuthUser = {
   id: string;
   email: string;
@@ -16,6 +19,7 @@ export type AuthUserProfile = AuthUser & {
 
 export type Session = {
   id: string;
+  publicId: string;
   expiresAt: Date;
 };
 

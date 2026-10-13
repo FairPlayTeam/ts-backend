@@ -833,7 +833,7 @@ describe('video comments integration', () => {
       expect.arrayContaining([
         {
           id: root.id,
-          videoId: video.id,
+          videoPublicId: video.publicId,
           content: null,
           createdAt: expect.any(String),
           deletedAt: expect.any(String),
@@ -842,7 +842,7 @@ describe('video comments integration', () => {
         },
         {
           id: reply.id,
-          videoId: video.id,
+          videoPublicId: video.publicId,
           content: 'Reply included with its root identifier.',
           createdAt: expect.any(String),
           deletedAt: null,
@@ -901,7 +901,7 @@ describe('video comments integration', () => {
     expect(dataExport.body.comments).toHaveLength(commentCount);
     expect(dataExport.body.comments[0]).toEqual(
       expect.objectContaining({
-        videoId: video.id,
+        videoPublicId: video.publicId,
         content: expect.stringMatching(/^Exported comment \d+$/),
       }),
     );

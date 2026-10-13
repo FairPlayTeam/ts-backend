@@ -213,7 +213,7 @@ describe('video ratings integration', () => {
       .expect(200);
     expect(dataExport.body.videoRatings).toEqual([
       {
-        videoId: video.id,
+        videoPublicId: video.publicId,
         value: 5,
         createdAt: expect.any(String),
         updatedAt: expect.any(String),

@@ -171,6 +171,7 @@ const createAuthTransaction = (calls: AuthServiceTestCalls) => ({
 
       return {
         id: 'session-id',
+        publicId: 'session-public-id',
         expiresAt: new Date('2026-01-31T00:00:00.000Z'),
       };
     },
@@ -186,6 +187,7 @@ const exportableComments = [
   {
     id: '44444444-4444-4444-8444-444444444444',
     videoId: '33333333-3333-4333-8333-333333333333',
+    video: { publicId: 'AbCdEf123_' },
     content: 'An exported comment.',
     createdAt: fixedNow,
     deletedAt: null,
@@ -195,6 +197,7 @@ const exportableComments = [
   {
     id: '55555555-5555-4555-8555-555555555555',
     videoId: '33333333-3333-4333-8333-333333333333',
+    video: { publicId: 'AbCdEf123_' },
     content: null,
     createdAt: fixedNow,
     deletedAt: new Date('2026-01-01T01:00:00.000Z'),
@@ -206,6 +209,7 @@ const exportableComments = [
 const exportableVideoRatings = [
   {
     videoId: '33333333-3333-4333-8333-333333333333',
+    video: { publicId: 'AbCdEf123_' },
     value: 5,
     createdAt: fixedNow,
     updatedAt: fixedNow,
@@ -222,6 +226,7 @@ const exportableCommentLikes = [
 const exportableVideoViews = [
   {
     videoId: '33333333-3333-4333-8333-333333333333',
+    video: { publicId: 'AbCdEf123_' },
     viewedOn: fixedNow,
   },
 ];
@@ -274,6 +279,7 @@ const exportableVideos = [
 const exportableSessions = [
   {
     id: 'session-id',
+    publicId: 'session-public-id',
     sessionKeySuffix: 'in-token',
     ipAddress: '127.0.0.1',
     userAgent: 'bun-test',
@@ -286,6 +292,7 @@ const exportableSessions = [
   },
   {
     id: 'other-session-id',
+    publicId: 'other-session-public-id',
     sessionKeySuffix: null,
     ipAddress: null,
     userAgent: null,
@@ -490,6 +497,7 @@ export const createBaseAuthPrisma = (calls: AuthServiceTestCalls): AuthDeps['pri
         return [
           {
             id: 'session-id',
+            publicId: 'session-public-id',
             sessionKeySuffix: 'in-token',
             ipAddress: '127.0.0.1',
             userAgent: 'bun-test',
@@ -500,6 +508,7 @@ export const createBaseAuthPrisma = (calls: AuthServiceTestCalls): AuthDeps['pri
           },
           {
             id: 'other-session-id',
+            publicId: 'other-session-public-id',
             sessionKeySuffix: null,
             ipAddress: null,
             userAgent: null,
@@ -520,6 +529,7 @@ export const createBaseAuthPrisma = (calls: AuthServiceTestCalls): AuthDeps['pri
 
         return {
           id: 'session-id',
+          publicId: 'session-public-id',
           expiresAt: new Date('2026-01-31T00:00:00.000Z'),
           isActive: true,
           user: {
@@ -541,9 +551,15 @@ export const createBaseAuthPrisma = (calls: AuthServiceTestCalls): AuthDeps['pri
       updateMany: async (args: unknown) => {
         calls.sessionUpdateMany = args;
 
-        const updateArgs = args as { where?: { id?: unknown } };
+        const updateArgs = args as { where?: { id?: unknown; publicId?: unknown } };
 
-        return { count: typeof updateArgs.where?.id === 'string' ? 1 : 2 };
+        return {
+          count:
+            typeof updateArgs.where?.id === 'string' ||
+            typeof updateArgs.where?.publicId === 'string'
+              ? 1
+              : 2,
+        };
       },
       deleteMany: async (args: unknown) => {
         calls.sessionDeleteMany = args;

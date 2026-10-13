@@ -8,6 +8,7 @@ import {
   SESSION_USER_AGENT_MAX_LENGTH,
 } from '../../../../config/constants.js';
 import { AUTH_ROLES } from '../../roles.js';
+import { SESSION_PUBLIC_ID_EXAMPLE, SESSION_PUBLIC_ID_PATTERN } from '../../sessions/types.js';
 import { relativeAssetPathSchema } from '../../../../controllers/shared/asset.schemas.js';
 
 export const responseMessageSchema = (example: string) => z.string().openapi({ example });
@@ -49,7 +50,6 @@ export const passwordSchema = z
   });
 
 export const authUserResponseSchema = z.object({
-  id: z.string().uuid().openapi({ example: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f' }),
   email: z.string().email().openapi({ example: 'creator@example.com' }),
   username: z.string().openapi({ example: 'fairplay_creator' }),
   displayName: z.string().nullable().openapi({ example: 'Neal Mohan' }),
@@ -71,7 +71,7 @@ export const authUserProfileResponseSchema = authUserResponseSchema.extend({
 });
 
 export const authSessionResponseSchema = z.object({
-  id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+  id: z.string().regex(SESSION_PUBLIC_ID_PATTERN).openapi({ example: SESSION_PUBLIC_ID_EXAMPLE }),
   expiresAt: z.string().datetime().openapi({ example: '2026-01-31T00:00:00.000Z' }),
 });
 

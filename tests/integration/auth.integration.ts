@@ -22,6 +22,7 @@ import {
   INVALID_CREDENTIALS_MESSAGE,
 } from '../../src/modules/auth/errors.js';
 import { REGISTRATION_IDENTIFIER_RATE_LIMIT_MAX } from '../../src/config/constants.js';
+import { recordVideoView } from '../../src/modules/videos/catalog.js';
 import { createVideoPublicId } from '../../src/modules/videos/shared/publicId.js';
 import { createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import {
@@ -156,7 +157,6 @@ describe('auth integration', () => {
     expect(verifyResponse.body).toEqual({
       message: VERIFY_EMAIL_SUCCESS_MESSAGE,
       user: {
-        id: expect.any(String),
         email: TEST_EMAIL,
         username: TEST_USERNAME,
         displayName: TEST_USERNAME,
@@ -172,6 +172,8 @@ describe('auth integration', () => {
 
     const firstSessionKey = verifyResponse.body.sessionKey as string;
     const persistedSession = await runtime.prisma.session.findFirstOrThrow();
+    expect(verifyResponse.body.session.id).toBe(persistedSession.publicId);
+    expect(verifyResponse.body.session.id).not.toBe(persistedSession.id);
     expect(persistedSession.sessionKey).toBe(hashToken(firstSessionKey));
     expect(persistedSession.sessionKeySuffix).toBe(firstSessionKey.slice(-8));
 
@@ -181,6 +183,7 @@ describe('auth integration', () => {
       .expect(200)
       .expect((response) => {
         expect(response.body.user.email).toBe(TEST_EMAIL);
+        expect(response.body.user).not.toHaveProperty('id');
         expect(response.body.session.id).toBe(verifyResponse.body.session.id);
       });
 
@@ -320,6 +323,43 @@ describe('auth integration', () => {
     }));
     await runtime.prisma.video.createMany({ data: videos });
 
+    const relatedVideoOwner = await createVerifiedSession(runtime, {
+      email: `export-related-video-${suffix}@example.com`,
+      username: `related_${suffix}`,
+    });
+    const relatedVideo = await runtime.videosService.createVideo({
+      userId: relatedVideoOwner.userId,
+      title: 'Export relation video',
+      description: null,
+      tags: [],
+      license: 'all_rights_reserved',
+      allowComments: true,
+    });
+    await runtime.prisma.video.update({
+      where: { id: relatedVideo.video.id },
+      data: {
+        processingStatus: 'ready',
+        durationSeconds: 19,
+        moderationStatus: 'approved',
+        visibility: 'public',
+      },
+    });
+    await runtime.videosService.rateVideo({
+      userId: owner.userId,
+      publicId: relatedVideo.video.publicId,
+      value: 5,
+    });
+    await recordVideoView(runtime.prisma, {
+      userId: owner.userId,
+      videoId: relatedVideo.video.id,
+      viewedOn: '2026-01-01',
+    });
+    await runtime.commentsService.createComment({
+      userId: owner.userId,
+      publicId: relatedVideo.video.publicId,
+      content: 'An exported comment with a public video reference.',
+    });
+
     const queryEvents: string[] = [];
     const observedPrisma = createQueryObservedPrismaClient(runtime.databaseUrl, ({ query }) => {
       queryEvents.push(query);
@@ -359,6 +399,26 @@ describe('auth integration', () => {
         () => countQueriesForTable('videos'),
         videos.length,
       );
+      const exportedRatings = [];
+      for await (const rating of exported.videoRatings) {
+        exportedRatings.push(rating);
+      }
+      const exportedViews = [];
+      for await (const view of exported.videoViews) {
+        exportedViews.push(view);
+      }
+      const exportedComments = [];
+      for await (const comment of exported.comments) {
+        exportedComments.push(comment);
+      }
+      const exportedSessions = [];
+      for await (const session of exported.sessions) {
+        exportedSessions.push(session);
+      }
+      const persistedOwnerSession = await runtime.prisma.session.findFirstOrThrow({
+        where: { userId: owner.userId },
+        select: { id: true, publicId: true },
+      });
 
       expect(following.map(({ username }) => username).sort()).toEqual(
         followingUsers.map(({ username }) => username).sort(),
@@ -375,6 +435,25 @@ describe('auth integration', () => {
       expect(new Set(following.map(({ username }) => username)).size).toBe(followingUsers.length);
       expect(new Set(followers.map(({ username }) => username)).size).toBe(followerUsers.length);
       expect(new Set(exportedVideos.map(({ publicId }) => publicId)).size).toBe(videos.length);
+      expect(exportedRatings).toEqual([
+        expect.objectContaining({ videoPublicId: relatedVideo.video.publicId, value: 5 }),
+      ]);
+      expect(exportedViews).toEqual([
+        { videoPublicId: relatedVideo.video.publicId, viewedOn: cursorTimestamp },
+      ]);
+      expect(exportedComments).toEqual([
+        expect.objectContaining({ videoPublicId: relatedVideo.video.publicId }),
+      ]);
+      expect(exportedSessions).toEqual([
+        expect.objectContaining({ id: persistedOwnerSession.publicId, isCurrent: true }),
+      ]);
+      expect(JSON.stringify(exportedSessions)).not.toContain(persistedOwnerSession.id);
+      expect(JSON.stringify(exportedRatings)).not.toContain(relatedVideo.video.id);
+      expect(JSON.stringify(exportedViews)).not.toContain(relatedVideo.video.id);
+      expect(JSON.stringify(exportedComments)).not.toContain(relatedVideo.video.id);
+      expect(exported.user).not.toHaveProperty('id');
+      expect(Object.keys(exported.emailVerificationToken ?? {})).not.toContain('id');
+      expect(Object.keys(exported.passwordResetToken ?? {})).not.toContain('id');
 
       const serializedFollows = JSON.stringify({ following, followers });
       const serializedVideos = JSON.stringify(exportedVideos);
@@ -406,7 +485,7 @@ describe('auth integration', () => {
     });
     const otherSession = await runtime.prisma.session.findFirstOrThrow({
       where: { userId: otherUser.userId },
-      select: { id: true, isActive: true },
+      select: { id: true, publicId: true, isActive: true },
     });
     const app = await createIntegrationApp(runtime);
 
@@ -416,11 +495,11 @@ describe('auth integration', () => {
       .expect(200)
       .expect((response) => {
         expect(response.body.sessions).toHaveLength(1);
-        expect(response.body.sessions[0].id).not.toBe(otherSession.id);
+        expect(response.body.sessions[0].id).not.toBe(otherSession.publicId);
       });
 
     await request(app)
-      .delete(`/auth/sessions/${otherSession.id}`)
+      .delete(`/auth/sessions/${otherSession.publicId}`)
       .set('Authorization', `Bearer ${owner.sessionKey}`)
       .expect(200)
       .expect({

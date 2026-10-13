@@ -4,6 +4,7 @@ import {
   LOGOUT_OTHER_SESSIONS_SUCCESS_MESSAGE,
   LOGOUT_SESSION_SUCCESS_MESSAGE,
 } from '../../messages.js';
+import { SESSION_PUBLIC_ID_EXAMPLE, SESSION_PUBLIC_ID_PATTERN } from '../../sessions/types.js';
 import {
   responseMessageSchema,
   sessionDeviceInfoResponseSchema,
@@ -11,16 +12,16 @@ import {
   sessionUserAgentResponseSchema,
 } from './shared.schemas.js';
 
-export const LOGOUT_SESSION_ID_INVALID_MESSAGE = 'Session id must be a valid UUID';
+export const LOGOUT_SESSION_ID_INVALID_MESSAGE = 'Session id must be a valid public reference';
 export const USER_SESSIONS_CURSOR_PAIR_MESSAGE =
   'cursorLastUsedAt and cursorId must be provided together';
+const sessionPublicIdSchema = z
+  .string()
+  .regex(SESSION_PUBLIC_ID_PATTERN, LOGOUT_SESSION_ID_INVALID_MESSAGE);
 
 export const logoutSessionParamsSchema = z
   .object({
-    sessionId: z
-      .string()
-      .uuid(LOGOUT_SESSION_ID_INVALID_MESSAGE)
-      .openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+    sessionId: sessionPublicIdSchema.openapi({ example: SESSION_PUBLIC_ID_EXAMPLE }),
   })
   .strict()
   .openapi('LogoutSessionParams');
@@ -35,11 +36,7 @@ export const userSessionsQuerySchema = z
     cursorLastUsedAt: z.string().datetime().optional().openapi({
       example: '2026-01-01T00:00:00.000Z',
     }),
-    cursorId: z
-      .string()
-      .uuid('Cursor session id must be a valid UUID')
-      .optional()
-      .openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+    cursorId: sessionPublicIdSchema.optional().openapi({ example: SESSION_PUBLIC_ID_EXAMPLE }),
   })
   .strict()
   .refine((query) => (query.cursorLastUsedAt === undefined) === (query.cursorId === undefined), {
@@ -55,7 +52,7 @@ export const userSessionsResponseSchema = z
   .object({
     sessions: z.array(
       z.object({
-        id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+        id: sessionPublicIdSchema.openapi({ example: SESSION_PUBLIC_ID_EXAMPLE }),
         sessionKeySuffix: z.string().nullable().openapi({ example: '9a8b7c6d' }),
         ipAddress: sessionIpAddressResponseSchema,
         userAgent: sessionUserAgentResponseSchema,
@@ -70,7 +67,7 @@ export const userSessionsResponseSchema = z
     nextCursor: z
       .object({
         lastUsedAt: z.string().datetime().openapi({ example: '2026-01-01T00:00:00.000Z' }),
-        id: z.string().uuid().openapi({ example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a' }),
+        id: sessionPublicIdSchema.openapi({ example: SESSION_PUBLIC_ID_EXAMPLE }),
       })
       .nullable(),
   })

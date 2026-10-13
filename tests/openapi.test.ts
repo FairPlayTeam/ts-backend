@@ -602,6 +602,11 @@ describe('OpenAPI generation', () => {
     const userDataExportSchema = JSON.stringify(
       document.components?.schemas?.UserDataExportResponse,
     );
+    const exportedUserProperties =
+      document.components?.schemas?.UserDataExportResponse?.properties?.user?.properties;
+    const exportedEmailVerificationTokenProperties =
+      document.components?.schemas?.UserDataExportResponse?.properties?.emailVerificationToken
+        ?.properties;
     expect(userDataExportSchema).toContain('"banReason"');
     expect(userDataExportSchema).toContain('"following"');
     expect(userDataExportSchema).toContain('"followers"');
@@ -610,6 +615,12 @@ describe('OpenAPI generation', () => {
     expect(userDataExportSchema).not.toContain('"mediaAssets"');
     expect(userDataExportSchema).not.toContain('objectKey');
     expect(userDataExportSchema).not.toContain('"bucket"');
+    expect(userDataExportSchema).not.toContain('9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f');
+    expect(exportedUserProperties).not.toHaveProperty('id');
+    expect(exportedEmailVerificationTokenProperties).not.toHaveProperty('id');
+    expect(
+      document.components?.schemas?.LoginResponse?.properties?.user?.properties,
+    ).not.toHaveProperty('id');
     expect(document.paths['/auth/sessions']?.get?.requestBody).toBeUndefined();
     expect(document.paths['/auth/sessions']?.get?.parameters).toEqual(
       expect.arrayContaining([
@@ -903,7 +914,7 @@ describe('OpenAPI generation', () => {
       type: 'array',
       items: {
         type: 'object',
-        required: ['videoId', 'value', 'createdAt', 'updatedAt'],
+        required: ['videoPublicId', 'value', 'createdAt', 'updatedAt'],
       },
     });
     expect(document.components?.schemas?.LogoutAllSessionsResponse).toBeDefined();

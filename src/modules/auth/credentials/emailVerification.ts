@@ -111,6 +111,7 @@ export const createVerificationService = (
         },
         select: {
           id: true,
+          publicId: true,
           expiresAt: true,
         },
       });

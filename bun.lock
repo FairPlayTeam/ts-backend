@@ -24,7 +24,7 @@
         "rate-limit-redis": "^5.0.0",
         "sharp": "^0.35.5",
         "swagger-ui-express": "^5.0.1",
-        "zod": "^4.5.4",
+        "zod": "^4.5.4"
       },
       "devDependencies": {
         "@eslint/js": "^10.0.1",
@@ -43,14 +43,14 @@
         "testcontainers": "^12.2.0",
         "typescript": "^6.0.3",
         "typescript-eslint": "^8.69.0",
-        "vitest": "^4.1.11",
-      },
-    },
+        "vitest": "^4.1.11"
+      }
+    }
   },
   "overrides": {
     "decode-uri-component": "0.5.0",
     "deepmerge-ts": "8.0.2",
-    "mysql2": "3.24.5",
+    "mysql2": "3.24.5"
   },
   "packages": {
     "@asteasolutions/zod-to-openapi": ["@asteasolutions/zod-to-openapi@8.5.0", "", { "dependencies": { "openapi3-ts": "^4.1.2" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-SABbKiObg5dLRiTFnqiW1WWwGcg1BJfmHtT2asIBnBHg6Smy/Ms2KHc650+JI4Hw7lSkdiNebEGXpwoxfben8Q=="],
@@ -1383,6 +1383,6 @@
 
     "multer/type-is/mime-types/mime-db": ["mime-db@1.52.0", "", {}, "sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg=="],
 
-    "readdir-glob/minimatch/brace-expansion/balanced-match": ["balanced-match@1.0.2", "", {}, "sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw=="],
+    "readdir-glob/minimatch/brace-expansion/balanced-match": ["balanced-match@1.0.2", "", {}, "sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw=="]
   }
 }

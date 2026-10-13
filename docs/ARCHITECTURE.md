@@ -1107,6 +1107,12 @@ an intentional serializer change. The generated `openapi.json` remains the snaps
 route descriptions; changes to paths, operation IDs, schemas, or documented statuses are API
 changes.
 
+Auth responses do not expose user or session database UUIDs. Session `id` values in login, session
+listing, cursors, revocation requests, and personal exports are stable public references stored as
+`sessions.public_id`; revocation still scopes the update to the authenticated owner. After this
+change, clients must refresh their session list before using a previously stored session ID. The
+personal export identifies videos by `publicId` and omits user and verification/reset token IDs.
+
 Profile media upload processes the file, reserves an external-resource target, stores the object,
 then confirms the target and updates the user media record in a serializable transaction. Failed
 object writes and user-deletion races schedule the reserved target for absence and attempt immediate

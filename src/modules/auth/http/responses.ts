@@ -26,17 +26,16 @@ import {
 export { sendNoStoreJson, setNoStore };
 
 type SessionResponseInput = {
-  id: string;
+  publicId: string;
   expiresAt: Date;
 };
 
 export const toSessionResponse = (session: SessionResponseInput) => ({
-  id: session.id,
+  id: session.publicId,
   expiresAt: toIsoString(session.expiresAt),
 });
 
 export const toAuthUserResponse = (user: AuthUser) => ({
-  id: user.id,
   email: user.email,
   username: user.username,
   displayName: user.displayName,
@@ -45,7 +44,6 @@ export const toAuthUserResponse = (user: AuthUser) => ({
 });
 
 export const toAuthUserProfileResponse = (user: AuthUserProfile) => ({
-  id: user.id,
   email: user.email,
   username: user.username,
   displayName: user.displayName,
@@ -92,7 +90,6 @@ type UserDataExportToken = NonNullable<ExportUserDataResult['emailVerificationTo
 const toUserDataExportTokenResponse = (token: UserDataExportToken | null) =>
   token
     ? {
-        id: token.id,
         createdAt: toIsoString(token.createdAt),
         expiresAt: toIsoString(token.expiresAt),
       }
@@ -101,7 +98,6 @@ const toUserDataExportTokenResponse = (token: UserDataExportToken | null) =>
 const toUserDataExportBaseResponse = (result: ExportUserDataResult) => ({
   exportedAt: toIsoString(result.exportedAt),
   user: {
-    id: result.user.id,
     email: result.user.email,
     username: result.user.username,
     displayName: result.user.displayName,
@@ -121,7 +117,7 @@ const toUserDataExportBaseResponse = (result: ExportUserDataResult) => ({
 
 const toUserDataExportCommentResponse = (comment: ExportUserCommentData) => ({
   id: comment.id,
-  videoId: comment.videoId,
+  videoPublicId: comment.videoPublicId,
   content: comment.content,
   createdAt: toIsoString(comment.createdAt),
   deletedAt: toNullableIsoString(comment.deletedAt),
@@ -135,14 +131,14 @@ const toUserDataExportCommentLikeResponse = (like: ExportUserCommentLikeData) =>
 });
 
 const toUserDataExportVideoRatingResponse = (rating: ExportUserVideoRatingData) => ({
-  videoId: rating.videoId,
+  videoPublicId: rating.videoPublicId,
   value: rating.value,
   createdAt: toIsoString(rating.createdAt),
   updatedAt: toIsoString(rating.updatedAt),
 });
 
 const toUserDataExportVideoViewResponse = (view: ExportUserVideoViewData) => ({
-  videoId: view.videoId,
+  videoPublicId: view.videoPublicId,
   viewedOn: toIsoString(view.viewedOn).slice(0, 10),
 });
 

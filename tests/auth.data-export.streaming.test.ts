@@ -91,6 +91,7 @@ const deleteAccountRequest = (baseUrl: string) =>
 const hostileExportFields = {
   passwordHash: 'hostile-password-hash',
   sessionKeyHash: 'hostile-session-key-hash',
+  videoId: '33333333-3333-4333-8333-333333333333',
   objectKey: 'hostile-storage-object-key',
   externalResourceTargetId: 'hostile-reconciliation-target-id',
   internalMarker: 'hostile-internal-marker',
@@ -125,12 +126,12 @@ describe('personal data export streaming', () => {
         ...addHostileExportFields(result),
         user: addHostileExportFields(result.user),
         emailVerificationToken: addHostileExportFields({
-          id: 'verification-token-id',
+          id: 'verification-token-internal-id',
           createdAt: timestamp,
           expiresAt,
         }),
         passwordResetToken: addHostileExportFields({
-          id: 'password-reset-token-id',
+          id: 'password-reset-token-internal-id',
           createdAt: timestamp,
           expiresAt,
         }),
@@ -152,7 +153,6 @@ describe('personal data export streaming', () => {
     expect(JSON.parse(body)).toEqual({
       exportedAt: '2026-01-01T00:00:00.000Z',
       user: {
-        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
         email: 'user@example.com',
         username: 'fairplay_user',
         displayName: 'Fairplay User',
@@ -167,12 +167,10 @@ describe('personal data export streaming', () => {
         lastLogin: '2026-01-01T00:00:00.000Z',
       },
       emailVerificationToken: {
-        id: 'verification-token-id',
         createdAt: '2026-01-01T00:00:00.000Z',
         expiresAt: '2026-01-08T00:00:00.000Z',
       },
       passwordResetToken: {
-        id: 'password-reset-token-id',
         createdAt: '2026-01-01T00:00:00.000Z',
         expiresAt: '2026-01-08T00:00:00.000Z',
       },
@@ -219,7 +217,7 @@ describe('personal data export streaming', () => {
       ],
       videoRatings: [
         {
-          videoId: '33333333-3333-4333-8333-333333333333',
+          videoPublicId: 'AbCdEf123_',
           value: 5,
           createdAt: '2026-01-01T00:00:00.000Z',
           updatedAt: '2026-01-01T00:00:00.000Z',
@@ -227,14 +225,14 @@ describe('personal data export streaming', () => {
       ],
       videoViews: [
         {
-          videoId: '33333333-3333-4333-8333-333333333333',
+          videoPublicId: 'AbCdEf123_',
           viewedOn: '2026-01-01',
         },
       ],
       comments: [
         {
           id: '44444444-4444-4444-8444-444444444444',
-          videoId: '33333333-3333-4333-8333-333333333333',
+          videoPublicId: 'AbCdEf123_',
           content: 'An exported comment.',
           createdAt: '2026-01-01T00:00:00.000Z',
           deletedAt: null,
@@ -250,7 +248,7 @@ describe('personal data export streaming', () => {
       ],
       sessions: [
         {
-          id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+          id: 'cmbl7u2ag0000i6c2p5o9h9ta',
           sessionKeySuffix: 'sion-key',
           ipAddress: '127.0.0.1',
           userAgent: 'bun-test',
@@ -265,6 +263,11 @@ describe('personal data export streaming', () => {
       ],
     });
     expect(body).not.toContain('hostile-');
+    expect(body).not.toContain('9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f');
+    expect(body).not.toContain('0d4e55cb-c278-4d74-a192-bf7c10888c7a');
+    expect(body).not.toContain('verification-token-internal-id');
+    expect(body).not.toContain('password-reset-token-internal-id');
+    expect(body).not.toContain('33333333-3333-4333-8333-333333333333');
 
     await closeServer(server);
   });
@@ -472,8 +475,10 @@ describe('personal data export streaming', () => {
 
   test('aborts the chunked response when a database page fails after headers were sent', async () => {
     const databaseError = new Error('database failed on the second export page');
-    const firstRatingPage = Array.from({ length: 250 }, (_, index) => ({
-      videoId: `10000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    const firstRatingPage = Array.from({ length: 250 }, () => ({
+      videoId: 'internal-video-id',
+      video: { publicId: 'AbCdEf123_' },
+      videoPublicId: 'AbCdEf123_',
       value: 5,
       createdAt: fixedNow,
       updatedAt: fixedNow,

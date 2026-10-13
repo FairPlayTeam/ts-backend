@@ -27,6 +27,25 @@ type FollowerExportRow = {
   follower: Pick<ExportUserFollowData, 'username' | 'displayName'>;
 };
 type OwnedVideoExportRow = ExportUserVideoData & { id: string };
+type CommentExportRow = Omit<ExportUserCommentData, 'videoPublicId'> & {
+  video: { publicId: string };
+};
+type VideoRatingExportRow = {
+  videoId: string;
+  video: { publicId: string };
+  value: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+type VideoViewExportRow = {
+  videoId: string;
+  video: { publicId: string };
+  viewedOn: Date;
+};
+type SessionExportRow = Omit<ExportUserSessionData, 'id'> & {
+  id: string;
+  publicId: string;
+};
 
 const createPaginatedExport = <TRow>(
   loadPage: (cursor: TRow | undefined) => Promise<TRow[]>,
@@ -67,44 +86,55 @@ const createCommentExport = (
   deps: AuthDependencies,
   userId: string,
 ): AsyncIterable<ExportUserCommentData> =>
-  createPaginatedExport((cursor) =>
-    deps.prisma.comment
-      .findMany({
-        where: {
-          authorId: userId,
-          ...(cursor
-            ? {
-                createdAt: { gte: cursor.createdAt },
-                OR: [
-                  { createdAt: { gt: cursor.createdAt } },
-                  { createdAt: cursor.createdAt, id: { gt: cursor.id } },
-                ],
-              }
-            : {}),
-        },
-        select: {
-          id: true,
-          videoId: true,
-          content: true,
-          createdAt: true,
-          deletedAt: true,
-          rootId: true,
-          replyingToCommentId: true,
-        },
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        take: USER_DATA_EXPORT_BATCH_SIZE,
-      })
-      .then((comments) => {
-        for (const comment of comments) {
-          const isActive = comment.deletedAt === null;
+  projectExport<CommentExportRow, ExportUserCommentData>(
+    createPaginatedExport<CommentExportRow>((cursor) =>
+      deps.prisma.comment
+        .findMany({
+          where: {
+            authorId: userId,
+            ...(cursor
+              ? {
+                  createdAt: { gte: cursor.createdAt },
+                  OR: [
+                    { createdAt: { gt: cursor.createdAt } },
+                    { createdAt: cursor.createdAt, id: { gt: cursor.id } },
+                  ],
+                }
+              : {}),
+          },
+          select: {
+            id: true,
+            video: { select: { publicId: true } },
+            content: true,
+            createdAt: true,
+            deletedAt: true,
+            rootId: true,
+            replyingToCommentId: true,
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          take: USER_DATA_EXPORT_BATCH_SIZE,
+        })
+        .then((comments) => {
+          for (const comment of comments) {
+            const isActive = comment.deletedAt === null;
 
-          if ((isActive && comment.content === null) || (!isActive && comment.content !== null)) {
-            throw new Error('Exported comment violated its lifecycle invariant');
+            if ((isActive && comment.content === null) || (!isActive && comment.content !== null)) {
+              throw new Error('Exported comment violated its lifecycle invariant');
+            }
           }
-        }
 
-        return comments;
-      }),
+          return comments;
+        }),
+    ),
+    ({ id, video, content, createdAt, deletedAt, rootId, replyingToCommentId }) => ({
+      id,
+      videoPublicId: video.publicId,
+      content,
+      createdAt,
+      deletedAt,
+      rootId,
+      replyingToCommentId,
+    }),
   );
 
 const createCommentLikeExport = (
@@ -134,28 +164,37 @@ const createVideoRatingExport = (
   deps: AuthDependencies,
   userId: string,
 ): AsyncIterable<ExportUserVideoRatingData> =>
-  createPaginatedExport((cursor) =>
-    deps.prisma.videoRating.findMany({
-      where: {
-        userId,
-        ...(cursor
-          ? {
-              createdAt: { gte: cursor.createdAt },
-              OR: [
-                { createdAt: { gt: cursor.createdAt } },
-                { createdAt: cursor.createdAt, videoId: { gt: cursor.videoId } },
-              ],
-            }
-          : {}),
-      },
-      select: {
-        videoId: true,
-        value: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-      orderBy: [{ createdAt: 'asc' }, { videoId: 'asc' }],
-      take: USER_DATA_EXPORT_BATCH_SIZE,
+  projectExport(
+    createPaginatedExport<VideoRatingExportRow>((cursor) =>
+      deps.prisma.videoRating.findMany({
+        where: {
+          userId,
+          ...(cursor
+            ? {
+                createdAt: { gte: cursor.createdAt },
+                OR: [
+                  { createdAt: { gt: cursor.createdAt } },
+                  { createdAt: cursor.createdAt, videoId: { gt: cursor.videoId } },
+                ],
+              }
+            : {}),
+        },
+        select: {
+          videoId: true,
+          video: { select: { publicId: true } },
+          value: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: [{ createdAt: 'asc' }, { videoId: 'asc' }],
+        take: USER_DATA_EXPORT_BATCH_SIZE,
+      }),
+    ),
+    ({ video, value, createdAt, updatedAt }) => ({
+      videoPublicId: video.publicId,
+      value,
+      createdAt,
+      updatedAt,
     }),
   );
 
@@ -163,26 +202,33 @@ const createVideoViewExport = (
   deps: AuthDependencies,
   userId: string,
 ): AsyncIterable<ExportUserVideoViewData> =>
-  createPaginatedExport((cursor) =>
-    deps.prisma.videoView.findMany({
-      where: {
-        userId,
-        ...(cursor
-          ? {
-              viewedOn: { gte: cursor.viewedOn },
-              OR: [
-                { viewedOn: { gt: cursor.viewedOn } },
-                { viewedOn: cursor.viewedOn, videoId: { gt: cursor.videoId } },
-              ],
-            }
-          : {}),
-      },
-      select: {
-        videoId: true,
-        viewedOn: true,
-      },
-      orderBy: [{ viewedOn: 'asc' }, { videoId: 'asc' }],
-      take: USER_DATA_EXPORT_BATCH_SIZE,
+  projectExport(
+    createPaginatedExport<VideoViewExportRow>((cursor) =>
+      deps.prisma.videoView.findMany({
+        where: {
+          userId,
+          ...(cursor
+            ? {
+                viewedOn: { gte: cursor.viewedOn },
+                OR: [
+                  { viewedOn: { gt: cursor.viewedOn } },
+                  { viewedOn: cursor.viewedOn, videoId: { gt: cursor.videoId } },
+                ],
+              }
+            : {}),
+        },
+        select: {
+          videoId: true,
+          video: { select: { publicId: true } },
+          viewedOn: true,
+        },
+        orderBy: [{ viewedOn: 'asc' }, { videoId: 'asc' }],
+        take: USER_DATA_EXPORT_BATCH_SIZE,
+      }),
+    ),
+    ({ video, viewedOn }) => ({
+      videoPublicId: video.publicId,
+      viewedOn,
     }),
   );
 
@@ -191,41 +237,50 @@ const createSessionExport = (
   userId: string,
   currentSessionId: string,
 ): AsyncIterable<ExportUserSessionData> =>
-  createPaginatedExport(async (cursor) => {
-    const sessions = await deps.prisma.session.findMany({
-      where: {
-        userId,
-        ...(cursor
-          ? {
-              createdAt: { gte: cursor.createdAt },
-              OR: [
-                { createdAt: { gt: cursor.createdAt } },
-                { createdAt: cursor.createdAt, id: { gt: cursor.id } },
-              ],
-            }
-          : {}),
-      },
-      select: {
-        id: true,
-        sessionKeySuffix: true,
-        ipAddress: true,
-        userAgent: true,
-        deviceInfo: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-        lastUsedAt: true,
-        expiresAt: true,
-      },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      take: USER_DATA_EXPORT_BATCH_SIZE,
-    });
-
-    return sessions.map((session) => ({
+  projectExport<SessionExportRow, ExportUserSessionData>(
+    createPaginatedExport<SessionExportRow>((cursor) =>
+      deps.prisma.session
+        .findMany({
+          where: {
+            userId,
+            ...(cursor
+              ? {
+                  createdAt: { gte: cursor.createdAt },
+                  OR: [
+                    { createdAt: { gt: cursor.createdAt } },
+                    { createdAt: cursor.createdAt, id: { gt: cursor.id } },
+                  ],
+                }
+              : {}),
+          },
+          select: {
+            id: true,
+            publicId: true,
+            sessionKeySuffix: true,
+            ipAddress: true,
+            userAgent: true,
+            deviceInfo: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+            lastUsedAt: true,
+            expiresAt: true,
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          take: USER_DATA_EXPORT_BATCH_SIZE,
+        })
+        .then((sessions) =>
+          sessions.map((session) => ({
+            ...session,
+            isCurrent: session.id === currentSessionId,
+          })),
+        ),
+    ),
+    ({ id: _internalId, publicId, ...session }) => ({
       ...session,
-      isCurrent: session.id === currentSessionId,
-    }));
-  });
+      id: publicId,
+    }),
+  );
 
 const createFollowingExport = (
   deps: AuthDependencies,
@@ -350,7 +405,6 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
     const user = await deps.prisma.user.findUnique({
       where: { id: userId },
       select: {
-        id: true,
         email: true,
         username: true,
         displayName: true,
@@ -374,7 +428,6 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
         },
         passwordResetToken: {
           select: {
-            id: true,
             createdAt: true,
             expiresAt: true,
           },
@@ -386,10 +439,23 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
       throw new AuthenticatedUserNotFoundError();
     }
 
-    const { emailVerificationTokens, passwordResetToken, ...exportedUser } = user;
+    const emailVerificationToken = user.emailVerificationTokens[0];
     return {
       exportedAt,
-      user: exportedUser,
+      user: {
+        email: user.email,
+        username: user.username,
+        displayName: user.displayName,
+        bio: user.bio,
+        role: user.role,
+        isVerified: user.isVerified,
+        isBanned: user.isBanned,
+        bannedAt: user.bannedAt,
+        banReason: user.banReason,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        lastLogin: user.lastLogin,
+      },
       following: createFollowingExport(deps, userId),
       followers: createFollowerExport(deps, userId),
       videos: createOwnedVideoExport(deps, userId),
@@ -398,8 +464,18 @@ export const createDataExportService = (deps: AuthDependencies): DataExportServi
       comments: createCommentExport(deps, userId),
       commentLikes: createCommentLikeExport(deps, userId),
       sessions: createSessionExport(deps, userId, currentSessionId),
-      emailVerificationToken: emailVerificationTokens[0] ?? null,
-      passwordResetToken,
+      emailVerificationToken: emailVerificationToken
+        ? {
+            createdAt: emailVerificationToken.createdAt,
+            expiresAt: emailVerificationToken.expiresAt,
+          }
+        : null,
+      passwordResetToken: user.passwordResetToken
+        ? {
+            createdAt: user.passwordResetToken.createdAt,
+            expiresAt: user.passwordResetToken.expiresAt,
+          }
+        : null,
     };
   },
 });

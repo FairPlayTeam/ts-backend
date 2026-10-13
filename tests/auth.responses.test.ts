@@ -25,6 +25,7 @@ describe('auth HTTP response serializers', () => {
     const expiresAt = new Date('2026-01-31T00:00:00.000Z');
     const session = addHostileFields({
       id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+      publicId: 'cmbl7u2ag0000i6c2p5o9h9ta',
       expiresAt,
     });
     const user = addHostileFields({
@@ -48,7 +49,6 @@ describe('auth HTTP response serializers', () => {
       JSON.stringify({
         message: LOGIN_SUCCESS_MESSAGE,
         user: {
-          id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
           email: 'user@example.com',
           username: 'fairplay_user',
           displayName: 'Fairplay User',
@@ -57,12 +57,14 @@ describe('auth HTTP response serializers', () => {
         },
         sessionKey: 'test-session-key',
         session: {
-          id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+          id: 'cmbl7u2ag0000i6c2p5o9h9ta',
           expiresAt: '2026-01-31T00:00:00.000Z',
         },
       }),
     );
     expect(serialized).not.toContain('hostile-');
+    expect(serialized).not.toContain('9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f');
+    expect(serialized).not.toContain('0d4e55cb-c278-4d74-a192-bf7c10888c7a');
   });
 
   test('serializes a profile and media asset through explicit public fields', () => {
@@ -90,7 +92,6 @@ describe('auth HTTP response serializers', () => {
 
     expect(profileJson).toBe(
       JSON.stringify({
-        id: '9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f',
         email: 'user@example.com',
         username: 'fairplay_user',
         displayName: 'Fairplay User',
@@ -111,13 +112,14 @@ describe('auth HTTP response serializers', () => {
       }),
     );
     expect(profileJson).not.toContain('hostile-');
+    expect(profileJson).not.toContain('9fdf5eb1-6d1d-4718-9f1b-5bdb9dd8e54f');
     expect(mediaJson).not.toContain('hostile-');
   });
 
   test('serializes session summaries through their public field whitelist', () => {
     const createdAt = new Date('2026-01-01T00:00:00.000Z');
     const session = addHostileFields({
-      id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+      id: 'cmbl7u2ag0000i6c2p5o9h9ta',
       sessionKeySuffix: 'sion-key',
       ipAddress: '127.0.0.1',
       userAgent: 'bun-test',
@@ -138,7 +140,7 @@ describe('auth HTTP response serializers', () => {
       JSON.stringify({
         sessions: [
           {
-            id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+            id: 'cmbl7u2ag0000i6c2p5o9h9ta',
             sessionKeySuffix: 'sion-key',
             ipAddress: '127.0.0.1',
             userAgent: 'bun-test',
@@ -152,7 +154,7 @@ describe('auth HTTP response serializers', () => {
         total: 1,
         nextCursor: {
           lastUsedAt: '2026-01-01T00:00:00.000Z',
-          id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+          id: 'cmbl7u2ag0000i6c2p5o9h9ta',
         },
       }),
     );

@@ -31,7 +31,7 @@ export type ExportUserDataInput = {
 
 export type ExportUserCommentData = {
   id: string;
-  videoId: string;
+  videoPublicId: string;
   content: string | null;
   createdAt: Date;
   deletedAt: Date | null;
@@ -45,14 +45,14 @@ export type ExportUserCommentLikeData = {
 };
 
 export type ExportUserVideoRatingData = {
-  videoId: string;
+  videoPublicId: string;
   value: number;
   createdAt: Date;
   updatedAt: Date;
 };
 
 export type ExportUserVideoViewData = {
-  videoId: string;
+  videoPublicId: string;
   viewedOn: Date;
 };
 
@@ -105,7 +105,6 @@ export type ExportUserSessionData = {
 export type ExportUserDataResult = {
   exportedAt: Date;
   user: {
-    id: string;
     email: string;
     username: string;
     displayName: string | null;
@@ -128,12 +127,10 @@ export type ExportUserDataResult = {
   commentLikes: AsyncIterable<ExportUserCommentLikeData>;
   sessions: AsyncIterable<ExportUserSessionData>;
   emailVerificationToken: {
-    id: string;
     createdAt: Date;
     expiresAt: Date;
   } | null;
   passwordResetToken: {
-    id: string;
     createdAt: Date;
     expiresAt: Date;
   } | null;

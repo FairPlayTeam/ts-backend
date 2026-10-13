@@ -25,6 +25,7 @@ describe('auth service sessions', () => {
       },
       session: {
         id: 'session-id',
+        publicId: 'session-public-id',
         expiresAt: new Date('2026-01-31T00:00:00.000Z'),
       },
     });
@@ -33,6 +34,7 @@ describe('auth service sessions', () => {
       where: { sessionKey: 'hashed-plain-token' },
       select: {
         id: true,
+        publicId: true,
         expiresAt: true,
         isActive: true,
         user: {
@@ -149,7 +151,7 @@ describe('auth service sessions', () => {
     ).resolves.toEqual({
       sessions: [
         {
-          id: 'session-id',
+          id: 'session-public-id',
           sessionKeySuffix: 'in-token',
           ipAddress: '127.0.0.1',
           userAgent: 'bun-test',
@@ -160,7 +162,7 @@ describe('auth service sessions', () => {
           isCurrent: true,
         },
         {
-          id: 'other-session-id',
+          id: 'other-session-public-id',
           sessionKeySuffix: null,
           ipAddress: null,
           userAgent: null,
@@ -185,6 +187,7 @@ describe('auth service sessions', () => {
       },
       select: {
         id: true,
+        publicId: true,
         sessionKeySuffix: true,
         ipAddress: true,
         userAgent: true,
@@ -193,7 +196,7 @@ describe('auth service sessions', () => {
         lastUsedAt: true,
         expiresAt: true,
       },
-      orderBy: [{ lastUsedAt: 'desc' }, { id: 'desc' }],
+      orderBy: [{ lastUsedAt: 'desc' }, { publicId: 'desc' }],
       take: 21,
     });
     expect(calls.sessionCount).toEqual({
@@ -330,7 +333,7 @@ describe('auth service sessions', () => {
 
     expect(calls.sessionUpdateMany).toEqual({
       where: {
-        id: 'target-session-id',
+        publicId: 'target-session-id',
         userId: 'user-id',
         isActive: true,
       },

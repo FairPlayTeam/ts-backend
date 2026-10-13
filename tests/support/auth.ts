@@ -33,6 +33,7 @@ const sessionResult = {
   sessionKey: 'test-session-key',
   session: {
     id: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
+    publicId: 'cmbl7u2ag0000i6c2p5o9h9ta',
     expiresAt: new Date('2026-01-31T00:00:00.000Z'),
   },
 };
@@ -40,7 +41,7 @@ const sessionResult = {
 const userSessionsResult = {
   sessions: [
     {
-      id: sessionResult.session.id,
+      id: sessionResult.session.publicId,
       sessionKeySuffix: 'sion-key',
       ipAddress: '127.0.0.1',
       userAgent: 'bun-test',
@@ -53,7 +54,7 @@ const userSessionsResult = {
   ],
   nextCursor: {
     lastUsedAt: new Date('2026-01-01T00:00:00.000Z'),
-    id: sessionResult.session.id,
+    id: sessionResult.session.publicId,
   },
   total: 1,
 };
@@ -119,7 +120,7 @@ const userDataExportResult = {
   ]),
   videoRatings: toAsyncIterable([
     {
-      videoId: '33333333-3333-4333-8333-333333333333',
+      videoPublicId: 'AbCdEf123_',
       value: 5,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -127,14 +128,14 @@ const userDataExportResult = {
   ]),
   videoViews: toAsyncIterable([
     {
-      videoId: '33333333-3333-4333-8333-333333333333',
+      videoPublicId: 'AbCdEf123_',
       viewedOn: new Date('2026-01-01T00:00:00.000Z'),
     },
   ]),
   comments: toAsyncIterable([
     {
       id: '44444444-4444-4444-8444-444444444444',
-      videoId: '33333333-3333-4333-8333-333333333333',
+      videoPublicId: 'AbCdEf123_',
       content: 'An exported comment.',
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       deletedAt: null,
@@ -150,7 +151,7 @@ const userDataExportResult = {
   ]),
   sessions: toAsyncIterable([
     {
-      id: sessionResult.session.id,
+      id: sessionResult.session.publicId,
       sessionKeySuffix: 'sion-key',
       ipAddress: '127.0.0.1',
       userAgent: 'bun-test',
