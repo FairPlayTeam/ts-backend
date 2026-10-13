@@ -1,5 +1,9 @@
 import { z } from '../../../../docs/zod.js';
 import {
+  COMMENT_PUBLIC_ID_EXAMPLE,
+  COMMENT_PUBLIC_ID_PATTERN,
+} from '../../../comments/publicId.js';
+import {
   BIO_MAX_LENGTH,
   DISPLAY_NAME_MAX_LENGTH,
   VIDEO_COMMENT_MAX_LENGTH,
@@ -71,7 +75,7 @@ const userDataExportVideoViewSchema = z.object({
 });
 
 const userDataExportCommentSchema = z.object({
-  id: z.string().uuid().openapi({ example: '6bdb6ab4-f598-4e1d-a399-0e9c84c96bd7' }),
+  id: z.string().regex(COMMENT_PUBLIC_ID_PATTERN).openapi({ example: COMMENT_PUBLIC_ID_EXAMPLE }),
   videoPublicId: z.string().openapi({ example: 'AbCdEf123_' }),
   content: z
     .string()
@@ -81,16 +85,23 @@ const userDataExportCommentSchema = z.object({
     .openapi({ example: 'A thoughtful comment.' }),
   createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
   deletedAt: nullableUserDataExportDateTimeSchema.openapi({ example: null }),
-  rootId: z.string().uuid().nullable().openapi({ example: '6bdb6ab4-f598-4e1d-a399-0e9c84c96bd7' }),
+  rootId: z
+    .string()
+    .regex(COMMENT_PUBLIC_ID_PATTERN)
+    .nullable()
+    .openapi({ example: COMMENT_PUBLIC_ID_EXAMPLE }),
   replyingToCommentId: z
     .string()
-    .uuid()
+    .regex(COMMENT_PUBLIC_ID_PATTERN)
     .nullable()
-    .openapi({ example: '6bdb6ab4-f598-4e1d-a399-0e9c84c96bd7' }),
+    .openapi({ example: COMMENT_PUBLIC_ID_EXAMPLE }),
 });
 
 const userDataExportCommentLikeSchema = z.object({
-  commentId: z.string().uuid().openapi({ example: '6bdb6ab4-f598-4e1d-a399-0e9c84c96bd7' }),
+  commentId: z
+    .string()
+    .regex(COMMENT_PUBLIC_ID_PATTERN)
+    .openapi({ example: COMMENT_PUBLIC_ID_EXAMPLE }),
   createdAt: userDataExportDateTimeSchema.openapi({ example: '2026-01-01T00:00:00.000Z' }),
 });
 

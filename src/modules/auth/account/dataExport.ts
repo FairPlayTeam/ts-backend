@@ -27,8 +27,20 @@ type FollowerExportRow = {
   follower: Pick<ExportUserFollowData, 'username' | 'displayName'>;
 };
 type OwnedVideoExportRow = ExportUserVideoData & { id: string };
-type CommentExportRow = Omit<ExportUserCommentData, 'videoPublicId'> & {
+type CommentExportRow = {
+  id: string;
+  publicId: string;
+  createdAt: Date;
   video: { publicId: string };
+  content: string | null;
+  deletedAt: Date | null;
+  root: { publicId: string } | null;
+  replyingToComment: { publicId: string } | null;
+};
+type CommentLikeExportRow = {
+  commentId: string;
+  createdAt: Date;
+  comment: { publicId: string };
 };
 type VideoRatingExportRow = {
   videoId: string;
@@ -104,12 +116,13 @@ const createCommentExport = (
           },
           select: {
             id: true,
+            publicId: true,
             video: { select: { publicId: true } },
             content: true,
             createdAt: true,
             deletedAt: true,
-            rootId: true,
-            replyingToCommentId: true,
+            root: { select: { publicId: true } },
+            replyingToComment: { select: { publicId: true } },
           },
           orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
           take: USER_DATA_EXPORT_BATCH_SIZE,
@@ -126,14 +139,14 @@ const createCommentExport = (
           return comments;
         }),
     ),
-    ({ id, video, content, createdAt, deletedAt, rootId, replyingToCommentId }) => ({
-      id,
+    ({ publicId, video, content, createdAt, deletedAt, root, replyingToComment }) => ({
+      id: publicId,
       videoPublicId: video.publicId,
       content,
       createdAt,
       deletedAt,
-      rootId,
-      replyingToCommentId,
+      rootId: root?.publicId ?? null,
+      replyingToCommentId: replyingToComment?.publicId ?? null,
     }),
   );
 
@@ -141,23 +154,27 @@ const createCommentLikeExport = (
   deps: AuthDependencies,
   userId: string,
 ): AsyncIterable<ExportUserCommentLikeData> =>
-  createPaginatedExport((cursor) =>
-    deps.prisma.commentLike.findMany({
-      where: {
-        userId,
-        ...(cursor
-          ? {
-              commentId: { gt: cursor.commentId },
-            }
-          : {}),
-      },
-      select: {
-        commentId: true,
-        createdAt: true,
-      },
-      orderBy: [{ commentId: 'asc' }],
-      take: USER_DATA_EXPORT_BATCH_SIZE,
-    }),
+  projectExport<CommentLikeExportRow, ExportUserCommentLikeData>(
+    createPaginatedExport<CommentLikeExportRow>((cursor) =>
+      deps.prisma.commentLike.findMany({
+        where: {
+          userId,
+          ...(cursor
+            ? {
+                commentId: { gt: cursor.commentId },
+              }
+            : {}),
+        },
+        select: {
+          commentId: true,
+          comment: { select: { publicId: true } },
+          createdAt: true,
+        },
+        orderBy: [{ commentId: 'asc' }],
+        take: USER_DATA_EXPORT_BATCH_SIZE,
+      }),
+    ),
+    ({ comment, createdAt }) => ({ commentId: comment.publicId, createdAt }),
   );
 
 const createVideoRatingExport = (

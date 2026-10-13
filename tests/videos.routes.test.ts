@@ -976,8 +976,8 @@ describe('videos routes multipart uploads', () => {
   test('creates root comments and flattened replies through authenticated validated routes', async () => {
     receivedCreateCommentRequest = undefined;
     receivedCreateCommentReplyRequest = undefined;
-    const rootCommentId = '11111111-1111-4111-8111-111111111111';
-    const targetReplyId = '22222222-2222-4222-8222-222222222222';
+    const rootCommentId = 'c_0d4e55cbc2784d74a192bf7c10888c7a';
+    const targetReplyId = 'c_0d4e55cbc2784d74a192bf7c10888c7b';
 
     const rootResponse = await fetch(`${baseUrl}/videos/${publicId}/comments`, {
       method: 'POST',
@@ -997,7 +997,7 @@ describe('videos routes multipart uploads', () => {
     });
     expect(await rootResponse.json()).toEqual({
       comment: {
-        id: '11111111-1111-4111-8111-111111111111',
+        id: 'c_0d4e55cbc2784d74a192bf7c10888c7a',
         content: 'A root comment.',
         isDeleted: false,
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -1161,8 +1161,8 @@ describe('videos routes multipart uploads', () => {
   });
 
   test('lists comment threads publicly and soft-deletes through the authenticated route', async () => {
-    const rootCommentId = '11111111-1111-4111-8111-111111111111';
-    const cursorId = '33333333-3333-4333-8333-333333333333';
+    const rootCommentId = 'c_0d4e55cbc2784d74a192bf7c10888c7a';
+    const cursorId = 'c_0d4e55cbc2784d74a192bf7c10888c7c';
     const cursorCreatedAt = '2026-01-02T00:00:00.000Z';
     receivedListCommentsRequest = undefined;
     receivedListCommentRepliesRequest = undefined;
@@ -1186,7 +1186,7 @@ describe('videos routes multipart uploads', () => {
     expect(await rootsResponse.json()).toEqual({
       comments: [
         {
-          id: rootCommentId,
+          id: 'c_0d4e55cbc2784d74a192bf7c10888c7a',
           content: 'This is the first FairPlay video.',
           isDeleted: false,
           createdAt: '2026-01-01T00:00:00.000Z',

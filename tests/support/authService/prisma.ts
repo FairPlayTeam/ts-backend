@@ -186,23 +186,25 @@ const createAuthTransaction = (calls: AuthServiceTestCalls) => ({
 const exportableComments = [
   {
     id: '44444444-4444-4444-8444-444444444444',
+    publicId: 'c_44444444444444448444444444444444',
     videoId: '33333333-3333-4333-8333-333333333333',
     video: { publicId: 'AbCdEf123_' },
     content: 'An exported comment.',
     createdAt: fixedNow,
     deletedAt: null,
-    rootId: null,
-    replyingToCommentId: null,
+    root: null,
+    replyingToComment: null,
   },
   {
     id: '55555555-5555-4555-8555-555555555555',
+    publicId: 'c_55555555555545558555555555555555',
     videoId: '33333333-3333-4333-8333-333333333333',
     video: { publicId: 'AbCdEf123_' },
     content: null,
     createdAt: fixedNow,
     deletedAt: new Date('2026-01-01T01:00:00.000Z'),
-    rootId: '44444444-4444-4444-8444-444444444444',
-    replyingToCommentId: '44444444-4444-4444-8444-444444444444',
+    root: { publicId: 'c_44444444444444448444444444444444' },
+    replyingToComment: { publicId: 'c_44444444444444448444444444444444' },
   },
 ];
 
@@ -219,6 +221,7 @@ const exportableVideoRatings = [
 const exportableCommentLikes = [
   {
     commentId: '44444444-4444-4444-8444-444444444444',
+    comment: { publicId: 'c_44444444444444448444444444444444' },
     createdAt: fixedNow,
   },
 ];

@@ -47,9 +47,15 @@ const MAX_VIDEO_COMMENTS_LIMIT = 100;
 
 const commentMutationSelect = {
   id: true,
+  publicId: true,
   content: true,
   videoId: true,
   rootId: true,
+  root: {
+    select: {
+      publicId: true,
+    },
+  },
   createdAt: true,
   likeCount: true,
   author: {
@@ -62,6 +68,7 @@ const commentMutationSelect = {
   replyingToComment: {
     select: {
       id: true,
+      publicId: true,
       videoId: true,
       rootId: true,
       deletedAt: true,
@@ -80,9 +87,15 @@ type CommentMutationRecord = Prisma.CommentGetPayload<{
 
 const commentListSelect = {
   id: true,
+  publicId: true,
   content: true,
   videoId: true,
   rootId: true,
+  root: {
+    select: {
+      publicId: true,
+    },
+  },
   createdAt: true,
   deletedAt: true,
   likeCount: true,
@@ -96,6 +109,7 @@ const commentListSelect = {
   replyingToComment: {
     select: {
       id: true,
+      publicId: true,
       videoId: true,
       rootId: true,
       deletedAt: true,
@@ -203,9 +217,10 @@ const normalizeCommentsLimit = (limit: number | undefined): number => {
 
 const commentCursorFilter = (
   cursor: CommentCursor | undefined,
+  cursorInternalId: string | undefined,
   direction: 'asc' | 'desc',
 ): Prisma.CommentWhereInput => {
-  if (!cursor) {
+  if (!cursor || !cursorInternalId) {
     return {};
   }
 
@@ -220,7 +235,7 @@ const commentCursorFilter = (
           { createdAt: { [operator]: cursor.createdAt } },
           {
             createdAt: cursor.createdAt,
-            id: { [operator]: cursor.id },
+            id: { [operator]: cursorInternalId },
           },
         ],
       },
@@ -235,7 +250,7 @@ const nextCommentCursor = (
   const lastComment = comments.at(-1);
 
   return hasNextPage && lastComment
-    ? { createdAt: lastComment.createdAt, id: lastComment.id }
+    ? { createdAt: lastComment.createdAt, id: lastComment.publicId }
     : null;
 };
 
@@ -330,6 +345,7 @@ const toReplyingTo = ({
 
   return {
     commentId: replyingToComment.id,
+    publicCommentId: replyingToComment.publicId,
     username: targetAuthor.username,
   };
 };
@@ -342,10 +358,12 @@ const toCommentResult = (comment: CommentMutationRecord): CreateCommentResult =>
   return {
     comment: {
       id: comment.id,
+      publicId: comment.publicId,
       content: comment.content,
       isDeleted: false,
       createdAt: comment.createdAt,
       rootCommentId: comment.rootId,
+      rootCommentPublicId: comment.root?.publicId ?? null,
       likeCount: comment.likeCount,
       viewerHasLiked: false,
       replyingTo: toReplyingTo(comment),
@@ -369,10 +387,12 @@ const toActiveComment = (comment: CommentListRecord, viewerHasLiked: boolean) =>
 
   return {
     id: comment.id,
+    publicId: comment.publicId,
     content: comment.content,
     isDeleted: false as const,
     createdAt: comment.createdAt,
     rootCommentId: comment.rootId,
+    rootCommentPublicId: comment.root?.publicId ?? null,
     likeCount: comment.likeCount,
     viewerHasLiked,
     replyingTo: toReplyingTo(comment),
@@ -404,10 +424,12 @@ const toCommentRoot = (
 
     return {
       id: comment.id,
+      publicId: comment.publicId,
       content: null,
       isDeleted: true,
       createdAt: comment.createdAt,
       rootCommentId: null,
+      rootCommentPublicId: null,
       likeCount: comment.likeCount,
       viewerHasLiked: false,
       replyingTo: null,
@@ -419,18 +441,20 @@ const toCommentRoot = (
   return {
     ...toActiveComment(comment, viewerHasLiked),
     rootCommentId: null,
+    rootCommentPublicId: null,
     replyCount,
   };
 };
 
 const toCommentReply = (comment: CommentListRecord, viewerHasLiked: boolean): CommentReply => {
-  if (comment.rootId === null) {
+  if (comment.rootId === null || !comment.root) {
     throw new Error('Video comment reply is missing its root');
   }
 
   return {
     ...toActiveComment(comment, viewerHasLiked),
     rootCommentId: comment.rootId,
+    rootCommentPublicId: comment.root.publicId,
   };
 };
 
@@ -513,7 +537,7 @@ export const createReply = async (
   const targetId = replyingToCommentId ?? rootCommentId;
   const candidates = await deps.prisma.comment.findMany({
     where: {
-      id: {
+      publicId: {
         in: [rootCommentId, targetId],
       },
       deletedAt: null,
@@ -524,11 +548,16 @@ export const createReply = async (
     },
     select: {
       id: true,
+      publicId: true,
       rootId: true,
     },
   });
-  const root = candidates.find(({ id }) => id === rootCommentId);
-  const target = candidates.find(({ id }) => id === targetId);
+  const root = candidates.find(
+    ({ publicId: candidatePublicId }) => candidatePublicId === rootCommentId,
+  );
+  const target = candidates.find(
+    ({ publicId: candidatePublicId }) => candidatePublicId === targetId,
+  );
 
   if (
     !root ||
@@ -538,6 +567,9 @@ export const createReply = async (
   ) {
     throw new CommentNotFoundError();
   }
+
+  const rootInternalId = root.id;
+  const targetInternalId = target.id;
 
   try {
     return await runCommentTransaction(deps, async (tx) => {
@@ -553,15 +585,15 @@ export const createReply = async (
             c."deleted_at" AS "deletedAt"
           FROM "comments" AS c
           WHERE c."id" IN (
-            CAST(${rootCommentId} AS UUID),
-            CAST(${targetId} AS UUID)
+            CAST(${rootInternalId} AS UUID),
+            CAST(${targetInternalId} AS UUID)
           )
           ORDER BY c."id"
           FOR UPDATE
         `,
       );
-      const root = lockedComments.find(({ id }) => id === rootCommentId);
-      const target = lockedComments.find(({ id }) => id === targetId);
+      const root = lockedComments.find(({ id }) => id === rootInternalId);
+      const target = lockedComments.find(({ id }) => id === targetInternalId);
 
       if (
         !root ||
@@ -625,9 +657,20 @@ export const listComments = async (
     async (tx) => {
       const videoId = await findReadableVideoId(tx, publicId);
       const rootWhere = visibleRootWhere(videoId);
+      const cursorComment = cursor
+        ? await tx.comment.findFirst({
+            where: { ...rootWhere, publicId: cursor.id },
+            select: { id: true },
+          })
+        : null;
+
+      if (cursor && !cursorComment) {
+        throw new CommentNotFoundError();
+      }
+
       const pageWhere = cursor
         ? ({
-            AND: [rootWhere, commentCursorFilter(cursor, 'desc')],
+            AND: [rootWhere, commentCursorFilter(cursor, cursorComment?.id, 'desc')],
           } satisfies Prisma.CommentWhereInput)
         : rootWhere;
       const queriedRoots = await tx.comment.findMany({
@@ -686,7 +729,7 @@ export const listReplies = async (
         const videoId = await findReadableVideoId(tx, publicId);
         const root = await tx.comment.findFirst({
           where: {
-            id: rootCommentId,
+            publicId: rootCommentId,
             ...visibleRootWhere(videoId),
           },
           select: {
@@ -703,9 +746,20 @@ export const listReplies = async (
           rootId: root.id,
           deletedAt: null,
         } satisfies Prisma.CommentWhereInput;
+        const cursorComment = cursor
+          ? await tx.comment.findFirst({
+              where: { ...repliesWhere, publicId: cursor.id },
+              select: { id: true },
+            })
+          : null;
+
+        if (cursor && !cursorComment) {
+          throw new CommentNotFoundError();
+        }
+
         const pageWhere = cursor
           ? ({
-              AND: [repliesWhere, commentCursorFilter(cursor, 'asc')],
+              AND: [repliesWhere, commentCursorFilter(cursor, cursorComment?.id, 'asc')],
             } satisfies Prisma.CommentWhereInput)
           : repliesWhere;
         const queriedReplies = await tx.comment.findMany({
@@ -752,12 +806,13 @@ export const deleteComment = async (
 ): Promise<void> => {
   const candidate = await deps.prisma.comment.findFirst({
     where: {
-      id: commentId,
+      publicId: commentId,
       video: {
         publicId,
       },
     },
     select: {
+      id: true,
       authorId: true,
       video: {
         select: {
@@ -807,7 +862,7 @@ export const deleteComment = async (
           c."author_id"::text AS "authorId",
           c."deleted_at" AS "deletedAt"
         FROM "comments" AS c
-        WHERE c."id" = CAST(${commentId} AS UUID)
+        WHERE c."id" = CAST(${candidate.id} AS UUID)
           AND c."video_id" = CAST(${video.id} AS UUID)
         FOR UPDATE
       `,
@@ -873,10 +928,10 @@ export const deleteComment = async (
 const findLikeableCommentCandidate = async (
   deps: Pick<CommentsDependencies, 'prisma'>,
   { commentId, publicId }: Pick<MutateCommentLikeInput, 'commentId' | 'publicId'>,
-): Promise<{ allowComments: boolean }> => {
+): Promise<{ allowComments: boolean; commentId: string }> => {
   const candidate = await deps.prisma.comment.findFirst({
     where: {
-      id: commentId,
+      publicId: commentId,
       deletedAt: null,
       video: {
         publicId,
@@ -884,6 +939,7 @@ const findLikeableCommentCandidate = async (
       },
     },
     select: {
+      id: true,
       video: {
         select: {
           allowComments: true,
@@ -896,7 +952,7 @@ const findLikeableCommentCandidate = async (
     throw new CommentNotFoundError();
   }
 
-  return candidate.video;
+  return { commentId: candidate.id, ...candidate.video };
 };
 
 const lockLikeableComment = async (
@@ -944,7 +1000,7 @@ export const likeComment = async (
 
   try {
     await runCommentTransaction(deps, async (tx) => {
-      const comment = await lockLikeableComment(tx, publicId, commentId);
+      const comment = await lockLikeableComment(tx, publicId, candidate.commentId);
       const currentLike = await tx.commentLike.findUnique({
         where: {
           userId_commentId: {
@@ -999,7 +1055,7 @@ export const unlikeComment = async (
 ): Promise<void> => {
   const candidate = await deps.prisma.comment.findFirst({
     where: {
-      id: commentId,
+      publicId: commentId,
       video: {
         publicId,
       },
@@ -1020,7 +1076,7 @@ export const unlikeComment = async (
           SELECT c."id"::text AS "id"
           FROM "comments" AS c
           INNER JOIN "videos" AS v ON v."id" = c."video_id"
-          WHERE c."id" = CAST(${commentId} AS UUID)
+          WHERE c."id" = CAST(${candidate.id} AS UUID)
             AND v."public_id" = ${publicId}
           FOR UPDATE OF c
         `,

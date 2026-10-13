@@ -237,7 +237,7 @@ describe('specialized auth rate limiters', () => {
 
   test('shares one authenticated quota across comment creation, like, and unlike', async () => {
     const server = await startAuthApp(withTokenScopedUsers(createStubAuthService()));
-    const commentId = '11111111-1111-4111-8111-111111111111';
+    const commentId = 'c_11111111111141118111111111111111';
 
     try {
       for (let index = 1; index < VIDEO_COMMENT_MUTATION_RATE_LIMIT_MAX; index += 1) {
@@ -298,7 +298,7 @@ describe('specialized auth rate limiters', () => {
     try {
       const responses = await Promise.all(
         Array.from({ length: requestCount }, (_, index) => {
-          const commentId = `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
+          const commentId = `c_${String(index + 1).padStart(32, '0')}`;
 
           return fetch(`${server.baseUrl}/videos/AbCdEf123_/comments/${commentId}`, {
             method: 'DELETE',

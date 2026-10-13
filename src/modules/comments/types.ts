@@ -5,8 +5,10 @@ export type CommentAuthor = PublicProfileIdentity;
 
 type CommentBase = {
   id: string;
+  publicId: string;
   createdAt: Date;
   rootCommentId: string | null;
+  rootCommentPublicId: string | null;
   likeCount: number;
   viewerHasLiked: boolean;
 };
@@ -16,6 +18,7 @@ export type ActiveComment = CommentBase & {
   isDeleted: false;
   replyingTo: {
     commentId: string;
+    publicCommentId: string;
     username: string;
   } | null;
   author: CommentAuthor;

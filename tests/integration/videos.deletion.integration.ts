@@ -459,7 +459,7 @@ describe('video deletion integration', () => {
         videoId: video.id,
         content: 'Existing comment before administrative deletion.',
       },
-      select: { id: true },
+      select: { id: true, publicId: true },
     });
     const app = await createIntegrationApp({
       ...runtime,
@@ -544,7 +544,7 @@ describe('video deletion integration', () => {
       .expect(404)
       .expect({ error: 'NotFound', message: 'Video not found' });
     await request(app)
-      .put(`/videos/${video.publicId}/comments/${existingComment.id}/like`)
+      .put(`/videos/${video.publicId}/comments/${existingComment.publicId}/like`)
       .set('Authorization', `Bearer ${participant.sessionKey}`)
       .expect(404)
       .expect({ error: 'NotFound', message: 'Comment not found' });

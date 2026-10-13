@@ -3,9 +3,11 @@ import {
   createCommentBodySchema,
   createReplyBodySchema,
   commentsQuerySchema,
+  commentResponseSchema,
+  commentParamsSchema,
+  commentReplyParamsSchema,
 } from '../src/modules/comments/http/schemas.js';
 import { Prisma } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
 import { VIDEO_COMMENT_MAX_LENGTH } from '../src/config/constants.js';
 import {
   createReply,
@@ -15,7 +17,10 @@ import {
   resolveCommentDeletionOrigin,
   resolveCommentLikeMutation,
 } from '../src/modules/comments/service.js';
-import { toCommentsResponse } from '../src/modules/comments/http/responses.js';
+import {
+  toCommentRepliesResponse,
+  toCommentsResponse,
+} from '../src/modules/comments/http/responses.js';
 import { CommentNotFoundError } from '../src/modules/comments/errors.js';
 import {
   readableVideoWhere,
@@ -23,15 +28,34 @@ import {
 } from '../src/modules/videos/shared/readability.js';
 
 test('video comment schemas normalize bounded plain text and validate reply targets', () => {
+  expect(
+    commentParamsSchema.safeParse({
+      videoId: 'v_0123456789abcdef0123456789abcdef',
+      commentId: '11111111-1111-4111-8111-111111111111',
+    }).success,
+  ).toBe(false);
+  expect(
+    commentReplyParamsSchema.safeParse({
+      videoId: 'v_0123456789abcdef0123456789abcdef',
+      rootCommentId: '11111111-1111-4111-8111-111111111111',
+    }).success,
+  ).toBe(false);
+
   expect(createCommentBodySchema.parse({ content: '  hello  ' })).toEqual({
     content: 'hello',
   });
   expect(
     createReplyBodySchema.safeParse({
       content: 'reply',
-      replyingToCommentId: '11111111-1111-4111-8111-111111111111',
+      replyingToCommentId: 'c_0d4e55cbc2784d74a192bf7c10888c7a',
     }).success,
   ).toBe(true);
+  expect(
+    createReplyBodySchema.safeParse({
+      content: 'reply',
+      replyingToCommentId: '11111111-1111-4111-8111-111111111111',
+    }).success,
+  ).toBe(false);
 
   for (const content of [
     '',
@@ -59,7 +83,7 @@ test('video comment schemas normalize bounded plain text and validate reply targ
   expect(
     createReplyBodySchema.safeParse({
       content: 'reply',
-      replyingToCommentId: 'not-a-uuid',
+      replyingToCommentId: 'not-a-public-id',
     }).success,
   ).toBe(false);
 });
@@ -79,16 +103,22 @@ test('video comment pagination requires a complete stable cursor', () => {
     commentsQuerySchema.parse({
       limit: '20',
       cursorCreatedAt: '2026-01-01T00:00:00.000Z',
-      cursorId: '11111111-1111-4111-8111-111111111111',
+      cursorId: 'c_0d4e55cbc2784d74a192bf7c10888c7a',
     }),
   ).toEqual({
     limit: 20,
     cursorCreatedAt: '2026-01-01T00:00:00.000Z',
-    cursorId: '11111111-1111-4111-8111-111111111111',
+    cursorId: 'c_0d4e55cbc2784d74a192bf7c10888c7a',
   });
   expect(
     commentsQuerySchema.safeParse({
       cursorCreatedAt: '2026-01-01T00:00:00.000Z',
+    }).success,
+  ).toBe(false);
+  expect(
+    commentsQuerySchema.safeParse({
+      cursorCreatedAt: '2026-01-01T00:00:00.000Z',
+      cursorId: '11111111-1111-4111-8111-111111111111',
     }).success,
   ).toBe(false);
 });
@@ -143,10 +173,12 @@ test('resolves comment deletion permission in author, owner, then moderation ord
 test('public comment DTOs whitelist fields independently of internal deletion metadata', () => {
   const internalComment = {
     id: '11111111-1111-4111-8111-111111111111',
+    publicId: 'c_0d4e55cbc2784d74a192bf7c10888c7a',
     content: 'Visible comment',
     isDeleted: false as const,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     rootCommentId: null,
+    rootCommentPublicId: null,
     replyingTo: null,
     replyCount: 0,
     likeCount: 7,
@@ -167,7 +199,7 @@ test('public comment DTOs whitelist fields independently of internal deletion me
   expect(toCommentsResponse({ comments: [internalComment], total: 1, nextCursor: null })).toEqual({
     comments: [
       {
-        id: internalComment.id,
+        id: internalComment.publicId,
         content: internalComment.content,
         isDeleted: false,
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -186,6 +218,66 @@ test('public comment DTOs whitelist fields independently of internal deletion me
     total: 1,
     nextCursor: null,
   });
+
+  const internalRootId = '22222222-2222-4222-8222-222222222222';
+  const internalReplyingToId = '33333333-3333-4333-8333-333333333333';
+  const internalReply = {
+    ...internalComment,
+    id: '44444444-4444-4444-8444-444444444444',
+    publicId: 'c_0d4e55cbc2784d74a192bf7c10888c7b',
+    rootCommentId: internalRootId,
+    rootCommentPublicId: 'c_0d4e55cbc2784d74a192bf7c10888c7a',
+    replyingTo: {
+      commentId: internalReplyingToId,
+      publicCommentId: 'c_0d4e55cbc2784d74a192bf7c10888c7c',
+      username: 'reply_target',
+    },
+  };
+  const repliesResponse = toCommentRepliesResponse({
+    replies: [internalReply],
+    total: 1,
+    nextCursor: {
+      createdAt: internalReply.createdAt,
+      id: internalReply.publicId,
+    },
+  });
+
+  expect(repliesResponse).toEqual({
+    replies: [
+      expect.objectContaining({
+        id: internalReply.publicId,
+        rootCommentId: internalReply.rootCommentPublicId,
+        replyingTo: {
+          commentId: internalReply.replyingTo.publicCommentId,
+          username: 'reply_target',
+        },
+      }),
+    ],
+    total: 1,
+    nextCursor: {
+      id: internalReply.publicId,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+  });
+  const serializedReplies = JSON.stringify(repliesResponse);
+  for (const internalId of [internalReply.id, internalRootId, internalReplyingToId]) {
+    expect(serializedReplies).not.toContain(internalId);
+  }
+  expect(
+    commentResponseSchema.safeParse({
+      comment: {
+        id: internalComment.id,
+        content: internalComment.content,
+        isDeleted: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        rootCommentId: null,
+        likeCount: 0,
+        viewerHasLiked: false,
+        replyingTo: null,
+        author: { username: 'comment_author', displayName: null, avatarUrl: null },
+      },
+    }).success,
+  ).toBe(false);
 });
 
 test('comment like mutations are idempotent in both directions', () => {
@@ -259,7 +351,7 @@ test.each([
       },
       {
         publicId: 'AbCdEf123_',
-        commentId: '11111111-1111-4111-8111-111111111111',
+        commentId: 'c_0d4e55cbc2784d74a192bf7c10888c7a',
         userId: testCase.userId,
         actorRole: testCase.actorRole,
       },
@@ -267,12 +359,13 @@ test.each([
   ).rejects.toBeInstanceOf(CommentNotFoundError);
   expect(findFirstArgs).toEqual({
     where: {
-      id: '11111111-1111-4111-8111-111111111111',
+      publicId: 'c_0d4e55cbc2784d74a192bf7c10888c7a',
       video: {
         publicId: 'AbCdEf123_',
       },
     },
     select: {
+      id: true,
       authorId: true,
       video: {
         select: {
@@ -299,7 +392,10 @@ test('missing reply roots are rejected by indexed preflight without opening vide
       throw new Error('An invalid reply root must not reach the video-lock transaction');
     },
   };
-  const rootCommentIds = Array.from({ length: 20 }, () => randomUUID());
+  const rootCommentIds = Array.from(
+    { length: 20 },
+    (_, index) => `c_${index.toString().padStart(32, '0')}`,
+  );
   const results = await Promise.allSettled(
     rootCommentIds.map((rootCommentId) =>
       createReply(
@@ -322,7 +418,7 @@ test('missing reply roots are rejected by indexed preflight without opening vide
   expect(findManyArgs).toEqual(
     rootCommentIds.map((rootCommentId) => ({
       where: {
-        id: {
+        publicId: {
           in: [rootCommentId, rootCommentId],
         },
         deletedAt: null,
@@ -333,6 +429,7 @@ test('missing reply roots are rejected by indexed preflight without opening vide
       },
       select: {
         id: true,
+        publicId: true,
         rootId: true,
       },
     })),
@@ -341,19 +438,27 @@ test('missing reply roots are rejected by indexed preflight without opening vide
 });
 
 test('invalid or foreign reply targets are rejected before opening video transactions', async () => {
-  const rootCommentId = '11111111-1111-4111-8111-111111111111';
-  const missingTargetId = '22222222-2222-4222-8222-222222222222';
-  const foreignTargetId = '33333333-3333-4333-8333-333333333333';
-  const foreignRootId = '44444444-4444-4444-8444-444444444444';
+  const rootCommentId = 'c_0d4e55cbc2784d74a192bf7c10888c7a';
+  const rootInternalId = '11111111-1111-4111-8111-111111111111';
+  const missingTargetId = 'c_0d4e55cbc2784d74a192bf7c10888c7b';
+  const foreignTargetId = 'c_0d4e55cbc2784d74a192bf7c10888c7c';
   let transactionCalls = 0;
   const prisma = {
     comment: {
-      findMany: async ({ where }: { where: { id: { in: string[] } } }) => {
-        const targetId = where.id.in[1];
+      findMany: async ({ where }: { where: { publicId: { in: string[] } } }) => {
+        const targetId = where.publicId.in[1];
 
         return [
-          { id: rootCommentId, rootId: null },
-          ...(targetId === foreignTargetId ? [{ id: foreignTargetId, rootId: foreignRootId }] : []),
+          { id: rootInternalId, publicId: rootCommentId, rootId: null },
+          ...(targetId === foreignTargetId
+            ? [
+                {
+                  id: '22222222-2222-4222-8222-222222222222',
+                  publicId: foreignTargetId,
+                  rootId: '33333333-3333-4333-8333-333333333333',
+                },
+              ]
+            : []),
         ];
       },
     },
@@ -385,12 +490,14 @@ test('root pages use the descending cursor bound and calculate reply counts with
   const createdAt = new Date('2026-01-01T00:00:00.000Z');
   const cursor = {
     createdAt: new Date('2026-01-02T00:00:00.000Z'),
-    id: '44444444-4444-4444-8444-444444444444',
+    id: 'c_0d4e55cbc2784d74a192bf7c10888c7a',
   };
+  const cursorInternalId = '44444444-4444-4444-8444-444444444444';
   const firstRootId = '11111111-1111-4111-8111-111111111111';
   const secondRootId = '22222222-2222-4222-8222-222222222222';
   const roots = [firstRootId, secondRootId, '33333333-3333-4333-8333-333333333333'].map((id) => ({
     id,
+    publicId: `c_${id.replaceAll('-', '')}`,
     content: `comment-${id}`,
     rootId: null,
     createdAt,
@@ -411,6 +518,7 @@ test('root pages use the descending cursor bound and calculate reply counts with
       findFirst: async () => ({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
     },
     comment: {
+      findFirst: async () => ({ id: cursorInternalId }),
       findMany: async (args: unknown) => {
         findManyArgs = args;
         return roots;
@@ -466,7 +574,10 @@ test('root pages use the descending cursor bound and calculate reply counts with
     { id: firstRootId, likeCount: 2, viewerHasLiked: true },
     { id: secondRootId, likeCount: 2, viewerHasLiked: false },
   ]);
-  expect(result.nextCursor).toEqual({ createdAt, id: secondRootId });
+  expect(result.nextCursor).toEqual({
+    createdAt,
+    id: `c_${secondRootId.replaceAll('-', '')}`,
+  });
   expect(result.total).toBe(3);
   expect(findManyArgs).toMatchObject({
     where: {
@@ -478,7 +589,7 @@ test('root pages use the descending cursor bound and calculate reply counts with
             {
               OR: [
                 { createdAt: { lt: cursor.createdAt } },
-                { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+                { createdAt: cursor.createdAt, id: { lt: cursorInternalId } },
               ],
             },
           ],
@@ -490,18 +601,22 @@ test('root pages use the descending cursor bound and calculate reply counts with
 
 test('reply pages add an ascending temporal index bound around the cursor tie-break', async () => {
   const videoId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-  const rootCommentId = '11111111-1111-4111-8111-111111111111';
+  const rootCommentId = 'c_0d4e55cbc2784d74a192bf7c10888c7a';
+  const rootInternalId = '11111111-1111-4111-8111-111111111111';
   const cursor = {
     createdAt: new Date('2026-01-02T00:00:00.000Z'),
-    id: '22222222-2222-4222-8222-222222222222',
+    id: 'c_0d4e55cbc2784d74a192bf7c10888c7b',
   };
+  const cursorInternalId = '22222222-2222-4222-8222-222222222222';
   let findManyArgs: unknown;
   const tx = {
     video: {
       findFirst: async () => ({ id: videoId }),
     },
     comment: {
-      findFirst: async () => ({ id: rootCommentId }),
+      findFirst: async ({ where }: { where: { publicId: string } }) => ({
+        id: where.publicId === rootCommentId ? rootInternalId : cursorInternalId,
+      }),
       findMany: async (args: unknown) => {
         findManyArgs = args;
         return [];
@@ -523,14 +638,14 @@ test('reply pages add an ascending temporal index bound around the cursor tie-br
   expect(findManyArgs).toMatchObject({
     where: {
       AND: [
-        { videoId, rootId: rootCommentId, deletedAt: null },
+        { videoId, rootId: rootInternalId, deletedAt: null },
         {
           AND: [
             { createdAt: { gte: cursor.createdAt } },
             {
               OR: [
                 { createdAt: { gt: cursor.createdAt } },
-                { createdAt: cursor.createdAt, id: { gt: cursor.id } },
+                { createdAt: cursor.createdAt, id: { gt: cursorInternalId } },
               ],
             },
           ],

@@ -2,13 +2,17 @@ import { VIDEO_COMMENT_MAX_LENGTH } from '../../../config/constants.js';
 import { z } from '../../../docs/zod.js';
 import { publicProfileIdentityResponseSchema } from '../../../controllers/shared/profile.schemas.js';
 import { publicVideoIdParamsSchema } from '../../videos/index.js';
+import { COMMENT_PUBLIC_ID_EXAMPLE, COMMENT_PUBLIC_ID_PATTERN } from '../publicId.js';
 
 export const VIDEO_COMMENT_CURSOR_PAIR_MESSAGE =
   'cursorCreatedAt and cursorId must be provided together';
 
-const commentIdSchema = z.string().uuid('Comment id must be a valid UUID').openapi({
-  example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
-});
+const commentIdSchema = z
+  .string()
+  .regex(COMMENT_PUBLIC_ID_PATTERN, 'Comment id must be a valid public reference')
+  .openapi({
+    example: COMMENT_PUBLIC_ID_EXAMPLE,
+  });
 
 export const commentReplyParamsSchema = publicVideoIdParamsSchema
   .extend({

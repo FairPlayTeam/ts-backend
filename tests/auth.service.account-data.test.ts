@@ -102,14 +102,14 @@ describe('auth service account data', () => {
     const comments = await collectAsync(result.comments);
     expect(await collectAsync(result.commentLikes)).toEqual([
       {
-        commentId: '44444444-4444-4444-8444-444444444444',
+        commentId: 'c_44444444444444448444444444444444',
         createdAt: fixedNow,
       },
     ]);
 
     expect(comments).toEqual([
       {
-        id: '44444444-4444-4444-8444-444444444444',
+        id: 'c_44444444444444448444444444444444',
         videoPublicId: 'AbCdEf123_',
         content: 'An exported comment.',
         createdAt: fixedNow,
@@ -118,13 +118,13 @@ describe('auth service account data', () => {
         replyingToCommentId: null,
       },
       {
-        id: '55555555-5555-4555-8555-555555555555',
+        id: 'c_55555555555545558555555555555555',
         videoPublicId: 'AbCdEf123_',
         content: null,
         createdAt: fixedNow,
         deletedAt: new Date('2026-01-01T01:00:00.000Z'),
-        rootId: '44444444-4444-4444-8444-444444444444',
-        replyingToCommentId: '44444444-4444-4444-8444-444444444444',
+        rootId: 'c_44444444444444448444444444444444',
+        replyingToCommentId: 'c_44444444444444448444444444444444',
       },
     ]);
     expect(
@@ -177,12 +177,13 @@ describe('auth service account data', () => {
         where: { authorId: 'user-id' },
         select: {
           id: true,
+          publicId: true,
           video: { select: { publicId: true } },
           content: true,
           createdAt: true,
           deletedAt: true,
-          rootId: true,
-          replyingToCommentId: true,
+          root: { select: { publicId: true } },
+          replyingToComment: { select: { publicId: true } },
         },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
         take: 250,
@@ -303,13 +304,14 @@ describe('auth service account data', () => {
   test('iterates large comment exports through bounded keyset pages', async () => {
     const exportedComments = Array.from({ length: 2_501 }, (_, index) => ({
       id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      publicId: `c_${index.toString(16).padStart(32, '0')}`,
       videoId: '33333333-3333-4333-8333-333333333333',
       video: { publicId: 'AbCdEf123_' },
       content: `Exported comment ${index}`,
       createdAt: fixedNow,
       deletedAt: null,
-      rootId: null,
-      replyingToCommentId: null,
+      root: null,
+      replyingToComment: null,
     }));
     const commentQueries: unknown[] = [];
     let offset = 0;
@@ -337,7 +339,7 @@ describe('auth service account data', () => {
       receivedIds.push(comment.id);
     }
 
-    expect(receivedIds).toEqual(exportedComments.map(({ id }) => id));
+    expect(receivedIds).toEqual(exportedComments.map(({ publicId }) => publicId));
     expect(commentQueries).toHaveLength(11);
     expect(commentQueries.map((query) => (query as { take?: number }).take)).toEqual(
       Array.from({ length: 11 }, () => 250),
@@ -362,6 +364,7 @@ describe('auth service account data', () => {
   test('iterates comment-like exports through the shared bounded keyset pattern', async () => {
     const exportedLikes = Array.from({ length: 501 }, (_, index) => ({
       commentId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      comment: { publicId: `c_${index.toString(16).padStart(32, '0')}` },
       createdAt: fixedNow,
     }));
     const likeQueries: unknown[] = [];
@@ -385,7 +388,9 @@ describe('auth service account data', () => {
       currentPassword: 'Password1!',
     });
 
-    expect(await collectAsync(result.commentLikes)).toEqual(exportedLikes);
+    expect(await collectAsync(result.commentLikes)).toEqual(
+      exportedLikes.map(({ comment, createdAt }) => ({ commentId: comment.publicId, createdAt })),
+    );
     expect(likeQueries).toHaveLength(3);
     expect(likeQueries[1]).toEqual(
       expect.objectContaining({
@@ -402,6 +407,7 @@ describe('auth service account data', () => {
   test('does not duplicate a comment like recreated after its export page was emitted', async () => {
     const initialLikes = Array.from({ length: 251 }, (_, index) => ({
       commentId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      comment: { publicId: `c_${index.toString(16).padStart(32, '0')}` },
       createdAt: fixedNow,
     }));
     const firstInitialLike = initialLikes[0];
@@ -444,8 +450,10 @@ describe('auth service account data', () => {
 
     expect(exportedLikes).toHaveLength(initialLikes.length);
     expect(new Set(exportedLikes.map(({ commentId }) => commentId)).size).toBe(initialLikes.length);
-    expect(exportedLikes.filter(({ commentId }) => commentId === recreatedLike.commentId)).toEqual([
-      firstInitialLike,
+    expect(
+      exportedLikes.filter(({ commentId }) => commentId === recreatedLike.comment.publicId),
+    ).toEqual([
+      { commentId: recreatedLike.comment.publicId, createdAt: firstInitialLike.createdAt },
     ]);
   });
 

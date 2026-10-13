@@ -443,11 +443,11 @@ describe('video comments integration', () => {
       .send({ content: '  A root comment.  ' })
       .expect(201)
       .expect('Cache-Control', 'no-store');
-    const rootId = rootResponse.body.comment.id as string;
+    const rootPublicId = rootResponse.body.comment.id as string;
 
     expect(rootResponse.body).toEqual({
       comment: {
-        id: rootId,
+        id: rootPublicId,
         content: 'A root comment.',
         isDeleted: false,
         createdAt: expect.any(String),
@@ -464,7 +464,7 @@ describe('video comments integration', () => {
     });
 
     const directReplyResponse = await request(app)
-      .post(`/videos/${video.publicId}/comments/${rootId}/replies`)
+      .post(`/videos/${video.publicId}/comments/${rootPublicId}/replies`)
       .set('Authorization', `Bearer ${secondAuthor.sessionKey}`)
       .send({ content: 'A direct reply.' })
       .expect(201);
@@ -472,15 +472,15 @@ describe('video comments integration', () => {
 
     expect(directReplyResponse.body.comment).toMatchObject({
       content: 'A direct reply.',
-      rootCommentId: rootId,
+      rootCommentId: rootPublicId,
       replyingTo: {
-        commentId: rootId,
+        commentId: rootPublicId,
         username: firstAuthorUsername,
       },
     });
 
     const nestedConversationResponse = await request(app)
-      .post(`/videos/${video.publicId}/comments/${rootId}/replies`)
+      .post(`/videos/${video.publicId}/comments/${rootPublicId}/replies`)
       .set('Authorization', `Bearer ${firstAuthor.sessionKey}`)
       .send({
         content: 'Still physically one level deep.',
@@ -489,7 +489,7 @@ describe('video comments integration', () => {
       .expect(201);
 
     expect(nestedConversationResponse.body.comment).toMatchObject({
-      rootCommentId: rootId,
+      rootCommentId: rootPublicId,
       replyingTo: {
         commentId: directReplyId,
         username: secondAuthorUsername,
@@ -500,27 +500,39 @@ describe('video comments integration', () => {
       where: { videoId: video.id },
       select: {
         id: true,
+        publicId: true,
         rootId: true,
         replyingToCommentId: true,
       },
     });
-    const rowsById = new Map(rows.map((row) => [row.id, row]));
+    const rowsById = new Map(rows.map((row) => [row.publicId, row]));
 
-    expect(rowsById.get(rootId)).toEqual({
-      id: rootId,
+    const rootRow = rowsById.get(rootPublicId);
+    const directReplyRow = rowsById.get(directReplyId);
+    if (!rootRow || !directReplyRow) {
+      throw new Error('Created comments were not found by their public references');
+    }
+    expect(rootRow).toMatchObject({
       rootId: null,
       replyingToCommentId: null,
     });
-    expect(rowsById.get(directReplyId)).toEqual({
-      id: directReplyId,
-      rootId,
-      replyingToCommentId: rootId,
+    expect(directReplyRow).toMatchObject({
+      rootId: rootRow?.id,
+      replyingToCommentId: rootRow?.id,
     });
     expect(rowsById.get(nestedConversationResponse.body.comment.id)).toEqual({
-      id: nestedConversationResponse.body.comment.id,
-      rootId,
-      replyingToCommentId: directReplyId,
+      ...rowsById.get(nestedConversationResponse.body.comment.id),
+      rootId: rootRow?.id,
+      replyingToCommentId: directReplyRow?.id,
     });
+    const publicResponses = JSON.stringify([
+      rootResponse.body,
+      directReplyResponse.body,
+      nestedConversationResponse.body,
+    ]);
+    for (const internalId of [rootRow.id, directReplyRow.id]) {
+      expect(publicResponses).not.toContain(internalId);
+    }
     await expect(
       runtime.prisma.video.findUniqueOrThrow({
         where: { id: video.id },
@@ -535,7 +547,7 @@ describe('video comments integration', () => {
       .expect(201);
 
     await request(app)
-      .post(`/videos/${video.publicId}/comments/${rootId}/replies`)
+      .post(`/videos/${video.publicId}/comments/${rootPublicId}/replies`)
       .set('Authorization', `Bearer ${firstAuthor.sessionKey}`)
       .send({
         content: 'Must not cross threads.',
@@ -557,11 +569,11 @@ describe('video comments integration', () => {
     ).comment;
 
     await request(app)
-      .post(`/videos/${video.publicId}/comments/${rootId}/replies`)
+      .post(`/videos/${video.publicId}/comments/${rootPublicId}/replies`)
       .set('Authorization', `Bearer ${firstAuthor.sessionKey}`)
       .send({
         content: 'Must not cross videos.',
-        replyingToCommentId: otherVideoRoot.id,
+        replyingToCommentId: otherVideoRoot.publicId,
       })
       .expect(404);
 
@@ -641,7 +653,7 @@ describe('video comments integration', () => {
     `;
     await runtime.commentsService.deleteComment({
       publicId: firstVideo.publicId,
-      commentId: deletedRoot.id,
+      commentId: deletedRoot.publicId,
       userId: author.userId,
       actorRole: 'user',
     });
@@ -661,16 +673,16 @@ describe('video comments integration', () => {
     expect(rootsResponse.body.total).toBe(1);
     expect(rootsResponse.body.comments).toEqual([
       expect.objectContaining({
-        id: activeRoot.id,
+        id: activeRoot.publicId,
         replyCount: 0,
       }),
     ]);
     expect(rootsResponse.body.comments.map(({ id }: { id: string }) => id)).not.toContain(
-      deletedRoot.id,
+      deletedRoot.publicId,
     );
 
     const repliesResponse = await request(app)
-      .get(`/videos/${firstVideo.publicId}/comments/${activeRoot.id}/replies`)
+      .get(`/videos/${firstVideo.publicId}/comments/${activeRoot.publicId}/replies`)
       .expect(200);
     expect(repliesResponse.body).toEqual({ replies: [], total: 0, nextCursor: null });
   });
@@ -736,6 +748,8 @@ describe('video comments integration', () => {
     ).comment;
     const crossThreadReplyId = '33333333-3333-4333-8333-333333333331';
     const crossVideoReplyId = '33333333-3333-4333-8333-333333333332';
+    const crossThreadReplyPublicId = 'c_33333333333343338333333333333331';
+    const crossVideoReplyPublicId = 'c_33333333333343338333333333333332';
 
     await runtime.prisma.$executeRaw`
       INSERT INTO "comments" (
@@ -744,6 +758,7 @@ describe('video comments integration', () => {
         "video_id",
         "root_id",
         "replying_to_comment_id",
+        "public_id",
         "content"
       )
       VALUES
@@ -753,6 +768,7 @@ describe('video comments integration', () => {
           CAST(${video.id} AS UUID),
           CAST(${root.id} AS UUID),
           CAST(${otherThreadRoot.id} AS UUID),
+          ${crossThreadReplyPublicId},
           'A correctly placed reply with a foreign thread target.'
         ),
         (
@@ -761,20 +777,23 @@ describe('video comments integration', () => {
           CAST(${video.id} AS UUID),
           CAST(${root.id} AS UUID),
           CAST(${otherVideoRoot.id} AS UUID),
+          ${crossVideoReplyPublicId},
           'A correctly placed reply with a foreign video target.'
         )
     `;
 
     const response = await request(app)
-      .get(`/videos/${video.publicId}/comments/${root.id}/replies`)
+      .get(`/videos/${video.publicId}/comments/${root.publicId}/replies`)
       .expect(200);
     const repliesById = new Map(
       response.body.replies.map((reply: { id: string; replyingTo: unknown }) => [reply.id, reply]),
     );
 
     expect(response.body.total).toBe(2);
-    expect(repliesById.get(crossThreadReplyId)).toMatchObject({ replyingTo: null });
-    expect(repliesById.get(crossVideoReplyId)).toMatchObject({ replyingTo: null });
+    expect(repliesById.get(crossThreadReplyPublicId)).toMatchObject({ replyingTo: null });
+    expect(repliesById.get(crossVideoReplyPublicId)).toMatchObject({ replyingTo: null });
+    expect(JSON.stringify(response.body)).not.toContain(crossThreadReplyId);
+    expect(JSON.stringify(response.body)).not.toContain(crossVideoReplyId);
     expect(JSON.stringify(response.body)).not.toContain(otherThreadRoot.id);
     expect(JSON.stringify(response.body)).not.toContain(otherVideoRoot.id);
     expect(JSON.stringify(response.body)).not.toContain(otherThreadUsername);
@@ -812,14 +831,14 @@ describe('video comments integration', () => {
     const reply = (
       await runtime.commentsService.createReply({
         publicId: video.publicId,
-        rootCommentId: root.id,
-        replyingToCommentId: root.id,
+        rootCommentId: root.publicId,
+        replyingToCommentId: root.publicId,
         userId: author.userId,
         content: 'Reply included with its root identifier.',
       })
     ).comment;
     await request(app)
-      .delete(`/videos/${video.publicId}/comments/${root.id}`)
+      .delete(`/videos/${video.publicId}/comments/${root.publicId}`)
       .set('Authorization', `Bearer ${author.sessionKey}`)
       .expect(204);
 
@@ -832,7 +851,7 @@ describe('video comments integration', () => {
     expect(dataExport.body.comments).toEqual(
       expect.arrayContaining([
         {
-          id: root.id,
+          id: root.publicId,
           videoPublicId: video.publicId,
           content: null,
           createdAt: expect.any(String),
@@ -841,16 +860,18 @@ describe('video comments integration', () => {
           replyingToCommentId: null,
         },
         {
-          id: reply.id,
+          id: reply.publicId,
           videoPublicId: video.publicId,
           content: 'Reply included with its root identifier.',
           createdAt: expect.any(String),
           deletedAt: null,
-          rootId: root.id,
-          replyingToCommentId: root.id,
+          rootId: root.publicId,
+          replyingToCommentId: root.publicId,
         },
       ]),
     );
+    expect(JSON.stringify(dataExport.body.comments)).not.toContain(root.id);
+    expect(JSON.stringify(dataExport.body.comments)).not.toContain(reply.id);
     expect(dataExport.body.comments).toHaveLength(2);
   });
 
@@ -938,7 +959,7 @@ describe('video comments integration', () => {
     const responses = await Promise.all(
       Array.from({ length: 20 }, () =>
         request(app)
-          .post(`/videos/${video.publicId}/comments/${randomUUID()}/replies`)
+          .post(`/videos/${video.publicId}/comments/c_${randomUUID().replaceAll('-', '')}/replies`)
           .set('Authorization', `Bearer ${replier.sessionKey}`)
           .send({ content: 'This random root must fail before the video lock.' }),
       ),
@@ -1001,11 +1022,14 @@ describe('video comments integration', () => {
     const app = await createIntegrationApp(runtime, {
       commentsService: observedService,
     });
-    const invalidTargetIds = [...Array.from({ length: 20 }, () => randomUUID()), foreignRoot.id];
+    const invalidTargetIds = [
+      ...Array.from({ length: 20 }, (_, index) => `c_${index.toString().padStart(32, '0')}`),
+      foreignRoot.publicId,
+    ];
     const responses = await Promise.all(
       invalidTargetIds.map((replyingToCommentId) =>
         request(app)
-          .post(`/videos/${video.publicId}/comments/${root.id}/replies`)
+          .post(`/videos/${video.publicId}/comments/${root.publicId}/replies`)
           .set('Authorization', `Bearer ${replier.sessionKey}`)
           .send({
             content: 'This invalid target must fail before the video lock.',
@@ -1412,12 +1436,12 @@ describe('video comments integration', () => {
       data: { processingStatus: 'failed' },
     });
     const inaccessibleKnownRoot = await request(await createIntegrationApp(runtime))
-      .post(`/videos/${video.publicId}/comments/${root.id}/replies`)
+      .post(`/videos/${video.publicId}/comments/${root.publicId}/replies`)
       .set('Authorization', `Bearer ${author.sessionKey}`)
       .send({ content: 'This video is no longer eligible.' })
       .expect(404);
     const inaccessibleMissingRoot = await request(await createIntegrationApp(runtime))
-      .post(`/videos/${video.publicId}/comments/${randomUUID()}/replies`)
+      .post(`/videos/${video.publicId}/comments/c_${randomUUID().replaceAll('-', '')}/replies`)
       .set('Authorization', `Bearer ${author.sessionKey}`)
       .send({ content: 'This root does not exist.' })
       .expect(404);
@@ -1441,7 +1465,7 @@ describe('video comments integration', () => {
     );
     const raceApp = await createIntegrationApp(runtime, { commentsService: raceService });
     const raceResponsePromise = request(raceApp)
-      .post(`/videos/${video.publicId}/comments/${root.id}/replies`)
+      .post(`/videos/${video.publicId}/comments/${root.publicId}/replies`)
       .set('Authorization', `Bearer ${author.sessionKey}`)
       .send({ content: 'The status changes after preflight.' })
       .then((response) => response);
@@ -1495,11 +1519,11 @@ describe('video comments integration', () => {
     ).comment;
     const app = await createIntegrationApp(runtime);
     const missingRoot = await request(app)
-      .get(`/videos/${video.publicId}/comments/${randomUUID()}/replies`)
+      .get(`/videos/${video.publicId}/comments/c_${randomUUID().replaceAll('-', '')}/replies`)
       .expect(404)
       .expect('Cache-Control', 'no-store');
     const wrongVideo = await request(app)
-      .get(`/videos/${otherVideo.publicId}/comments/${root.id}/replies`)
+      .get(`/videos/${otherVideo.publicId}/comments/${root.publicId}/replies`)
       .expect(404)
       .expect('Cache-Control', 'no-store');
 
@@ -1508,7 +1532,7 @@ describe('video comments integration', () => {
       data: { processingStatus: 'failed' },
     });
     const unreadableVideo = await request(app)
-      .get(`/videos/${video.publicId}/comments/${root.id}/replies`)
+      .get(`/videos/${video.publicId}/comments/${root.publicId}/replies`)
       .expect(404)
       .expect('Cache-Control', 'no-store');
     const expectedNotFound = {
@@ -1520,6 +1544,153 @@ describe('video comments integration', () => {
     expect(wrongVideo.body).toEqual(missingRoot.body);
     expect(unreadableVideo.body).toEqual(missingRoot.body);
   });
+
+  test.each(['roots', 'replies'] as const)(
+    'rejects absent and out-of-scope %s cursors with the same public response',
+    async (listKind) => {
+      if (!runtime) {
+        throw new Error('Integration runtime was not started');
+      }
+
+      const author = await createVerifiedSession(runtime, {
+        email: `cursor-scope-${listKind}@example.com`,
+        username: `cursor_scope_${listKind}`,
+      });
+      const video = await createPlayableVideo(runtime, {
+        ownerId: author.userId,
+        title: 'Current cursor scope',
+        visibility: 'public',
+      });
+      const otherVideo = await createPlayableVideo(runtime, {
+        ownerId: author.userId,
+        title: 'Foreign cursor scope',
+        visibility: 'public',
+      });
+      const root = (
+        await runtime.commentsService.createComment({
+          publicId: video.publicId,
+          userId: author.userId,
+          content: 'Current thread',
+        })
+      ).comment;
+      const siblingRoot = (
+        await runtime.commentsService.createComment({
+          publicId: video.publicId,
+          userId: author.userId,
+          content: 'Another thread in the same video',
+        })
+      ).comment;
+      const foreignRoot = (
+        await runtime.commentsService.createComment({
+          publicId: otherVideo.publicId,
+          userId: author.userId,
+          content: 'Thread in another video',
+        })
+      ).comment;
+      const reply = (
+        await runtime.commentsService.createReply({
+          publicId: video.publicId,
+          rootCommentId: root.publicId,
+          userId: author.userId,
+          content: 'Current thread reply',
+        })
+      ).comment;
+      const siblingReply = (
+        await runtime.commentsService.createReply({
+          publicId: video.publicId,
+          rootCommentId: siblingRoot.publicId,
+          userId: author.userId,
+          content: 'Another thread reply',
+        })
+      ).comment;
+      const foreignReply = (
+        await runtime.commentsService.createReply({
+          publicId: otherVideo.publicId,
+          rootCommentId: foreignRoot.publicId,
+          userId: author.userId,
+          content: 'Another video reply',
+        })
+      ).comment;
+      const deletedBoundary = (
+        listKind === 'roots'
+          ? await runtime.commentsService.createComment({
+              publicId: video.publicId,
+              userId: author.userId,
+              content: 'Root without surviving replies',
+            })
+          : await runtime.commentsService.createReply({
+              publicId: video.publicId,
+              rootCommentId: root.publicId,
+              userId: author.userId,
+              content: 'Deleted reply',
+            })
+      ).comment;
+      await runtime.commentsService.deleteComment({
+        publicId: video.publicId,
+        commentId: deletedBoundary.publicId,
+        userId: author.userId,
+        actorRole: 'user',
+      });
+
+      const app = await createIntegrationApp(runtime);
+      const path =
+        listKind === 'roots'
+          ? `/videos/${video.publicId}/comments`
+          : `/videos/${video.publicId}/comments/${root.publicId}/replies`;
+      const missingCursor = {
+        publicId: `c_${randomUUID().replaceAll('-', '')}`,
+        createdAt: root.createdAt,
+      };
+      const absent = await request(app)
+        .get(path)
+        .query({
+          cursorId: missingCursor.publicId,
+          cursorCreatedAt: missingCursor.createdAt.toISOString(),
+        })
+        .expect(404)
+        .expect('Cache-Control', 'no-store');
+      expect(absent.body).toEqual({ error: 'NotFound', message: 'Comment not found' });
+
+      const invalidBoundaries =
+        listKind === 'roots'
+          ? [foreignRoot, reply, deletedBoundary]
+          : [foreignReply, siblingReply, root, deletedBoundary];
+      for (const boundary of invalidBoundaries) {
+        const response = await request(app)
+          .get(path)
+          .query({
+            cursorId: boundary.publicId,
+            cursorCreatedAt: boundary.createdAt.toISOString(),
+          })
+          .expect(404)
+          .expect('Cache-Control', 'no-store');
+        expect(response.body).toEqual(absent.body);
+      }
+
+      const validBoundary = listKind === 'roots' ? root : reply;
+      await request(app)
+        .get(path)
+        .query({
+          cursorId: validBoundary.publicId,
+          cursorCreatedAt: validBoundary.createdAt.toISOString(),
+        })
+        .expect(200);
+
+      await runtime.commentsService.deleteComment({
+        publicId: video.publicId,
+        commentId: root.publicId,
+        userId: author.userId,
+        actorRole: 'user',
+      });
+      await request(app)
+        .get(path)
+        .query({
+          cursorId: validBoundary.publicId,
+          cursorCreatedAt: validBoundary.createdAt.toISOString(),
+        })
+        .expect(200);
+    },
+  );
 
   test('paginates readable root threads and replies with stable cursors and grouped counts', async () => {
     if (!runtime) {
@@ -1575,7 +1746,7 @@ describe('video comments integration', () => {
       const result = await runtime.commentsService.createReply({
         publicId: video.publicId,
         userId,
-        rootCommentId: rootWithReplies.id,
+        rootCommentId: rootWithReplies.publicId,
         content,
       });
       replies.push(result.comment);
@@ -1600,10 +1771,9 @@ describe('video comments integration', () => {
       },
     });
 
-    const expectedRootIds = roots
-      .map(({ id }) => id)
-      .sort()
-      .reverse();
+    const expectedRootIds = [...roots]
+      .sort((left, right) => right.id.localeCompare(left.id))
+      .map(({ publicId }) => publicId);
     const firstPage = await request(app)
       .get(`/videos/${video.publicId}/comments`)
       .query({ limit: 2 })
@@ -1615,7 +1785,7 @@ describe('video comments integration', () => {
       expectedRootIds.slice(0, 2),
     );
     expect(
-      firstPage.body.comments.find(({ id }: { id: string }) => id === rootWithReplies.id)
+      firstPage.body.comments.find(({ id }: { id: string }) => id === rootWithReplies.publicId)
         ?.replyCount,
     ).toBe(3);
     expect(firstPage.body.nextCursor).toEqual({
@@ -1637,9 +1807,11 @@ describe('video comments integration', () => {
     );
     expect(secondPage.body.nextCursor).toBeNull();
 
-    const expectedReplyIds = replies.map(({ id }) => id).sort();
+    const expectedReplyIds = [...replies]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map(({ publicId }) => publicId);
     const firstRepliesPage = await request(app)
-      .get(`/videos/${video.publicId}/comments/${rootWithReplies.id}/replies`)
+      .get(`/videos/${video.publicId}/comments/${rootWithReplies.publicId}/replies`)
       .query({ limit: 2 })
       .expect(200);
     expect(firstRepliesPage.body.total).toBe(3);
@@ -1648,7 +1820,7 @@ describe('video comments integration', () => {
     );
 
     const secondRepliesPage = await request(app)
-      .get(`/videos/${video.publicId}/comments/${rootWithReplies.id}/replies`)
+      .get(`/videos/${video.publicId}/comments/${rootWithReplies.publicId}/replies`)
       .query({
         limit: 2,
         cursorCreatedAt: firstRepliesPage.body.nextCursor.createdAt,
@@ -1665,7 +1837,7 @@ describe('video comments integration', () => {
     });
     await request(app).get(`/videos/${video.publicId}/comments`).expect(404);
     await request(app)
-      .get(`/videos/${video.publicId}/comments/${rootWithReplies.id}/replies`)
+      .get(`/videos/${video.publicId}/comments/${rootWithReplies.publicId}/replies`)
       .expect(404);
   });
 
@@ -1744,7 +1916,7 @@ describe('video comments integration', () => {
       },
       select: {
         createdAt: true,
-        id: true,
+        publicId: true,
       },
     });
     const replyCursor = await runtime.prisma.comment.findFirst({
@@ -1754,7 +1926,7 @@ describe('video comments integration', () => {
       },
       select: {
         createdAt: true,
-        id: true,
+        publicId: true,
       },
     });
 
@@ -1773,7 +1945,7 @@ describe('video comments integration', () => {
       await listComments(
         { prisma: observedPrisma },
         {
-          cursor: rootCursor,
+          cursor: { createdAt: rootCursor.createdAt, id: rootCursor.publicId },
           limit: 100,
           publicId: video.publicId,
         },
@@ -1784,10 +1956,10 @@ describe('video comments integration', () => {
       await listReplies(
         { prisma: observedPrisma },
         {
-          cursor: replyCursor,
+          cursor: { createdAt: replyCursor.createdAt, id: replyCursor.publicId },
           limit: 100,
           publicId: video.publicId,
-          rootCommentId: root.id,
+          rootCommentId: root.publicId,
         },
       );
       replyQuery = findEmittedCommentPageQuery(emittedQueries);
@@ -1838,7 +2010,7 @@ describe('video comments integration', () => {
       await runtime.commentsService.createReply({
         publicId: video.publicId,
         userId: survivor.userId,
-        rootCommentId: root.id,
+        rootCommentId: root.publicId,
         content: 'This reply keeps the thread visible',
       })
     ).comment;
@@ -1846,7 +2018,7 @@ describe('video comments integration', () => {
       await runtime.commentsService.createReply({
         publicId: video.publicId,
         userId: author.userId,
-        rootCommentId: root.id,
+        rootCommentId: root.publicId,
         content: 'This leaf must disappear',
       })
     ).comment;
@@ -1867,24 +2039,24 @@ describe('video comments integration', () => {
 
     const concurrentDeletes = await Promise.all([
       request(app)
-        .delete(`/videos/${video.publicId}/comments/${root.id}`)
+        .delete(`/videos/${video.publicId}/comments/${root.publicId}`)
         .set('Authorization', `Bearer ${author.sessionKey}`),
       request(app)
-        .delete(`/videos/${video.publicId}/comments/${root.id}`)
+        .delete(`/videos/${video.publicId}/comments/${root.publicId}`)
         .set('Authorization', `Bearer ${author.sessionKey}`),
     ]);
     expect(concurrentDeletes.map(({ status }) => status)).toEqual([204, 204]);
 
     await request(app)
-      .delete(`/videos/${video.publicId}/comments/${deletedReply.id}`)
+      .delete(`/videos/${video.publicId}/comments/${deletedReply.publicId}`)
       .set('Authorization', `Bearer ${author.sessionKey}`)
       .expect(204);
     await request(app)
-      .delete(`/videos/${video.publicId}/comments/${standaloneRoot.id}`)
+      .delete(`/videos/${video.publicId}/comments/${standaloneRoot.publicId}`)
       .set('Authorization', `Bearer ${author.sessionKey}`)
       .expect(204);
     await request(app)
-      .delete(`/videos/${video.publicId}/comments/${otherRoot.id}`)
+      .delete(`/videos/${video.publicId}/comments/${otherRoot.publicId}`)
       .set('Authorization', `Bearer ${author.sessionKey}`)
       .expect(404);
 
@@ -1924,10 +2096,10 @@ describe('video comments integration', () => {
 
     const rootsResponse = await request(app).get(`/videos/${video.publicId}/comments`).expect(200);
     const placeholder = rootsResponse.body.comments.find(
-      ({ id }: { id: string }) => id === root.id,
+      ({ id }: { id: string }) => id === root.publicId,
     );
     expect(placeholder).toEqual({
-      id: root.id,
+      id: root.publicId,
       content: null,
       isDeleted: true,
       createdAt: expect.any(String),
@@ -1939,17 +2111,17 @@ describe('video comments integration', () => {
       replyCount: 1,
     });
     expect(rootsResponse.body.comments.map(({ id }: { id: string }) => id)).toEqual(
-      expect.arrayContaining([root.id, otherRoot.id]),
+      expect.arrayContaining([root.publicId, otherRoot.publicId]),
     );
     expect(rootsResponse.body.comments.map(({ id }: { id: string }) => id)).not.toContain(
-      standaloneRoot.id,
+      standaloneRoot.publicId,
     );
 
     const repliesResponse = await request(app)
-      .get(`/videos/${video.publicId}/comments/${root.id}/replies`)
+      .get(`/videos/${video.publicId}/comments/${root.publicId}/replies`)
       .expect(200);
     expect(repliesResponse.body.replies.map(({ id }: { id: string }) => id)).toEqual([
-      survivingReply.id,
+      survivingReply.publicId,
     ]);
   });
 
@@ -2017,7 +2189,7 @@ describe('video comments integration', () => {
         throw new Error('Comment creation unexpectedly lost the integration runtime');
       }
 
-      return result.comment.id;
+      return result.comment.publicId;
     });
 
     const deleteAs = (commentId: string, sessionKey: string) =>
@@ -2033,10 +2205,10 @@ describe('video comments integration', () => {
     await deleteAs(commentIds[5] ?? '', admin.sessionKey).expect(204);
 
     const rows = await runtime.prisma.comment.findMany({
-      where: { id: { in: commentIds } },
-      select: { id: true, deletedAt: true, deletionOrigin: true },
+      where: { publicId: { in: commentIds } },
+      select: { publicId: true, deletedAt: true, deletionOrigin: true },
     });
-    const rowsById = new Map(rows.map((row) => [row.id, row]));
+    const rowsById = new Map(rows.map((row) => [row.publicId, row]));
     expect(rowsById.get(commentIds[0] ?? '')).toMatchObject({
       deletedAt: expect.any(Date),
       deletionOrigin: 'author',
@@ -2115,7 +2287,7 @@ describe('video comments integration', () => {
       runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
         const deletionPromise = trackOperation(
           request(app)
-            .delete(`/videos/${video.publicId}/comments/${comment.id}`)
+            .delete(`/videos/${video.publicId}/comments/${comment.publicId}`)
             .set('Authorization', `Bearer ${moderator.sessionKey}`)
             .then((response) => response),
         );
@@ -2223,11 +2395,11 @@ describe('video comments integration', () => {
     ]);
 
     await request(app)
-      .delete(`/videos/${rejectedVideo.publicId}/comments/${rejectedComment.id}`)
+      .delete(`/videos/${rejectedVideo.publicId}/comments/${rejectedComment.publicId}`)
       .set('Authorization', `Bearer ${moderator.sessionKey}`)
       .expect(204);
     await request(app)
-      .delete(`/videos/${nonReadyVideo.publicId}/comments/${nonReadyComment.id}`)
+      .delete(`/videos/${nonReadyVideo.publicId}/comments/${nonReadyComment.publicId}`)
       .set('Authorization', `Bearer ${admin.sessionKey}`)
       .expect(204);
 
@@ -2290,20 +2462,20 @@ describe('video comments integration', () => {
       })
     ).comment;
     const authorization = `Bearer ${unauthorized.sessionKey}`;
-    const absentCommentId = randomUUID();
+    const absentCommentId = `c_${randomUUID().replaceAll('-', '')}`;
     const [absent, wrongVideo, forbidden, otherOwnerForbidden, moderatorAbsent] = await Promise.all(
       [
         request(app)
           .delete(`/videos/${firstVideo.publicId}/comments/${absentCommentId}`)
           .set('Authorization', authorization),
         request(app)
-          .delete(`/videos/${secondVideo.publicId}/comments/${comment.id}`)
+          .delete(`/videos/${secondVideo.publicId}/comments/${comment.publicId}`)
           .set('Authorization', authorization),
         request(app)
-          .delete(`/videos/${firstVideo.publicId}/comments/${comment.id}`)
+          .delete(`/videos/${firstVideo.publicId}/comments/${comment.publicId}`)
           .set('Authorization', authorization),
         request(app)
-          .delete(`/videos/${firstVideo.publicId}/comments/${comment.id}`)
+          .delete(`/videos/${firstVideo.publicId}/comments/${comment.publicId}`)
           .set('Authorization', `Bearer ${secondOwner.sessionKey}`),
         request(app)
           .delete(`/videos/${firstVideo.publicId}/comments/${absentCommentId}`)
@@ -2355,7 +2527,7 @@ describe('video comments integration', () => {
         }),
       ),
     );
-    const commentIds = comments.map((result) => result?.comment.id ?? '');
+    const commentIds = comments.map((result) => result?.comment.publicId ?? '');
 
     await request(app)
       .delete(`/videos/${video.publicId}/comments/${commentIds[0]}`)
@@ -2435,7 +2607,7 @@ describe('video comments integration', () => {
     };
     const app = await createIntegrationApp(runtime, { authService });
     const deletion = request(app)
-      .delete(`/videos/${video.publicId}/comments/${comment.id}`)
+      .delete(`/videos/${video.publicId}/comments/${comment.publicId}`)
       .set('Authorization', `Bearer ${moderator.sessionKey}`)
       .then((response) => response);
     const [deletionResponse] = await coordinateWhilePaused({
@@ -2526,7 +2698,7 @@ describe('video comments integration', () => {
     const firstApp = await createIntegrationApp(runtime, { commentsService: firstService });
     const secondApp = await createIntegrationApp(runtime);
     const authorDeletion = request(firstApp)
-      .delete(`/videos/${video.publicId}/comments/${comment.id}`)
+      .delete(`/videos/${video.publicId}/comments/${comment.publicId}`)
       .set('Authorization', `Bearer ${author.sessionKey}`)
       .then((response) => response);
     const [authorDeletionResponse, moderatorDeletionResponse] = await coordinateLockInterleaving({
@@ -2537,7 +2709,7 @@ describe('video comments integration', () => {
       secondLockDescription: 'moderator deletion to wait for author deletion',
       startSecond: () =>
         request(secondApp)
-          .delete(`/videos/${video.publicId}/comments/${comment.id}`)
+          .delete(`/videos/${video.publicId}/comments/${comment.publicId}`)
           .set('Authorization', `Bearer ${moderator.sessionKey}`)
           .then((response) => response),
       waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
@@ -2608,7 +2780,7 @@ describe('video comments integration', () => {
       runtime.userMediaExternalResources,
     );
     const commentDeletionResponsePromise = request(commentFirstApp)
-      .delete(`/videos/${commentFirstVideo.publicId}/comments/${commentFirstRoot.id}`)
+      .delete(`/videos/${commentFirstVideo.publicId}/comments/${commentFirstRoot.publicId}`)
       .set('Authorization', `Bearer ${commentFirstAuthor.sessionKey}`)
       .then((response) => response);
     const [commentDeletionResponse] = await coordinateLockInterleaving({
@@ -2689,7 +2861,7 @@ describe('video comments integration', () => {
       secondLockDescription: 'comment deletion to wait for account deletion',
       startSecond: () =>
         request(accountFirstApp)
-          .delete(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstRoot.id}`)
+          .delete(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstRoot.publicId}`)
           .set('Authorization', `Bearer ${accountFirstAuthor.sessionKey}`)
           .then((response) => response),
       waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
@@ -2773,7 +2945,7 @@ describe('video comments integration', () => {
       runtime.userMediaExternalResources,
     );
     const ownerDeletion = request(ownerFirstApp)
-      .delete(`/videos/${ownerFirstVideo.publicId}/comments/${ownerFirstComment.id}`)
+      .delete(`/videos/${ownerFirstVideo.publicId}/comments/${ownerFirstComment.publicId}`)
       .set('Authorization', `Bearer ${owner.sessionKey}`)
       .then((response) => response);
     const [ownerDeletionResponse] = await coordinateLockInterleaving({
@@ -2849,7 +3021,7 @@ describe('video comments integration', () => {
       secondLockDescription: 'moderator deletion to wait for account deletion',
       startSecond: () =>
         request(moderatorApp)
-          .delete(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstComment.id}`)
+          .delete(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstComment.publicId}`)
           .set('Authorization', `Bearer ${moderator.sessionKey}`)
           .then((response) => response),
       waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
@@ -2918,7 +3090,7 @@ describe('video comments integration', () => {
         throw new Error('Comment creation unexpectedly lost the integration runtime');
       }
 
-      return result.comment.id;
+      return result.comment.publicId;
     });
 
     await Promise.all(
@@ -2931,10 +3103,10 @@ describe('video comments integration', () => {
     );
 
     const commentsBeforeAccountDeletion = await runtime.prisma.comment.findMany({
-      where: { id: { in: commentIds } },
+      where: { publicId: { in: commentIds } },
       orderBy: { id: 'asc' },
       select: {
-        id: true,
+        publicId: true,
         authorId: true,
         content: true,
         deletedAt: true,
@@ -2949,8 +3121,8 @@ describe('video comments integration', () => {
     expect(commentsBeforeAccountDeletion).toHaveLength(2);
     expect(commentsBeforeAccountDeletion).toEqual(
       expect.arrayContaining(
-        commentIds.map((id) => ({
-          id,
+        commentIds.map((publicId) => ({
+          publicId,
           authorId: author.userId,
           content: null,
           deletedAt: expect.any(Date),
@@ -2974,10 +3146,10 @@ describe('video comments integration', () => {
 
     await expect(
       runtime.prisma.comment.findMany({
-        where: { id: { in: commentIds } },
+        where: { publicId: { in: commentIds } },
         orderBy: { id: 'asc' },
         select: {
-          id: true,
+          publicId: true,
           authorId: true,
           content: true,
           deletedAt: true,
@@ -3053,11 +3225,11 @@ describe('video comments integration', () => {
       runtime.userMediaExternalResources,
     );
     const replyFirstResponsePromise = request(replyFirstApp)
-      .post(`/videos/${replyFirstVideo.publicId}/comments/${replyFirstRoot.id}/replies`)
+      .post(`/videos/${replyFirstVideo.publicId}/comments/${replyFirstRoot.publicId}/replies`)
       .set('Authorization', `Bearer ${replier.sessionKey}`)
       .send({
         content: 'The reply commits before target anonymization.',
-        replyingToCommentId: replyFirstRoot.id,
+        replyingToCommentId: replyFirstRoot.publicId,
       })
       .then((response) => response);
     const [replyFirstResponse] = await coordinateLockInterleaving({
@@ -3084,7 +3256,7 @@ describe('video comments integration', () => {
     ).resolves.toEqual({ commentCount: 1 });
     await expect(
       runtime.prisma.comment.findUniqueOrThrow({
-        where: { id: committedReplyId },
+        where: { publicId: committedReplyId },
         select: { content: true, deletedAt: true, replyingToCommentId: true },
       }),
     ).resolves.toEqual({
@@ -3093,7 +3265,7 @@ describe('video comments integration', () => {
       replyingToCommentId: replyFirstRoot.id,
     });
     const visibleReplies = await request(replyFirstApp)
-      .get(`/videos/${replyFirstVideo.publicId}/comments/${replyFirstRoot.id}/replies`)
+      .get(`/videos/${replyFirstVideo.publicId}/comments/${replyFirstRoot.publicId}/replies`)
       .expect(200);
     expect(visibleReplies.body.replies).toEqual([
       expect.objectContaining({
@@ -3147,11 +3319,13 @@ describe('video comments integration', () => {
       secondLockDescription: 'targeted reply to wait for account deletion',
       startSecond: () =>
         request(accountFirstApp)
-          .post(`/videos/${accountFirstVideo.publicId}/comments/${accountFirstRoot.id}/replies`)
+          .post(
+            `/videos/${accountFirstVideo.publicId}/comments/${accountFirstRoot.publicId}/replies`,
+          )
           .set('Authorization', `Bearer ${replier.sessionKey}`)
           .send({
             content: 'Must not target an anonymized root.',
-            replyingToCommentId: accountFirstRoot.id,
+            replyingToCommentId: accountFirstRoot.publicId,
           })
           .then((response) => response),
       waitForSecondLock: (signal) => waitForBlockedVideoQueries(activeRuntime, 1, 5_000, signal),
@@ -3236,7 +3410,7 @@ describe('video comments integration', () => {
     ).resolves.toEqual({ commentCount: 0 });
     await expect(
       runtime.prisma.comment.findUniqueOrThrow({
-        where: { id: committedCommentId },
+        where: { publicId: committedCommentId },
         select: { authorId: true, content: true, deletedAt: true, deletionOrigin: true },
       }),
     ).resolves.toEqual({
@@ -3346,7 +3520,7 @@ describe('video comments integration', () => {
       await runtime.commentsService.createReply({
         publicId: firstVideo.publicId,
         userId: survivor.userId,
-        rootCommentId: deletedRoot.id,
+        rootCommentId: deletedRoot.publicId,
         content: 'Reply preserved after account deletion',
       })
     ).comment;
@@ -3413,18 +3587,18 @@ describe('video comments integration', () => {
       .expect(200);
     expect(firstRoots.body.comments).toEqual([
       expect.objectContaining({
-        id: deletedRoot.id,
+        id: deletedRoot.publicId,
         isDeleted: true,
         author: null,
         replyCount: 1,
       }),
     ]);
     const firstReplies = await request(app)
-      .get(`/videos/${firstVideo.publicId}/comments/${deletedRoot.id}/replies`)
+      .get(`/videos/${firstVideo.publicId}/comments/${deletedRoot.publicId}/replies`)
       .expect(200);
     expect(firstReplies.body.replies).toEqual([
       expect.objectContaining({
-        id: survivingReply.id,
+        id: survivingReply.publicId,
         replyingTo: null,
       }),
     ]);
@@ -3433,7 +3607,7 @@ describe('video comments integration', () => {
       .get(`/videos/${secondVideo.publicId}/comments`)
       .expect(200);
     expect(secondRoots.body.comments.map(({ id }: { id: string }) => id)).toEqual([
-      survivingRoot.id,
+      survivingRoot.publicId,
     ]);
   });
 });

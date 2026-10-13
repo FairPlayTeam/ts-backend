@@ -10,7 +10,7 @@ import type {
 const toCommentResponseBody = (comment: Comment) =>
   comment.isDeleted
     ? {
-        id: comment.id,
+        id: comment.publicId,
         content: null,
         isDeleted: true as const,
         createdAt: toIsoString(comment.createdAt),
@@ -21,16 +21,16 @@ const toCommentResponseBody = (comment: Comment) =>
         author: null,
       }
     : {
-        id: comment.id,
+        id: comment.publicId,
         content: comment.content,
         isDeleted: comment.isDeleted,
         createdAt: toIsoString(comment.createdAt),
-        rootCommentId: comment.rootCommentId,
+        rootCommentId: comment.rootCommentPublicId,
         likeCount: comment.likeCount,
         viewerHasLiked: comment.viewerHasLiked,
         replyingTo: comment.replyingTo
           ? {
-              commentId: comment.replyingTo.commentId,
+              commentId: comment.replyingTo.publicCommentId,
               username: comment.replyingTo.username,
             }
           : null,

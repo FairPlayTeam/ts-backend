@@ -297,6 +297,10 @@ specific participant being addressed. Authors can soft-delete their own comments
 owner and moderators or administrators can also soft-delete comments without depending on video
 readability or engagement state. A deleted root is returned as a content-free placeholder only while
 active replies still preserve its thread.
+Comment IDs, root and reply references, pagination cursors, and personal export references use
+persisted opaque public references; the internal comment UUID is not returned by these APIs.
+Cursor references must belong to the current list; absent, foreign, or no longer visible boundaries
+return the same `404 Comment not found` response.
 Authenticated users can idempotently add or remove a like with
 `PUT /videos/:publicId/comments/:commentId/like` and
 `DELETE /videos/:publicId/comments/:commentId/like`. Every root and reply DTO exposes the aggregate

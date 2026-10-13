@@ -273,6 +273,7 @@ model VideoView {
 
 model Comment {
   id                  String                 @id @default(uuid()) @db.Uuid
+  publicId            String                 @unique @default(dbgenerated("'c_' || replace(gen_random_uuid()::text, '-', '')")) @map("public_id") @db.VarChar(35)
   authorId            String?                @map("author_id") @db.Uuid
   videoId             String                 @map("video_id") @db.Uuid
   rootId              String?                @map("root_id") @db.Uuid

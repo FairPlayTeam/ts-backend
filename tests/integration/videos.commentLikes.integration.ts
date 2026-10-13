@@ -225,13 +225,13 @@ describe('video comment likes integration', () => {
       (service) =>
         service.likeComment({
           publicId: video.publicId,
-          commentId: duplicatePut.id,
+          commentId: duplicatePut.publicId,
           userId: firstUser.userId,
         }),
       () =>
         runtime!.commentsService.likeComment({
           publicId: video.publicId,
-          commentId: duplicatePut.id,
+          commentId: duplicatePut.publicId,
           userId: firstUser.userId,
         }),
     );
@@ -252,13 +252,13 @@ describe('video comment likes integration', () => {
       (service) =>
         service.likeComment({
           publicId: video.publicId,
-          commentId: distinctUsers.id,
+          commentId: distinctUsers.publicId,
           userId: firstUser.userId,
         }),
       () =>
         runtime!.commentsService.likeComment({
           publicId: video.publicId,
-          commentId: distinctUsers.id,
+          commentId: distinctUsers.publicId,
           userId: secondUser.userId,
         }),
     );
@@ -273,7 +273,7 @@ describe('video comment likes integration', () => {
     const duplicateDelete = await createComment(runtime, video, owner.userId, 'Duplicate DELETE');
     await runtime.commentsService.likeComment({
       publicId: video.publicId,
-      commentId: duplicateDelete.id,
+      commentId: duplicateDelete.publicId,
       userId: firstUser.userId,
     });
     const duplicateDeleteResults = await withFirstCommentLockHeld(
@@ -281,13 +281,13 @@ describe('video comment likes integration', () => {
       (service) =>
         service.unlikeComment({
           publicId: video.publicId,
-          commentId: duplicateDelete.id,
+          commentId: duplicateDelete.publicId,
           userId: firstUser.userId,
         }),
       () =>
         runtime!.commentsService.unlikeComment({
           publicId: video.publicId,
-          commentId: duplicateDelete.id,
+          commentId: duplicateDelete.publicId,
           userId: firstUser.userId,
         }),
     );
@@ -305,13 +305,13 @@ describe('video comment likes integration', () => {
       (service) =>
         service.likeComment({
           publicId: video.publicId,
-          commentId: putThenDelete.id,
+          commentId: putThenDelete.publicId,
           userId: firstUser.userId,
         }),
       () =>
         runtime!.commentsService.unlikeComment({
           publicId: video.publicId,
-          commentId: putThenDelete.id,
+          commentId: putThenDelete.publicId,
           userId: firstUser.userId,
         }),
     );
@@ -338,7 +338,7 @@ describe('video comment likes integration', () => {
 
     await runtime.commentsService.likeComment({
       publicId: video.publicId,
-      commentId: comment.id,
+      commentId: comment.publicId,
       userId: liker.userId,
     });
     await runtime.prisma.video.update({
@@ -347,11 +347,11 @@ describe('video comment likes integration', () => {
     });
 
     await request(app)
-      .put(`/videos/${video.publicId}/comments/${comment.id}/like`)
+      .put(`/videos/${video.publicId}/comments/${comment.publicId}/like`)
       .set('Authorization', `Bearer ${liker.sessionKey}`)
       .expect(404);
     await request(app)
-      .delete(`/videos/${video.publicId}/comments/${comment.id}/like`)
+      .delete(`/videos/${video.publicId}/comments/${comment.publicId}/like`)
       .set('Authorization', `Bearer ${liker.sessionKey}`)
       .expect(204);
 
@@ -360,11 +360,11 @@ describe('video comment likes integration', () => {
       data: { moderationStatus: 'approved', allowComments: false },
     });
     await request(app)
-      .put(`/videos/${video.publicId}/comments/${comment.id}/like`)
+      .put(`/videos/${video.publicId}/comments/${comment.publicId}/like`)
       .set('Authorization', `Bearer ${liker.sessionKey}`)
       .expect(409);
     await request(app)
-      .delete(`/videos/${video.publicId}/comments/${comment.id}/like`)
+      .delete(`/videos/${video.publicId}/comments/${comment.publicId}/like`)
       .set('Authorization', `Bearer ${liker.sessionKey}`)
       .expect(204);
 
@@ -374,7 +374,7 @@ describe('video comment likes integration', () => {
     });
     await runtime.commentsService.likeComment({
       publicId: video.publicId,
-      commentId: comment.id,
+      commentId: comment.publicId,
       userId: liker.userId,
     });
     await runtime.prisma.video.update({
@@ -382,11 +382,11 @@ describe('video comment likes integration', () => {
       data: { processingStatus: 'draft' },
     });
     await request(app)
-      .put(`/videos/${video.publicId}/comments/${comment.id}/like`)
+      .put(`/videos/${video.publicId}/comments/${comment.publicId}/like`)
       .set('Authorization', `Bearer ${liker.sessionKey}`)
       .expect(404);
     await request(app)
-      .delete(`/videos/${video.publicId}/comments/${comment.id}/like`)
+      .delete(`/videos/${video.publicId}/comments/${comment.publicId}/like`)
       .set('Authorization', `Bearer ${liker.sessionKey}`)
       .expect(204);
 
@@ -396,16 +396,16 @@ describe('video comment likes integration', () => {
     });
     await runtime.commentsService.deleteComment({
       publicId: video.publicId,
-      commentId: comment.id,
+      commentId: comment.publicId,
       userId: owner.userId,
       actorRole: 'user',
     });
     await request(app)
-      .put(`/videos/${video.publicId}/comments/${comment.id}/like`)
+      .put(`/videos/${video.publicId}/comments/${comment.publicId}/like`)
       .set('Authorization', `Bearer ${liker.sessionKey}`)
       .expect(404);
     await request(app)
-      .delete(`/videos/${video.publicId}/comments/${comment.id}/like`)
+      .delete(`/videos/${video.publicId}/comments/${comment.publicId}/like`)
       .set('Authorization', `Bearer ${liker.sessionKey}`)
       .expect(204);
     await expect(
@@ -432,7 +432,7 @@ describe('video comment likes integration', () => {
     const deletedComment = await createComment(runtime, video, owner.userId, 'Deleted target');
     await runtime.commentsService.deleteComment({
       publicId: video.publicId,
-      commentId: deletedComment.id,
+      commentId: deletedComment.publicId,
       userId: owner.userId,
       actorRole: 'user',
     });
@@ -458,11 +458,11 @@ describe('video comment likes integration', () => {
     });
     const app = await createIntegrationApp(runtime);
     const targets = [
-      `/videos/${video.publicId}/comments/${randomUUID()}/like`,
-      `/videos/${wrongVideo.publicId}/comments/${comment.id}/like`,
-      `/videos/${video.publicId}/comments/${deletedComment.id}/like`,
-      `/videos/${rejectedVideo.publicId}/comments/${rejectedComment.id}/like`,
-      `/videos/ZZZZZZZZZZ/comments/${comment.id}/like`,
+      `/videos/${video.publicId}/comments/c_${randomUUID().replaceAll('-', '')}/like`,
+      `/videos/${wrongVideo.publicId}/comments/${comment.publicId}/like`,
+      `/videos/${video.publicId}/comments/${deletedComment.publicId}/like`,
+      `/videos/${rejectedVideo.publicId}/comments/${rejectedComment.publicId}/like`,
+      `/videos/ZZZZZZZZZZ/comments/${comment.publicId}/like`,
     ];
     const responses = await Promise.all(
       targets.map((path) =>
@@ -492,14 +492,15 @@ describe('video comment likes integration', () => {
     const preflightService = createIntegrationCommentsService(preflightPrisma);
     const attempts = [
       ...Array.from({ length: 20 }, () => randomUUID()),
-      deletedComment.id,
-      rejectedComment.id,
+      deletedComment.publicId,
+      rejectedComment.publicId,
     ];
 
     for (const commentId of attempts) {
       await expect(
         preflightService.likeComment({
-          publicId: commentId === rejectedComment.id ? rejectedVideo.publicId : video.publicId,
+          publicId:
+            commentId === rejectedComment.publicId ? rejectedVideo.publicId : video.publicId,
           commentId,
           userId: liker.userId,
         }),
@@ -508,7 +509,7 @@ describe('video comment likes integration', () => {
     await expect(
       preflightService.likeComment({
         publicId: disabledVideo.publicId,
-        commentId: disabledComment.id,
+        commentId: disabledComment.publicId,
         userId: liker.userId,
       }),
     ).rejects.toBeInstanceOf(CommentsDisabledError);
@@ -526,7 +527,7 @@ describe('video comment likes integration', () => {
     const reply = (
       await runtime.commentsService.createReply({
         publicId: video.publicId,
-        rootCommentId: root.id,
+        rootCommentId: root.publicId,
         userId: owner.userId,
         content: 'Reply with a like.',
       })
@@ -535,13 +536,13 @@ describe('video comment likes integration', () => {
     for (const userId of [liker.userId, otherLiker.userId]) {
       await runtime.commentsService.likeComment({
         publicId: video.publicId,
-        commentId: root.id,
+        commentId: root.publicId,
         userId,
       });
     }
     await runtime.commentsService.likeComment({
       publicId: video.publicId,
-      commentId: reply.id,
+      commentId: reply.publicId,
       userId: liker.userId,
     });
 
@@ -552,23 +553,23 @@ describe('video comment likes integration', () => {
       .set('Authorization', `Bearer ${liker.sessionKey}`)
       .expect(200);
     const likedReplies = await request(app)
-      .get(`/videos/${video.publicId}/comments/${root.id}/replies`)
+      .get(`/videos/${video.publicId}/comments/${root.publicId}/replies`)
       .set('Authorization', `Bearer ${liker.sessionKey}`)
       .expect(200);
 
     expect(anonymousRoots.headers['cache-control']).toBe('no-store');
     expect(anonymousRoots.body.comments[0]).toMatchObject({
-      id: root.id,
+      id: root.publicId,
       likeCount: 2,
       viewerHasLiked: false,
     });
     expect(likedRoots.body.comments[0]).toMatchObject({
-      id: root.id,
+      id: root.publicId,
       likeCount: 2,
       viewerHasLiked: true,
     });
     expect(likedReplies.body.replies[0]).toMatchObject({
-      id: reply.id,
+      id: reply.publicId,
       likeCount: 1,
       viewerHasLiked: true,
     });
@@ -606,13 +607,13 @@ describe('video comment likes integration', () => {
         (service) =>
           service.likeComment({
             publicId: video.publicId,
-            commentId: likeFirst.id,
+            commentId: likeFirst.publicId,
             userId: liker.userId,
           }),
         () =>
           runtime!.commentsService.deleteComment({
             publicId: video.publicId,
-            commentId: likeFirst.id,
+            commentId: likeFirst.publicId,
             userId: privilegedActor.userId,
             actorRole: role,
           }),
@@ -630,14 +631,14 @@ describe('video comment likes integration', () => {
         (service) =>
           service.deleteComment({
             publicId: video.publicId,
-            commentId: deleteFirst.id,
+            commentId: deleteFirst.publicId,
             userId: privilegedActor.userId,
             actorRole: role,
           }),
         () =>
           runtime!.commentsService.likeComment({
             publicId: video.publicId,
-            commentId: deleteFirst.id,
+            commentId: deleteFirst.publicId,
             userId: liker.userId,
           }),
       );
@@ -683,12 +684,12 @@ describe('video comment likes integration', () => {
       const video = index < 2 ? firstVideo : secondVideo;
       await runtime.commentsService.likeComment({
         publicId: video.publicId,
-        commentId: comment.id,
+        commentId: comment.publicId,
         userId: liker.userId,
       });
       await runtime.commentsService.likeComment({
         publicId: video.publicId,
-        commentId: comment.id,
+        commentId: comment.publicId,
         userId: survivor.userId,
       });
     }
@@ -731,7 +732,7 @@ describe('video comment likes integration', () => {
       for (const userId of [firstLiker.userId, secondLiker.userId]) {
         await runtime.commentsService.likeComment({
           publicId: video.publicId,
-          commentId: comment.id,
+          commentId: comment.publicId,
           userId,
         });
       }
@@ -787,7 +788,7 @@ describe('video comment likes integration', () => {
     for (const comment of comments) {
       await runtime.commentsService.likeComment({
         publicId: video.publicId,
-        commentId: comment.id,
+        commentId: comment.publicId,
         userId: liker.userId,
       });
     }
@@ -802,7 +803,7 @@ describe('video comment likes integration', () => {
     expect(response.body.commentLikes).toHaveLength(2);
     expect(
       response.body.commentLikes.map(({ commentId }: { commentId: string }) => commentId).sort(),
-    ).toEqual(comments.map(({ id }) => id).sort());
+    ).toEqual(comments.map(({ publicId }) => publicId).sort());
     for (const like of response.body.commentLikes as Array<{ createdAt: string }>) {
       expect(new Date(like.createdAt).toISOString()).toBe(like.createdAt);
     }
@@ -825,7 +826,7 @@ describe('video comment likes integration', () => {
     });
     const comments = await runtime.prisma.comment.findMany({
       where: { videoId: video.id },
-      select: { id: true },
+      select: { id: true, publicId: true },
       orderBy: { id: 'asc' },
     });
     await runtime.prisma.commentLike.createMany({
@@ -888,7 +889,9 @@ describe('video comment likes integration', () => {
     expect(emitted).toHaveLength(exportedLikeCount);
     expect(new Set(emitted.map(({ commentId }) => commentId)).size).toBe(exportedLikeCount);
     expect(emitted.filter(({ commentId }) => commentId === toggledLike.commentId)).toHaveLength(1);
-    expect(emitted.map(({ commentId }) => commentId)).toEqual(comments.map(({ id }) => id));
+    expect(emitted.map(({ commentId }) => commentId)).toEqual(
+      comments.map(({ publicId }) => publicId),
+    );
     await expect(
       runtime.prisma.commentLike.count({ where: { userId: liker.userId } }),
     ).resolves.toBe(exportedLikeCount);

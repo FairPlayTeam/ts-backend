@@ -231,7 +231,7 @@ describe('personal data export streaming', () => {
       ],
       comments: [
         {
-          id: '44444444-4444-4444-8444-444444444444',
+          id: 'c_44444444444444448444444444444444',
           videoPublicId: 'AbCdEf123_',
           content: 'An exported comment.',
           createdAt: '2026-01-01T00:00:00.000Z',
@@ -242,7 +242,7 @@ describe('personal data export streaming', () => {
       ],
       commentLikes: [
         {
-          commentId: '44444444-4444-4444-8444-444444444444',
+          commentId: 'c_44444444444444448444444444444444',
           createdAt: '2026-01-01T00:00:00.000Z',
         },
       ],

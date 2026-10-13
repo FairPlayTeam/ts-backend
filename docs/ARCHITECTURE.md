@@ -795,7 +795,11 @@ after rejection or after comments are disabled. Creating a root or reply uses th
 engagement scope and additionally requires `allow_comments = true`. Root pages sort newest-first;
 reply pages sort oldest-first. Both use a bounded `(created_at, id)` cursor inside a short
 `RepeatableRead` transaction. Root `replyCount` values come from one grouped query for the whole
-page, never one query per root. Both cursor directions repeat the temporal boundary outside the
+page, never one query per root. Cursor public references are resolved through the same scope as
+the current page: visible roots in the requested video, or active replies in the requested thread.
+Absent references, foreign references, and boundaries no longer visible all return the same
+`404 Comment not found`; a deleted root with surviving replies remains a valid root boundary.
+Both cursor directions repeat the temporal boundary outside the
 tie-break `OR`. Reply pages use a partial
 `(video_id, root_id, created_at, id) WHERE root_id IS NOT NULL AND deleted_at IS NULL` index, while
 root pages use a partial `(video_id, created_at DESC, id DESC) WHERE root_id IS NULL` index. These
@@ -841,21 +845,24 @@ storage or security invariant. Presence validation ignores Unicode whitespace an
 selectors, combining grapheme joiners, and C0/C1 controls, only while deciding whether some visible
 content exists. It does not strip those characters from otherwise valid stored text, so legitimate
 joined emoji sequences and mixed visible/control content remain intact. The `CommentsPort` assumes
-its UUIDs and normalized content have already crossed the HTTP validation boundary. A future job or
-administration script calling that port directly must reuse the same validation rules rather than
-treating the service as a runtime parser for arbitrary input.
+its public comment references and normalized content have already crossed the HTTP validation
+boundary. Comment references use a persisted opaque `c_` plus 128-bit UUID encoded as hex. The
+service resolves them to internal UUIDs before database operations; DTOs, route parameters, reply
+references, and cursors use only the public value. A future job or administration script calling
+that port directly must reuse the same validation rules rather than treating the service as a
+runtime parser for arbitrary input.
 
 Root creation, replies, deletion, and both idempotent comment-like mutations share one authenticated
 per-user mutation rate limit of 30 actions per ten minutes. Their deliberately different
 anti-amplification and locking protocols form one consistent ownership model:
 
-| Operation    | Indexed preflight before transaction                                          | Row lock order                                 | Aggregate protected                           | Justification                                                                                                                                                                               |
-| ------------ | ----------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Create root  | None beyond validated/authenticated input                                     | Video                                          | `videos.comment_count`                        | The video owns the aggregate and the locked query atomically checks engagement scope plus `allow_comments`.                                                                                 |
-| Create reply | Active root/target membership and video engagement scope                      | Video, then root/target comments in UUID order | `videos.comment_count`                        | Random comment UUIDs cannot contend on a popular video; the locked rows remain the final same-video/thread validation boundary.                                                             |
-| Soft-delete  | Exact comment/video membership and preliminary permission                     | Video, comment, then actor for staff deletion  | `videos.comment_count`, received-like cleanup | Unauthorized or random UUIDs never reach locks; locked rows repeat author and exact current video owner, then lock and recheck the actor only when permission depends on a staff role.      |
-| PUT like     | Exact active comment/video membership, engagement scope, and `allow_comments` | Comment only                                   | `comments.like_count`                         | The aggregate belongs to one comment; a video lock would serialize unrelated likes across a popular video. The transaction freshly rechecks video eligibility in its serializable snapshot. |
-| DELETE like  | Exact comment/video membership, without engagement or lifecycle filters       | Comment only                                   | `comments.like_count`                         | Unlike remains idempotent outside engagement scope and after soft deletion, without exposing whether a fact existed.                                                                        |
+| Operation    | Indexed preflight before transaction                                          | Row lock order                                 | Aggregate protected                           | Justification                                                                                                                                                                                       |
+| ------------ | ----------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create root  | None beyond validated/authenticated input                                     | Video                                          | `videos.comment_count`                        | The video owns the aggregate and the locked query atomically checks engagement scope plus `allow_comments`.                                                                                         |
+| Create reply | Active root/target membership and video engagement scope                      | Video, then root/target comments in UUID order | `videos.comment_count`                        | Random comment UUIDs cannot contend on a popular video; the locked rows remain the final same-video/thread validation boundary.                                                                     |
+| Soft-delete  | Exact comment/video membership and preliminary permission                     | Video, comment, then actor for staff deletion  | `videos.comment_count`, received-like cleanup | Unauthorized or unknown public references never reach locks; locked rows repeat author and exact current video owner, then lock and recheck the actor only when permission depends on a staff role. |
+| PUT like     | Exact active comment/video membership, engagement scope, and `allow_comments` | Comment only                                   | `comments.like_count`                         | The aggregate belongs to one comment; a video lock would serialize unrelated likes across a popular video. The transaction freshly rechecks video eligibility in its serializable snapshot.         |
+| DELETE like  | Exact comment/video membership, without engagement or lifecycle filters       | Comment only                                   | `comments.like_count`                         | Unlike remains idempotent outside engagement scope and after soft deletion, without exposing whether a fact existed.                                                                                |
 
 Root and reply creation intentionally do not add a separate `allowComments` preflight, unlike PUT
 like. Reaching either path already requires authentication and a valid video public identifier (and
@@ -939,7 +946,7 @@ define normal behavior without silently claiming stronger guarantees.
 | Multi-section export snapshots     | Export avoids one long database snapshot: every keyset page observes state when queried, so concurrent changes may appear in later sections/pages but not earlier ones. This weak temporal consistency is accepted for bounded transaction duration and availability.                                                                                                                               |
 | Like overlapping video rejection   | Serializable ordering is authoritative, not wall-clock commit order. A like whose transaction read the eligible video before a concurrent rejection may commit after the rejection's commit is observed; serialization may still order the like first. Preventing that visible ordering surprise would require a video lock that serializes unrelated comment likes.                                |
 | Shared mutation quota              | Root creation, replies, deletion, like, and unlike share 30 actions per user per ten minutes. This intentionally includes moderation deletions by moderators and administrators; operational moderation tooling may eventually require a consciously separate quota.                                                                                                                                |
-| Public `Comment.id` UUID           | Comment UUID is the opaque public identifier, an explicit exception to the repository convention. Every operation still revalidates exact video and thread context, so UUID possession grants no access or authority; never generalize this exception to resources lacking those checks.                                                                                                            |
+| Public comment references          | A persisted `c_` plus 128-bit UUID encoded as hex is used for comment IDs and references. Internal comment UUIDs remain database-only; route operations still revalidate exact video and thread context, so possession of a public reference grants no authority.                                                                                                                                   |
 
 The shared API IP limiter (1,200 requests per 15 minutes) runs after CORS and before `express.json`,
 so requests consume their coarse admission quota before JSON bodies are read and parsed. It covers
@@ -1111,7 +1118,8 @@ Auth responses do not expose user or session database UUIDs. Session `id` values
 listing, cursors, revocation requests, and personal exports are stable public references stored as
 `sessions.public_id`; revocation still scopes the update to the authenticated owner. After this
 change, clients must refresh their session list before using a previously stored session ID. The
-personal export identifies videos by `publicId` and omits user and verification/reset token IDs.
+personal export identifies videos by `publicId`, comments by their persisted public references, and
+omits user and verification/reset token IDs.
 
 Profile media upload processes the file, reserves an external-resource target, stores the object,
 then confirms the target and updates the user media record in a serializable transaction. Failed

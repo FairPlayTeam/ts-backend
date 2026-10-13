@@ -134,7 +134,7 @@ const userDataExportResult = {
   ]),
   comments: toAsyncIterable([
     {
-      id: '44444444-4444-4444-8444-444444444444',
+      id: 'c_44444444444444448444444444444444',
       videoPublicId: 'AbCdEf123_',
       content: 'An exported comment.',
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -145,7 +145,7 @@ const userDataExportResult = {
   ]),
   commentLikes: toAsyncIterable([
     {
-      commentId: '44444444-4444-4444-8444-444444444444',
+      commentId: 'c_44444444444444448444444444444444',
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
     },
   ]),
