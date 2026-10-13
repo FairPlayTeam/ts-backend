@@ -1,5 +1,5 @@
 import type {
-  VideoDeletionOrigin,
+  VideoDeletionRequestOrigin,
   VideoLicense,
   VideoModerationStatus,
   VideoProcessingStatus,
@@ -83,7 +83,7 @@ export type ExportUserVideoData = {
   rejectionReason: string | null;
   deletionRequestedAt: Date | null;
   deletionReason: string | null;
-  deletionOrigin: VideoDeletionOrigin | null;
+  deletionOrigin: VideoDeletionRequestOrigin | null;
   createdAt: Date;
   updatedAt: Date;
 };

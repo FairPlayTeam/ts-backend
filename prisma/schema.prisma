@@ -48,7 +48,7 @@ enum VideoModerationStatus {
   rejected
 }
 
-enum VideoDeletionOrigin {
+enum VideoDeletionRequestOrigin {
   moderator
   admin
 }
@@ -220,7 +220,7 @@ model Video {
   rejectionReason            String?               @map("rejection_reason") @db.VarChar(1000)
   deletionRequestedAt        DateTime?             @map("deletion_requested_at")
   deletionReason             String?               @map("deletion_reason") @db.VarChar(1000)
-  deletionOrigin             VideoDeletionOrigin?  @map("deletion_origin")
+  deletionOrigin             VideoDeletionRequestOrigin?  @map("deletion_origin")
   createdAt                  DateTime              @default(now()) @map("created_at")
   updatedAt                  DateTime              @updatedAt @map("updated_at")
 

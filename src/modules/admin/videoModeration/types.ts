@@ -5,7 +5,7 @@ import type {
 } from '../../videos/index.js';
 
 export type AdminVideoSort = 'newest' | 'oldest';
-export type VideoDeletionOrigin = 'moderator' | 'admin';
+export type VideoDeletionRequestOrigin = 'moderator' | 'admin';
 
 export type ListAdminVideosInput = {
   actorUserId: string;
@@ -36,7 +36,7 @@ export type AdminVideoSummary = {
   rejectionReason: string | null;
   deletionRequestedAt: Date | null;
   deletionReason: string | null;
-  deletionOrigin: VideoDeletionOrigin | null;
+  deletionOrigin: VideoDeletionRequestOrigin | null;
 };
 
 export type ListAdminVideosResult = {
