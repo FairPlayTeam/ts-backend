@@ -190,39 +190,39 @@ model UserMediaAsset {
 }
 
 model Video {
-  id                         String                @id @default(uuid()) @db.Uuid
-  publicId                   String                @unique @map("public_id") @db.VarChar(64)
-  ownerId                    String                @map("owner_id") @db.Uuid
-  title                      String                @db.VarChar(120)
-  description                String?               @db.VarChar(5000)
-  tags                       String[]              @default([])
-  license                    VideoLicense          @default(all_rights_reserved)
-  visibility                 VideoVisibility       @default(unlisted)
-  allowComments              Boolean               @default(true) @map("allow_comments")
-  processingStatus           VideoProcessingStatus @default(draft) @map("processing_status")
-  moderationStatus           VideoModerationStatus @default(pending) @map("moderation_status")
-  sourceUploadSessionId      String?               @unique @map("source_upload_session_id") @db.Uuid
-  sourceObjectKey            String?               @unique @map("source_object_key") @db.VarChar(512)
-  sourceSizeBytes            BigInt?               @map("source_size_bytes")
-  activeArtifactGenerationId String?               @unique @map("active_artifact_generation_id") @db.Uuid
-  hlsMasterObjectKey         String?               @unique @map("hls_master_object_key") @db.VarChar(512)
-  thumbnailObjectKey         String?               @unique @map("thumbnail_object_key") @db.VarChar(512)
-  durationSeconds            Int?                  @map("duration_seconds")
+  id                         String                      @id @default(uuid()) @db.Uuid
+  publicId                   String                      @unique @map("public_id") @db.VarChar(64)
+  ownerId                    String                      @map("owner_id") @db.Uuid
+  title                      String                      @db.VarChar(120)
+  description                String?                     @db.VarChar(5000)
+  tags                       String[]                    @default([])
+  license                    VideoLicense                @default(all_rights_reserved)
+  visibility                 VideoVisibility             @default(unlisted)
+  allowComments              Boolean                     @default(true) @map("allow_comments")
+  processingStatus           VideoProcessingStatus       @default(draft) @map("processing_status")
+  moderationStatus           VideoModerationStatus       @default(pending) @map("moderation_status")
+  sourceUploadSessionId      String?                     @unique @map("source_upload_session_id") @db.Uuid
+  sourceObjectKey            String?                     @unique @map("source_object_key") @db.VarChar(512)
+  sourceSizeBytes            BigInt?                     @map("source_size_bytes")
+  activeArtifactGenerationId String?                     @unique @map("active_artifact_generation_id") @db.Uuid
+  hlsMasterObjectKey         String?                     @unique @map("hls_master_object_key") @db.VarChar(512)
+  thumbnailObjectKey         String?                     @unique @map("thumbnail_object_key") @db.VarChar(512)
+  durationSeconds            Int?                        @map("duration_seconds")
   width                      Int?
   height                     Int?
-  viewCount                  Int                   @default(0) @map("view_count")
-  ratingSum                  Int                   @default(0) @map("rating_sum")
-  ratingCount                Int                   @default(0) @map("rating_count")
-  commentCount               Int                   @default(0) @map("comment_count")
-  transcodeError             String?               @map("transcode_error") @db.VarChar(1000)
-  publishedAt                DateTime?             @map("published_at")
-  rejectedAt                 DateTime?             @map("rejected_at")
-  rejectionReason            String?               @map("rejection_reason") @db.VarChar(1000)
-  deletionRequestedAt        DateTime?             @map("deletion_requested_at")
-  deletionReason             String?               @map("deletion_reason") @db.VarChar(1000)
-  deletionOrigin             VideoDeletionRequestOrigin?  @map("deletion_origin")
-  createdAt                  DateTime              @default(now()) @map("created_at")
-  updatedAt                  DateTime              @updatedAt @map("updated_at")
+  viewCount                  Int                         @default(0) @map("view_count")
+  ratingSum                  Int                         @default(0) @map("rating_sum")
+  ratingCount                Int                         @default(0) @map("rating_count")
+  commentCount               Int                         @default(0) @map("comment_count")
+  transcodeError             String?                     @map("transcode_error") @db.VarChar(1000)
+  publishedAt                DateTime?                   @map("published_at")
+  rejectedAt                 DateTime?                   @map("rejected_at")
+  rejectionReason            String?                     @map("rejection_reason") @db.VarChar(1000)
+  deletionRequestedAt        DateTime?                   @map("deletion_requested_at")
+  deletionReason             String?                     @map("deletion_reason") @db.VarChar(1000)
+  deletionOrigin             VideoDeletionRequestOrigin? @map("deletion_origin")
+  createdAt                  DateTime                    @default(now()) @map("created_at")
+  updatedAt                  DateTime                    @updatedAt @map("updated_at")
 
   owner                    User                      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   sourceUploadSession      VideoUploadSession?       @relation("CurrentVideoSource", fields: [sourceUploadSessionId], references: [id], onDelete: SetNull)
@@ -284,13 +284,13 @@ model Comment {
   deletionOrigin      CommentDeletionOrigin? @map("deletion_origin")
   likeCount           Int                    @default(0) @map("like_count")
 
-  author            User?     @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
-  video             Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  root              Comment?  @relation("CommentThread", fields: [rootId], references: [id], onDelete: Cascade)
-  replies           Comment[] @relation("CommentThread")
-  replyingToComment Comment?  @relation("CommentReplyTarget", fields: [replyingToCommentId], references: [id], onDelete: SetNull)
-  addressedReplies  Comment[] @relation("CommentReplyTarget")
-  likes              CommentLike[]
+  author            User?         @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  video             Video         @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  root              Comment?      @relation("CommentThread", fields: [rootId], references: [id], onDelete: Cascade)
+  replies           Comment[]     @relation("CommentThread")
+  replyingToComment Comment?      @relation("CommentReplyTarget", fields: [replyingToCommentId], references: [id], onDelete: SetNull)
+  addressedReplies  Comment[]     @relation("CommentReplyTarget")
+  likes             CommentLike[]
 
   @@index([videoId, rootId, createdAt, id])
   @@index([rootId, createdAt, id])

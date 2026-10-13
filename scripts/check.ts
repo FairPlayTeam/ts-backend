@@ -11,6 +11,7 @@ const steps: CheckStep[] = [
   { label: 'typecheck', command: ['bun', 'run', 'typecheck'] },
   { label: 'lint', command: ['bun', 'run', 'lint'] },
   { label: 'format check', command: ['bun', 'run', 'format:check'] },
+  { label: 'prisma format check', command: ['bun', 'run', 'prisma:format:check'] },
   { label: 'Prisma validate', command: ['bunx', 'prisma', 'validate'] },
   { label: 'unit tests', command: ['bun', 'run', 'test:unit'] },
   { label: 'integration tests', command: ['bun', 'run', 'test:integration'] },
