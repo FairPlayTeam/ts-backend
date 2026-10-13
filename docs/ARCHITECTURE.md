@@ -1058,7 +1058,7 @@ this locked reread. No password hash is included in the service result or HTTP D
 | Invariant                                                    | Untrusted input / source of truth                         | Transformations                                               | Enforcement                                                                 | Counterexample                                             | Observable proof                                                                     |
 | ------------------------------------------------------------ | --------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Authenticated password is still current                      | Client password / current `users.password_hash`           | Pre-read, bcrypt, lock wait, transactional reread             | Hash equality before session insertion                                      | Reset commits during login                                 | Real PostgreSQL lock wait, then generic 401, unchanged session count and `lastLogin` |
-| Reset revokes a login that acquires the lock first           | Concurrent login/reset / committed session rows           | Login insert and commit, reset password update and revocation | User lock held through session creation and reset update through revocation | Reset runs before the login insertion commits              | Reset visibly waits on the user UPDATE; both sessions are subsequently inactive      |
+| Reset revokes a login that acquires the lock first           | Concurrent login/reset / committed session rows           | Login insert and commit, reset password update and revocation | User lock held through session creation and reset update through revocation | Reset runs before the login insertion commits              | Reset visibly waits on the user row lock; both sessions are subsequently inactive    |
 | Account remains eligible                                     | Pre-read account / locked current user                    | Ban, verification change, or account deletion before creation | Missing-user, ban and verification checks before writes                     | Valid bcrypt result with an account that changed meanwhile | HTTP errors and no inserted session after the concurrent change                      |
 | Public response uses current profile without internal fields | Pre-read profile / locked current user and HTTP whitelist | Transactional projection, HTTP serialization                  | Explicit user projection and `toAuthSessionResponse`                        | Role changes during bcrypt; hash accidentally returned     | Exact serialized HTTP body                                                           |
 
@@ -1069,10 +1069,32 @@ If login wins, reset/ban can revoke its session after commit, and deletion can c
 Consequently, a successful login response can contain a session already revoked by a concurrent
 operation; it never guarantees that the session remains usable after the transaction commits.
 
-This protocol protects login session issuance. Sensitive-action reauthentication in account
-export/deletion and bulk logout still performs a password preflight, without coupling that hash
-to a final transaction check. Those existing operations are not covered by the login guarantee;
-exports additionally stream several independent reads rather than a single locked snapshot.
+### Sensitive-action transaction invariants
+
+Sensitive-action reauthentication returns the exact hash authenticated by bcrypt outside the
+transaction. Login, account deletion, both bulk session revocations, and each export read share
+the locked hash/ban check. Account deletion keeps its job/video/comment locks before acquiring
+the user lock and checking credentials, before any aggregate repair or deletion. Password reset
+locks the user before consuming its reset token, then rereads its credentials; this avoids a
+user/token lock cycle with the account-deletion cascade and preserves reset-error precedence.
+Every serializable deletion retry repeats the final check
+against the originally authenticated hash, without repeating bcrypt.
+
+| Invariant                                                  | Untrusted input / source of truth                           | Transformations                                              | Enforcement                                           | Counterexample                                                         | Observable proof                                                                   |
+| ---------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| A reset invalidates pending sensitive actions              | Client password and middleware snapshot / current user hash | Bcrypt, pause, reset commit, final transaction               | Shared locked hash/ban check before reads or writes   | Reset finishes after bcrypt but before deletion, export or bulk logout | Four HTTP routes reject with the same 401, account retained and new session active |
+| An authorized operation completes before reset             | Concurrent operation/reset / user row lock                  | Resource locks, user lock, operation effects, commit, reset  | Common user lock held until final transaction commits | Reset tries to update before protected effects                         | PostgreSQL lock wait; reset reads committed effects or finds deleted user          |
+| An export never starts another page with stale credentials | Export iterator / current user hash and ban state           | Initial metadata read, bounded page reads, HTTP backpressure | Short transaction around each check and page query    | Reset/ban between pages or collections                                 | Next page is rejected; started HTTP stream closes without valid final JSON         |
+| No token/user lock cycle with deletion                     | Concurrent deletion/reset / PostgreSQL locks                | Reset token consumption and account cascade                  | Reset acquires user lock before reset-token mutation  | Deletion owns user while reset owns token                              | Deletion-first/reset-second completes without a deadlock                           |
+
+Exports remain bounded, paginated reads rather than one consistent snapshot. No transaction or
+user lock is held while sending bytes or waiting for HTTP backpressure. A page authorized and
+read before reset/ban may still be emitted after it commits; already delivered bytes cannot be
+recalled. The next page (including a different collection) repeats authorization and rejects the
+stale hash. Before HTTP headers this is the ordinary invalid-credentials response; after headers
+the existing streaming error path closes the response without its final JSON delimiter. Clients
+must discard incomplete exports. Password checks bind the operation to current credentials;
+this change does not turn every session revocation into cancellation of already running requests.
 
 The login concurrency regressions live in
 `tests/integration/auth.login-concurrency.integration.ts`. On 2026-10-13 both transaction orders
@@ -1082,6 +1104,26 @@ login-first test fail because reset completed before the required lock wait. Bot
 were restored after these mutation checks. The other cases exercise real administrative ban,
 account deletion, email-verification loss, and an exact HTTP profile/session projection after a
 role change during password comparison.
+
+Sensitive-action regressions live in `tests/integration/auth.sensitive-concurrency.integration.ts`.
+The 2026-10-13 PostgreSQL/HTTP verification includes pending bcrypt requests, real lock waits in
+both orders, account ban/deletion, export metadata and page boundaries, and interrupted chunked
+HTTP delivery. The reset-first deletion case observes two serializable transaction attempts and
+one bcrypt comparison: the first snapshot conflicts, the retry rejects the original stale hash.
+Concurrent duplicate account deletions now produce one success and one invalid-credentials
+failure once the user is gone. The cleanup regression observes one real waiter on the target and
+one on the user, and verifies that the original cleanup target is retained without duplication.
+Mutation checks were executed and all source files restored afterwards:
+
+- Removing final hash equality made all four pending sensitive HTTP actions return 200 instead
+  of 401.
+- Skipping only the sensitive-operation user lock made the three inverse write scenarios and
+  both inverse export reads fail because reset completed before the required PostgreSQL wait.
+- Keeping initial export authorization while skipping subsequent page checks made all eight
+  collection checks, the next-page check, and the HTTP interruption check fail.
+- Moving reset's user lock after token consumption produced PostgreSQL `40P01`, `deadlock detected`,
+  in the deletion-first regression. With the correct order, deletion succeeds and reset reports
+  its ordinary invalid-reset-token error after the user disappears.
 
 ```mermaid
 sequenceDiagram

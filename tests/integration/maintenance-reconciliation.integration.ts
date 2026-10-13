@@ -5,6 +5,7 @@ import { buildVideoArtifactManifest } from '../../src/modules/videos/shared/obje
 import { createVideoHlsGenerationToken } from '../../src/modules/videos/shared/hls.js';
 import { createObjectStorage, ObjectStorageUnavailableError } from '../../src/lib/objectStorage.js';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
+import { InvalidCredentialsError } from '../../src/modules/auth/errors.js';
 import { createVideoArtifactReconciliationHandlers } from '../../src/modules/videoTranscoding/index.js';
 import { createVideoUploadsReconciliationHandlers } from '../../src/modules/videoUploads/index.js';
 import {
@@ -1160,7 +1161,7 @@ describe('maintenance and reconciliation integration', () => {
     expect(queuedTargets.map(({ id }) => id)).toContain(mediaAsset.externalResourceTargetId);
   });
 
-  test('serializes duplicate account-deletion cleanup transitions without creating a second target', async () => {
+  test('rejects the second concurrent account deletion without creating a second cleanup target', async () => {
     if (!runtime) {
       throw new Error('Integration runtime was not started');
     }
@@ -1237,16 +1238,26 @@ describe('maintenance and reconciliation integration', () => {
       },
       runWhileGateHeld: async ({ trackOperation, waitForSignal }) => {
         const firstDeletion = trackOperation(
-          deletionService.deleteAccount({
-            userId: owner.userId,
-            currentPassword: INITIAL_PASSWORD,
-          }),
+          deletionService
+            .deleteAccount({
+              userId: owner.userId,
+              currentPassword: INITIAL_PASSWORD,
+            })
+            .then(
+              (result) => ({ result, error: null }),
+              (error: unknown) => ({ result: null, error }),
+            ),
         );
         const secondDeletion = trackOperation(
-          deletionService.deleteAccount({
-            userId: owner.userId,
-            currentPassword: INITIAL_PASSWORD,
-          }),
+          deletionService
+            .deleteAccount({
+              userId: owner.userId,
+              currentPassword: INITIAL_PASSWORD,
+            })
+            .then(
+              (result) => ({ result, error: null }),
+              (error: unknown) => ({ result: null, error }),
+            ),
         );
         await waitForSignal({
           description: 'both account-deletion reauthentication checks',
@@ -1254,12 +1265,22 @@ describe('maintenance and reconciliation integration', () => {
           timeoutMs: 5_000,
         });
         await waitForSignal({
-          description: 'both account deletions behind the external-resource target gate',
+          description: 'the first account deletion behind the external-resource target gate',
           observe: (signal) =>
             waitForPostgresLockWaiters(activeRuntime.prisma, {
               applicationNames: [activeRuntime.postgresApplicationName],
-              expectedCount: 2,
+              expectedCount: 1,
               queryFragments: ['external_resource_targets'],
+              signal,
+            }),
+        });
+        await waitForSignal({
+          description: 'the second deletion behind the first deletion user lock',
+          observe: (signal) =>
+            waitForPostgresLockWaiters(activeRuntime.prisma, {
+              applicationNames: [activeRuntime.postgresApplicationName],
+              expectedCount: 1,
+              queryFragments: ['FROM "users"', 'FOR UPDATE'],
               signal,
             }),
         });
@@ -1268,16 +1289,16 @@ describe('maintenance and reconciliation integration', () => {
       },
     });
 
-    expect(deletions).toEqual([
-      expect.objectContaining({
-        externalCleanupQueued: 1,
-        mediaCleanupQueued: 1,
-      }),
+    const successfulDeletions = deletions.flatMap(({ result }) => (result ? [result] : []));
+    const rejectedDeletions = deletions.flatMap(({ error }) => (error === null ? [] : [error]));
+    expect(successfulDeletions).toEqual([
       expect.objectContaining({
         externalCleanupQueued: 1,
         mediaCleanupQueued: 1,
       }),
     ]);
+    expect(rejectedDeletions).toHaveLength(1);
+    expect(rejectedDeletions[0]).toBeInstanceOf(InvalidCredentialsError);
     await expect(
       runtime.prisma.user.findUnique({
         where: { id: owner.userId },

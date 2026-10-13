@@ -24,9 +24,11 @@ import {
   LOGOUT_SESSION_SUCCESS_MESSAGE,
   CLEANUP_SESSION_SUCCESS_MESSAGE,
 } from '../messages.js';
-import { reauthenticateSensitiveAction } from '../credentials/reauthentication.js';
-import { lockUserAuthorizationState } from '../authorization.js';
-import { AccountBannedError, EmailNotVerifiedError, InvalidCredentialsError } from '../errors.js';
+import {
+  lockAuthenticatedUser,
+  reauthenticateSensitiveAction,
+} from '../credentials/reauthentication.js';
+import { EmailNotVerifiedError } from '../errors.js';
 
 type PrepareSessionInput = {
   ipAddress?: string | undefined;
@@ -136,33 +138,7 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
 
     const result = await deps.prisma.$transaction(async (tx) => {
       // Serialize before inserting: reset/ban update this row before revoking sessions.
-      const lockedUser = await lockUserAuthorizationState(tx, userId);
-      if (!lockedUser) {
-        throw new InvalidCredentialsError();
-      }
-
-      const currentUser = await tx.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          displayName: true,
-          bio: true,
-          role: true,
-          passwordHash: true,
-          isVerified: true,
-          isBanned: true,
-        },
-      });
-
-      // Bcrypt has already authenticated this exact hash outside the row lock.
-      if (!currentUser || currentUser.passwordHash !== authenticatedPasswordHash) {
-        throw new InvalidCredentialsError();
-      }
-      if (currentUser.isBanned) {
-        throw new AccountBannedError();
-      }
+      const currentUser = await lockAuthenticatedUser(tx, userId, authenticatedPasswordHash);
       if (!currentUser.isVerified) {
         throw new EmailNotVerifiedError();
       }
@@ -327,16 +303,22 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
       userId,
       currentPassword,
     }: LogoutAllSessionsInput): Promise<{ message: string; sessionsLoggedOut: number }> {
-      await reauthenticateSensitiveAction(deps, { userId, currentPassword });
+      const authenticatedPasswordHash = await reauthenticateSensitiveAction(deps, {
+        userId,
+        currentPassword,
+      });
 
-      const result = await deps.prisma.session.updateMany({
-        where: {
-          userId,
-          isActive: true,
-        },
-        data: {
-          isActive: false,
-        },
+      const result = await deps.prisma.$transaction(async (tx) => {
+        await lockAuthenticatedUser(tx, userId, authenticatedPasswordHash);
+        return tx.session.updateMany({
+          where: {
+            userId,
+            isActive: true,
+          },
+          data: {
+            isActive: false,
+          },
+        });
       });
 
       return {
@@ -350,19 +332,25 @@ export const createSessionService = (deps: AuthDependencies): SessionService => 
       currentSessionId,
       currentPassword,
     }: LogoutOtherSessionsInput): Promise<{ message: string; sessionsLoggedOut: number }> {
-      await reauthenticateSensitiveAction(deps, { userId, currentPassword });
+      const authenticatedPasswordHash = await reauthenticateSensitiveAction(deps, {
+        userId,
+        currentPassword,
+      });
 
-      const result = await deps.prisma.session.updateMany({
-        where: {
-          userId,
-          isActive: true,
-          id: {
-            not: currentSessionId,
+      const result = await deps.prisma.$transaction(async (tx) => {
+        await lockAuthenticatedUser(tx, userId, authenticatedPasswordHash);
+        return tx.session.updateMany({
+          where: {
+            userId,
+            isActive: true,
+            id: {
+              not: currentSessionId,
+            },
           },
-        },
-        data: {
-          isActive: false,
-        },
+          data: {
+            isActive: false,
+          },
+        });
       });
 
       return {

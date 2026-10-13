@@ -94,6 +94,10 @@ const createAuthTransaction = (calls: AuthServiceTestCalls) => ({
         };
       }
 
+      if (select?.banReason) {
+        return createExportableUser();
+      }
+
       return {
         id: 'user-id',
         username: 'fairplay_user',
@@ -345,12 +349,28 @@ const createExportableUser = () => ({
   },
 });
 
-export const createBaseAuthPrisma = (calls: AuthServiceTestCalls): AuthDeps['prisma'] => {
+export const createBaseAuthPrisma = (
+  calls: AuthServiceTestCalls,
+  overrides: Omit<Partial<AuthDeps['prisma']>, '$transaction'> = {},
+): AuthDeps['prisma'] => {
   const tx = createAuthTransaction(calls);
   const basePrisma = {
     $transaction: async (
-      input: ((transaction: typeof tx) => Promise<unknown>) | Promise<unknown>[],
-    ) => (Array.isArray(input) ? Promise.all(input) : input(tx)),
+      input: ((transaction: unknown) => Promise<unknown>) | Promise<unknown>[],
+    ): Promise<unknown> =>
+      Array.isArray(input)
+        ? Promise.all(input)
+        : input({
+            ...tx,
+            user: { ...tx.user, ...overrides.user },
+            session: { ...basePrisma.session, ...tx.session, ...overrides.session },
+            comment: { ...basePrisma.comment, ...tx.comment, ...overrides.comment },
+            commentLike: { ...basePrisma.commentLike, ...tx.commentLike, ...overrides.commentLike },
+            userFollow: { ...basePrisma.userFollow, ...overrides.userFollow },
+            video: { ...basePrisma.video, ...overrides.video },
+            videoRating: { ...basePrisma.videoRating, ...overrides.videoRating },
+            videoView: { ...basePrisma.videoView, ...overrides.videoView },
+          }),
     comment: {
       findMany: async (args: unknown) => {
         calls.commentFindMany.push(args);

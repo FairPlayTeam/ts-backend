@@ -6,7 +6,7 @@ import {
 } from '../src/modules/auth/messages.js';
 import {
   AccountDeletionTemporarilyUnavailableError,
-  AuthenticatedUserNotFoundError,
+  InvalidCredentialsError,
 } from '../src/modules/auth/errors.js';
 import { createTestDeps, fixedNow } from './support/authService.js';
 import type { AuthDeps } from './support/authService.js';
@@ -58,6 +58,7 @@ describe('auth service account data', () => {
       currentSessionId: 'session-id',
       currentPassword: 'Password1!',
     });
+    const metadataQuery = calls.userFindUnique;
 
     expect(result.exportedAt).toEqual(fixedNow);
     expect(result.user).toMatchObject({
@@ -134,13 +135,13 @@ describe('auth service account data', () => {
       { id: 'other-session-public-id', isCurrent: false },
     ]);
 
-    expect(calls.userFindUnique).toEqual({
+    expect(metadataQuery).toEqual({
       where: { id: 'user-id' },
       select: expect.objectContaining({
         banReason: true,
       }),
     });
-    expect(JSON.stringify(calls.userFindUnique)).not.toContain('mediaAssets');
+    expect(JSON.stringify(metadataQuery)).not.toContain('mediaAssets');
     expect(calls.userFollowFindMany).toHaveLength(2);
     expect(calls.userFollowFindMany[0]).toEqual(
       expect.objectContaining({
@@ -194,7 +195,7 @@ describe('auth service account data', () => {
       hash: 'hashed-password',
     });
 
-    const selectedFields = JSON.stringify(calls.userFindUnique);
+    const selectedFields = JSON.stringify(metadataQuery);
     expect(selectedFields).not.toContain('"comments":');
     expect(selectedFields).not.toContain('"videoRatings":');
     expect(selectedFields).not.toContain('"videoViews":');
@@ -458,13 +459,14 @@ describe('auth service account data', () => {
   });
 
   test('rejects data exports when the authenticated user disappeared after reauthentication', async () => {
+    let reads = 0;
     const { deps } = createTestDeps({
       prisma: {
         user: {
           findUnique: async (args: unknown) => {
             const select = (args as { select?: Record<string, unknown> }).select;
 
-            if (select?.passwordHash) {
+            if (select?.passwordHash && reads++ === 0) {
               return {
                 passwordHash: 'hashed-password',
                 isBanned: false,
@@ -484,7 +486,7 @@ describe('auth service account data', () => {
         currentSessionId: 'session-id',
         currentPassword: 'Password1!',
       }),
-    ).rejects.toBeInstanceOf(AuthenticatedUserNotFoundError);
+    ).rejects.toBeInstanceOf(InvalidCredentialsError);
   });
 
   test('repairs denormalized aggregates then deletes the user row for database cascades', async () => {

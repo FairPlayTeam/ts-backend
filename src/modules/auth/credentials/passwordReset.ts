@@ -17,6 +17,7 @@ import {
 } from '../helpers.js';
 import { RESET_PASSWORD_EMAIL_MESSAGE, RESET_PASSWORD_SUCCESS_MESSAGE } from '../messages.js';
 import { handleExpectedMailerError } from '../../../services/mailer/mailer.helpers.js';
+import { lockUserAuthorizationState } from '../authorization.js';
 
 type ResetPasswordService = AuthPasswordResetPort;
 
@@ -134,6 +135,11 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
     const hashedPassword = await deps.hasher.hash(password, deps.config.bcryptRounds);
 
     const sessionsLoggedOut = await deps.prisma.$transaction(async (tx) => {
+      // User before token: account deletion cascades tokens while holding the user row.
+      if (!(await lockUserAuthorizationState(tx, user.id))) {
+        throw new InvalidPasswordResetTokenError();
+      }
+
       const consumedAt = deps.clock.now();
       const consumed = await tx.passwordResetToken.deleteMany({
         where: {

@@ -12,7 +12,10 @@ import {
   DELETE_ACCOUNT_MEDIA_CLEANUP_QUEUED_MESSAGE,
   DELETE_ACCOUNT_SUCCESS_MESSAGE,
 } from '../messages.js';
-import { reauthenticateSensitiveAction } from '../credentials/reauthentication.js';
+import {
+  lockAuthenticatedUser,
+  reauthenticateSensitiveAction,
+} from '../credentials/reauthentication.js';
 import type { AuthAccountPort, DeleteAccountInput } from './types.js';
 
 type AccountDeletionService = Pick<AuthAccountPort, 'deleteAccount'>;
@@ -26,7 +29,10 @@ type LockedAccountComment = {
 
 export const createAccountDeletionService = (deps: AuthDependencies): AccountDeletionService => ({
   async deleteAccount({ userId, currentPassword }: DeleteAccountInput) {
-    await reauthenticateSensitiveAction(deps, { userId, currentPassword });
+    const authenticatedPasswordHash = await reauthenticateSensitiveAction(deps, {
+      userId,
+      currentPassword,
+    });
     const requestedAt = deps.clock.now();
     const targets = await runSerializableTransaction(
       deps.prisma,
@@ -92,6 +98,9 @@ export const createAccountDeletionService = (deps: AuthDependencies): AccountDel
           FOR UPDATE
         `,
         );
+        // Preserve resource -> user lock ordering, and repeat this check on every retry.
+        await lockAuthenticatedUser(tx, userId, authenticatedPasswordHash);
+
         // These repairs need a source-derived delta that differs for each target row. Prisma
         // updateMany can apply only one fixed delta and cannot express the grouped UPDATE ... FROM
         // shape, so keep all four repairs set-based while their target rows are locked.

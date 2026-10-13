@@ -12,8 +12,8 @@ type AuthDepsOverrides = Omit<Partial<AuthDeps>, 'prisma'> & {
 
 export function createTestDeps(overrides: AuthDepsOverrides = {}) {
   const calls = createAuthServiceTestCalls();
-  const basePrisma = createBaseAuthPrisma(calls);
   const { prisma: prismaOverride, ...dependencyOverrides } = overrides;
+  const basePrisma = createBaseAuthPrisma(calls, prismaOverride);
 
   const deps = {
     prisma: {

@@ -1,5 +1,4 @@
 import bcrypt from 'bcryptjs';
-import type { Prisma, PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import {
@@ -7,6 +6,7 @@ import {
   INVALID_CREDENTIALS_MESSAGE,
 } from '../../src/modules/auth/errors.js';
 import { LOGIN_SUCCESS_MESSAGE } from '../../src/modules/auth/messages.js';
+import { holdAuthTransaction } from './support/authTransactions.js';
 import { coordinateLockInterleaving } from './support/asyncBarriers.js';
 import { createVerifiedSession, INITIAL_PASSWORD } from './support/fixtures.js';
 import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
@@ -22,61 +22,6 @@ import {
 const EMAIL = 'login-race@example.com';
 const USERNAME = 'login_race';
 const NEXT_PASSWORD = 'ResetPassword2!';
-
-// Gate actual service transactions, without replacing their SQL or their row locks.
-const holdAuthTransaction = (
-  prisma: PrismaClient,
-  checkpoint: 'before-insert' | 'before-commit',
-) => {
-  const paused = Promise.withResolvers<void>();
-  const release = Promise.withResolvers<void>();
-  const pause = async () => {
-    paused.resolve();
-    await release.promise;
-  };
-  const heldPrisma = new Proxy(prisma, {
-    get(target, property) {
-      if (property === '$transaction') {
-        return <T>(run: (tx: Prisma.TransactionClient) => Promise<T>) =>
-          target.$transaction(
-            async (tx) => {
-              const heldTx = new Proxy(tx, {
-                get(transaction, key) {
-                  if (key === 'session' && checkpoint === 'before-insert') {
-                    return new Proxy(transaction.session, {
-                      get(session, method) {
-                        if (method === 'create') {
-                          return async (args: Prisma.SessionCreateArgs) => {
-                            // Login has checked its locked reread, but has not inserted yet.
-                            await pause();
-                            return session.create(args);
-                          };
-                        }
-                        const value: unknown = Reflect.get(session, method, session);
-                        return typeof value === 'function' ? value.bind(session) : value;
-                      },
-                    });
-                  }
-                  const value: unknown = Reflect.get(transaction, key, transaction);
-                  return typeof value === 'function' ? value.bind(transaction) : value;
-                },
-              });
-              const result = await run(heldTx);
-              if (checkpoint === 'before-commit') {
-                // Reset's password UPDATE and session revocation really ran before this gate.
-                await pause();
-              }
-              return result;
-            },
-            { timeout: 15_000 },
-          );
-      }
-      const value: unknown = Reflect.get(target, property, target);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  });
-  return { prisma: heldPrisma, paused: paused.promise, release: release.resolve };
-};
 
 describe('login transaction security integration', () => {
   let runtime: TestRuntime;
@@ -172,14 +117,14 @@ describe('login transaction security integration', () => {
       firstOperation: loginService.login({ emailOrUsername: USERNAME, password: INITIAL_PASSWORD }),
       firstPaused: gate.paused,
       releaseFirst: gate.release,
-      secondLockDescription: 'reset password UPDATE behind login',
+      secondLockDescription: 'reset user lock behind login',
       startSecond: () =>
         runtime.authService.resetPassword({ email: EMAIL, code, password: NEXT_PASSWORD }),
       waitForSecondLock: (signal) =>
         waitForPostgresLockWaiters(runtime.prisma, {
           applicationNames: [runtime.postgresApplicationName],
           expectedCount: 1,
-          queryFragments: ['UPDATE', '"users"', '"password_hash"'],
+          queryFragments: ['FROM "users"', 'FOR UPDATE'],
           signal,
         }),
     });

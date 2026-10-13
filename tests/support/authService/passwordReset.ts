@@ -84,6 +84,7 @@ export function createPasswordResetConfirmationTestDeps(
   const currentPasswordHash = options.currentPasswordHash ?? initialUser?.passwordHash;
   const updateUserCount = options.updateUserCount ?? 1;
   const passwordResetTx = {
+    $queryRaw: async () => (initialUser ? [{ role: 'user', isBanned: initialUser.isBanned }] : []),
     passwordResetToken: {
       deleteMany: async (args: unknown) => {
         calls.passwordResetTokenDeleteMany = args;
