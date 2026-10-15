@@ -49,12 +49,22 @@ export type ExternalResourceTargetRecord = Prisma.ExternalResourceTargetGetPaylo
   select: typeof targetSelect;
 }>;
 
+const ownedTargetWhere = (
+  target: ExternalResourceTargetRecord,
+  checkedAt: Date,
+): Prisma.ExternalResourceTargetWhereInput => ({
+  id: target.id,
+  goal: target.goal,
+  state: 'reconciling',
+  reconciliationLeaseId: target.reconciliationLeaseId,
+  reconciliationLeaseExpiresAt: { gt: checkedAt },
+});
+
 export type ExternalResourceReconciliationHandler = {
   preparePresent?(target: ExternalResourceTargetRecord): Promise<void>;
-  handlePresentSizeMismatch?(
+  handlePresentRejection?(
     tx: Prisma.TransactionClient,
     target: ExternalResourceTargetRecord,
-    actualSizeBytes: number,
   ): Promise<void>;
   finalize?(
     tx: Prisma.TransactionClient,
@@ -77,8 +87,8 @@ type ReconcileExternalResourcesSummary = {
 };
 
 export class ExternalResourceNotDesiredError extends Error {
-  constructor(message = 'External resource is no longer desired') {
-    super(message);
+  constructor(message = 'External resource is no longer desired', options: ErrorOptions = {}) {
+    super(message, options);
     this.name = 'ExternalResourceNotDesiredError';
   }
 }
@@ -501,14 +511,7 @@ export const createExternalResourceReconciler = (
     const renewedAt = deps.clock.now();
     const leaseExpiresAt = new Date(renewedAt.getTime() + RECONCILIATION_LEASE_MS);
     const renewed = await deps.prisma.externalResourceTarget.updateMany({
-      where: {
-        id: target.id,
-        state: 'reconciling',
-        reconciliationLeaseId: target.reconciliationLeaseId,
-        reconciliationLeaseExpiresAt: {
-          gt: renewedAt,
-        },
-      },
+      where: ownedTargetWhere(target, renewedAt),
       data: {
         reconciliationLeaseExpiresAt: leaseExpiresAt,
       },
@@ -528,14 +531,7 @@ export const createExternalResourceReconciler = (
 
     await runSerializableTransaction(deps.prisma, async (tx) => {
       const ownedTarget = await tx.externalResourceTarget.findFirst({
-        where: {
-          id: target.id,
-          state: 'reconciling',
-          reconciliationLeaseId: target.reconciliationLeaseId,
-          reconciliationLeaseExpiresAt: {
-            gt: requestedAt,
-          },
-        },
+        where: ownedTargetWhere(target, requestedAt),
         select: {
           id: true,
           expectedSizeBytes: true,
@@ -548,9 +544,7 @@ export const createExternalResourceReconciler = (
         throw new ExternalResourceLeaseLostError();
       }
 
-      if (actualSizeBytes !== undefined) {
-        await handler?.handlePresentSizeMismatch?.(tx, target, actualSizeBytes);
-      }
+      await handler?.handlePresentRejection?.(tx, target);
 
       const transitionedAt = deps.clock.now();
       const requestedNotBefore = getExternalResourceQuiescenceNotBefore(requestedAt);
@@ -562,14 +556,7 @@ export const createExternalResourceReconciler = (
           ? actualSize
           : ownedTarget.expectedSizeBytes;
       const redirected = await tx.externalResourceTarget.updateMany({
-        where: {
-          id: target.id,
-          state: 'reconciling',
-          reconciliationLeaseId: target.reconciliationLeaseId,
-          reconciliationLeaseExpiresAt: {
-            gt: transitionedAt,
-          },
-        },
+        where: ownedTargetWhere(target, transitionedAt),
         data: {
           goal: 'absent',
           state: 'quiescing',
@@ -594,14 +581,7 @@ export const createExternalResourceReconciler = (
     const attempts = target.attempts + 1;
     const failedAt = deps.clock.now();
     const updated = await deps.prisma.externalResourceTarget.updateMany({
-      where: {
-        id: target.id,
-        state: 'reconciling',
-        reconciliationLeaseId: target.reconciliationLeaseId,
-        reconciliationLeaseExpiresAt: {
-          gt: failedAt,
-        },
-      },
+      where: ownedTargetWhere(target, failedAt),
       data: {
         state: target.goal === 'present' ? 'writing' : 'quiescing',
         attempts,
@@ -625,14 +605,7 @@ export const createExternalResourceReconciler = (
     await runSerializableTransaction(deps.prisma, async (tx) => {
       const ownershipCheckedAt = deps.clock.now();
       const ownedTarget = await tx.externalResourceTarget.findFirst({
-        where: {
-          id: target.id,
-          state: 'reconciling',
-          reconciliationLeaseId: target.reconciliationLeaseId,
-          reconciliationLeaseExpiresAt: {
-            gt: ownershipCheckedAt,
-          },
-        },
+        where: ownedTargetWhere(target, ownershipCheckedAt),
         select: {
           id: true,
         },
@@ -645,14 +618,7 @@ export const createExternalResourceReconciler = (
       await handler?.finalize?.(tx, target, verifiedObject);
       const confirmedAt = deps.clock.now();
       const finalized = await tx.externalResourceTarget.updateMany({
-        where: {
-          id: target.id,
-          state: 'reconciling',
-          reconciliationLeaseId: target.reconciliationLeaseId,
-          reconciliationLeaseExpiresAt: {
-            gt: confirmedAt,
-          },
-        },
+        where: ownedTargetWhere(target, confirmedAt),
         data: {
           state: target.goal === 'present' ? 'confirmed_present' : 'confirmed_absent',
           attempts: 0,

@@ -1,5 +1,6 @@
 import { z } from '../../../docs/zod.js';
 import { VIDEO_PUBLIC_ID_PATTERN } from '../../videos/shared/publicId.js';
+import { isXmlCompatibleUploadETag } from '../validation.js';
 
 const partNumberSchema = z.number().int().min(1).max(10_000).openapi({ example: 1 });
 
@@ -35,7 +36,17 @@ export const signVideoMultipartUploadPartsBodySchema = z
 
 const uploadPartSchema = z.object({
   partNumber: partNumberSchema,
-  etag: z.string().trim().min(1).max(255).openapi({ example: '"abc123"' }),
+  etag: z
+    .string()
+    .refine(isXmlCompatibleUploadETag, 'ETag contains characters incompatible with XML')
+    .trim()
+    .min(1)
+    .max(255)
+    .openapi({
+      description:
+        'Opaque ETag containing only XML 1.0 compatible characters; no digest format is required.',
+      example: '"abc123"',
+    }),
 });
 
 export const completeVideoMultipartUploadBodySchema = z

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isXmlCompatibleUploadETag } from './validation.js';
 import type { Prisma } from '@prisma/client';
 import {
   sourceThumbnailSelect,
@@ -286,7 +287,10 @@ const assertValidCompletedParts = (
   if (
     sortedParts.length !== requiredPartCount ||
     sortedParts.some(
-      (part, index) => part.partNumber !== index + 1 || part.etag.trim().length === 0,
+      (part, index) =>
+        part.partNumber !== index + 1 ||
+        part.etag.trim().length === 0 ||
+        !isXmlCompatibleUploadETag(part.etag),
     )
   ) {
     throw new InvalidVideoUploadSessionStateError();
@@ -494,39 +498,6 @@ const prepareCompletion = async (
     uploadSessionId: session.id,
     userId: session.userId,
     videoId: session.videoId,
-  });
-};
-
-const scheduleSizeMismatchCleanup = async (
-  deps: VideoUploadsDependencies,
-  session: UploadSessionRecord,
-): Promise<void> => {
-  const now = deps.clock.now();
-
-  await runSerializableTransaction(deps.prisma, async (tx) => {
-    const updated = await tx.videoUploadSession.updateMany({
-      where: {
-        id: session.id,
-        status: 'completing',
-      },
-      data: {
-        status: 'aborting',
-      },
-    });
-
-    if (updated.count === 0) {
-      return;
-    }
-
-    await requestExternalResourceAbsence(tx, session.externalResourceTargetId, now);
-    if (session.sourceThumbnail) {
-      await requestExternalResourceAbsence(
-        tx,
-        session.sourceThumbnail.externalResourceTargetId,
-        now,
-      );
-    }
-    await resetVideoWithoutSourceAfterUploadEnds(tx, session.videoId);
   });
 };
 
@@ -958,7 +929,6 @@ export const createVideoUploadsService = (
       });
     } catch (err) {
       if (err instanceof ExternalResourceSizeMismatchError) {
-        await scheduleSizeMismatchCleanup(deps, prepared);
         throw new VideoUploadSizeMismatchError();
       }
 
@@ -978,6 +948,14 @@ export const createVideoUploadsService = (
     });
 
     if (reconciledSession.status !== 'completed') {
+      if (
+        reconciledSession.status === 'aborting' ||
+        reconciledSession.status === 'aborted' ||
+        reconciledSession.status === 'expiring' ||
+        reconciledSession.status === 'expired'
+      ) {
+        throw new InvalidVideoUploadSessionStateError();
+      }
       throw new ObjectStorageUnavailableError('Completed video source reconciliation is deferred');
     }
 

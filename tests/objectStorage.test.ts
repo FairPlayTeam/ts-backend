@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 import type { ObjectStorageConfig } from '../src/config/env.schema.js';
 import {
   ObjectStorageUnavailableError,
+  MultipartCompletionRejectedError,
   createS3ObjectStorageClient,
   createS3SigningClient,
   createObjectStorage,
@@ -165,6 +166,58 @@ describe('object storage', () => {
       storage.deleteObject('users/user-id/avatar/current-avatar.webp'),
     ).resolves.toBeUndefined();
   });
+
+  for (const { name, message, terminal } of [
+    { name: 'InvalidPart', message: 'A part does not exist', terminal: true },
+    { name: 'InvalidPartOrder', message: 'Parts are out of order', terminal: true },
+    { name: 'EntityTooSmall', message: 'A nonfinal part is too small', terminal: true },
+    { name: 'NoSuchUpload', message: 'The upload does not exist', terminal: true },
+    { name: 'MalformedXML', message: 'The completion XML cannot be parsed', terminal: true },
+    { name: 'InvalidRequest', message: 'Bad request: No data was uploaded', terminal: true },
+    { name: 'InvalidRequest', message: 'Unsupported storage configuration', terminal: false },
+    { name: 'AccessDenied', message: 'Access denied', terminal: false },
+    { name: 'InternalError', message: 'Storage unavailable', terminal: false },
+    { name: 'Error', message: 'Bad request: No data was uploaded', terminal: false },
+  ]) {
+    test(`classifies multipart ${name}: ${message}`, async () => {
+      const rejection = Object.assign(new Error(message), { name });
+      const storage = createObjectStorage(
+        createConfig(),
+        {
+          bucketExists: async () => true,
+          createBucket: async () => undefined,
+          putObject: async () => undefined,
+          deleteObject: async () => undefined,
+          headObject: async () => {
+            throw rejection;
+          },
+          completeMultipartUpload: async () => {
+            throw rejection;
+          },
+        },
+        createOperationLogCollector().logger,
+      );
+      const outcome = await storage
+        .completeMultipartUpload({
+          objectKey: 'source.mp4',
+          uploadId: 'upload',
+          parts: [{ partNumber: 1, etag: 'etag' }],
+        })
+        .catch((error: unknown) => error);
+      expect(outcome).toBeInstanceOf(
+        terminal ? MultipartCompletionRejectedError : ObjectStorageUnavailableError,
+      );
+      expect(outcome).toMatchObject({ cause: rejection });
+      if (terminal) expect(outcome).toMatchObject({ code: name });
+      if (name === 'NoSuchUpload') {
+        await expect(storage.headObject({ objectKey: 'source.mp4' })).resolves.toBeNull();
+      } else {
+        await expect(storage.headObject({ objectKey: 'source.mp4' })).rejects.toBeInstanceOf(
+          ObjectStorageUnavailableError,
+        );
+      }
+    });
+  }
 
   test('orchestrates multipart uploads with signed part URLs', async () => {
     const calls: unknown[] = [];

@@ -562,15 +562,93 @@ bounds the number of admitted sources as well as queued work. The existing due-t
 remains; the per-user ceiling prevents one account from occupying more than two of ten admitted
 slots, but it is not a weighted round-robin scheduler.
 
-A `completing` session is intentionally retained as a capacity reservation while the durable source
-target is being reconciled: the external multipart completion may have succeeded even when the API
-did not observe its result. Reconciliation retries failed targets with a capped delay but no
-terminal attempt limit. If the object store keeps returning a permanent error (for example, the
-completed source remains absent), that session can therefore retain its account and global slots
-indefinitely, even after its upload expiry. It is not safe to release the slot based only on age,
-because later reconciliation could still publish the source and enqueue its job. Operators must
-investigate sustained failures for completing source targets and resolve them through the existing
-reconciliation/cleanup flow; do not free capacity by editing the session or target rows directly.
+A `completing` session retains its capacity reservation while the durable source target is being
+reconciled: multipart completion may have succeeded even when its response was lost. Its age or
+upload expiry never releases this reservation. A conforming object can still be recovered and
+published after expiry, transferring the reservation to its queued job.
+
+ETags are opaque strings, not MD5 values. Completion crosses a JSON-to-XML boundary: JSON decoding
+produces a JavaScript string, HTTP retains its existing trimming, and the S3 SDK serializes and
+escapes that string into UTF-8 XML. The HTTP schema and business validation share the same
+[XML 1.0 character check](https://www.w3.org/TR/xml/#charsets), applied to the original string before
+trimming or UTF-8 replacement can conceal invalid input, and before parts are frozen or the session
+changes to `completing`. Forbidden controls, isolated UTF-16 surrogates, U+FFFE and U+FFFF are
+rejected; valid Unicode and XML punctuation remain opaque and are escaped by the SDK. HTTP rejects
+incompatible input with 400 without storing parts or calling S3. The service also rejects direct
+calls before persistence. Such a rejected request leaves its existing initiated upload governed by
+the ordinary upload expiry; it never creates an indefinitely retained completing reservation.
+
+Multipart completion preserves a typed rejection for `InvalidPart`, `InvalidPartOrder`,
+`EntityTooSmall`, `NoSuchUpload`, and `MalformedXML`. Garage's specific `InvalidRequest` response with the message
+`Bad request: No data was uploaded` is also recognized; other `InvalidRequest` responses remain
+retryable. These codes describe the completion operation, not a general storage error policy. After
+any completion error, HEAD still checks the actual object: a present object must pass the normal
+size verification, and a failed HEAD leaves the result ambiguous. Only a recognized rejection with
+a successfully observed absent object takes the terminal abandonment path.
+
+That path extends the existing size-mismatch redirection. One serializable, lease-checked
+transaction changes the session to `aborting`, redirects its source target to `absent/quiescing`,
+invalidates the reconciliation lease, schedules its confirmed source thumbnail for absence, and
+resets a video without an existing source or another active upload to `draft`. Admission capacity is released
+only when this transaction commits. Storage quota continues to include these targets until cleanup
+confirms their absence. The canonical one-hour quiescence, multipart abort, object deletion, and
+absence verification remain unchanged; successful cleanup then changes the session to `aborted`.
+HTTP completion returns the existing generic 409 session-state conflict for the rejected
+completion and subsequent retries. Storage implementation details are not serialized.
+
+Both immediate HTTP completion and maintenance use this transition, so existing invalid
+`completing` sessions recover at their next due reconciliation without client cooperation. The
+existing backoff is retained, including its 24-hour cap. Unrecognized, configuration, network,
+timeout, and server failures remain retryable and can still reserve capacity indefinitely during
+sustained storage failure; monitor these targets and use the existing abandonment/cleanup protocol
+for operational cancellation. Never release capacity by editing session or target rows directly.
+
+`tests/integration/uploads.terminal-completion.integration.ts` observes the actual Garage codes for
+empty uploads, incorrect uploaded ETags, missing multipart uploads, and malformed completion XML.
+It checks HTTP responses and
+the serialized session whitelist, real objects and persisted multipart handles, capacity reuse,
+storage quota, maintenance recovery, and successful publication with exactly one job.
+
+The two transaction orderings wait for actual PostgreSQL `wait_event_type = 'Lock'` on the target
+renewal or session update. Their test-of-test removes the renewal step or the abort transaction's
+serializable isolation and observes failures. Additional temporary removals verify classification,
+atomic domain abandonment, HEAD recovery, and the final lease-expiry checks. The late-takeover
+counterexample removes the lease/session publication checks and simulates rewriting the goal and
+quiescence from the old snapshot; it then observes a published source after slot reuse. Removing
+only application checks while preserving the current absence intent also hits PostgreSQL's
+independent goal/state and lease constraints. These mutations are restored before the normal
+verification suite; no database constraint is changed.
+
+The six ownership filters share the private `ownedTargetWhere(target, checkedAt)` helper. Every
+query still supplies its own check time, including fresh clock reads after domain publication or
+abandonment work. Real PostgreSQL regressions observe those domain writes inside the transaction,
+then expire the lease and verify their rollback. Replacing either final check time with its
+pre-handler timestamp fails the corresponding regression; the proper final timestamps are restored
+before the normal verification suite.
+
+The JSON-to-XML regressions first reproduced ten failed maintenance claims and a sixth account's
+429 with historical `completing` rows containing U+0001, U+001F or U+FFFF and no uploaded parts.
+With the fix, all ten claims redirect to absence and the sixth account receives 201. HTTP attacks
+are separately rejected before parts are persisted; their ordinary initiated reservations remain
+expirable. Both direct service calls and raw HTTP strings containing forbidden controls (including
+ones that trimming would otherwise remove), U+FFFE/U+FFFF, NUL and isolated surrogates are tested.
+Real Garage tests retain opaque Unicode and escaped XML punctuation, and verify HEAD for historical
+MalformedXML: an absent object is abandoned, an unavailable HEAD is retried, and a conforming
+present object publishes once. A stale MalformedXML claim cannot publish after abandonment and
+slot reuse, even when real bytes subsequently arrive. Temporary removal of the HTTP check, business
+check, pre-trim ordering, MalformedXML classification or HEAD requirement fails its respective
+regression. The existing PostgreSQL lock barriers and publication fences also remain covered.
+
+#### Completion and abandonment invariants
+
+| Untrusted input and source of truth                                         | Transformation                                                                              | Enforcement point                                                                                                                                                                    | Bypass or boundary case                                                                                      | Observable counterexample test                                                                                                                                             |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client JSON ETag; XML 1.0 Char and actual Garage parsing/HEAD               | JSON decoding → raw-string validation → existing trim → SDK XML escaping and UTF-8 encoding | Shared HTTP/business check before freezing parts; MalformedXML + successful absent HEAD uses the existing atomic abandonment                                                         | Controls hidden by trim, NUL, isolated surrogates, U+FFFE/U+FFFF; old persisted rows bypass new input checks | Hostile HTTP/direct calls persist no parts; real Garage returns MalformedXML for legacy inputs; ten old slots recover by maintenance and HEAD still preserves real objects |
+| Client parts/ETags; frozen PostgreSQL parts and real S3 response/HEAD       | Completion rejection becomes absence intent                                                 | Lease-checked serializable redirection commits session and target together                                                                                                           | No PUT, wrong ETag, missing multipart upload, existing expired session                                       | Five accounts' ten fictitious HTTP completions terminate and a sixth account is admitted                                                                                   |
+| Completion response; real object metadata                                   | Lost response recovers an object with the reserved size                                     | HEAD and ordinary publication transaction                                                                                                                                            | Completed upload returns NoSuchUpload; unavailable HEAD must remain ambiguous                                | Actual Garage object is published once after a lost response, while unavailable HEAD retains completing                                                                    |
+| Obsolete target snapshot; current PostgreSQL goal, state, lease and session | Delayed external completion attempts publication after abandonment                          | Renewals and finalization require the current goal and live lease; domain publication requires completing; guarded final target update shares the transaction with source/job writes | Lease takeover, abandonment after real completion, late bytes arriving after slot reuse                      | Actual PostgreSQL lock waits in both orders; resumed old reconciliation creates no source or job and late objects are cleaned                                              |
+| Session age; durable source intent                                          | Expiry does not prove definitive invalidity                                                 | Completing stays in admission accounting until publication or abandonment commits                                                                                                    | Transient failure at +48 h; valid late completion                                                            | Old ambiguous session keeps its reservation; old conforming source still queues one job                                                                                    |
+| Source reservation; target's confirmed absence                              | Capacity release precedes storage quota release                                             | Existing admission and quota queries plus confirmed cleanup                                                                                                                          | Late object or thumbnail survives logical abandonment                                                        | Admission can resume while quota stays charged; real cleanup removes objects/handles and terminates aborted                                                                |
 
 ```mermaid
 sequenceDiagram

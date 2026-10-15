@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { MultipartCompletionRejectedError } from '../../lib/objectStorage.js';
 import {
   VIDEO_SOURCE_THUMBNAIL_HEIGHT_PX,
   VIDEO_SOURCE_THUMBNAIL_WIDTH_PX,
@@ -227,12 +228,20 @@ export const createVideoReconciliationHandler = (
       });
 
       if (!object) {
+        if (err instanceof MultipartCompletionRejectedError) {
+          throw new ExternalResourceNotDesiredError(
+            'Video source multipart completion was rejected',
+            {
+              cause: err,
+            },
+          );
+        }
         throw err;
       }
     }
   },
 
-  async handlePresentSizeMismatch(tx, target) {
+  async handlePresentRejection(tx, target) {
     const session = await tx.videoUploadSession.findFirst({
       where: {
         externalResourceTargetId: target.id,
@@ -241,6 +250,9 @@ export const createVideoReconciliationHandler = (
       select: {
         id: true,
         videoId: true,
+        sourceThumbnail: {
+          select: { externalResourceTargetId: true },
+        },
       },
     });
 
@@ -259,6 +271,13 @@ export const createVideoReconciliationHandler = (
     });
 
     if (updated.count > 0) {
+      if (session.sourceThumbnail) {
+        await requestExternalResourceAbsence(
+          tx,
+          session.sourceThumbnail.externalResourceTargetId,
+          deps.clock.now(),
+        );
+      }
       await resetVideoWithoutSourceAfterUploadEnds(tx, session.videoId);
     }
   },

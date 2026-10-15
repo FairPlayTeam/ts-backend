@@ -203,11 +203,53 @@ export class ObjectStorageUnavailableError extends Error {
   }
 }
 
+export type MultipartCompletionRejectionCode =
+  | 'InvalidPart'
+  | 'InvalidPartOrder'
+  | 'EntityTooSmall'
+  | 'NoSuchUpload'
+  | 'InvalidRequest'
+  | 'MalformedXML';
+
+export class MultipartCompletionRejectedError extends Error {
+  constructor(
+    readonly code: MultipartCompletionRejectionCode,
+    options: ErrorOptions = {},
+  ) {
+    super('Object storage rejected the multipart completion', options);
+    this.name = 'MultipartCompletionRejectedError';
+  }
+}
+
+const multipartCompletionRejectionCode = (
+  err: unknown,
+): MultipartCompletionRejectionCode | null => {
+  if (!(err instanceof Error)) {
+    return null;
+  }
+
+  const code = isRecord(err) && typeof err.code === 'string' ? err.code : err.name;
+  switch (code) {
+    case 'InvalidPart':
+    case 'InvalidPartOrder':
+    case 'EntityTooSmall':
+    case 'NoSuchUpload':
+    case 'MalformedXML':
+      return code;
+    case 'InvalidRequest':
+      return err.message === 'Bad request: No data was uploaded' ? code : null;
+    default:
+      return null;
+  }
+};
+
 const rejectUnavailableObjectStorage = <T = never>(): Promise<T> =>
   Promise.reject(new ObjectStorageUnavailableError());
 
-const toObjectStorageUnavailableError = (err: unknown): ObjectStorageUnavailableError =>
-  err instanceof ObjectStorageUnavailableError
+const toObjectStorageError = (
+  err: unknown,
+): ObjectStorageUnavailableError | MultipartCompletionRejectedError =>
+  err instanceof ObjectStorageUnavailableError || err instanceof MultipartCompletionRejectedError
     ? err
     : new ObjectStorageUnavailableError(undefined, { cause: err });
 
@@ -243,7 +285,7 @@ const runObjectStorageOperation = async <T>({
       run: () => requestAbortContext.run(abortController.signal, run),
     });
   } catch (err) {
-    throw toObjectStorageUnavailableError(err);
+    throw toObjectStorageError(err);
   }
 };
 
@@ -811,12 +853,20 @@ export const createObjectStorage = (
             throw createUnsupportedMultipartError();
           }
 
-          await client.completeMultipartUpload(
-            bucket,
-            objectKey,
-            uploadId,
-            parts.map((part) => ({ part: part.partNumber, etag: part.etag })),
-          );
+          try {
+            await client.completeMultipartUpload(
+              bucket,
+              objectKey,
+              uploadId,
+              parts.map((part) => ({ part: part.partNumber, etag: part.etag })),
+            );
+          } catch (err) {
+            const code = multipartCompletionRejectionCode(err);
+            if (code) {
+              throw new MultipartCompletionRejectedError(code, { cause: err });
+            }
+            throw err;
+          }
         },
       });
     },
