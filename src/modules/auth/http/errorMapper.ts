@@ -10,6 +10,8 @@ import {
   InvalidPasswordResetTokenError,
   PasswordResetPasswordReuseError,
   PasswordResetStateChangedError,
+  PasswordTooLongError,
+  PasswordContainsNulError,
   ProfileUpdateEmptyError,
   UserAlreadyExistsError,
 } from '../errors.js';
@@ -49,6 +51,10 @@ export function toAuthHttpError(err: unknown): Error {
   }
 
   if (err instanceof ProfileUpdateEmptyError) {
+    return new HttpError(400, 'BadRequest', err.message, { cause: err });
+  }
+
+  if (err instanceof PasswordTooLongError || err instanceof PasswordContainsNulError) {
     return new HttpError(400, 'BadRequest', err.message, { cause: err });
   }
 

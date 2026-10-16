@@ -1124,6 +1124,79 @@ It does not depend on Express.
 
 ## Simplified auth flow
 
+### Password byte policy and existing accounts
+
+The hasher remains bcryptjs. Registration, password reset, login and sensitive-action
+reauthentication share an explicit maximum of **72 UTF-8 bytes**, measured with
+`Buffer.byteLength(password, 'utf8')`, and forbid **NUL (U+0000)** anywhere in the decoded
+password string. The HTTP schemas enforce both predicates before invoking the credential
+service. The four service entries enforce the same rules before their own account lookup,
+hashing, comparison or mutation. Inputs over the limit or containing NUL are rejected;
+NUL is never removed and passwords are never truncated. Password strings are used verbatim, without trimming,
+Unicode normalization or prehashing. Creation retains the existing minimum length of eight
+JavaScript string code units and uppercase, digit and special-character requirements;
+login and reauthentication require a nonempty, NUL-free password within the byte limit.
+
+The installed bcrypt adds a NUL terminator and cyclically consumes the encoded key during
+key expansion. Embedded NUL can therefore introduce a shorter periodic alias: the 11-byte
+`A1!\u0000A1!\u0000A1!` hashes equivalently to `A1!`, bypassing the creation minimum even
+on a database initially containing no accounts. This is not truncation at the first NUL:
+`A1!\u0000different` does not verify as `A1!`. Rejecting NUL closes that input class without
+changing bcrypt or imposing new creation requirements on authentication. The restriction
+applies after JSON decoding; literal backslash-u0000 text is accepted when no actual NUL
+is present. Other whitespace and Unicode sequences are preserved.
+
+HTTP length and NUL failures use the normal 400 validation response, independently of whether the
+identifier exists. A service called directly throws `PasswordTooLongError` or
+`PasswordContainsNulError`, mapped to 400
+`BadRequest` by the auth controllers. Wrong credentials within the limit retain the generic
+401 response. A rejected reset does not consume its code or change a hash or session;
+middleware authentication on sensitive routes may still update a session's `lastUsedAt`.
+
+| Guarantee                                                 | Untrusted input / source of truth                   | Transformation                                                       | Enforcement                                                                    | Bypass and observable regression                                                                                                                                                                                           |
+| --------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The byte cap prevents bcrypt truncation                   | JSON password / UTF-8 byte length                   | JSON decoding, UTF-8 encoding, bcrypt's 72-byte truncation           | Shared HTTP predicate and registration/reset service guard                     | 71/72/73 bytes, accents, emoji, characters crossing byte 72 and complexity only in the ignored suffix; oversize inputs rejected before persistence, exact 72-byte secrets verified with real bcrypt                        |
+| All credential paths use the same maximum                 | Password or currentPassword / shared byte predicate | HTTP parsing or direct service call                                  | Login and common sensitive-action reauthentication guard, plus creation guards | Direct calls to all seven operations reject before account lookup or password-dependent work; HTTP tests assert exact serialized 400 bodies                                                                                |
+| Rejected resets preserve credentials and recovery         | New password and reset code / PostgreSQL rows       | Validation before code lookup or transaction                         | Reset entry guard                                                              | Valid code plus oversized password leaves hash, code and session eligibility unchanged; the same code subsequently completes a valid reset                                                                                 |
+| The length error does not reveal account existence        | Identifier and oversized password / request alone   | Validation before identifier lookup                                  | Public schemas before service invocation                                       | Known and unknown identifiers produce identical status and body; in-range wrong passwords retain identical generic 401 responses                                                                                           |
+| New passwords cannot introduce NUL-based periodic aliases | Decoded JSON password / NUL-free predicate          | JSON escape decoding, bcrypt NUL terminator and cyclic key expansion | Common schema and all credential service guards                                | Leading, trailing, interior, byte-72 and periodic NUL are rejected without stripping; real bcrypt positive and negative controls; real PostgreSQL registration/reset rejection leaves persistent rows and emails unchanged |
+
+The NUL regression suite observes the actual bcrypt equivalence and a nonperiodic control,
+then checks HTTP and direct-service rejection for leading, trailing, interior, periodic and
+byte-72 NUL. Real PostgreSQL tests verify that rejected registration leaves no account, token,
+session or email, and that rejected reset preserves the complete user, reset token, sessions
+and delivered emails. The same reset code remains usable for a compliant replacement.
+After compliant registration and reset, the short `A1!` alias receives the same generic 401
+on login, export, account deletion and both bulk-logout routes. Legacy fixtures alone bypass
+the new policy to verify recovery from a previously stored periodic-NUL hash.
+
+**Deployment limitation:** hashes created before this policy contain neither the original
+input length nor the ignored suffix. They cannot identify affected accounts, reconstruct
+the full password, or distinguish the original input from another input with the same first
+72 bytes. The new maximum rejects the original long input; users must recover through
+`/auth/forgot-password` and `/auth/reset-password` with a new compliant password. There is
+no legacy fallback that accepts oversized inputs. A valid string containing exactly the
+old first 72 bytes can still authenticate until that password is reset; if the cutoff splits
+a UTF-8 character, a standalone valid prefix may not exist. Login does not impose creation
+complexity rules on that old prefix.
+
+Similarly, an existing hash does not identify whether its original input contained NUL.
+The NUL-containing input is now rejected on login and reauthentication, so an affected user
+must use email recovery with a new compliant password. A NUL-free shorter periodic alias
+may still authenticate until recovery; banning NUL cannot repair an already stored hash.
+The legacy-NUL integration test documents that alias succeeding before recovery, failing
+afterward, and the existing sessions being revoked by the successful reset.
+
+Before deploying to existing real accounts, inventory whether any passwords predate this
+policy. Eliminating the historical truncation and NUL-alias risks for all such accounts requires renewal
+of **all** pre-policy passwords, because affected hashes cannot be selected reliably, and
+revocation of their existing sessions. An authorized operational rollout must arrange that
+renewal and session revocation; this code change performs no bulk credential invalidation
+and adds no migration or automatic forced-reset state. Without that rollout, historical
+hashes remain a documented residual risk. A successful individual reset uses the existing
+transaction to replace the hash and revoke active sessions. The HTTP/PostgreSQL regression
+test explicitly records the old-prefix behavior before recovery and its rejection afterward.
+
 ### Login transaction invariants
 
 Password comparison (bcrypt, including the missing-user comparison) stays outside the transaction.

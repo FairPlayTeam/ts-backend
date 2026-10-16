@@ -134,6 +134,15 @@ or
 http://localhost:3000/openapi.json
 ```
 
+## Password policy
+
+Passwords are limited to **72 UTF-8 bytes** on registration, reset, login and sensitive-action
+reauthentication. **NUL (U+0000) is forbidden** on all four paths. Oversized or NUL-containing
+values are rejected without removing characters or truncating; bcrypt remains the hasher.
+Existing passwords created before this policy may require email recovery. Old hashes cannot
+reveal which passwords were truncated or contained NUL, and existing short aliases can remain
+valid until recovery: see the [password policy and rollout limitations](docs/ARCHITECTURE.md#password-byte-policy-and-existing-accounts).
+
 ## Checks
 
 This backend contains different commands for checking code quality and project conventions.

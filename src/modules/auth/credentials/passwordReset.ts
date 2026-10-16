@@ -18,6 +18,7 @@ import {
 import { RESET_PASSWORD_EMAIL_MESSAGE, RESET_PASSWORD_SUCCESS_MESSAGE } from '../messages.js';
 import { handleExpectedMailerError } from '../../../services/mailer/mailer.helpers.js';
 import { lockUserAuthorizationState } from '../authorization.js';
+import { assertPasswordInputAllowed } from './passwordPolicy.js';
 
 type ResetPasswordService = AuthPasswordResetPort;
 
@@ -83,6 +84,8 @@ export const createResetPasswordService = (deps: AuthDependencies): ResetPasswor
   },
 
   async resetPassword({ email, code, password }: ResetPasswordInput) {
+    assertPasswordInputAllowed(password);
+
     const normalizedEmail = normalizeEmail(email);
     const codeNorm = code.trim();
     const now = deps.clock.now();

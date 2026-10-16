@@ -1,7 +1,7 @@
 import { z } from '../../../../docs/zod.js';
 import {
   EMAIL_MAX_LENGTH,
-  PASSWORD_MAX_LENGTH,
+  PASSWORD_MAX_BYTES,
   PASSWORD_MIN_LENGTH,
   SESSION_DEVICE_INFO_MAX_LENGTH,
   SESSION_IP_ADDRESS_MAX_LENGTH,
@@ -10,6 +10,8 @@ import {
 import { AUTH_ROLES } from '../../roles.js';
 import { SESSION_PUBLIC_ID_EXAMPLE, SESSION_PUBLIC_ID_PATTERN } from '../../sessions/types.js';
 import { relativeAssetPathSchema } from '../../../../controllers/shared/asset.schemas.js';
+import { isPasswordNulFree, isPasswordWithinByteLimit } from '../../credentials/passwordPolicy.js';
+import { PASSWORD_CONTAINS_NUL_MESSAGE, PASSWORD_TOO_LONG_MESSAGE } from '../../errors.js';
 
 export const responseMessageSchema = (example: string) => z.string().openapi({ example });
 
@@ -32,10 +34,17 @@ export const sixDigitCodeSchema = (label: string, description: string) =>
       example: '123456',
     });
 
-export const passwordSchema = z
+export const passwordInputSchema = z
   .string()
+  .refine(isPasswordWithinByteLimit, PASSWORD_TOO_LONG_MESSAGE)
+  .refine(isPasswordNulFree, PASSWORD_CONTAINS_NUL_MESSAGE)
+  .openapi({
+    format: 'password',
+    description: `At most ${PASSWORD_MAX_BYTES} UTF-8 bytes. NUL (U+0000) is forbidden. Used verbatim, without trimming or normalization.`,
+  });
+
+export const passwordSchema = passwordInputSchema
   .min(PASSWORD_MIN_LENGTH, `Password must be at least ${PASSWORD_MIN_LENGTH} characters`)
-  .max(PASSWORD_MAX_LENGTH, `Password must be at most ${PASSWORD_MAX_LENGTH} characters`)
   .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
   .regex(/[0-9]/, 'Password must contain at least one number')
   .regex(
@@ -44,8 +53,7 @@ export const passwordSchema = z
   )
   .openapi({
     format: 'password',
-    description:
-      'Must contain at least one uppercase letter, one number, and one special character.',
+    description: `At most ${PASSWORD_MAX_BYTES} UTF-8 bytes. NUL (U+0000) is forbidden. Must contain at least one uppercase letter, one number, and one special character. Used verbatim, without trimming or normalization.`,
     example: 'Password1!',
   });
 
@@ -95,18 +103,11 @@ export const sessionDeviceInfoResponseSchema = z
 
 export const sensitiveActionReauthenticationBodySchema = z
   .object({
-    currentPassword: z
-      .string()
-      .min(1, 'Current password is required')
-      .max(
-        PASSWORD_MAX_LENGTH,
-        `Current password must be at most ${PASSWORD_MAX_LENGTH} characters`,
-      )
-      .openapi({
-        format: 'password',
-        description: 'Current account password required to confirm this sensitive action.',
-        example: 'Password1!',
-      }),
+    currentPassword: passwordInputSchema.min(1, 'Current password is required').openapi({
+      format: 'password',
+      description: `Current account password required to confirm this sensitive action. At most ${PASSWORD_MAX_BYTES} UTF-8 bytes. NUL (U+0000) is forbidden. Used verbatim, without trimming or normalization.`,
+      example: 'Password1!',
+    }),
   })
   .strict()
   .openapi('SensitiveActionReauthenticationRequest');

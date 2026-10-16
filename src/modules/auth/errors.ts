@@ -1,3 +1,7 @@
+import { PASSWORD_MAX_BYTES } from '../../config/constants.js';
+
+export const PASSWORD_TOO_LONG_MESSAGE = `Password must be at most ${PASSWORD_MAX_BYTES} UTF-8 bytes`;
+export const PASSWORD_CONTAINS_NUL_MESSAGE = 'Password must not contain NUL (U+0000)';
 const USER_ALREADY_EXISTS_MESSAGE = 'User already exists';
 export const INVALID_CREDENTIALS_MESSAGE = 'Invalid credentials';
 const ACCOUNT_BANNED_MESSAGE = 'This account has been banned';
@@ -25,6 +29,20 @@ export class InvalidCredentialsError extends Error {
   constructor() {
     super(INVALID_CREDENTIALS_MESSAGE);
     this.name = 'InvalidCredentialsError';
+  }
+}
+
+export class PasswordTooLongError extends Error {
+  constructor() {
+    super(PASSWORD_TOO_LONG_MESSAGE);
+    this.name = 'PasswordTooLongError';
+  }
+}
+
+export class PasswordContainsNulError extends Error {
+  constructor() {
+    super(PASSWORD_CONTAINS_NUL_MESSAGE);
+    this.name = 'PasswordContainsNulError';
   }
 }
 

@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { AccountBannedError, InvalidCredentialsError } from '../errors.js';
 import type { AuthDependencies } from '../dependencies.js';
 import { lockUserAuthorizationState } from '../authorization.js';
+import { assertPasswordInputAllowed } from './passwordPolicy.js';
 
 type ReauthenticateSensitiveActionInput = {
   userId: string;
@@ -12,6 +13,8 @@ export const reauthenticateSensitiveAction = async (
   deps: AuthDependencies,
   { userId, currentPassword }: ReauthenticateSensitiveActionInput,
 ): Promise<string> => {
+  assertPasswordInputAllowed(currentPassword);
+
   const user = await deps.prisma.user.findUnique({
     where: { id: userId },
     select: {

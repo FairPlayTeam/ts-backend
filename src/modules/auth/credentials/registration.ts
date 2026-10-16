@@ -8,11 +8,14 @@ import {
 import { REGISTER_SUCCESS_MESSAGE } from '../messages.js';
 import { handleExpectedMailerError } from '../../../services/mailer/mailer.helpers.js';
 import type { AuthCredentialsPort, RegisterInput } from './types.js';
+import { assertPasswordInputAllowed } from './passwordPolicy.js';
 
 type RegistrationService = Pick<AuthCredentialsPort, 'register'>;
 
 export const createRegistrationService = (deps: AuthDependencies): RegistrationService => ({
   async register({ email, username, password }: RegisterInput) {
+    assertPasswordInputAllowed(password);
+
     const usernameNorm = username.trim().toLowerCase();
     const emailNorm = normalizeEmail(email);
 

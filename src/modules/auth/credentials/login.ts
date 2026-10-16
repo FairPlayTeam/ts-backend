@@ -4,6 +4,7 @@ import { InvalidCredentialsError, AccountBannedError, EmailNotVerifiedError } fr
 import { LOGIN_SUCCESS_MESSAGE } from '../messages.js';
 import type { SessionService } from '../sessions/service.js';
 import type { AuthCredentialsPort, LoginInput } from './types.js';
+import { assertPasswordInputAllowed } from './passwordPolicy.js';
 
 const MISSING_USER_PASSWORD = 'missing-user-password';
 
@@ -21,6 +22,8 @@ export const createLoginService = (
 
   return {
     async login({ emailOrUsername, password, ipAddress, userAgent }: LoginInput) {
+      assertPasswordInputAllowed(password);
+
       const lookup = normalizeIdentifier(emailOrUsername);
 
       const user = await deps.prisma.user.findFirst({

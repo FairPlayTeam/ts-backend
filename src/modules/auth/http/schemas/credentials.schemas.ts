@@ -1,5 +1,5 @@
 import { z } from '../../../../docs/zod.js';
-import { EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../../../../config/constants.js';
+import { EMAIL_MAX_LENGTH } from '../../../../config/constants.js';
 import {
   LOGIN_SUCCESS_MESSAGE,
   REGISTER_SUCCESS_MESSAGE,
@@ -13,6 +13,7 @@ import {
   authUserResponseSchema,
   emailSchema,
   passwordSchema,
+  passwordInputSchema,
   responseMessageSchema,
   sixDigitCodeSchema,
 } from './shared.schemas.js';
@@ -40,14 +41,10 @@ export const loginBodySchema = z
       .max(EMAIL_MAX_LENGTH)
       .transform((value) => value.toLowerCase())
       .openapi({ example: 'creator@example.com' }),
-    password: z
-      .string()
-      .min(1, 'Password is required')
-      .max(PASSWORD_MAX_LENGTH, `Password must be at most ${PASSWORD_MAX_LENGTH} characters`)
-      .openapi({
-        format: 'password',
-        example: 'FairPlay2026!',
-      }),
+    password: passwordInputSchema.min(1, 'Password is required').openapi({
+      format: 'password',
+      example: 'FairPlay2026!',
+    }),
   })
   .strict()
   .openapi('LoginRequest');
