@@ -877,6 +877,23 @@ page, never one query per root. Cursor public references are resolved through th
 the current page: visible roots in the requested video, or active replies in the requested thread.
 Absent references, foreign references, and boundaries no longer visible all return the same
 `404 Comment not found`; a deleted root with surviving replies remains a valid root boundary.
+An absent or unreadable video uses that same public 404 body, with or without a cursor.
+`listComments` converts `VideoNotFoundError` to `CommentNotFoundError`, following the existing
+`listReplies` pattern. The shared HTTP mapper retains its behavior for other comment operations;
+the conversion is local to the list service. Validation failures remain 400, and a readable
+video without comments still returns an empty 200 page.
+
+| Guarantee                         | Untrusted input / source of truth                                                | Transformations                                                                              | Enforcement                                                                              | Observable regression                                                                                                                                                                                                             |
+| --------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Uniform list 404                  | Video public reference and optional cursor / current PostgreSQL rows             | Scoped video lookup, scoped cursor lookup, domain error, HTTP mapping and JSON serialization | List-service conversion of missing/unreadable video errors to the existing comment error | Real HTTP/PostgreSQL comparisons cover absent or failed videos without a cursor, with an absent cursor or with a known cursor, plus foreign, wrong-kind and deleted boundaries; removing the conversion breaks the root-list test |
+| Valid reads remain valid          | Video state and thread membership / existing readability and visible-root scopes | Transactional reads and public DTO serialization                                             | Existing scope predicates and cursor resolution                                          | Empty readable root page, ready unlisted video, valid cursor and deleted root with surviving replies retain 200                                                                                                                   |
+| Invalid syntax remains validation | Path and query strings / Zod schemas                                             | Parameter parsing before service invocation                                                  | Existing list route validation                                                           | Malformed video or cursor reference, incomplete cursor pair and invalid timestamp retain 400                                                                                                                                      |
+
+The HTTP comparisons assert status, the complete parsed JSON body, serialized text,
+`Content-Type`, `Content-Length`, and `Cache-Control: no-store`. Transport-dependent headers
+such as `Date` and `Connection` are outside this equality contract. This regression establishes
+response-contract uniformity; it does not establish disclosure of an unreadable video's existence.
+
 Both cursor directions repeat the temporal boundary outside the
 tie-break `OR`. Reply pages use a partial
 `(video_id, root_id, created_at, id) WHERE root_id IS NOT NULL AND deleted_at IS NULL` index, while

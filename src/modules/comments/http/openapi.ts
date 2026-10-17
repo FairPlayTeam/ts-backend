@@ -60,7 +60,7 @@ export const routeDocs = [
     operationId: 'listVideoComments',
     summary: 'List public comment threads for a video',
     description:
-      'Public endpoint. Authentication is optional and is used only to calculate viewerHasLiked for the current viewer; anonymous viewers can read comments and receive viewerHasLiked=false.',
+      'Public endpoint. Authentication is optional and is used only to calculate viewerHasLiked for the current viewer; anonymous viewers can read comments and receive viewerHasLiked=false. An absent or unreadable video and an absent or out-of-scope cursor all return the same 404 NotFound response with message "Comment not found". Malformed path or query parameters return 400.',
     tags: ['Videos'],
     security: [{}, { bearerAuth: [] }],
     request: {

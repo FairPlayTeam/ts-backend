@@ -1566,6 +1566,11 @@ describe('video comments integration', () => {
         title: 'Foreign cursor scope',
         visibility: 'public',
       });
+      const app = await createIntegrationApp(runtime);
+      if (listKind === 'roots') {
+        const empty = await request(app).get(`/videos/${video.publicId}/comments`).expect(200);
+        expect(empty.body).toEqual({ comments: [], total: 0, nextCursor: null });
+      }
       const root = (
         await runtime.commentsService.createComment({
           publicId: video.publicId,
@@ -1632,24 +1637,39 @@ describe('video comments integration', () => {
         actorRole: 'user',
       });
 
-      const app = await createIntegrationApp(runtime);
-      const path =
+      const listPath = (publicId: string) =>
         listKind === 'roots'
-          ? `/videos/${video.publicId}/comments`
-          : `/videos/${video.publicId}/comments/${root.publicId}/replies`;
+          ? `/videos/${publicId}/comments`
+          : `/videos/${publicId}/comments/${root.publicId}/replies`;
+      const path = listPath(video.publicId);
       const missingCursor = {
         publicId: `c_${randomUUID().replaceAll('-', '')}`,
         createdAt: root.createdAt,
       };
-      const absent = await request(app)
-        .get(path)
-        .query({
-          cursorId: missingCursor.publicId,
-          cursorCreatedAt: missingCursor.createdAt.toISOString(),
-        })
-        .expect(404)
-        .expect('Cache-Control', 'no-store');
-      expect(absent.body).toEqual({ error: 'NotFound', message: 'Comment not found' });
+      const missingCursorQuery = {
+        cursorId: missingCursor.publicId,
+        cursorCreatedAt: missingCursor.createdAt.toISOString(),
+      };
+      const expectedBody = { error: 'NotFound', message: 'Comment not found' };
+      const expectedText = JSON.stringify(expectedBody);
+      const expectedNotFound = {
+        status: 404,
+        body: expectedBody,
+        text: expectedText,
+        contentType: 'application/json; charset=utf-8',
+        contentLength: String(Buffer.byteLength(expectedText)),
+        cacheControl: 'no-store',
+      };
+      const httpContract = (response: request.Response) => ({
+        status: response.status,
+        body: response.body,
+        text: response.text,
+        contentType: response.headers['content-type'],
+        contentLength: response.headers['content-length'],
+        cacheControl: response.headers['cache-control'],
+      });
+      const absent = await request(app).get(path).query(missingCursorQuery);
+      expect(httpContract(absent)).toEqual(expectedNotFound);
 
       const invalidBoundaries =
         listKind === 'roots'
@@ -1664,17 +1684,49 @@ describe('video comments integration', () => {
           })
           .expect(404)
           .expect('Cache-Control', 'no-store');
-        expect(response.body).toEqual(absent.body);
+        expect(httpContract(response)).toEqual(expectedNotFound);
       }
 
       const validBoundary = listKind === 'roots' ? root : reply;
-      await request(app)
-        .get(path)
-        .query({
-          cursorId: validBoundary.publicId,
-          cursorCreatedAt: validBoundary.createdAt.toISOString(),
-        })
-        .expect(200);
+      const validCursorQuery = {
+        cursorId: validBoundary.publicId,
+        cursorCreatedAt: validBoundary.createdAt.toISOString(),
+      };
+      const missingVideoId = 'AAAAAAAAAA';
+      expect(
+        await runtime.prisma.video.findUnique({
+          where: { publicId: missingVideoId },
+          select: { id: true },
+        }),
+      ).toBeNull();
+      for (const query of [{}, missingCursorQuery, validCursorQuery]) {
+        const missingVideo = await request(app).get(listPath(missingVideoId)).query(query);
+        expect(httpContract(missingVideo)).toEqual(expectedNotFound);
+      }
+
+      await runtime.prisma.video.update({
+        where: { id: video.id },
+        data: { processingStatus: 'failed' },
+      });
+      for (const query of [{}, missingCursorQuery, validCursorQuery]) {
+        const unreadableVideo = await request(app).get(path).query(query);
+        expect(httpContract(unreadableVideo)).toEqual(expectedNotFound);
+      }
+      await runtime.prisma.video.update({
+        where: { id: video.id },
+        data: { processingStatus: 'ready', visibility: 'unlisted' },
+      });
+
+      for (const query of [
+        { cursorId: missingCursor.publicId },
+        { ...missingCursorQuery, cursorId: 'invalid' },
+        { ...missingCursorQuery, cursorCreatedAt: 'invalid' },
+      ]) {
+        const malformed = await request(app).get(path).query(query).expect(400);
+        expect(malformed.body.error).toBe('ValidationError');
+      }
+      await request(app).get(listPath('invalid')).expect(400);
+      await request(app).get(path).query(validCursorQuery).expect(200);
 
       await runtime.commentsService.deleteComment({
         publicId: video.publicId,

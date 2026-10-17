@@ -653,68 +653,76 @@ export const listComments = async (
 ): Promise<ListCommentsResult> => {
   const pageSize = normalizeCommentsLimit(limit);
 
-  return deps.prisma.$transaction(
-    async (tx) => {
-      const videoId = await findReadableVideoId(tx, publicId);
-      const rootWhere = visibleRootWhere(videoId);
-      const cursorComment = cursor
-        ? await tx.comment.findFirst({
-            where: { ...rootWhere, publicId: cursor.id },
-            select: { id: true },
-          })
-        : null;
+  try {
+    return await deps.prisma.$transaction(
+      async (tx) => {
+        const videoId = await findReadableVideoId(tx, publicId);
+        const rootWhere = visibleRootWhere(videoId);
+        const cursorComment = cursor
+          ? await tx.comment.findFirst({
+              where: { ...rootWhere, publicId: cursor.id },
+              select: { id: true },
+            })
+          : null;
 
-      if (cursor && !cursorComment) {
-        throw new CommentNotFoundError();
-      }
+        if (cursor && !cursorComment) {
+          throw new CommentNotFoundError();
+        }
 
-      const pageWhere = cursor
-        ? ({
-            AND: [rootWhere, commentCursorFilter(cursor, cursorComment?.id, 'desc')],
-          } satisfies Prisma.CommentWhereInput)
-        : rootWhere;
-      const queriedRoots = await tx.comment.findMany({
-        where: pageWhere,
-        select: commentListSelect,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: pageSize + 1,
-      });
-      const roots = queriedRoots.slice(0, pageSize);
-      const rootIds = roots.map(({ id }) => id);
-      const groupedReplyCounts =
-        rootIds.length === 0
-          ? []
-          : await tx.comment.groupBy({
-              by: ['rootId'],
-              where: {
-                videoId,
-                rootId: {
-                  in: rootIds,
+        const pageWhere = cursor
+          ? ({
+              AND: [rootWhere, commentCursorFilter(cursor, cursorComment?.id, 'desc')],
+            } satisfies Prisma.CommentWhereInput)
+          : rootWhere;
+        const queriedRoots = await tx.comment.findMany({
+          where: pageWhere,
+          select: commentListSelect,
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: pageSize + 1,
+        });
+        const roots = queriedRoots.slice(0, pageSize);
+        const rootIds = roots.map(({ id }) => id);
+        const groupedReplyCounts =
+          rootIds.length === 0
+            ? []
+            : await tx.comment.groupBy({
+                by: ['rootId'],
+                where: {
+                  videoId,
+                  rootId: {
+                    in: rootIds,
+                  },
+                  deletedAt: null,
                 },
-                deletedAt: null,
-              },
-              _count: {
-                _all: true,
-              },
-            });
-      const total = await tx.comment.count({ where: rootWhere });
-      const likedCommentIds = await findViewerLikedCommentIds(tx, viewerUserId, rootIds);
-      const replyCounts = new Map(
-        groupedReplyCounts.map(({ _count, rootId }) => [rootId, _count._all]),
-      );
+                _count: {
+                  _all: true,
+                },
+              });
+        const total = await tx.comment.count({ where: rootWhere });
+        const likedCommentIds = await findViewerLikedCommentIds(tx, viewerUserId, rootIds);
+        const replyCounts = new Map(
+          groupedReplyCounts.map(({ _count, rootId }) => [rootId, _count._all]),
+        );
 
-      return {
-        comments: roots.map((root) =>
-          toCommentRoot(root, replyCounts.get(root.id) ?? 0, likedCommentIds.has(root.id)),
-        ),
-        total,
-        nextCursor: nextCommentCursor(roots, queriedRoots.length > pageSize),
-      };
-    },
-    {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
-    },
-  );
+        return {
+          comments: roots.map((root) =>
+            toCommentRoot(root, replyCounts.get(root.id) ?? 0, likedCommentIds.has(root.id)),
+          ),
+          total,
+          nextCursor: nextCommentCursor(roots, queriedRoots.length > pageSize),
+        };
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      },
+    );
+  } catch (err) {
+    if (err instanceof VideoNotFoundError) {
+      throw new CommentNotFoundError();
+    }
+
+    throw err;
+  }
 };
 
 export const listReplies = async (
