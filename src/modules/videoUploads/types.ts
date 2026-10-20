@@ -135,6 +135,7 @@ export type VideoUploadSessionResult = {
 
 export type SignVideoMultipartUploadPartsResult = {
   uploadSessionId: string;
+  expiresAt: Date;
   parts: {
     partNumber: number;
     url: string;

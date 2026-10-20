@@ -160,6 +160,7 @@ export const requestExternalResourceAbsence = async (
   },
   targetId: string,
   requestedAt: Date,
+  { reopenConfirmedAbsence = false }: { reopenConfirmedAbsence?: boolean } = {},
 ): Promise<boolean> => {
   const target = await store.externalResourceTarget.findUnique({
     where: { id: targetId },
@@ -170,7 +171,7 @@ export const requestExternalResourceAbsence = async (
     },
   });
 
-  if (!target || target.state === 'confirmed_absent') {
+  if (!target || (target.state === 'confirmed_absent' && !reopenConfirmedAbsence)) {
     return false;
   }
 

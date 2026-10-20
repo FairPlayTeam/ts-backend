@@ -28,6 +28,7 @@ type VideoUploadSessionResponse = {
 
 type SignedVideoUploadPartsResponse = {
   uploadSessionId: string;
+  expiresAt: string;
   parts: {
     partNumber: number;
     url: string;
@@ -74,6 +75,7 @@ export const toSignedVideoUploadPartsResponse = (
   result: SignVideoMultipartUploadPartsResult,
 ): SignedVideoUploadPartsResponse => ({
   uploadSessionId: result.uploadSessionId,
+  expiresAt: toIsoString(result.expiresAt),
   parts: result.parts.map((part) => ({
     partNumber: part.partNumber,
     url: part.url,

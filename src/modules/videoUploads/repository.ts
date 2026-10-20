@@ -1,4 +1,16 @@
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+
+// Read mutable session authorization and time only after acquiring this lock.
+export const lockUploadSession = async (
+  tx: Pick<Prisma.TransactionClient, '$queryRaw'>,
+  id: string,
+): Promise<void> => {
+  await tx.$queryRaw(Prisma.sql`
+    SELECT "id" FROM "video_upload_sessions"
+    WHERE "id" = CAST(${id} AS UUID)
+    FOR UPDATE
+  `);
+};
 
 export const uploadSessionSelect = {
   id: true,
@@ -11,10 +23,14 @@ export const uploadSessionSelect = {
   expectedSizeBytes: true,
   partCount: true,
   expiresAt: true,
+  hardExpiresAt: true,
+  verifiedUploadedBytes: true,
+  nextProgressCheckAt: true,
   completedAt: true,
   abortedAt: true,
   expiredAt: true,
   externalResourceTargetId: true,
+  externalResourceTarget: { select: { goal: true } },
   createdAt: true,
   updatedAt: true,
   multipartHandle: {

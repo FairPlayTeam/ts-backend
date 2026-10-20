@@ -20,6 +20,7 @@ import {
 } from './types.js';
 import {
   completedSourceSessionSelect,
+  lockUploadSession,
   reconciliationUploadSessionSelect,
   type ReconciliationUploadSessionRecord,
 } from './repository.js';
@@ -384,6 +385,7 @@ export const createVideoSourceThumbnailReconciliationHandler = (
       );
     }
 
+    await lockUploadSession(tx, target.generation);
     const session = await tx.videoUploadSession.findFirst({
       where: {
         id: target.generation,

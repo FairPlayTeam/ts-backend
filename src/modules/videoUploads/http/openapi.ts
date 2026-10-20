@@ -37,6 +37,8 @@ export const routeDocs = [
     path: '/videos/{publicId}/upload/multipart/init',
     operationId: 'initializeVideoMultipartUpload',
     summary: 'Initialize a multipart video upload',
+    description:
+      'Reserves capacity for 15 minutes without verified progress (configurable, minimum 60 seconds), with a 24-hour absolute limit. Admission also limits each account to two admitted reservations per rolling hour by default; aborting or deleting a video does not refund this budget.',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
     request: {
@@ -53,6 +55,8 @@ export const routeDocs = [
     path: '/videos/{publicId}/upload/multipart/{uploadSessionId}/parts/sign',
     operationId: 'signVideoMultipartUploadParts',
     summary: 'Sign multipart video upload parts',
+    description:
+      'Call after completed part transfers, even when URLs were signed in a batch. Backend ListParts checks use half the time remaining, clamped to 5–30 seconds, persisted per session. Budget at least 5 seconds for a suppressed check to become eligible again, plus network, S3 and SQL processing time, before expiresAt; retry with that margin if the returned deadline has not advanced. A 200 with unchanged expiresAt does not acknowledge renewal. Parts arriving during the last 5 seconds have no guaranteed renewal. Only newly verified bytes in correctly sized parts renew the reservation, up to its absolute deadline. Rewriting a part or polling without progress does not renew it. Delayed observations cannot revive an expired session. Each URL expires no later than the deadline used when signing it. An old cooldown already in progress during rollout can still last 30 seconds.',
     tags: ['Videos'],
     security: [{ bearerAuth: [] }],
     request: {

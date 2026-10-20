@@ -6,6 +6,7 @@ import { createPlayableVideo, type PlayableVideo } from './support/playableVideo
 import { seedHlsGeneration } from './support/videoArtifacts.js';
 import {
   createIntegrationApp,
+  createIntegrationVideoUploadsService,
   createVideoReadBarrierService,
   resetState,
   startRuntime,
@@ -37,6 +38,13 @@ describe('public video detail integration', () => {
   beforeAll(async () => {
     runtime = await startRuntime();
     await resetState(runtime);
+    // One creator needs six initial sources, three race cases and three comment cases.
+    runtime.videoUploadsService = createIntegrationVideoUploadsService(
+      runtime.prisma,
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+      { maxReservationsPerHour: 12 },
+    );
     app = await createIntegrationApp(runtime);
     owner = await createVerifiedSession(runtime, {
       email: 'jawed@example.com',

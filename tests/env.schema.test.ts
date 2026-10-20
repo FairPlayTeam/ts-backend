@@ -38,6 +38,8 @@ describe('environment configuration', () => {
         maxTranscodeOutstandingJobsPerUser: 2,
         userStorageQuotaBytes: 107374182400,
         sessionTtlSeconds: 86400,
+        idleTtlSeconds: 900,
+        maxReservationsPerHour: 2,
       },
       videoTranscode: {
         maxConcurrentJobs: 0,
@@ -208,7 +210,9 @@ describe('numeric environment variable matrix', () => {
     ['VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS', '1', '9007199254740991'],
     ['VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER', '1', '9007199254740991'],
     ['VIDEO_USER_STORAGE_QUOTA_BYTES', '1', '9007199254740991'],
-    ['VIDEO_UPLOAD_SESSION_TTL_SECONDS', '1', '9007199254740991'],
+    ['VIDEO_UPLOAD_SESSION_TTL_SECONDS', '60', '9007199254740991'],
+    ['VIDEO_UPLOAD_IDLE_TTL_SECONDS', '60', '9007199254740991'],
+    ['VIDEO_UPLOAD_MAX_RESERVATIONS_PER_HOUR', '1', '9007199254740991'],
     ['VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS', '0', '9007199254740991', 'nonnegative'],
     ['VIDEO_TRANSCODE_THREADS_PER_JOB', '1', '9007199254740991'],
     ['VIDEO_TRANSCODE_MAX_DURATION_SECONDS', '1', '9007199254740991'],
@@ -222,6 +226,8 @@ describe('numeric environment variable matrix', () => {
     ['VIDEO_TRANSCODE_MAX_ARTIFACT_BYTES', '1', '9007199254740991'],
   ];
   const overrides: Record<string, NodeJS.ProcessEnv> = {
+    VIDEO_UPLOAD_SESSION_TTL_SECONDS: { VIDEO_UPLOAD_IDLE_TTL_SECONDS: '60' },
+    VIDEO_UPLOAD_IDLE_TTL_SECONDS: { VIDEO_UPLOAD_SESSION_TTL_SECONDS: '9007199254740991' },
     VIDEO_UPLOAD_MAX_PARTS: { VIDEO_UPLOAD_MAX_BYTES: '1', VIDEO_USER_STORAGE_QUOTA_BYTES: '1' },
     VIDEO_UPLOAD_MAX_BYTES: uploadAtCapacity,
     VIDEO_USER_STORAGE_QUOTA_BYTES: { VIDEO_UPLOAD_MAX_BYTES: '1' },
@@ -518,7 +524,39 @@ describe('runtime roles, secrets, and cross-field limits', () => {
     }
   });
 
+  test('rejects idle windows too short for bounded progress checks, including 20 seconds', () => {
+    for (const seconds of ['1', '20', '59']) {
+      expect(() =>
+        parseEnvironment({
+          ...validDevelopmentEnvironment(),
+          VIDEO_UPLOAD_IDLE_TTL_SECONDS: seconds,
+        }),
+      ).toThrow('VIDEO_UPLOAD_IDLE_TTL_SECONDS');
+    }
+    expect(
+      parseEnvironment({
+        ...validDevelopmentEnvironment(),
+        VIDEO_UPLOAD_IDLE_TTL_SECONDS: '60',
+        VIDEO_UPLOAD_SESSION_TTL_SECONDS: '60',
+      }).videoUpload.idleTtlSeconds,
+    ).toBe(60);
+    expect(() =>
+      parseEnvironment({
+        ...validDevelopmentEnvironment(),
+        VIDEO_UPLOAD_IDLE_TTL_SECONDS: '60',
+        VIDEO_UPLOAD_SESSION_TTL_SECONDS: '59',
+      }),
+    ).toThrow('VIDEO_UPLOAD_IDLE_TTL_SECONDS');
+  });
+
   test('rejects inconsistent multipart capacity and user quota', () => {
+    expect(() =>
+      parseEnvironment({
+        ...validDevelopmentEnvironment(),
+        VIDEO_UPLOAD_IDLE_TTL_SECONDS: '901',
+        VIDEO_UPLOAD_SESSION_TTL_SECONDS: '900',
+      }),
+    ).toThrow('VIDEO_UPLOAD_IDLE_TTL_SECONDS');
     expect(() =>
       parseEnvironment({
         ...validDevelopmentEnvironment(),

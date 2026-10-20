@@ -218,6 +218,55 @@ outstanding globally and two per account. Capacity transfers atomically from an 
 to its queued job when completion commits. A full limit returns the same retryable 429 and does not
 create an S3 multipart upload.
 
+An idle reservation expires after 15 minutes (`VIDEO_UPLOAD_IDLE_TTL_SECONDS=900`). The existing
+`VIDEO_UPLOAD_SESSION_TTL_SECONDS=86400` is its absolute 24-hour ceiling. Before expiry, clients
+must call `POST /videos/:publicId/upload/multipart/:uploadSessionId/parts/sign` between completed
+part transfers, including when they already have a batch of URLs. This endpoint returns the current
+`expiresAt`. The backend reads S3 ListParts at a persisted interval equal to half the time remaining,
+bounded between 5 and 30 seconds (30 seconds when at least one minute remains). Only an increase in verified
+bytes from correctly sized parts extends the deadline. GET, signing alone, thumbnails, and rewriting
+the same part do not renew it. A part still in flight is not visible progress; the default 64 MiB
+part must finish within the initial 15 minutes (about 0.60 Mbit/s of payload). URL expiry is bounded
+by the reservation deadline at signing; renewing requires obtaining fresh URLs when necessary.
+
+`VIDEO_UPLOAD_IDLE_TTL_SECONDS` must be at least 60 seconds and cannot exceed the absolute TTL;
+20-second idle windows are rejected at startup. Clients must budget at least 5 seconds for a
+suppressed observation to become eligible again, plus network, S3 and SQL processing time, before
+expiry. Call parts/sign after a completed part and retry if `expiresAt` has not advanced, leaving
+that margin for the retry too. A 200 response can contain the unchanged deadline; it does not
+acknowledge a renewal. Progress observed or applied after expiry cannot rescue the reservation,
+and a part completed during the last 5 seconds has no renewal guarantee. Use a larger margin for
+storage outages and slow connections. Existing cooldowns are preserved across a deployment and may
+still last up to 30 seconds until their next check; new checks then use the adaptive interval.
+
+`VIDEO_UPLOAD_MAX_RESERVATIONS_PER_HOUR=2` additionally limits admitted reservations per account in
+a rolling hour, across all videos. Abort, video deletion, failed S3 initialization, and cleanup do
+not refund this budget. The default policy prevents five idle accounts from continuously refilling
+ten slots; additional accounts or real transfers can still consume capacity. This also limits
+legitimate upload starts and retries after provider outages.
+
+Admission closes expired idle reservations durably before reusing their capacity, without waiting
+for maintenance. Existing reservations receive at most 15 minutes of grace when the migration runs;
+deploy the client renewal behavior together with this change. Already `completing` sessions retain
+their reservation during ambiguous completion recovery. Logical abandonment prevents publication;
+an older PUT URL may still write until expiry or provider abort. Storage quota remains charged until
+the existing durable cleanup confirms absence. The separate issue of oversized PUT bodies remains
+open; this policy does not impose a provider-side byte limit.
+
+The migration adds a required absolute deadline without a database default: stop old API writers
+before applying it, then start the updated API before reopening uploads. Old API binaries cannot
+initialize sessions against the migrated schema. This is a coordinated deployment, not a rolling
+compatibility guarantee.
+
+Garage integration tests cover the local contract. Before deploying to Backblaze B2, run
+`bun scripts/verify-b2-upload-contract.ts` against an isolated, existing test bucket with
+`B2_TEST_ENDPOINT`, `B2_TEST_BUCKET`, `B2_TEST_REGION`, `B2_TEST_ACCESS_KEY_ID`, and
+`B2_TEST_SECRET_ACCESS_KEY` configured. The credentials need multipart, HEAD, version listing and
+version deletion permissions for that bucket. The script writes only a random diagnostic prefix
+and removes its multipart handles and object versions. No B2 test environment was available during
+implementation: production qualification remains outstanding, including in-flight PUT/abort races
+and physical retention. See [the reservation policy](docs/ARCHITECTURE.md#idle-upload-reservations).
+
 Every execution reserves a durable `writing` generation and its cleanup prefixes before creating
 or uploading artifacts. FFmpeg creates a 240p-only rendition for sources from 240p through 479p;
 sources at 480p and above keep the 480p, 720p, and 1080p ladder entries that fit without upscaling.

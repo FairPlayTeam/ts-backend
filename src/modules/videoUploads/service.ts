@@ -3,10 +3,15 @@ import { isXmlCompatibleUploadETag } from './validation.js';
 import type { Prisma } from '@prisma/client';
 import {
   sourceThumbnailSelect,
+  lockUploadSession,
   uploadSessionSelect,
   type UploadSessionRecord,
 } from './repository.js';
-import { HOUR_MS } from '../../config/constants.js';
+import {
+  HOUR_MS,
+  VIDEO_UPLOAD_PROGRESS_CHECK_INTERVAL_MS,
+  VIDEO_UPLOAD_MIN_PROGRESS_CHECK_INTERVAL_MS,
+} from '../../config/constants.js';
 import { ObjectStorageUnavailableError } from '../../lib/objectStorage.js';
 import { constraintContains, isPrismaUniqueError } from '../../lib/prismaErrors.js';
 import { runSerializableTransaction } from '../../lib/prismaTransactions.js';
@@ -50,6 +55,7 @@ import type {
 } from './types.js';
 import {
   ABORTABLE_UPLOAD_SESSION_STATUSES,
+  ACTIVE_UPLOAD_SESSION_STATUSES,
   EXPIRABLE_UPLOAD_SESSION_STATUSES,
   SIGNABLE_UPLOAD_SESSION_STATUSES,
   SOURCE_THUMBNAIL_UPLOAD_SESSION_STATUSES,
@@ -121,6 +127,7 @@ const findOwnedUploadSession = async (
       id: input.uploadSessionId,
       videoId: input.videoId,
       userId: input.userId,
+      user: { is: { isBanned: false } },
     },
     select: uploadSessionSelect,
   });
@@ -133,7 +140,10 @@ const findOwnedUploadSession = async (
 };
 
 const expireStaleUploadSessions = async (
-  store: Pick<TransactionClient, 'externalResourceTarget' | 'video' | 'videoUploadSession'>,
+  store: Pick<
+    TransactionClient,
+    '$queryRaw' | 'externalResourceTarget' | 'video' | 'videoUploadSession'
+  >,
   now: Date,
   {
     limit,
@@ -170,6 +180,7 @@ const expireStaleUploadSessions = async (
   let uploadSessionsExpired = 0;
 
   for (const session of staleSessions) {
+    await lockUploadSession(store, session.id);
     const result = await store.videoUploadSession.updateMany({
       where: {
         id: session.id,
@@ -228,6 +239,25 @@ const expireSessionIfNeeded = async (
   });
 };
 
+const assertSignableUploadSession = (
+  session: UploadSessionRecord,
+  now: Date,
+): UploadSessionRecord & { multipartHandle: { uploadId: string } } => {
+  if (
+    session.status === 'expiring' ||
+    session.status === 'expired' ||
+    (EXPIRABLE_UPLOAD_SESSION_STATUSES.includes(session.status) && session.expiresAt <= now)
+  ) {
+    throw new VideoUploadSessionExpiredError();
+  }
+  if (!SIGNABLE_UPLOAD_SESSION_STATUSES.includes(session.status) || !session.multipartHandle) {
+    throw new InvalidVideoUploadSessionStateError();
+  }
+  if (session.externalResourceTarget.goal !== 'present')
+    throw new InvalidVideoUploadSessionStateError();
+  return { ...session, multipartHandle: session.multipartHandle };
+};
+
 const getSignableUploadSession = async (
   deps: VideoUploadsDependencies,
   input: GetVideoMultipartUploadSessionInput,
@@ -238,18 +268,7 @@ const getSignableUploadSession = async (
     deps.clock.now(),
   );
 
-  if (session.status === 'expiring' || session.status === 'expired') {
-    throw new VideoUploadSessionExpiredError();
-  }
-
-  if (!SIGNABLE_UPLOAD_SESSION_STATUSES.includes(session.status) || !session.multipartHandle) {
-    throw new InvalidVideoUploadSessionStateError();
-  }
-
-  return {
-    ...session,
-    multipartHandle: session.multipartHandle,
-  };
+  return assertSignableUploadSession(session, deps.clock.now());
 };
 
 const expectedPartCount = (
@@ -265,8 +284,12 @@ const assertValidPartNumbers = (
 
   if (
     partNumbers.length === 0 ||
+    partNumbers.length > 100 ||
     uniquePartNumbers.size !== partNumbers.length ||
-    partNumbers.some((partNumber) => partNumber < 1 || partNumber > maxPartNumber)
+    partNumbers.some(
+      (partNumber) =>
+        !Number.isSafeInteger(partNumber) || partNumber < 1 || partNumber > maxPartNumber,
+    )
   ) {
     throw new InvalidVideoUploadSessionStateError();
   }
@@ -339,7 +362,6 @@ const assertUserStorageQuota = async (
 const assertVideoTranscodeAdmissionCapacity = async (
   tx: Pick<TransactionClient, 'videoTranscodeJob' | 'videoUploadSession'>,
   userId: string,
-  now: Date,
   {
     maxTranscodeOutstandingJobs,
     maxTranscodeOutstandingJobsPerUser,
@@ -348,14 +370,9 @@ const assertVideoTranscodeAdmissionCapacity = async (
     'maxTranscodeOutstandingJobs' | 'maxTranscodeOutstandingJobsPerUser'
   >,
 ): Promise<void> => {
+  // An expired timestamp never releases capacity before the durable abandonment commits.
   const activeUploadSessionWhere: Prisma.VideoUploadSessionWhereInput = {
-    OR: [
-      { status: 'completing' },
-      {
-        status: { in: [...EXPIRABLE_UPLOAD_SESSION_STATUSES] },
-        expiresAt: { gt: now },
-      },
-    ],
+    status: { in: [...ACTIVE_UPLOAD_SESSION_STATUSES] },
   };
   const outstandingJobWhere: Prisma.VideoTranscodeJobWhereInput = {
     status: { in: ['queued', 'processing'] },
@@ -407,18 +424,32 @@ const scheduleFailedInitialization = async (
       },
     });
 
-    if (result.count === 0) {
-      return;
-    }
-
     if (uploadId) {
-      await tx.externalMultipartHandle.create({
-        data: {
+      // A late CreateMultipartUpload response must remain tracked even if the
+      // session has already expired or its account/video has been deleted.
+      await tx.externalMultipartHandle.upsert({
+        where: { targetId_uploadId: { targetId, uploadId } },
+        create: {
           targetId,
-          uploadSessionId: sessionId,
+          ...(result.count > 0 ? { uploadSessionId: sessionId } : {}),
           uploadId,
         },
+        update: {},
       });
+    }
+
+    if (result.count === 0) {
+      if (uploadId) {
+        const target = await tx.externalResourceTarget.findUnique({
+          where: { id: targetId },
+          select: { goal: true },
+        });
+        if (target?.goal === 'absent') {
+          // A newly observed external write invalidates even an older absence confirmation.
+          await requestExternalResourceAbsence(tx, targetId, now, { reopenConfirmedAbsence: true });
+        }
+      }
+      return;
     }
 
     await requestExternalResourceAbsence(tx, targetId, now);
@@ -435,29 +466,25 @@ const prepareCompletion = async (
   session: UploadSessionRecord,
   parts: readonly CompleteVideoMultipartUploadInput['parts'][number][],
 ): Promise<UploadSessionRecord> => {
-  const sortedParts = assertValidCompletedParts(parts, session);
-
-  if (session.status === 'completed') {
-    if (!partsMatch(session.parts, sortedParts)) {
-      throw new InvalidVideoUploadSessionStateError();
+  assertValidCompletedParts(parts, session);
+  return runSerializableTransaction(deps.prisma, async (tx) => {
+    await lockUploadSession(tx, session.id);
+    const current = await findOwnedUploadSession(tx, {
+      uploadSessionId: session.id,
+      videoId: session.videoId,
+      userId: session.userId,
+    });
+    const sortedParts = assertValidCompletedParts(parts, current);
+    if (current.status === 'completed' || current.status === 'completing') {
+      if (
+        (current.status === 'completing' && !current.multipartHandle) ||
+        !partsMatch(current.parts, sortedParts)
+      ) {
+        throw new InvalidVideoUploadSessionStateError();
+      }
+      return current;
     }
-
-    return session;
-  }
-
-  if (session.status === 'completing') {
-    if (!session.multipartHandle || !partsMatch(session.parts, sortedParts)) {
-      throw new InvalidVideoUploadSessionStateError();
-    }
-
-    return session;
-  }
-
-  if (!SIGNABLE_UPLOAD_SESSION_STATUSES.includes(session.status) || !session.multipartHandle) {
-    throw new InvalidVideoUploadSessionStateError();
-  }
-
-  await deps.prisma.$transaction(async (tx) => {
+    assertSignableUploadSession(current, deps.clock.now());
     const updated = await tx.videoUploadSession.updateMany({
       where: {
         id: session.id,
@@ -492,12 +519,11 @@ const prepareCompletion = async (
         nextAttemptAt: deps.clock.now(),
       },
     });
-  });
-
-  return findOwnedUploadSession(deps.prisma, {
-    uploadSessionId: session.id,
-    userId: session.userId,
-    videoId: session.videoId,
+    return findOwnedUploadSession(tx, {
+      uploadSessionId: session.id,
+      videoId: session.videoId,
+      userId: session.userId,
+    });
   });
 };
 
@@ -508,7 +534,10 @@ const scheduleVideoSourceThumbnailAbsence = async (
   const requestedAt = deps.clock.now();
 
   await runSerializableTransaction(deps.prisma, async (tx) => {
-    await requestExternalResourceAbsence(tx, targetId, requestedAt);
+    // This follows a returned PUT, so an earlier absence confirmation is stale.
+    await requestExternalResourceAbsence(tx, targetId, requestedAt, {
+      reopenConfirmedAbsence: true,
+    });
   });
 };
 
@@ -544,10 +573,8 @@ export const createVideoUploadsService = (
       throw new VideoUploadSizeExceededError();
     }
 
-    const now = deps.clock.now();
     const uploadSessionId = randomUUID();
     const objectKey = videoOriginalKey(userId, videoId, uploadSessionId);
-    const expiresAt = new Date(now.getTime() + deps.config.sessionTtlSeconds * 1000);
     let reservedSession: { externalResourceTargetId: string };
 
     try {
@@ -556,6 +583,7 @@ export const createVideoUploadsService = (
           where: {
             id: videoId,
             ownerId: userId,
+            owner: { is: { isBanned: false } },
           },
           select: {
             id: true,
@@ -566,14 +594,28 @@ export const createVideoUploadsService = (
           throw new VideoNotFoundError();
         }
 
-        await expireStaleUploadSessions(tx, now, { videoId });
+        await expireStaleUploadSessions(tx, deps.clock.now(), {
+          limit: MULTIPART_MAINTENANCE_BATCH_SIZE,
+        });
 
         if (await findActiveUploadSession(tx, videoId)) {
           throw new ActiveVideoUploadSessionExistsError();
         }
 
-        await assertVideoTranscodeAdmissionCapacity(tx, userId, now, deps.config);
+        await assertVideoTranscodeAdmissionCapacity(tx, userId, deps.config);
         await assertUserStorageQuota(tx, userId, sizeBytes, deps.config.userStorageQuotaBytes);
+
+        const now = deps.clock.now();
+        const reservations = await tx.externalResourceTarget.count({
+          where: { userId, role: 'source', createdAt: { gt: new Date(now.getTime() - HOUR_MS) } },
+        });
+        if (reservations >= deps.config.maxReservationsPerHour) {
+          throw new VideoTranscodeAdmissionFullError();
+        }
+        const hardExpiresAt = new Date(now.getTime() + deps.config.sessionTtlSeconds * 1000);
+        const expiresAt = new Date(
+          Math.min(hardExpiresAt.getTime(), now.getTime() + deps.config.idleTtlSeconds * 1000),
+        );
 
         const target = await tx.externalResourceTarget.create({
           data: {
@@ -586,6 +628,7 @@ export const createVideoUploadsService = (
             generation: uploadSessionId,
             expectedSizeBytes: BigInt(sizeBytes),
             mayHaveMultipartUpload: true,
+            createdAt: now,
             goal: 'present',
             state: 'writing',
             nextAttemptAt: new Date(now.getTime() + HOUR_MS),
@@ -605,6 +648,8 @@ export const createVideoUploadsService = (
             partSizeBytes: deps.config.partSizeBytes,
             expectedSizeBytes: BigInt(sizeBytes),
             expiresAt,
+            hardExpiresAt,
+            nextProgressCheckAt: now,
             externalResourceTargetId: target.id,
           },
           select: {
@@ -643,10 +688,12 @@ export const createVideoUploadsService = (
       uploadId = multipart.uploadId;
 
       await deps.prisma.$transaction(async (tx) => {
+        await lockUploadSession(tx, uploadSessionId);
         const updated = await tx.videoUploadSession.updateMany({
           where: {
             id: uploadSessionId,
             status: 'initializing',
+            expiresAt: { gt: deps.clock.now() },
           },
           data: {
             status: 'initiated',
@@ -715,8 +762,8 @@ export const createVideoUploadsService = (
     const processedThumbnail = await deps.imageProcessor.processVideoThumbnail(file);
     const thumbnailId = randomUUID();
     const objectKey = videoSourceThumbnailKey(userId, videoId, uploadSessionId, thumbnailId);
-    const reservedAt = deps.clock.now();
     const target = await runSerializableTransaction(deps.prisma, async (tx) => {
+      await lockUploadSession(tx, uploadSessionId);
       const currentSession = await tx.videoUploadSession.findFirst({
         where: {
           id: uploadSessionId,
@@ -733,6 +780,7 @@ export const createVideoUploadsService = (
         throw new VideoUploadSessionNotFoundError();
       }
 
+      const reservedAt = deps.clock.now();
       if (
         currentSession.expiresAt <= reservedAt ||
         !SOURCE_THUMBNAIL_UPLOAD_SESSION_STATUSES.includes(currentSession.status)
@@ -853,38 +901,118 @@ export const createVideoUploadsService = (
     userId,
     videoId,
   }: SignVideoMultipartUploadPartsInput): Promise<SignVideoMultipartUploadPartsResult> {
-    const session = await getSignableUploadSession(deps, {
+    const input = {
       uploadSessionId,
       userId,
       videoId,
-    });
-    assertValidPartNumbers(partNumbers, session);
-
-    if (session.status === 'initiated') {
-      await deps.prisma.videoUploadSession.updateMany({
-        where: {
-          id: session.id,
-          status: 'initiated',
-        },
+    };
+    assertValidPartNumbers(partNumbers, await getSignableUploadSession(deps, input));
+    const observation = await runSerializableTransaction(deps.prisma, async (tx) => {
+      await lockUploadSession(tx, uploadSessionId);
+      const current = assertSignableUploadSession(
+        await findOwnedUploadSession(tx, input),
+        deps.clock.now(),
+      );
+      const now = deps.clock.now();
+      const checkProgress = current.nextProgressCheckAt <= now;
+      // Leave another check opportunity near expiry while retaining a persisted cost bound.
+      // Never shorten an already reserved cooldown: another process may be observing S3.
+      const checkIntervalMs = Math.max(
+        VIDEO_UPLOAD_MIN_PROGRESS_CHECK_INTERVAL_MS,
+        Math.min(
+          VIDEO_UPLOAD_PROGRESS_CHECK_INTERVAL_MS,
+          Math.floor((current.expiresAt.getTime() - now.getTime()) / 2),
+        ),
+      );
+      await tx.videoUploadSession.update({
+        where: { id: current.id },
         data: {
           status: 'uploading',
+          ...(checkProgress
+            ? {
+                nextProgressCheckAt: new Date(now.getTime() + checkIntervalMs),
+              }
+            : {}),
         },
+      });
+      return { session: current, checkProgress };
+    });
+
+    if (observation.checkProgress) {
+      const observedSession = observation.session;
+      const listed = await deps.objectStorage.listMultipartUploadParts({
+        bucket: observedSession.bucket,
+        objectKey: observedSession.objectKey,
+        uploadId: observedSession.multipartHandle.uploadId,
+        limit: expectedPartCount(observedSession),
+      });
+      if (listed.truncated)
+        throw new ObjectStorageUnavailableError('Multipart progress listing was truncated');
+      let usefulBytes = 0n;
+      const seen = new Set<number>();
+      const size = bigintToSafeNumber(observedSession.expectedSizeBytes);
+      for (const part of listed.parts) {
+        if (seen.has(part.partNumber))
+          throw new ObjectStorageUnavailableError('Multipart progress contained duplicate parts');
+        seen.add(part.partNumber);
+        if (
+          !Number.isSafeInteger(part.partNumber) ||
+          part.partNumber < 1 ||
+          part.partNumber > expectedPartCount(observedSession)
+        )
+          continue;
+        const expected = Math.min(
+          observedSession.partSizeBytes,
+          size - (part.partNumber - 1) * observedSession.partSizeBytes,
+        );
+        if (part.sizeBytes === expected) usefulBytes += BigInt(expected);
+      }
+      await runSerializableTransaction(deps.prisma, async (tx) => {
+        await lockUploadSession(tx, uploadSessionId);
+        const current = assertSignableUploadSession(
+          await findOwnedUploadSession(tx, input),
+          deps.clock.now(),
+        );
+        if (usefulBytes > current.verifiedUploadedBytes) {
+          const expiresAt = new Date(
+            Math.max(
+              current.expiresAt.getTime(),
+              Math.min(
+                current.hardExpiresAt.getTime(),
+                deps.clock.now().getTime() + deps.config.idleTtlSeconds * 1000,
+              ),
+            ),
+          );
+          await tx.videoUploadSession.update({
+            where: { id: current.id },
+            data: { verifiedUploadedBytes: usefulBytes, expiresAt },
+          });
+        }
       });
     }
 
+    const session = await getSignableUploadSession(deps, input);
+    const parts = await Promise.all(
+      partNumbers.map(async (partNumber) => ({
+        partNumber,
+        url: await deps.objectStorage.signMultipartUploadPart({
+          bucket: session.bucket,
+          objectKey: session.objectKey,
+          uploadId: session.multipartHandle.uploadId,
+          partNumber,
+          expiresAt: session.expiresAt,
+        }),
+      })),
+    );
+    const checked = await runSerializableTransaction(deps.prisma, async (tx) => {
+      await lockUploadSession(tx, uploadSessionId);
+      return assertSignableUploadSession(await findOwnedUploadSession(tx, input), deps.clock.now());
+    });
+
     return {
       uploadSessionId: session.id,
-      parts: await Promise.all(
-        partNumbers.map(async (partNumber) => ({
-          partNumber,
-          url: await deps.objectStorage.signMultipartUploadPart({
-            bucket: session.bucket,
-            objectKey: session.objectKey,
-            uploadId: session.multipartHandle.uploadId,
-            partNumber,
-          }),
-        })),
-      ),
+      expiresAt: checked.expiresAt,
+      parts,
     };
   },
 

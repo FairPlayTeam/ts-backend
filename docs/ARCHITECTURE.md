@@ -552,7 +552,10 @@ create Express, bind a socket, start the maintenance loop, or connect to Redis. 
 
 Before S3 multipart initialization, one serializable transaction counts queued/processing jobs and
 upload sessions that reserve a future job. Initializing, initiated, and uploading sessions count
-only while their expiry is in the future; a `completing` session counts regardless of its expiry.
+until durable abandonment commits, including past their deadline; a `completing` session counts
+regardless of its expiry. Admission first runs the existing expiry transition globally, in a
+bounded batch of 100, within that transaction. Maintenance handles larger backlogs; when still
+full after this bounded sweep, admission rolls back and returns 429.
 Admission is refused when the configured global limit (10 by default) or per-user limit (2 by
 default) is already full, returning one generic 429. The transaction creates the upload reservation
 only after this check, so a rejected request does not create a target/session or contact object
@@ -561,6 +564,96 @@ and inserts the queued job, transferring rather than releasing the capacity rese
 bounds the number of admitted sources as well as queued work. The existing due-time/id claim order
 remains; the per-user ceiling prevents one account from occupying more than two of ten admitted
 slots, but it is not a weighted round-robin scheduler.
+
+### Idle upload reservations
+
+`expiresAt` is the effective idle deadline, initially 15 minutes; `hardExpiresAt` is the immutable
+absolute deadline, initially 24 hours. Both durations are configurable; idle must be at least
+60 seconds and cannot exceed hard. A 20-second idle TTL fails configuration validation.
+The migration preserves existing absolute deadlines and gives expirable sessions at most 15 minutes
+of grace; completing sessions are unchanged. Deploy client renewal support with the migration.
+The new hard deadline is required and has no database default. Stop old API writers before applying
+the migration and reopen uploads with the updated API; old binaries cannot initialize new sessions
+against the migrated schema. This migration does not support mixed old/new API writers.
+
+The existing parts/sign endpoint reserves its persisted progress-check interval under the session
+lock, then observes ListParts outside the SQL transaction. The interval is half the time remaining,
+rounded down to milliseconds and clamped between 5 and 30 seconds. It stays at 30 seconds while at
+least one minute remains; a check at T−10 schedules the next at T−5 rather than T+20. Every admitted
+check reserves at least 5 seconds, including on storage failure, and suppressed requests never
+shorten that reservation. Existing cooldowns survive rollout, so one already reserved by the old
+version can still last 30 seconds. Actual observations remain outside the SQL transaction.
+Listing validates numeric part
+metadata, strict ordering and increasing page markers, and is bounded by the expected part count
+(at most 10,000), storage timeout and pagination bound. Overflow or malformed listing fails closed.
+Only distinct in-range parts of the expected full or final size contribute bytes. A serializable
+transaction locks and rechecks ownership, ban, live status, present target intent and a fresh idle
+deadline before comparing the snapshot against `verifiedUploadedBytes`. Only a strict increase of
+that persistent maximum renews expiry, capped by hard expiry. Rewrites, ETags, dates, GET, signing
+alone and thumbnails cannot manufacture progress. An older snapshot cannot consume the same gain
+twice. Provider errors never grant time. A valid part still in flight is not progress; the initial
+64 MiB part requires roughly 0.60 Mbit/s within 15 minutes, excluding network overhead.
+
+The signing response whitelists the current `expiresAt` beside the existing session ID and part
+URLs. Clients must call it between completed transfers, even with presigned batches, and budget
+at least 5 seconds for a suppressed check to become eligible again plus network, S3 and SQL
+processing time before expiry. A 200 with unchanged `expiresAt` is not a renewal acknowledgment;
+retry with that margin still available. A part arriving in the last 5 seconds, unavailable storage
+or a delayed transaction has no guaranteed renewal. ListParts and the fresh locked application
+must finish before expiry; no grace or unverified extension is granted. A larger operational margin
+is necessary for slow connections, unavailable providers or the old cooldown during rollout.
+Each URL is clamped to the earlier of its configured lifetime and the reservation deadline when
+signed, after bucket preparation. SigV4's timestamp and TTL use the same instant, so delayed signing
+cannot push the URL's actual deadline past the reservation. A renewal does not extend already issued URLs. Final ownership,
+status and deadline checks prevent returning capabilities after a delayed sign operation loses its
+live session. The existing session ID/status contract is retained; no storage key, upload handle,
+hard deadline or progress counter is newly exposed outside bearer URLs.
+
+Completion locks the session and reads a fresh application-clock deadline after the lock wait before
+entering `completing`. Expiry uses the same row lock before the existing durable absence intent and
+lease invalidation. Thumbnail reservation and finalization also recheck under that lock. A late S3
+initialization cannot revive an expired session; its returned multipart handle is persisted on the
+durable target even if the session/video was removed, for ordinary cleanup. Already completing
+requests keep their existing lost-response recovery semantics regardless of age. If a new handle
+arrives after confirmed absence, it reopens the same absence intent and quiescence, charging the
+target again until cleanup confirms absence. Ordinary absence requests keep a confirmed absence terminal.
+
+The rolling-hour budget is two admitted source reservations per account by default. The serializable
+admission transaction counts existing `ExternalResourceTarget` source rows created in that hour
+before inserting the next reservation. These targets already survive session/video/account cascades
+and confirmed cleanup. Abort, deletion, provider initialization failure and IP changes do not refund
+an admission. No parallel counter, Redis dependency or fact table is added. The existing user/role
+index is reused; very large source histories may make this count expensive and need an indexed
+time range once measured. Any future target-history purge must preserve at least this hour of facts.
+
+The five-account zero-transfer attack now occupies capacity for at most the idle period at each
+hour's budget renewal, rather than continuously. This is not protection against unbounded verified
+accounts or transfers that make real useful progress. Two starts per hour also restrict legitimate
+bursts and retries after storage outages; tune the budget and idle window together.
+
+Admission capacity and storage quota remain distinct: durable abandonment frees the former, while
+only confirmed absence frees reserved source bytes. Old UploadPart URLs cannot complete or publish
+an abandoned reservation, though a provider may accept a late PUT before URL expiry/abort. Existing
+quiescence, durable handles, repeated abort/deletion and HEAD confirmation remain authoritative.
+Previously issued URLs are not retroactively shortened. The separate oversized-body/repeated-storage
+amplification issue is not fixed by this policy.
+
+Garage tests observe actual uploaded parts, a 1,001-part paginated listing, old-capability replay and
+cleanup. PostgreSQL regressions observe real `Lock` wait events for completion/expiry, competing
+progress snapshots, thumbnail finalization and budget contenders. Counter-tests temporarily remove
+the respective deadline/high-water/budget checks and require a failing assertion before restoring
+them; the implementation validation record states the observed results.
+
+Backblaze B2 is the production provider; Garage is a local test provider. The opt-in
+`scripts/verify-b2-upload-contract.ts` uses an existing isolated B2 bucket and only a random test
+prefix. It checks real part sizes and retries, bounded listing, signed-deadline parameters and
+rejection after actual URL expiry,
+completion retry/HEAD recovery, and old URL rejection after complete/abort, then removes its own
+versions and handles. It does not observe physical reclamation, browser
+behavior, or a PUT already in flight during abort. No isolated B2 credentials were available, so
+these provider guarantees remain unqualified. Run this script and explicitly exercise in-flight
+PUT/abort before claiming production qualification; SDK arguments or Garage results cannot supply
+that evidence. The byte-limit fix is a separate task.
 
 A `completing` session retains its capacity reservation while the durable source target is being
 reconciled: multipart completion may have succeeded even when its response was lost. Its age or

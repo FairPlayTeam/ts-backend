@@ -309,6 +309,10 @@ export const createIntegrationVideoUploadsDependencies = (
     maxUploadBytes?: number;
     maxTranscodeOutstandingJobs?: number;
     maxTranscodeOutstandingJobsPerUser?: number;
+    idleTtlSeconds?: number;
+    sessionTtlSeconds?: number;
+    maxReservationsPerHour?: number;
+    partSizeBytes?: number;
     now?: () => Date;
     userStorageQuotaBytes?: number;
   } = {},
@@ -330,8 +334,10 @@ export const createIntegrationVideoUploadsDependencies = (
     maxTranscodeOutstandingJobsPerUser:
       config.maxTranscodeOutstandingJobsPerUser ??
       DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER,
-    partSizeBytes: 67_108_864,
-    sessionTtlSeconds: 86_400,
+    partSizeBytes: config.partSizeBytes ?? 67_108_864,
+    sessionTtlSeconds: config.sessionTtlSeconds ?? 86_400,
+    idleTtlSeconds: config.idleTtlSeconds ?? 900,
+    maxReservationsPerHour: config.maxReservationsPerHour ?? 2,
     userStorageQuotaBytes: config.userStorageQuotaBytes ?? 100 * 1024 * 1024 * 1024,
   },
 });

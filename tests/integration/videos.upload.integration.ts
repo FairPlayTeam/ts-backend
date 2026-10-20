@@ -1056,6 +1056,7 @@ describe('videos upload integration', () => {
           partSizeBytes: 67_108_864,
           expectedSizeBytes: 128n,
           expiresAt: new Date(reservedAt.getTime() + 60 * 60 * 1000),
+          hardExpiresAt: new Date(reservedAt.getTime() + 24 * 60 * 60 * 1000),
           externalResourceTargetId: reservedTarget.id,
         },
       });

@@ -45,6 +45,56 @@ describe('object storage', () => {
     }
   });
 
+  test('keeps the actual signed URL expiry within the deadline even when signing is delayed', async () => {
+    const config = createConfig();
+    const client = createS3ObjectStorageClient(config);
+    const signer = createS3SigningClient(config);
+    const storage = createObjectStorage(
+      config,
+      { ...client, bucketExists: async () => true },
+      createOperationLogCollector().logger,
+      {
+        ...signer,
+        signMultipartUploadPartUrl: async (
+          ...args: Parameters<typeof signer.signMultipartUploadPartUrl>
+        ) => {
+          await new Promise((resolve) => setTimeout(resolve, 1_200));
+          return signer.signMultipartUploadPartUrl(...args);
+        },
+      },
+    );
+    try {
+      const expiresAt = new Date(Date.now() + 4_000);
+      const url = new URL(
+        await storage.signMultipartUploadPart({
+          objectKey: 'source.bin',
+          uploadId: 'id',
+          partNumber: 1,
+          expiresAt,
+        }),
+      );
+      const stamp = url.searchParams.get('X-Amz-Date') ?? '';
+      const signedAt = new Date(
+        stamp.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, '$1-$2-$3T$4:$5:$6Z'),
+      ).getTime();
+      expect(Number.isFinite(signedAt)).toBe(true);
+      expect(signedAt + Number(url.searchParams.get('X-Amz-Expires')) * 1000).toBeLessThanOrEqual(
+        expiresAt.getTime(),
+      );
+      await expect(
+        storage.signMultipartUploadPart({
+          objectKey: 'source.bin',
+          uploadId: 'id',
+          partNumber: 1,
+          expiresAt: new Date(0),
+        }),
+      ).rejects.toBeInstanceOf(ObjectStorageUnavailableError);
+    } finally {
+      client.destroy();
+      signer.destroy();
+    }
+  });
+
   test('ensures the bucket once before writes and signs GET URLs with the public client', async () => {
     const calls: unknown[] = [];
     const { logger, logs } = createOperationLogCollector();
@@ -454,6 +504,62 @@ describe('object storage', () => {
     expect(calls).toContainEqual(['downloadObject', 'videos', 'source.mp4', 'C:\\tmp\\source.mp4']);
     expect(calls).toContainEqual(['getObject', 'videos', 'playlist.m3u8']);
   });
+
+  for (const scenario of [
+    'missing marker',
+    'regressing marker',
+    'duplicate part',
+    'invalid size',
+  ] as const) {
+    test(`rejects ListParts ${scenario} instead of trusting an incomplete snapshot`, async () => {
+      let requests = 0;
+      const server = createServer((request, response) => {
+        if (request.method === 'HEAD') {
+          response.writeHead(200).end();
+          return;
+        }
+        requests += 1;
+        const truncated = scenario !== 'invalid size' && requests === 1;
+        const marker =
+          scenario === 'missing marker'
+            ? ''
+            : `<NextPartNumberMarker>${scenario === 'regressing marker' ? 0 : 1}</NextPartNumberMarker>`;
+        response
+          .writeHead(200, { 'content-type': 'application/xml' })
+          .end(
+            `<ListPartsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">` +
+              `<IsTruncated>${truncated}</IsTruncated>${marker}` +
+              `<Part><PartNumber>1</PartNumber><Size>${scenario === 'invalid size' ? -1 : 1}</Size></Part>` +
+              `</ListPartsResult>`,
+          );
+      });
+      server.listen(0, '127.0.0.1');
+      await once(server, 'listening');
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        throw new Error('Expected TCP port');
+      }
+      const config = createConfig({ endpoint: `http://127.0.0.1:${address.port}` });
+      const client = createS3ObjectStorageClient(config);
+      const storage = createObjectStorage(config, client, createOperationLogCollector().logger);
+      try {
+        await expect(
+          storage.listMultipartUploadParts({
+            objectKey: 'source.bin',
+            uploadId: 'upload-1',
+            limit: 10,
+          }),
+        ).rejects.toBeInstanceOf(ObjectStorageUnavailableError);
+        expect(requests).toBe(scenario === 'duplicate part' ? 2 : 1);
+      } finally {
+        client.destroy();
+        const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+        server.closeAllConnections();
+        await closed;
+      }
+    });
+  }
 
   for (const missingMarker of ['key', 'upload ID'] as const) {
     test(`rejects a truncated multipart page without its ${missingMarker} marker`, async () => {

@@ -28,6 +28,7 @@ import { waitForPostgresLockWaiters } from './support/postgresLocks.js';
 import {
   createIntegrationAuthService,
   createIntegrationVideoUploadsDependencies,
+  createIntegrationVideoUploadsService,
   createIntegrationVideosService,
   createPrismaClient,
   resetState,
@@ -603,6 +604,13 @@ describe('maintenance and reconciliation integration', () => {
 
     const observedAt = new Date('2026-07-24T12:00:00.000Z');
     const staleAt = new Date(observedAt.getTime() - 60_000);
+    // Prepare one reservation plus two job generations; test expiry only after preparation.
+    const fixtureUploads = createIntegrationVideoUploadsService(
+      runtime.prisma,
+      runtime.videoObjectStorage,
+      runtime.videoExternalResources,
+      { maxReservationsPerHour: 3, maxTranscodeOutstandingJobsPerUser: 3 },
+    );
     const owner = await createVerifiedSession(runtime, {
       email: 'maintenance-video@example.com',
       username: 'maintenance_video',
@@ -615,14 +623,10 @@ describe('maintenance and reconciliation integration', () => {
       license: 'all_rights_reserved',
       allowComments: true,
     });
-    const expiringUpload = await runtime.videoUploadsService.initMultipartUpload({
+    const expiringUpload = await fixtureUploads.initMultipartUpload({
       userId: owner.userId,
       videoId: expiringVideo.video.id,
       sizeBytes: 128,
-    });
-    await runtime.prisma.videoUploadSession.update({
-      where: { id: expiringUpload.uploadSession.id },
-      data: { expiresAt: staleAt },
     });
 
     const createWritingGeneration = async ({ live, title }: { live: boolean; title: string }) => {
@@ -639,7 +643,7 @@ describe('maintenance and reconciliation integration', () => {
         throw new Error('Integration runtime disappeared');
       }
 
-      const source = await uploadVideoSource(runtime.videoUploadsService, {
+      const source = await uploadVideoSource(fixtureUploads, {
         body: Buffer.from(`${title} source`),
         userId: owner.userId,
         videoId: created.video.id,
@@ -727,6 +731,10 @@ describe('maintenance and reconciliation integration', () => {
     const live = await createWritingGeneration({
       live: true,
       title: 'Live generation',
+    });
+    await runtime.prisma.videoUploadSession.update({
+      where: { id: expiringUpload.uploadSession.id },
+      data: { expiresAt: staleAt },
     });
     const maintenanceExternalResources = createExternalResourceReconciler({
       prisma: runtime.prisma,

@@ -1548,6 +1548,7 @@ describe('videos routes multipart uploads', () => {
     const responseBody: unknown = await response.json();
     expect(responseBody).toEqual({
       uploadSessionId,
+      expiresAt: '2026-01-01T00:00:00.000Z',
       parts: [
         {
           partNumber: 1,

@@ -214,6 +214,7 @@ export const createStubVideoUploadsService = (): VideoUploadsPort => ({
   }),
   signMultipartUploadParts: async (input): Promise<SignVideoMultipartUploadPartsResult> => ({
     uploadSessionId: input.uploadSessionId,
+    expiresAt: fixedNow,
     parts: input.partNumbers.map((partNumber) => ({
       partNumber,
       url: `http://localhost:9000/videos/user-id/video-id/sources/${input.uploadSessionId}/original.mp4?partNumber=${partNumber}&uploadId=test-upload-id`,

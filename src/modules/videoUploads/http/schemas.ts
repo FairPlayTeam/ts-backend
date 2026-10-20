@@ -155,6 +155,10 @@ export const signedVideoUploadPartsResponseSchema = z
     uploadSessionId: z.string().uuid().openapi({
       example: '0d4e55cb-c278-4d74-a192-bf7c10888c7a',
     }),
+    expiresAt: z.string().datetime().openapi({
+      description: 'Current reservation deadline. Only newly verified source bytes can extend it.',
+      example: '2026-01-01T00:15:00.000Z',
+    }),
     parts: z.array(
       z.object({
         partNumber: z.number().int().positive().openapi({ example: 1 }),

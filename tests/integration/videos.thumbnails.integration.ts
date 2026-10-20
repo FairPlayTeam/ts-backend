@@ -302,6 +302,7 @@ describe('videos thumbnails integration', () => {
       {
         maxTranscodeOutstandingJobs: 3,
         maxTranscodeOutstandingJobsPerUser: 3,
+        maxReservationsPerHour: 3,
         userStorageQuotaBytes: quotaBytes,
       },
     );
@@ -1200,7 +1201,8 @@ describe('videos thumbnails integration', () => {
       await waitForPostgresLockWaiters(runtime.prisma, {
         applicationNames: [firstApplicationName, secondApplicationName],
         expectedCount: 2,
-        queryFragments: ['video_source_thumbnails'],
+        // One finalizer waits on the thumbnail table, the other on its session lock.
+        queryFragments: ['SELECT', 'video_'],
       });
     } catch (error) {
       coordinationErrors.add(error);

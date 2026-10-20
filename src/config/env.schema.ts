@@ -26,7 +26,10 @@ import {
   DEFAULT_VIDEO_UPLOAD_MAX_PARTS,
   DEFAULT_VIDEO_UPLOAD_PART_SIZE_BYTES,
   DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS,
+  DEFAULT_VIDEO_UPLOAD_IDLE_TTL_SECONDS,
+  DEFAULT_VIDEO_UPLOAD_MAX_RESERVATIONS_PER_HOUR,
   DEFAULT_VIDEO_USER_STORAGE_QUOTA_BYTES,
+  MIN_VIDEO_UPLOAD_IDLE_TTL_SECONDS,
   MAX_EXTERNAL_OPERATION_TIMEOUT_MS,
   MINUTE_MS,
   SESSION_CLEANUP_INACTIVE_RETENTION_DAYS,
@@ -320,6 +323,13 @@ const environmentSchemaFields = z.object({
     Number.MAX_SAFE_INTEGER,
   ),
   VIDEO_UPLOAD_SESSION_TTL_SECONDS: positiveInteger(DEFAULT_VIDEO_UPLOAD_SESSION_TTL_SECONDS),
+  VIDEO_UPLOAD_IDLE_TTL_SECONDS: positiveIntegerAtLeast(
+    DEFAULT_VIDEO_UPLOAD_IDLE_TTL_SECONDS,
+    MIN_VIDEO_UPLOAD_IDLE_TTL_SECONDS,
+  ),
+  VIDEO_UPLOAD_MAX_RESERVATIONS_PER_HOUR: positiveInteger(
+    DEFAULT_VIDEO_UPLOAD_MAX_RESERVATIONS_PER_HOUR,
+  ),
   VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS: positiveInteger(
     DEFAULT_VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS,
   ),
@@ -557,6 +567,13 @@ const validateCrossFieldRules = (environment: EnvironmentFields, context: z.Refi
     );
   }
 
+  if (environment.VIDEO_UPLOAD_IDLE_TTL_SECONDS > environment.VIDEO_UPLOAD_SESSION_TTL_SECONDS) {
+    addIssue(
+      context,
+      'VIDEO_UPLOAD_IDLE_TTL_SECONDS',
+      'VIDEO_UPLOAD_IDLE_TTL_SECONDS must not exceed VIDEO_UPLOAD_SESSION_TTL_SECONDS',
+    );
+  }
   if (
     environment.VIDEO_UPLOAD_MAX_BYTES >
     environment.VIDEO_UPLOAD_PART_SIZE_BYTES * environment.VIDEO_UPLOAD_MAX_PARTS
@@ -718,6 +735,8 @@ const toConfig = (environment: EnvironmentFields, context: z.RefinementCtx) => {
       maxTranscodeOutstandingJobsPerUser: environment.VIDEO_TRANSCODE_MAX_OUTSTANDING_JOBS_PER_USER,
       userStorageQuotaBytes: environment.VIDEO_USER_STORAGE_QUOTA_BYTES,
       sessionTtlSeconds: environment.VIDEO_UPLOAD_SESSION_TTL_SECONDS,
+      idleTtlSeconds: environment.VIDEO_UPLOAD_IDLE_TTL_SECONDS,
+      maxReservationsPerHour: environment.VIDEO_UPLOAD_MAX_RESERVATIONS_PER_HOUR,
     },
     videoTranscode: {
       maxConcurrentJobs: environment.VIDEO_TRANSCODE_MAX_CONCURRENT_JOBS,

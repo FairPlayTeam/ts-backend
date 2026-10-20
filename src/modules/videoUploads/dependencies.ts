@@ -25,6 +25,7 @@ export type VideoUploadsDependencies = {
     | 'completeMultipartUpload'
     | 'headObject'
     | 'initiateMultipartUpload'
+    | 'listMultipartUploadParts'
     | 'putObject'
     | 'signMultipartUploadPart'
   >;
@@ -43,6 +44,8 @@ export type VideoUploadsDependencies = {
     | 'maxTranscodeOutstandingJobsPerUser'
     | 'partSizeBytes'
     | 'sessionTtlSeconds'
+    | 'idleTtlSeconds'
+    | 'maxReservationsPerHour'
     | 'userStorageQuotaBytes'
   >;
 };

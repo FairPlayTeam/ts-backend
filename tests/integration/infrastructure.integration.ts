@@ -10,7 +10,9 @@ import {
   GetBucketCorsCommand,
   HeadBucketCommand,
   ListMultipartUploadsCommand,
+  ListPartsCommand,
   PutBucketCorsCommand,
+  UploadPartCommand,
 } from '@aws-sdk/client-s3';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { createExternalResourceReconciler } from '../../src/services/externalResources.js';
@@ -187,6 +189,19 @@ describe('infrastructure integration', () => {
         thumbnailMigration.slice(enumStatementEnd),
       );
 
+      // Exercise the migrated row with today's client/service schema, not a historical schema.
+      const laterMigrations = (await readdir(migrationsDirectory, { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory() && entry.name > migrationName)
+        .map((entry) => entry.name)
+        .sort();
+      for (const directory of laterMigrations) {
+        await runPostgresSql(
+          runtime.postgresContainerId,
+          databaseName,
+          await readFile(resolve(migrationsDirectory, directory, 'migration.sql'), 'utf8'),
+        );
+      }
+
       const migratedDatabaseUrl = new URL(runtime.databaseUrl);
       migratedDatabaseUrl.pathname = `/${databaseName}`;
       migrationPrisma = createPrismaClient(migratedDatabaseUrl.toString());
@@ -216,7 +231,11 @@ describe('infrastructure integration', () => {
         id: uploadSessionId,
         status: 'initiated',
         sourceThumbnail: null,
+        hardExpiresAt: new Date('2099-01-01T00:00:00.000Z'),
+        verifiedUploadedBytes: 0n,
       });
+      expect(preexistingSession.expiresAt.getTime()).toBeGreaterThan(Date.now());
+      expect(preexistingSession.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 15 * 60_000);
       await expect(
         migrationVideoUploadsService.getMultipartUploadSession({
           userId,
@@ -343,6 +362,56 @@ describe('infrastructure integration', () => {
     await expect(
       integrationRuntime.objectStorage.headObject({ objectKey: objectKeys[0] ?? '' }),
     ).resolves.toBeNull();
+  });
+
+  test('observes and bounds 1001 real uploaded parts across Garage ListParts pages', async () => {
+    if (!runtime) throw new Error('Integration runtime was not started');
+    const storage = runtime.videoObjectStorage;
+    const sdk = createS3Client(runtime.videoObjectStorageConfig);
+    const objectKey = `integration/parts-contract-${randomUUID()}/source.bin`;
+    const { uploadId } = await storage.initiateMultipartUpload({ objectKey });
+    try {
+      for (let start = 0; start < 1_001; start += 25) {
+        await Promise.all(
+          Array.from({ length: Math.min(25, 1_001 - start) }, (_, index) =>
+            sdk.send(
+              new UploadPartCommand({
+                Bucket: VIDEO_OBJECT_STORAGE_BUCKET,
+                Key: objectKey,
+                UploadId: uploadId,
+                PartNumber: start + index + 1,
+                Body: Buffer.from([1]),
+              }),
+            ),
+          ),
+        );
+      }
+      const first = await sdk.send(
+        new ListPartsCommand({
+          Bucket: VIDEO_OBJECT_STORAGE_BUCKET,
+          Key: objectKey,
+          UploadId: uploadId,
+          MaxParts: 1_000,
+        }),
+      );
+      expect(first.Parts).toHaveLength(1_000);
+      expect(first.IsTruncated).toBe(true);
+      expect(Number(first.NextPartNumberMarker)).toBe(1_000);
+      const listed = await storage.listMultipartUploadParts({ objectKey, uploadId, limit: 1_001 });
+      expect(listed).toEqual({
+        truncated: false,
+        parts: Array.from({ length: 1_001 }, (_, index) => ({
+          partNumber: index + 1,
+          sizeBytes: 1,
+        })),
+      });
+      const limited = await storage.listMultipartUploadParts({ objectKey, uploadId, limit: 1_000 });
+      expect(limited.parts).toHaveLength(1_000);
+      expect(limited.truncated).toBe(true);
+    } finally {
+      sdk.destroy();
+      await storage.abortMultipartUpload({ objectKey, uploadId });
+    }
   });
 
   test('paginates same-key incomplete multipart uploads with both S3 markers against Garage', async () => {

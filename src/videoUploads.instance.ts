@@ -28,6 +28,8 @@ const dependencies: VideoUploadsDependencies = {
     maxTranscodeOutstandingJobsPerUser: config.videoUpload.maxTranscodeOutstandingJobsPerUser,
     partSizeBytes: config.videoUpload.partSizeBytes,
     sessionTtlSeconds: config.videoUpload.sessionTtlSeconds,
+    idleTtlSeconds: config.videoUpload.idleTtlSeconds,
+    maxReservationsPerHour: config.videoUpload.maxReservationsPerHour,
     userStorageQuotaBytes: config.videoUpload.userStorageQuotaBytes,
   },
 };

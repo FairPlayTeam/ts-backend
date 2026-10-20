@@ -13,6 +13,7 @@ import {
   HeadObjectCommand,
   ListMultipartUploadsCommand,
   ListObjectsV2Command,
+  ListPartsCommand,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -44,6 +45,7 @@ type ObjectStorageClient = {
   downloadObject?(bucketName: string, objectName: string, destinationPath: string): Promise<void>;
   getObject?(bucketName: string, objectName: string): Promise<Readable>;
   listMultipartUploads?(bucketName: string, prefix: string): Readable;
+  listMultipartUploadParts?(bucketName: string, objectName: string, uploadId: string): Readable;
   listObjects?(bucketName: string, prefix: string): Readable;
   createBucket(bucketName: string): Promise<void>;
   putObject(
@@ -62,6 +64,7 @@ type ObjectStorageClient = {
     uploadId: string,
     partNumber: number,
     expires: number,
+    signingDate?: Date,
   ): Promise<string>;
   destroy?(): void;
 };
@@ -100,6 +103,9 @@ export type ObjectStorage = {
   getSignedUrl(objectKey: string, bucket?: string): Promise<string>;
   headObject(input: ObjectStorageSelector): Promise<ObjectStorageObject | null>;
   listMultipartUploads(input: ListMultipartUploadsInput): Promise<ListMultipartUploadsResult>;
+  listMultipartUploadParts(
+    input: ListMultipartUploadPartsInput,
+  ): Promise<ListMultipartUploadPartsResult>;
   listObjects(input: ListObjectsInput): Promise<ListObjectsResult>;
   signMultipartUploadPart(input: SignMultipartUploadPartInput): Promise<string>;
   checkReady(bucket?: string): Promise<void>;
@@ -178,7 +184,12 @@ type SignMultipartUploadPartInput = {
   objectKey: string;
   uploadId: string;
   partNumber: number;
+  expiresAt?: Date;
 };
+
+export type StoredMultipartUploadPart = { partNumber: number; sizeBytes: number };
+type ListMultipartUploadPartsInput = ObjectStorageSelector & { uploadId: string; limit: number };
+type ListMultipartUploadPartsResult = { parts: StoredMultipartUploadPart[]; truncated: boolean };
 
 type CompleteMultipartUploadInput = {
   bucket?: string;
@@ -303,6 +314,7 @@ export const createUnavailableObjectStorage = (): ObjectStorage => ({
   getSignedUrl: () => rejectUnavailableObjectStorage<string>(),
   headObject: () => rejectUnavailableObjectStorage<ObjectStorageObject | null>(),
   listMultipartUploads: () => rejectUnavailableObjectStorage<ListMultipartUploadsResult>(),
+  listMultipartUploadParts: () => rejectUnavailableObjectStorage<ListMultipartUploadPartsResult>(),
   listObjects: () => rejectUnavailableObjectStorage<ListObjectsResult>(),
   signMultipartUploadPart: () => rejectUnavailableObjectStorage<string>(),
   checkReady: () => rejectUnavailableObjectStorage<void>(),
@@ -379,6 +391,16 @@ const toMultipartUpload = (value: unknown): ObjectStorageMultipartUpload | null 
   };
 };
 
+const toStoredMultipartUploadPart = (value: unknown): StoredMultipartUploadPart | null => {
+  if (!isRecord(value)) return null;
+  const partNumber = readNonNegativeSafeInteger(value.partNumber);
+  const sizeBytes = readNonNegativeSafeInteger(value.sizeBytes);
+  if (partNumber === null || partNumber < 1 || partNumber > 10_000 || sizeBytes === null) {
+    throw new Error('Object storage returned invalid multipart part metadata');
+  }
+  return { partNumber, sizeBytes };
+};
+
 const collectStreamItems = <T>(
   stream: Readable,
   limit: number,
@@ -393,7 +415,19 @@ const collectStreamItems = <T>(
         return;
       }
 
-      const item = parse(value);
+      let item: T | null;
+      try {
+        item = parse(value);
+      } catch (err) {
+        settled = true;
+        stream.destroy();
+        reject(
+          err instanceof Error
+            ? err
+            : new Error('Object storage list metadata is invalid', { cause: err }),
+        );
+        return;
+      }
 
       if (!item) {
         return;
@@ -566,6 +600,45 @@ const createObjectStorageClientAdapter = (sdkClient: S3Client): ObjectStorageCli
 
     return toNodeReadable(result.Body);
   },
+  listMultipartUploadParts(bucketName, objectName, uploadId) {
+    const abortSignal = requestAbortContext.getStore();
+    return Readable.from(
+      (async function* () {
+        let marker = 0;
+        let lastPart = 0;
+        for (let pageNumber = 0; pageNumber < 10_000; pageNumber += 1) {
+          const page = await sdkClient.send(
+            new ListPartsCommand({
+              Bucket: bucketName,
+              Key: objectName,
+              UploadId: uploadId,
+              MaxParts: 1_000,
+              PartNumberMarker: String(marker),
+            }),
+            abortSignal ? { abortSignal } : {},
+          );
+          for (const part of page.Parts ?? []) {
+            const parsed = toStoredMultipartUploadPart({
+              partNumber: part.PartNumber,
+              sizeBytes: part.Size,
+            });
+            if (!parsed || parsed.partNumber <= lastPart) {
+              throw new Error('Object storage repeated or reordered multipart parts');
+            }
+            lastPart = parsed.partNumber;
+            yield parsed;
+          }
+          if (!page.IsTruncated) return;
+          const next = Number(page.NextPartNumberMarker);
+          if (!Number.isSafeInteger(next) || next <= marker || next < lastPart || next > 10_000) {
+            throw new Error('Object storage returned an invalid part pagination marker');
+          }
+          marker = next;
+        }
+        throw new Error('Object storage exceeded the multipart part pagination bound');
+      })(),
+    );
+  },
   listMultipartUploads(bucketName, prefix) {
     const abortSignal = requestAbortContext.getStore();
 
@@ -721,7 +794,14 @@ const createSigningClientAdapter = (sdkClient: S3Client): S3SigningClientAdapter
     getSignedUrl(sdkClient, new GetObjectCommand({ Bucket: bucketName, Key: objectName }), {
       expiresIn: expires,
     }),
-  signMultipartUploadPartUrl: (bucketName, objectName, uploadId, partNumber, expires) =>
+  signMultipartUploadPartUrl: (
+    bucketName,
+    objectName,
+    uploadId,
+    partNumber,
+    expires,
+    signingDate,
+  ) =>
     getSignedUrl(
       sdkClient,
       new UploadPartCommand({
@@ -730,7 +810,7 @@ const createSigningClientAdapter = (sdkClient: S3Client): S3SigningClientAdapter
         UploadId: uploadId,
         PartNumber: partNumber,
       }),
-      { expiresIn: expires },
+      { expiresIn: expires, ...(signingDate ? { signingDate } : {}) },
     ),
 });
 
@@ -1083,7 +1163,35 @@ export const createObjectStorage = (
       });
     },
 
-    async signMultipartUploadPart({ bucket = config.bucket, objectKey, partNumber, uploadId }) {
+    async listMultipartUploadParts({ bucket = config.bucket, objectKey, uploadId, limit }) {
+      assertListLimit(limit);
+      await ensureBucket(bucket);
+      return runObjectStorageOperation({
+        config,
+        logger,
+        operation: 'objectStorage.listMultipartUploadParts',
+        data: { bucket, objectKey },
+        run: async () => {
+          if (!client.listMultipartUploadParts) {
+            throw createUnsupportedObjectStorageOperationError('listing multipart parts');
+          }
+          const result = await collectStreamItems(
+            client.listMultipartUploadParts(bucket, objectKey, uploadId),
+            limit,
+            toStoredMultipartUploadPart,
+          );
+          return { parts: result.items, truncated: result.truncated };
+        },
+      });
+    },
+
+    async signMultipartUploadPart({
+      bucket = config.bucket,
+      objectKey,
+      partNumber,
+      uploadId,
+      expiresAt,
+    }) {
       await ensureBucket(bucket);
       const signedUrl = await runObjectStorageOperation({
         config,
@@ -1095,12 +1203,23 @@ export const createObjectStorage = (
             throw createUnsupportedMultipartError();
           }
 
+          // Bind the duration and SigV4 timestamp to the same instant, even if signing waits.
+          const signingDate = new Date();
+          const expires = expiresAt
+            ? Math.min(
+                config.signedUrlTtlSeconds,
+                Math.floor((expiresAt.getTime() - signingDate.getTime()) / 1000),
+              )
+            : config.signedUrlTtlSeconds;
+          if (expires < 1)
+            throw new ObjectStorageUnavailableError('Upload signing deadline has passed');
           return signingClient.signMultipartUploadPartUrl(
             bucket,
             objectKey,
             uploadId,
             partNumber,
-            config.signedUrlTtlSeconds,
+            expires,
+            signingDate,
           );
         },
       });
