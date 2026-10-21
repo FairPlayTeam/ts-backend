@@ -39,7 +39,8 @@ const config: ObjectStorageConfig = {
   accessKey: required('B2_TEST_ACCESS_KEY_ID'),
   secretKey: required('B2_TEST_SECRET_ACCESS_KEY'),
   signedUrlTtlSeconds: 900,
-  operationTimeoutMs: 10_000,
+  // Diagnostic observation window only; does not change runtime configuration.
+  operationTimeoutMs: 60_000,
 };
 const client = createS3ObjectStorageClient(config);
 client.createBucket = () =>
@@ -63,21 +64,77 @@ const assert = (condition: boolean, message: string): void => {
   if (!condition) throw new Error(message);
 };
 const begin = async (name: string) => {
+  const startedAt = Date.now();
+  const context = { stage: name, timeoutMs: config.operationTimeoutMs };
+  console.log(`B2 multipart initiation started: ${JSON.stringify(context)}`);
   const objectKey = `${prefix}${name}.bin`;
-  const { uploadId } = await storage.initiateMultipartUpload({ objectKey });
-  const handle = { objectKey, uploadId };
-  handles.push(handle);
-  return handle;
+  try {
+    const { uploadId } = await storage.initiateMultipartUpload({ objectKey });
+    const handle = { objectKey, uploadId };
+    handles.push(handle);
+    console.log(
+      `B2 multipart initiation succeeded: ${JSON.stringify({ ...context, durationMs: Date.now() - startedAt })}`,
+    );
+    return handle;
+  } catch (error) {
+    console.log(
+      `B2 multipart initiation failed: ${JSON.stringify({ ...context, durationMs: Date.now() - startedAt })}`,
+    );
+    throw error;
+  }
 };
-const put = async (url: string, body: Buffer) => {
-  const response = await fetch(url, { method: 'PUT', body, signal: AbortSignal.timeout(10_000) });
-  const text = await response.text();
-  return {
-    status: response.status,
-    etag: response.headers.get('etag'),
-    code: text.match(/<Code>([^<]+)<\/Code>/)?.[1],
-  };
+const PUT_TIMEOUT_MS = 60_000;
+const TRANSFER_URL_TTL_SECONDS = 300;
+const put = async (stage: string, url: string, body: Buffer) => {
+  const startedAt = Date.now();
+  const signal = AbortSignal.timeout(PUT_TIMEOUT_MS);
+  const context = { stage, sizeBytes: body.length, timeoutMs: PUT_TIMEOUT_MS };
+  console.log(`B2 PUT started: ${JSON.stringify(context)}`);
+  let response: Response | undefined;
+  try {
+    response = await fetch(url, { method: 'PUT', body, signal });
+    const text = await response.text();
+    const result = {
+      ...context,
+      status: response.status,
+      etag: response.headers.get('etag'),
+      code: text.match(/<Code>([^<]+)<\/Code>/)?.[1],
+      durationMs: Date.now() - startedAt,
+      requestId: response.headers.get('x-amz-request-id'),
+    };
+    console.log(`B2 PUT response: ${describePut(result)}`);
+    return result;
+  } catch (error) {
+    // Do not retain the original error: fetch errors can contain the signed URL.
+    const failure =
+      signal.aborted || (error instanceof Error && error.name === 'TimeoutError')
+        ? 'timeout'
+        : 'transport-or-response-error';
+    // eslint-disable-next-line preserve-caught-error -- The original cause may expose a bearer URL.
+    throw new Error(
+      `B2 PUT failed: ${JSON.stringify({
+        ...context,
+        failure,
+        phase: response ? 'response-body' : 'response-headers',
+        status: response?.status ?? null,
+        durationMs: Date.now() - startedAt,
+        requestId: response?.headers.get('x-amz-request-id') ?? null,
+      })}`,
+    );
+  }
 };
+// Never include bearer URLs, ETag values or response bodies in diagnostic errors.
+const describePut = (result: Awaited<ReturnType<typeof put>>): string =>
+  JSON.stringify({
+    stage: result.stage,
+    sizeBytes: result.sizeBytes,
+    timeoutMs: result.timeoutMs,
+    status: result.status,
+    code: result.code ?? null,
+    hasETag: result.etag !== null,
+    durationMs: result.durationMs,
+    requestId: result.requestId,
+  });
 
 const cleanupErrors: unknown[] = [];
 let operationError: Error | undefined;
@@ -90,25 +147,34 @@ try {
     expiresAt: new Date(Date.now() + 2_500),
   });
   await new Promise((resolve) => setTimeout(resolve, 3_000));
-  const expiredPut = await put(expiringUrl, Buffer.from([1]));
+  const expiredPut = await put('expired-capability', expiringUrl, Buffer.from([1]));
   assert(
     expiredPut.status >= 400 && expiredPut.status < 500,
-    'B2 must reject a real PUT started after its signed URL expired',
+    `B2 must reject a real PUT started after its signed URL expired: ${describePut(expiredPut)}`,
   );
   assert(
     (await storage.listMultipartUploadParts({ ...expired, limit: 1 })).parts.length === 0,
     'An expired capability must not store a part',
   );
   const complete = await begin('completed');
-  const expiresAt = new Date(Date.now() + 120_000);
+  const expiresAt = new Date(Date.now() + TRANSFER_URL_TTL_SECONDS * 1_000);
   const firstUrl = await storage.signMultipartUploadPart({ ...complete, partNumber: 1, expiresAt });
   const ttl = Number(new URL(firstUrl).searchParams.get('X-Amz-Expires'));
-  assert(ttl > 0 && ttl <= 120, 'The real URL must respect the reservation signing deadline');
+  assert(
+    ttl > 0 && ttl <= TRANSFER_URL_TTL_SECONDS,
+    'The real URL must respect the reservation signing deadline',
+  );
   const body = Buffer.alloc(5 * 1024 * 1024, 1);
-  const first = await put(firstUrl, body);
-  assert(first.status === 200 && first.etag !== null, 'B2 must accept the first real part');
-  const rewritten = await put(firstUrl, Buffer.alloc(body.length, 2));
-  assert(rewritten.status === 200 && rewritten.etag !== null, 'B2 must support same-part retries');
+  const first = await put('first-part', firstUrl, body);
+  assert(
+    first.status === 200 && first.etag !== null,
+    `B2 must accept the first real part: ${describePut(first)}`,
+  );
+  const rewritten = await put('same-part-rewrite', firstUrl, Buffer.alloc(body.length, 2));
+  assert(
+    rewritten.status === 200 && rewritten.etag !== null,
+    `B2 must support same-part retries: ${describePut(rewritten)}`,
+  );
   const beforeLast = await storage.listMultipartUploadParts({ ...complete, limit: 2 });
   assert(
     !beforeLast.truncated &&
@@ -117,8 +183,11 @@ try {
     'A part rewrite must not appear as additional useful progress in ListParts',
   );
   const lastUrl = await storage.signMultipartUploadPart({ ...complete, partNumber: 2, expiresAt });
-  const last = await put(lastUrl, Buffer.alloc(7, 3));
-  assert(last.status === 200 && last.etag !== null, 'B2 must accept the short last part');
+  const last = await put('short-last-part', lastUrl, Buffer.alloc(7, 3));
+  assert(
+    last.status === 200 && last.etag !== null,
+    `B2 must accept the short last part: ${describePut(last)}`,
+  );
   const listed = await storage.listMultipartUploadParts({ ...complete, limit: 2 });
   assert(
     !listed.truncated && listed.parts.length === 2 && listed.parts[1]?.sizeBytes === 7,
@@ -148,31 +217,32 @@ try {
       .VersionId !== undefined,
     'B2 must expose the object version so the test can clean up its own data',
   );
-  const completedReplay = await put(firstUrl, body);
+  const completedReplay = await put('replay-after-complete', firstUrl, body);
   assert(
     completedReplay.status >= 400 &&
       completedReplay.status < 500 &&
       completedReplay.code === 'NoSuchUpload',
-    'An old part capability must not recreate an already completed multipart upload',
+    `An old part capability must not recreate an already completed multipart upload: ${describePut(completedReplay)}`,
   );
 
   const aborted = await begin('aborted');
   const abortedUrl = await storage.signMultipartUploadPart({
     ...aborted,
     partNumber: 1,
-    expiresAt: new Date(Date.now() + 120_000),
+    expiresAt: new Date(Date.now() + TRANSFER_URL_TTL_SECONDS * 1_000),
   });
+  const beforeAbort = await put('before-abort', abortedUrl, body);
   assert(
-    (await put(abortedUrl, body)).status === 200,
-    'The aborted case must first contain real data',
+    beforeAbort.status === 200,
+    `The aborted case must first contain real data: ${describePut(beforeAbort)}`,
   );
   await storage.abortMultipartUpload(aborted);
-  const abortedReplay = await put(abortedUrl, body);
+  const abortedReplay = await put('replay-after-abort', abortedUrl, body);
   assert(
     abortedReplay.status >= 400 &&
       abortedReplay.status < 500 &&
       abortedReplay.code === 'NoSuchUpload',
-    'An old capability must not recreate an aborted multipart upload',
+    `An old capability must not recreate an aborted multipart upload: ${describePut(abortedReplay)}`,
   );
   assert((await storage.headObject(aborted)) === null, 'Aborting must not publish a source object');
   console.log(
