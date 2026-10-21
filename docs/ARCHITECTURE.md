@@ -417,6 +417,28 @@ optional domain transitions commit together only while the lease is still owned.
 releases its lease, records a bounded error, and retries with exponential backoff capped at 24
 hours.
 
+PostgreSQL requires a non-null, strictly positive `expected_size_bytes` for exact resource
+roles `source`, `source_thumbnail`, and `user_media`, including during cleanup. Prefix roles `hls_artifacts` and
+`thumbnail_prefix` retain a null size. A video's source session, object key, and strictly positive
+source size must either all be present or all be null. The additive migration
+`20261021120000_require_exact_resource_sizes` replaces only the two size checks, with explicit
+`IS NOT NULL` guards because SQL checks also accept unknown results. Production starts empty;
+this migration does not repair existing invalid rows, which would cause constraint validation
+to fail.
+
+`database.size-constraints.integration.ts` exercises these invariants with real PostgreSQL
+inserts, updates, and persisted reads, bypassing application validation:
+
+| Invariant / untrusted input and authority                              | Implicit transformation                          | Enforcement                                     | Counterexamples                                                    | Observable evidence                                                               |
+| ---------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| Exact target size / direct SQL writer, PostgreSQL row                  | SQL parameter to nullable BIGINT                 | `external_resource_targets_expected_size_check` | Each exact role with null, zero, or negative size on insert/update | Named check rejects writes; positive size remains persisted                       |
+| Prefix size stays absent / omitted or explicit null, PostgreSQL row    | Omitted column defaults to null                  | Prefix branch of the same check                 | Both prefix roles with any numeric size                            | Null insert/update succeeds; numeric updates fail; null is read back              |
+| Complete video source or no source / direct SQL writer, PostgreSQL row | SQL UUID/BIGINT casts and three nullable columns | `videos_source_fields_check`                    | Missing/non-positive size on insert/update, partial tuples         | Named check rejects writes; complete positive source and all-null removal succeed |
+
+Temporarily removing both new presence guards made the three exact-role tests and the video
+source test fail because null-sized inserts succeeded. Both prefix tests still passed. The
+original migration was restored after this mutation check.
+
 Deletion requests move a target to `quiescing` no earlier than one hour after the request, and a
 later request can extend but never shorten that deadline. Exact cleanup aborts persisted and
 discoverable multipart uploads before deleting and confirming the object absent. Present

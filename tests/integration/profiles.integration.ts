@@ -1244,7 +1244,7 @@ describe('profiles integration', () => {
         selectorKind: 'exact',
         role: 'source',
         generation: randomUUID(),
-        expectedSizeBytes: null,
+        expectedSizeBytes: 1n,
         mayHaveMultipartUpload: false,
         goal: 'absent',
         state: 'quiescing',
