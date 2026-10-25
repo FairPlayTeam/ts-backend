@@ -1,6 +1,15 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6)
 ![License](https://img.shields.io/badge/License-GNU%20AGPLv3-blue.svg)
 
+> [!IMPORTANT]
+> **The backend is currently being refactored for v2.**
+>
+> The `main` branch contains the v1 backend and is not the target for new contributions.
+>
+> If you want to contribute, please use the [`refactor/v2`](../../tree/refactor/v2) branch instead.
+>
+> The v2 branch is expected to be merged into `main` soon.
+
 # Fairplay API
 
 This repository contains the Fairplay backend API built with:
