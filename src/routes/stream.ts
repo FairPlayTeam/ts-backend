@@ -1,8 +1,17 @@
 import { Router, Response } from 'express';
 import { minioClient, BUCKETS } from '../lib/minio.js';
-import { hlsMasterIndex, hlsVariantIndex } from '../lib/paths.js';
+import {
+  hlsMasterIndex,
+  hlsVariantIndex,
+  hlsVariantSegment,
+} from '../lib/paths.js';
 import { registerRoute } from '../lib/docs.js';
-import { rewritePlaylistWithToken } from '../lib/hlsPlaylist.js';
+import {
+  hasValidStreamIdentifiers,
+  isValidHlsQuality,
+  isValidHlsSegmentName,
+  rewritePlaylistWithToken,
+} from '../lib/hlsPlaylist.js';
 import {
   createPlaybackToken,
   verifyPlaybackToken,
@@ -69,6 +78,14 @@ const resolveStreamAuthorization = async (
   userId: string,
   videoId: string,
 ): Promise<StreamAuthorization> => {
+  if (!hasValidStreamIdentifiers(userId, videoId)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      body: { error: 'Invalid stream parameters' },
+    };
+  }
+
   const requestedToken = getRequestedPlaybackToken(req);
 
   if (requestedToken) {
@@ -195,6 +212,10 @@ registerRoute({
   auth: false,
   params: { userId: 'User ID (UUID)', videoId: 'Video ID' },
   query: { token: 'Short-lived playback token returned by GET /videos/:id' },
+  responses: {
+    '400': '{ "error": "Invalid stream parameters" }',
+    '403': '{ "error": "Invalid or expired playback token" }',
+  },
 });
 
 router.get(
@@ -202,6 +223,11 @@ router.get(
   optionalSessionAuthenticate,
   async (req: SessionAuthRequest, res: Response) => {
     const { userId, videoId, quality } = req.params;
+    if (!isValidHlsQuality(quality)) {
+      res.status(400).json({ error: 'Invalid video quality' });
+      return;
+    }
+
     const authorization = await resolveStreamAuthorization(req, userId, videoId);
 
     if (!authorization.ok) {
@@ -231,6 +257,10 @@ registerRoute({
     quality: 'Video quality (240p, 480p, 720p, 1080p)',
   },
   query: { token: 'Short-lived playback token returned by GET /videos/:id' },
+  responses: {
+    '400': '{ "error": "Invalid video quality" }',
+    '403': '{ "error": "Invalid or expired playback token" }',
+  },
 });
 
 router.get(
@@ -238,6 +268,15 @@ router.get(
   optionalSessionAuthenticate,
   async (req: SessionAuthRequest, res: Response) => {
     const { userId, videoId, quality, segment } = req.params;
+    if (!isValidHlsQuality(quality)) {
+      res.status(400).json({ error: 'Invalid video quality' });
+      return;
+    }
+    if (!isValidHlsSegmentName(segment)) {
+      res.status(400).json({ error: 'Invalid segment name' });
+      return;
+    }
+
     const authorization = await resolveStreamAuthorization(req, userId, videoId);
 
     if (!authorization.ok) {
@@ -245,7 +284,7 @@ router.get(
       return;
     }
 
-    const objectName = `${userId}/${videoId}/${quality}/${segment}`;
+    const objectName = hlsVariantSegment(userId, videoId, quality, segment);
     await proxyObject(
       BUCKETS.VIDEOS,
       objectName,
@@ -264,10 +303,14 @@ registerRoute({
   params: {
     userId: 'User ID (UUID)',
     videoId: 'Video ID',
-    quality: 'Video quality',
-    segment: 'Segment filename',
+    quality: 'Video quality (240p, 480p, 720p, 1080p)',
+    segment: 'Segment filename (segment_000.ts)',
   },
   query: { token: 'Short-lived playback token returned by GET /videos/:id' },
+  responses: {
+    '400': '{ "error": "Invalid segment name" }',
+    '403': '{ "error": "Invalid or expired playback token" }',
+  },
 });
 
 export default router;
