@@ -80,6 +80,10 @@ model User {
   passwordResetTokens PasswordResetToken[]
   updatedCampaigns Campaign[] @relation("CampaignUpdatedBy")
 
+  activeThemeId String? @map("active_theme_id") @db.Uuid
+  activeTheme   Theme?  @relation("ActiveTheme", fields: [activeThemeId], references: [id], onDelete: SetNull)
+  themes        Theme[]
+
   @@map("users")
 }
 
@@ -259,4 +263,24 @@ model Session {
   @@index([expiresAt])
   @@index([isActive])
   @@map("sessions")
+}
+
+model Theme {
+  id          String  @id @default(uuid()) @db.Uuid
+  authorId    String  @map("author_id") @db.Uuid
+  name        String
+  description String?
+  isPublic    Boolean @default(false) @map("is_public")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  author User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  User   User[] @relation("ActiveTheme")
+
+  colors Json
+
+  @@index([authorId])
+  @@index([isPublic])
+  @@map("themes")
 }
