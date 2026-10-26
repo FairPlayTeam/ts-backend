@@ -30,6 +30,11 @@ export const publicVideoCatalogWhere = {
   visibility: 'public',
   moderationStatus: 'approved',
   processingStatus: 'ready',
+  owner: {
+    is: {
+      isBanned: false,
+    },
+  },
 } satisfies Prisma.VideoWhereInput;
 
 export const READABLE_VIDEO_SCOPE_SQL = Prisma.sql`

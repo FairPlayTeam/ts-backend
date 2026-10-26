@@ -78,18 +78,20 @@ describe('public video feed integration', () => {
     const createCatalogVideo = async ({
       createdAt,
       moderationStatus,
+      ownerUserId = owner.userId,
       processingStatus,
       title,
       visibility,
     }: {
       createdAt: Date;
       moderationStatus: 'approved' | 'pending' | 'rejected';
+      ownerUserId?: string;
       processingStatus: 'draft' | 'ready';
       title: string;
       visibility: 'public' | 'unlisted';
     }) => {
       const created = await activeRuntime.videosService.createVideo({
-        userId: owner.userId,
+        userId: ownerUserId,
         title,
         description: 'This must never appear in a feed card.',
         tags: ['internal-feed-tag'],
@@ -137,6 +139,19 @@ describe('public video feed integration', () => {
         visibility: 'public',
       }),
     ]);
+    const bannedOwner = await createVerifiedSession(runtime, {
+      email: 'feed-banned-owner@example.com',
+      username: 'banned_feed_owner',
+    });
+    await runtime.prisma.user.update({
+      where: { id: bannedOwner.userId },
+      data: {
+        isBanned: true,
+        bannedAt: new Date('2026-06-08T00:00:00.000Z'),
+        banReason: 'Abusive content',
+      },
+    });
+
     await Promise.all([
       createCatalogVideo({
         createdAt: new Date('2026-06-04T00:00:00.000Z'),
@@ -164,6 +179,14 @@ describe('public video feed integration', () => {
         moderationStatus: 'approved',
         processingStatus: 'draft',
         title: 'Hidden draft',
+        visibility: 'public',
+      }),
+      createCatalogVideo({
+        createdAt: new Date('2026-06-08T00:00:00.000Z'),
+        moderationStatus: 'approved',
+        ownerUserId: bannedOwner.userId,
+        processingStatus: 'ready',
+        title: 'Hidden banned owner',
         visibility: 'public',
       }),
     ]);
