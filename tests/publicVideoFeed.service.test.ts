@@ -88,6 +88,11 @@ describe('public video feed service', () => {
       visibility: 'public',
       moderationStatus: 'approved',
       processingStatus: 'ready',
+      owner: {
+        is: {
+          isBanned: false,
+        },
+      },
     };
     expect(calls.findMany).toEqual(
       expect.objectContaining({
@@ -180,6 +185,11 @@ describe('public video feed service', () => {
       visibility: 'public',
       moderationStatus: 'approved',
       processingStatus: 'ready',
+      owner: {
+        is: {
+          isBanned: false,
+        },
+      },
     };
 
     expect(creator.calls.findMany).toEqual(
@@ -239,6 +249,33 @@ describe('public video feed service', () => {
     expect(calls.count).toBeUndefined();
     expect(calls.transactionOptions).toEqual({
       isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+    });
+  });
+
+  test('excludes banned user videos from the public catalog scope', async () => {
+    const { calls, deps } = createDeps();
+
+    await createVideosService(deps).listPublicVideos({});
+
+    expect(calls.findMany).toEqual(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          owner: {
+            is: {
+              isBanned: false,
+            },
+          },
+        }),
+      }),
+    );
+    expect(calls.count).toEqual({
+      where: expect.objectContaining({
+        owner: {
+          is: {
+            isBanned: false,
+          },
+        },
+      }),
     });
   });
 });
